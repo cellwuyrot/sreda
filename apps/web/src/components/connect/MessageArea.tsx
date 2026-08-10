@@ -2669,6 +2669,21 @@ export default function MessageArea({
                   <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className="input-field !py-1 !px-2 text-xs" />
                   <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="input-field !py-1 !px-2 text-xs" />
                   <button type="button" onClick={scheduleMessage} disabled={!newMessage.trim() || !scheduleDate || !scheduleTime} className="btn-primary !py-1 !px-3 text-xs disabled:opacity-50">Запланировать</button>
+                  {/* FIX-SCHED-CLOSE: панель открывалась из меню «Отложенная
+                      отправка», но закрыть её было нечем: кнопка-переключатель есть
+                      только в панели форматирования, а из меню инструментов состояние
+                      выставлялось безусловно (setShowSchedule(true)). Если передумал —
+                      выйти было нельзя. Закрытие заодно чистит незавершённый выбор
+                      даты/времени, чтобы при следующем открытии не всего было старого. */}
+                  <button
+                    type="button"
+                    onClick={() => { setShowSchedule(false); setScheduleDate(""); setScheduleTime(""); }}
+                    className="ml-auto p-1 rounded text-neutral-500 hover:text-neutral-800 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                    title="Закрыть"
+                    aria-label="Закрыть панель отложенной отправки"
+                  >
+                    <XIcon size={14} style={{ color: "inherit" }} />
+                  </button>
                 </div>
                 {scheduledList.length > 0 && (
                   <div className="space-y-1">
@@ -2749,7 +2764,7 @@ export default function MessageArea({
                     onImage={() => fileInputRef.current?.click()}
                     onGeo={() => setShowGeoPicker(true)}
                     onToggleFormat={() => setShowFormatBar((v) => !v)}
-                    onSchedule={() => { setShowSchedule(true); loadScheduled(); }}
+                    onSchedule={() => { setShowSchedule((v) => { const next = !v; if (next) loadScheduled(); return next; }); }}
                     formatActive={showFormatBar}
                   />
                   {/* Набор сообщества показывается в этой же кнопке, а не рядом:
