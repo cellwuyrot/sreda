@@ -815,14 +815,7 @@ function ConnectPageInner() {
     <MotionConfig reducedMotion={isMono ? "always" : "never"}>
     <>
     {!splashDone && !isMono && <ConnectSplash onDone={handleSplashDone} />}
-    {/* FIX-DM-VH: на телефоне высота берётся из --tz-app-h, а не из h-dvh.
-        В globals.css у .cn-main уже выстроен каскад 100vh → 100dvh → --tz-app-h
-        именно потому, что Android WebView не пересчитывает dvh при появлении
-        клавиатуры (тот же приём в WorkspaceCanvas и NewsComposer). Но утилитарный
-        класс max-md:h-dvh стоял на том же элементе и перебивал этот каскад —
-        каркас оставался высотой во весь экран, клавиатура накрывала поле ввода,
-        а страница начинала прокручиваться целиком. */}
-    <div className="cn-main flex h-[calc(100vh-64px-var(--tz-desktop-inset-bottom))] max-md:h-[var(--tz-app-h,100dvh)] overflow-hidden">
+    <div className="cn-main flex h-[calc(100vh-64px-var(--tz-desktop-inset-bottom))] max-md:h-dvh overflow-hidden">
 
       {/* ── COL 1: NavRail (desktop only) ── */}
       <NavRail

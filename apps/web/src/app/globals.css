@@ -987,73 +987,11 @@ html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto
 /* DM messages share the same component language as Connect without allowing
    the hover toolbar to cover message text. */
 .tz-dm-msg-row { min-height: 42px; }
-/* FIX-DM-BAR: бар действий обязан помещаться В ОБЛАСТИ СООБЩЕНИЯ.
-
-   Было две независимые ошибки, и обе резали картинку.
-
-   1) По вертикали бар висел на 34–36px ВЫШЕ строки, то есть целиком за её
-      пределами. Но строка сообщения обрезает всё выступающее: у неё
-      `content-visibility: auto` (см. .tz-msg-row), а это paint-containment с
-      запасом `overflow-clip-margin`. При наведении бар и верхняя кромка
-      «пузыря» попадали под обрезку — это и выглядело как «сообщение
-      урезается». Опускаем бар внутрь строки: обрезать больше нечего.
-
-   2) По горизонтали DM-правила переопределяли `left`/`right`, но НЕ трогали
-      `transform: translate(-50%, …)` из базового правила (там бар центруется
-      через left:50%). В итоге к уже выставленному краю добавлялся сдвиг на
-      половину собственной ширины, и бар уезжал наружу — «панель плывёт».
-      Сбрасываем сдвиг по X, оставляя только анимацию по Y. */
-/* FIX-DM-BAR2: бар стоит в ПУСТОМ ПОЛЕ СБОКУ ОТ ПУЗЫРЯ, а не над текстом.
-
-   Предыдущая редакция убрала обрезку, опустив бар внутрь строки (top: 2px), но
-   оставила его на той же стороне, где стоит сам пузырь, — и бар лёг на первую
-   строку текста.
-
-   Корень был в горизонтали. Свои сообщения верстаются с flex-row-reverse, то есть
-   пузырь прижат ВПРАВО, а бар стоял в right: 6px — ровно поверх него. У чужих
-   сообщений зеркально: пузырь слева и бар слева.
-
-   Пузырь ограничен max-w-[78%], поэтому с противоположной стороны строки всегда
-   остаётся свободное место. Туда бар и переезжает: своё сообщение — бар слева,
-   чужое — справа. Он остаётся внутри строки (обрезка ему не грозит) и при этом
-   никогда не накрывает текст.
-
-   По вертикали — по центру строки, а не у верхнего края: у длинного сообщения
-   кнопки иначе оказываются далеко от курсора.
-
-   Смещение -50% живёт в самом transform, поэтому анимация появления обязана
-   его повторять — иначе бар прыгнет на полвысоты в момент наведения. */
-.tz-dm-msg-row .tz-msg-toolbar {
-  top: 50%;
-  transform: translate(0, calc(-50% + 2px));
-}
-.tz-dm-msg-row:hover .tz-msg-toolbar,
-.tz-dm-msg-row:focus-within .tz-msg-toolbar,
-.tz-dm-msg-row .tz-msg-toolbar:focus-within {
-  transform: translate(0, -50%);
-}
-/* Своё сообщение стоит справа — значит свободное поле слева, и наоборот. */
-.tz-dm-own .tz-msg-toolbar { left: 6px; right: auto; }
-.tz-dm-peer .tz-msg-toolbar { right: 6px; left: auto; }
-
-/* Узкий экран: свободного поля сбоку может не хватить на весь ряд кнопок,
-   поэтому бар переносится под пузырь и прижимается к его стороне. Место под
-   него резервируется БЕЗУСЛОВНО, а не по :hover — иначе наведение меняло бы
-   высоту строки и лента подпрыгивала бы (та самая ошибка FIX-HOVER-JUMP). */
-@media (max-width: 767px) {
-  .tz-dm-msg-row { padding-bottom: 30px; }
-  .tz-dm-msg-row .tz-msg-toolbar {
-    top: auto;
-    bottom: 2px;
-    transform: translate(0, 2px);
-  }
-  .tz-dm-msg-row:hover .tz-msg-toolbar,
-  .tz-dm-msg-row:focus-within .tz-msg-toolbar,
-  .tz-dm-msg-row .tz-msg-toolbar:focus-within {
-    transform: translate(0, 0);
-  }
-  .tz-dm-own .tz-msg-toolbar { right: 6px; left: auto; }
-  .tz-dm-peer .tz-msg-toolbar { left: 6px; right: auto; }
+.tz-dm-msg-row .tz-msg-toolbar { top: -34px; }
+.tz-dm-own .tz-msg-toolbar { right: 6px; left: auto; }
+.tz-dm-peer .tz-msg-toolbar { left: 6px; right: auto; }
+@media (hover: none) {
+  .tz-dm-msg-row .tz-msg-toolbar { top: -36px; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
