@@ -106,8 +106,6 @@ export async function GET(req: Request) {
           other,
           lastMessage,
           lastMessageAt: c.lastMessageAt,
-          /* FIX-DM-SORT: начало переписки — по нему список строит порядок. */
-          createdAt: c.createdAt,
           business: {
             appealId: c.appealId,
             subject: appeal?.subject ?? "",
@@ -126,9 +124,7 @@ export async function GET(req: Request) {
       const rawOther = c.user1Id === userId ? c.user2 : c.user1;
       // FIX-ACT: если ручного статуса нет — показываем свежую активность с ПК
       const other = { ...rawOther, customStatus: rawOther.customStatus ?? freshActivity(rawOther) };
-      /* FIX-DM-SORT: createdAt — момент начала переписки. Список ранжируется
-         по нему, а не по последнему сообщению (см. DMConversationList). */
-      return { id: c.id, other, lastMessage, lastMessageAt: c.lastMessageAt, createdAt: c.createdAt };
+      return { id: c.id, other, lastMessage, lastMessageAt: c.lastMessageAt };
     });
 
     return NextResponse.json(result);

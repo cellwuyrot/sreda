@@ -93,14 +93,6 @@ function createOverlayWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // FIX-OVL-THROTTLE: окно оверлея по своей природе НИКОГДА не получает фокус
-      // (focusable:false) и живёт поверх чужого полноэкранного приложения. Без
-      // этого флага Chromium троттлит его renderer как фоновую вкладку, поэтому
-      // приходящие по IPC обновления состояния (индикация речи, мьют, живое
-      // превью демонстрации экрана) переставали своевременно отрисовываться —
-      // панель выглядела «зависшей» или пустой. Держим renderer оверлея всегда
-      // активным.
-      backgroundThrottling: false,
     },
   });
   win.setAlwaysOnTop(true, "screen-saver");
