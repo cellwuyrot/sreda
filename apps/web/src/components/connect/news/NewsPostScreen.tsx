@@ -22,6 +22,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import ImageLightbox from "@/components/ui/ImageLightbox";
+/* FIX-IMGMENU: картинки в новостном посте скачиваются тем же меню, что и в чатах. */
+import ImageContextMenu, { useImageContextMenu } from "@/components/ui/ImageContextMenu";
 import { FileIcon, LockIcon, PinIcon, UsersIcon } from "@/components/ui/ConnectIcons";
 import { EditIcon } from "@/components/ui/ConnectIconsExtra";
 import { renderContent } from "../messageFormat";
@@ -79,6 +81,8 @@ export default function NewsPostScreen({
   const [sendFailed, setSendFailed] = useState(false);
   const [pinning, setPinning] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  /* Одно меню на весь экран поста: и обложка, и вложения в теле поста. */
+  const imageMenu = useImageContextMenu();
   const [coverFailed, setCoverFailed] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -276,6 +280,7 @@ export default function NewsPostScreen({
             onClick={() => setLightboxSrc(cover)}
             className="max-h-[52vh] w-full cursor-zoom-in bg-neutral-100 object-cover dark:bg-white/5"
             draggable={false}
+            {...imageMenu.bind(cover)}
           />
         )}
 
@@ -330,6 +335,7 @@ export default function NewsPostScreen({
                   onClick={() => setLightboxSrc(attachment.url)}
                   className="w-full cursor-zoom-in rounded-xl bg-neutral-100 object-cover dark:bg-white/5"
                   draggable={false}
+                  {...imageMenu.bind(attachment.url, attachment.name)}
                 />
               ))}
             </div>
@@ -512,6 +518,17 @@ export default function NewsPostScreen({
       )}
 
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+
+      {imageMenu.menu && (
+        <ImageContextMenu
+          src={imageMenu.menu.src}
+          name={imageMenu.menu.name}
+          x={imageMenu.menu.x}
+          y={imageMenu.menu.y}
+          onClose={imageMenu.close}
+          onOpen={() => setLightboxSrc(imageMenu.menu!.src)}
+        />
+      )}
     </div>
   );
 }

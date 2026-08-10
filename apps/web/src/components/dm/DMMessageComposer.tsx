@@ -16,6 +16,9 @@ import { hasPremium } from "@/lib/premium";
 import { useSession } from "next-auth/react";
 import { TriozEmojiButton } from "@/components/ui/TriozEmoji";
 import InfoTooltip from "@/components/ui/InfoTooltip";
+/* FIX-FORMATS: тот же список, что проверяет сервер. Здесь раньше значились `.zip`
+   и `.rar`, которые роут загрузки отклонял: выбрать файл можно, отправить — нет. */
+import { CHAT_ATTACHMENT_ACCEPT } from "@/lib/attachmentTypes";
 // FIX-ICONS: фирменные SVG-иконки вместо PNG и глифа «✕»
 import { ShieldIcon, XIcon } from "@/components/ui/ConnectIcons";
 
@@ -204,7 +207,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
               <button type="button" onClick={() => onInsertFormat("**", "**")} className="px-2 py-1 text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Жирный">B</button>
               <button type="button" onClick={() => onInsertFormat("*", "*")} className="px-2 py-1 text-xs italic text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Курсив">I</button>
               <button type="button" onClick={() => onInsertFormat("`", "`")} className="px-2 py-1 text-xs font-mono text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Код">&lt;/&gt;</button>
-              {/* Блок кода — рядом с «кодом внутри строки»: одиночные кавычки
+              {/* Блок кода — рядом с «кодом внутри строки»: одиноч��ые кавычки
                   для имени переменной, тройные для куска программы. */}
               <button type="button" onClick={wrapSelectionAsCode} className="px-2 py-1 text-xs font-mono text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Блок кода — переносы и отступы сохраняются">```</button>
               <button type="button" onClick={() => onInsertFormat("\n- ", "")} className="px-2 py-1 text-xs text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Список">•</button>
@@ -257,7 +260,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
               />
             )}
             <TriozEmojiButton onSelect={insertEmoji} />
-            <input ref={fileInputRef} type="file" className="hidden" onChange={onFileUpload} accept="image/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar" multiple />
+            <input ref={fileInputRef} type="file" className="hidden" onChange={onFileUpload} accept={CHAT_ATTACHMENT_ACCEPT} multiple />
             <input ref={imageInputRef} type="file" className="hidden" onChange={onFileUpload} accept="image/*" multiple />
 
             {pendingAttachments.length > 0 && (
