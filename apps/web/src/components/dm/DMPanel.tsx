@@ -132,6 +132,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Context menu & emoji picker
+  const [openMessageMenuId, setOpenMessageMenuId] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
+
   // Threads
   const [activeThread, setActiveThread] = useState<{ id: string; user: string; content: string } | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
@@ -226,28 +230,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   );
   const otherId = otherUser?.id ?? null;
   const e2eeReady = !!(myPrivateKey && peerPublicKey);
-
-  /* FIX-DM-NTF: говорим глобальной шапке, какая переписка сейчас открыта.
-
-     Тост о новом ЛС показывает Navbar — именно потому, что сообщение должно
-     догнать человека в любом разделе. Цена этого — шапка не знает, что диалог
-     уже открыт. Поэтому панель сама объявляет своё состояние.
-
-     При закрытии и при смене диалога обязательно сбрасываем отметку, иначе
-     ушёдший из раздела человек навсегда перестал бы получать уведомления от
-     последнего собеседника. */
-  useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("tz-dm-active", {
-        detail: { conversationId: selectedConvId, peerId: otherId },
-      }),
-    );
-    return () => {
-      window.dispatchEvent(
-        new CustomEvent("tz-dm-active", { detail: { conversationId: null, peerId: null } }),
-      );
-    };
-  }, [selectedConvId, otherId]);
 
   /* Связка в заголовке делового разговора: тема заявки и кто её ведёт.
      Администрации имя ведущего нужно — иначе двое отвечают одному клиенту, не
@@ -498,6 +480,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     resetWindow();
     setReplyTo(null);
     setEditingId(null);
+    setOpenMessageMenuId(null);
     setShowPinned(false);
     setActiveThread(null);
     setPeerPublicKey(null);
@@ -617,17 +600,11 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
     socket.on("dm-message", async (msg: Message) => {
       if (!selectedConvId || msg.conversationId !== selectedConvId) {
-        /* FIX-DM-SELF: сервер шлёт событие обеим сторонам, включая отправителя.
-           Без этой проверки собственное сообщение, отправленное при открытом
-           другом диалоге (например, пересылкой) или с другого устройства, ставило
-           твоей же переписке метку непрочитанного. Предпросмотр при этом
-           обновляем всегда: строка в списке должна показывать последнюю реплику
-           независимо от того, кто её написал. */
-        const ownMessage = msg.userId === currentUserId;
+        // Increment unread for the conversation in the list
         setConversations((prev) =>
           prev.map((c) =>
             c.id === msg.conversationId
-              ? { ...c, unread: ownMessage ? (c.unread || 0) : (c.unread || 0) + 1, lastMessage: { id: msg.id, content: msg.content, createdAt: msg.createdAt, userId: msg.userId }, lastMessageAt: msg.createdAt }
+              ? { ...c, unread: (c.unread || 0) + 1, lastMessage: { id: msg.id, content: msg.content, createdAt: msg.createdAt, userId: msg.userId }, lastMessageAt: msg.createdAt }
               : c,
           ),
         );
@@ -1520,6 +1497,16 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     textareaRef.current?.focus();
   }, []);
 
+  // ── Menu toggle ──────────────────────────────────────────────────────────────
+  const toggleMenu = useCallback((id: string) => {
+    setOpenMessageMenuId((prev) => (prev === id ? null : id));
+    setShowEmojiPicker(null);
+  }, []);
+
+  const toggleEmojiPicker = useCallback((id: string) => {
+    setShowEmojiPicker((prev) => (prev === id ? null : id));
+  }, []);
+
   // ════════════════════════════════════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════════════════════════════════════
@@ -1653,6 +1640,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onCancelEdit={cancelEdit}
               onReply={handleReply}
               onDelete={(id) => setConfirmDelete(id)}
+              openMessageMenuId={openMessageMenuId}
+              onToggleMenu={toggleMenu}
+              showEmojiPicker={showEmojiPicker}
+              onToggleEmojiPicker={toggleEmojiPicker}
               onToggleReaction={toggleReaction}
               onPin={pinMessage}
               onOpenThread={openThread}
