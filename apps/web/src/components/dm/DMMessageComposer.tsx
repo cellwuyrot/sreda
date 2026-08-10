@@ -246,7 +246,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
             onDragOver={onDragOver}
             onDragLeave={onDragLeave}
             onDrop={onDrop}
-            className={`relative flex gap-2 items-end rounded-2xl border transition-colors px-2 py-1.5 focus-within:ring-2 focus-within:ring-violet-400/20 dark:focus-within:ring-cyan-400/20 focus-within:border-violet-400 dark:focus-within:border-cyan-400 ${isDragOver ? "bg-violet-50 dark:bg-cyan-900/10 border-violet-300 dark:border-cyan-700" : "border-[var(--cn-border)] bg-[var(--cn-card)]"}`}
+            className={`relative flex flex-wrap gap-2 items-end rounded-2xl border transition-colors px-2 py-1.5 focus-within:ring-2 focus-within:ring-violet-400/20 dark:focus-within:ring-cyan-400/20 focus-within:border-violet-400 dark:focus-within:border-cyan-400 ${isDragOver ? "bg-violet-50 dark:bg-cyan-900/10 border-violet-300 dark:border-cyan-700" : "border-[var(--cn-border)] bg-[var(--cn-card)]"}`}
           >
             {fileUploading ? (
               <span className="w-11 h-11 shrink-0 inline-flex items-center justify-center text-neutral-400"><Spinner size="sm" tone="current" /></span>
@@ -263,8 +263,13 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
             <input ref={fileInputRef} type="file" className="hidden" onChange={onFileUpload} accept={CHAT_ATTACHMENT_ACCEPT} multiple />
             <input ref={imageInputRef} type="file" className="hidden" onChange={onFileUpload} accept="image/*" multiple />
 
+            {/* FIX-DM-ATTACH: плашки вложений занимают собственную строку над полем
+                ввода. Раньше этот блок был обычным элементом того же горизонтального
+                ряда и откусывал ширину у textarea. На телефоне, где в том же ряду ещё
+                кнопка вложений, эмодзи и отправка, полю не оставалось ничего —
+                текст набирался в полоску шириной в несколько пикселей и был не виден. */}
             {pendingAttachments.length > 0 && (
-              <div className="flex flex-wrap gap-2 px-1 pb-2">
+              <div className="order-first basis-full w-full flex flex-wrap gap-2 px-1 pb-1">
                 {pendingAttachments.map((attachment, index) => (
                   <div key={`${attachment.url}-${index}`} className="flex items-center gap-2 max-w-[220px] rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3 py-2 text-xs text-neutral-600 dark:text-gray-300">
                     <span className="truncate">{attachment.name}</span>
@@ -281,7 +286,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
               </div>
             )}
 
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-0">
               {mentions.open && (
                 <MentionPopupList
                   entries={mentions.entries}

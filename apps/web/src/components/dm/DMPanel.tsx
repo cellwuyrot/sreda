@@ -227,6 +227,28 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const otherId = otherUser?.id ?? null;
   const e2eeReady = !!(myPrivateKey && peerPublicKey);
 
+  /* FIX-DM-NTF: говорим глобальной шапке, какая переписка сейчас открыта.
+
+     Тост о новом ЛС показывает Navbar — именно потому, что сообщение должно
+     догнать человека в любом разделе. Цена этого — шапка не знает, что диалог
+     уже открыт. Поэтому панель сама объявляет своё состояние.
+
+     При закрытии и при смене диалога обязательно сбрасываем отметку, иначе
+     ушёдший из раздела человек навсегда перестал бы получать уведомления от
+     последнего собеседника. */
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("tz-dm-active", {
+        detail: { conversationId: selectedConvId, peerId: otherId },
+      }),
+    );
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent("tz-dm-active", { detail: { conversationId: null, peerId: null } }),
+      );
+    };
+  }, [selectedConvId, otherId]);
+
   /* Связка в заголовке делового разговора: тема заявки и кто её ведёт.
      Администрации имя ведущего нужно — иначе двое отвечают одному клиенту, не
      зная друг о друге. Клиенту его не показываем: он обращается к администрации,
@@ -595,11 +617,17 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
     socket.on("dm-message", async (msg: Message) => {
       if (!selectedConvId || msg.conversationId !== selectedConvId) {
-        // Increment unread for the conversation in the list
+        /* FIX-DM-SELF: сервер шлёт событие обеим сторонам, включая отправителя.
+           Без этой проверки собственное сообщение, отправленное при открытом
+           другом диалоге (например, пересылкой) или с другого устройства, ставило
+           твоей же переписке метку непрочитанного. Предпросмотр при этом
+           обновляем всегда: строка в списке должна показывать последнюю реплику
+           независимо от того, кто её написал. */
+        const ownMessage = msg.userId === currentUserId;
         setConversations((prev) =>
           prev.map((c) =>
             c.id === msg.conversationId
-              ? { ...c, unread: (c.unread || 0) + 1, lastMessage: { id: msg.id, content: msg.content, createdAt: msg.createdAt, userId: msg.userId }, lastMessageAt: msg.createdAt }
+              ? { ...c, unread: ownMessage ? (c.unread || 0) : (c.unread || 0) + 1, lastMessage: { id: msg.id, content: msg.content, createdAt: msg.createdAt, userId: msg.userId }, lastMessageAt: msg.createdAt }
               : c,
           ),
         );
