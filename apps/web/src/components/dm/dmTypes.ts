@@ -67,6 +67,12 @@ export interface Conversation {
   other: DMUser;
   lastMessage: { id: string; content: string; createdAt: string; userId: string } | null;
   lastMessageAt: string | null;
+  /**
+   * Начало переписки. По нему строится порядок списка диалогов: кто написал
+   * раньше, тот выше. Необязательное — старый клиент без этого поля просто
+   * откатится к ранжированию по lastMessageAt.
+   */
+  createdAt?: string | null;
   unread?: number;
   business?: BusinessInfo;
 }
