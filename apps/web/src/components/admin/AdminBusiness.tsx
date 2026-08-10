@@ -1,5 +1,5 @@
 "use client";
-
+​
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Spinner from "@/components/ui/Spinner";
@@ -14,7 +14,6 @@ import {
 } from "@/lib/businessPayment";
 /* BUSINESS-SUB: счёт теперь бывает разовым и подписным. */
 import {
-  cyclesLeft,
   describeTerms,
   formatDueDate,
   isSubscription,
@@ -22,7 +21,7 @@ import {
   type BillingPeriod,
   type PaymentMode,
 } from "@/lib/businessPaymentFlow";
-
+​
 /**
  * BUSINESS-PAY: подраздел «Бизнес» в «Админ → Пользователи».
  *
@@ -34,7 +33,7 @@ import {
  * Сумма хранится в копейках, а вводится в рублях: дробные деньги в числах с
  * плавающей точкой — классический способ потерять копейку на округлении.
  */
-
+​
 interface PaymentRow {
   id: string;
   title: string;
@@ -58,7 +57,7 @@ interface PaymentRow {
   paidAt: string | null;
   contractCount: number;
 }
-
+​
 interface ConversationRow {
   id: string;
   appealId: string | null;
@@ -68,13 +67,13 @@ interface ConversationRow {
   handlerName: string | null;
   payment: PaymentRow | null;
 }
-
+​
 interface ServiceRow {
   id: string;
   title: string;
   documentCount: number;
 }
-
+​
 function StatusPill({ status }: { status: PaymentStatus }) {
   const paid = isPaid(status);
   const awaiting = status === "AWAITING";
@@ -92,7 +91,7 @@ function StatusPill({ status }: { status: PaymentStatus }) {
     </span>
   );
 }
-
+​
 export default function AdminBusiness() {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [services, setServices] = useState<ServiceRow[]>([]);
@@ -102,13 +101,13 @@ export default function AdminBusiness() {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [editing, setEditing] = useState<ConversationRow | null>(null);
-
+​
   /* Поиск с задержкой: без неё каждая буква была бы отдельным запросом к базе. */
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 350);
     return () => clearTimeout(t);
   }, [query]);
-
+​
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/admin/business${debounced ? `?q=${encodeURIComponent(debounced)}` : ""}`);
@@ -123,11 +122,11 @@ export default function AdminBusiness() {
       setLoading(false);
     }
   }, [debounced]);
-
+​
   useEffect(() => {
     void load();
   }, [load]);
-
+​
   async function setStatus(conversationId: string, status: PaymentStatus) {
     if (status === "PAID") {
       const ok = await confirmDialog({
@@ -152,11 +151,11 @@ export default function AdminBusiness() {
       setBusy(false);
     }
   }
-
+​
   if (loading) {
     return <div className="py-16 flex justify-center"><Spinner /></div>;
   }
-
+​
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
@@ -168,9 +167,9 @@ export default function AdminBusiness() {
         />
         <span className="text-xs text-gray-500 whitespace-nowrap">{conversations.length} обращений</span>
       </div>
-
+​
       {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
-
+​
       {conversations.length === 0 ? (
         <p className="py-12 text-center text-sm text-gray-500">Деловых обращений пока нет</p>
       ) : (
@@ -219,10 +218,10 @@ export default function AdminBusiness() {
                         : " · платежей больше нет"}
                       {` · оплачено периодов: ${c.payment.paidCycles}`}
                       {c.payment.cycles
-                        ? ` из ${c.payment.cycles} (осталось ${cyclesLeft({
-                            cycles: c.payment.cycles,
-                            paidCycles: c.payment.paidCycles,
-                          })})`
+                        ? ` из ${c.payment.cycles} (осталось ${Math.max(
+                            0,
+                            c.payment.cycles - c.payment.paidCycles,
+                          )})`
                         : ""}
                     </p>
                   )}
@@ -235,7 +234,7 @@ export default function AdminBusiness() {
                     </p>
                   )}
                 </div>
-
+​
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -271,7 +270,7 @@ export default function AdminBusiness() {
           ))}
         </div>
       )}
-
+​
       <AnimatePresence>
         {editing && (
           <PaymentFormModal
@@ -288,9 +287,9 @@ export default function AdminBusiness() {
     </div>
   );
 }
-
+​
 /* ── Форма выставления счёта ────────────────────────────────────── */
-
+​
 function PaymentFormModal({
   conversation,
   services,
@@ -316,12 +315,12 @@ function PaymentFormModal({
   const [amount, setAmount] = useState(p ? String(p.amount / 100) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
+​
   const selectedService = useMemo(
     () => services.find((s) => s.id === serviceId) ?? null,
     [services, serviceId],
   );
-
+​
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -329,7 +328,7 @@ function PaymentFormModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
+​
   async function save() {
     const rub = Number(amount.replace(",", "."));
     if (!title.trim()) {
@@ -367,7 +366,7 @@ function PaymentFormModal({
       setBusy(false);
     }
   }
-
+​
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -399,14 +398,14 @@ function PaymentFormModal({
             ✕
           </button>
         </div>
-
+​
         {p && (
           <p className="text-[11px] text-amber-400">
             Счёт уже выставлен. Сохранение изменит условия и сбросит подпись клиента —
             ему придётся ознакомиться с документами заново.
           </p>
         )}
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Услуга (отсюда берутся документы)</span>
           <select
@@ -427,7 +426,7 @@ function PaymentFormModal({
             </span>
           )}
         </label>
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Название счёта</span>
           <input
@@ -437,7 +436,7 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
           />
         </label>
-
+​
         {/* BUSINESS-SUB: альтернативный счёт по системе подписки. */}
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
@@ -465,7 +464,7 @@ function PaymentFormModal({
             </select>
           </label>
         </div>
-
+​
         {mode === "SUBSCRIPTION" && (
           <label className="block">
             <span className="text-xs text-gray-400">Сколько периодов оплатить (пусто — бессрочно)</span>
@@ -478,7 +477,7 @@ function PaymentFormModal({
             />
           </label>
         )}
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">
             {mode === "SUBSCRIPTION" ? `Сумма за один ${periodLabel(period)}, ₽` : "Сумма, ₽"}
@@ -491,7 +490,7 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
           />
         </label>
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Описание для клиента</span>
           <textarea
@@ -501,7 +500,7 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none resize-none"
           />
         </label>
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Реквизиты для оплаты</span>
           <textarea
@@ -512,7 +511,7 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none resize-none"
           />
         </label>
-
+​
         {p && p.documents.length > 0 && (
           <div className="text-[11px] text-gray-500">
             В текущем счёте документов: {p.documents.length}
@@ -520,9 +519,9 @@ function PaymentFormModal({
             {p.documents.map((d) => `${d.name} (${formatSize(d.size)})`).join(", ")}
           </div>
         )}
-
+​
         {error && <p className="text-xs text-red-400">{error}</p>}
-
+​
         <button
           type="button"
           disabled={busy}
@@ -535,3 +534,4 @@ function PaymentFormModal({
     </motion.div>
   );
 }
+​
