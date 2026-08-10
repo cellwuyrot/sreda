@@ -175,6 +175,20 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = false
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
+            /* FIX-EMOJI: системный масштаб шрифта сюда не пускаем.
+
+               WebView по умолчанию берёт textZoom из настроек системы (Настройки →
+               Экран → Размер шрифта) и масштабирует только текст. Картинки он не
+               трогает вовсе. Эмодзи у нас — картинки 20–22px рядом с текстом,
+               поэтому при системном увеличении шрифта (частая настройка, особенно
+               130% и выше) текст растёт, а глиф остаётся прежним — и вся строка
+               выглядит перекошенной. Именно поэтому «кривые эмодзи» видны в
+               андроид-клиенте и не воспроизводятся в браузере на том же телефоне.
+
+               Доступность от этого не страдает: размер текста чата настраивается в
+               самом приложении (--tz-chat-body-size), и там он меняет всю строку
+               целиком — вместе с глифами. */
+            textZoom = 100
             // Identify the shell so the site can tell it apart from a plain
             // mobile browser, while keeping the mobile responsive layout.
             userAgentString = "$userAgentString ConnectAndroid/${BuildConfig.VERSION_NAME}"
@@ -218,7 +232,7 @@ class MainActivity : AppCompatActivity() {
          * внутренние переходы выполняются через history.pushState и НЕ проходят
          * через shouldOverrideUrlLoading. Первая линия защиты — веб-гард
          * (AndroidShellGuard глушит клики по ссылкам вне /connect и прячет
-         * сайтовые кнопки по классу tz-android), а этот хук — последний рубеж:
+         * сайтовые кнопки по классу tz-android), а этот хук — пос��едний рубеж:
          * если клиентский роутер всё же увёл страницу в сайтовый раздел,
          * возвращаем оболочку на стартовый экран мессенджера.
          */

@@ -149,6 +149,14 @@ export const UPLOAD_MIME_TYPES: Record<string, string> = {
   ".odt": "application/vnd.oasis.opendocument.text",
   ".ods": "application/vnd.oasis.opendocument.spreadsheet",
   ".zip": "application/zip",
+  // FIX-FORMATS: md и rar разрешены в чатах, значит их надо уметь и ОТДАВАТЬ.
+  // Без строки здесь файл уходит как application/octet-stream: заметка .md не
+  // открывается предпросмотром (в DocsPanel она в списке INLINE_EXT), а на
+  // .rar часть браузеров вешает ещё и своё имя файла при сохранении.
+  // charset для markdown обязателен: без него кириллица в заметке ломается.
+  ".md": "text/markdown; charset=utf-8",
+  ".rar": "application/vnd.rar",
+  ".7z": "application/x-7z-compressed",
 };
 
 /**

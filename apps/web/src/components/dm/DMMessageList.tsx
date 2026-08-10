@@ -1,6 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useRef } from "react";
+/* FIX-DM-DOTS: useEffect/useRef держались здесь только ради обработчика «клик
+   мимо меню» — вместе с меню «три точки» ушли и они. */
+import { Fragment } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import VoicePlayer from "@/components/ui/VoicePlayer";
@@ -8,10 +10,11 @@ import VideoPlayer from "@/components/ui/VideoPlayer";
 import VideoNotePlayer from "@/components/ui/VideoNotePlayer";
 import MessageBody from "@/components/connect/MessageBody";
 import MessageHoverToolbar from "@/components/connect/MessageHoverToolbar";
-import { TriozEmoji, TriozEmojiGrid } from "@/components/ui/TriozEmoji";
+/* FIX-IMGMENU: правый клик и долгое нажатие на картинке — тот же компонент, что и в каналах. */
+import ImageContextMenu, { useImageContextMenu } from "@/components/ui/ImageContextMenu";
+import { TriozEmoji } from "@/components/ui/TriozEmoji";
 // FIX-ICONS: единый стиль иконок — фирменные SVG вместо PNG (/icons/*) и глифов ✓✕💬
-import { ReplyIcon, PinIcon, ThreadIcon, ForwardIcon, ShieldIcon, XIcon, CheckIcon, DoubleCheckIcon, ClockIcon, ResendIcon, ChatIcon, VaultIcon, EmojiIcon } from "@/components/ui/ConnectIcons";
-import { EditIcon, TrashIcon } from "@/components/ui/ConnectIconsExtra";
+import { PinIcon, ThreadIcon, ShieldIcon, XIcon, CheckIcon, DoubleCheckIcon, ClockIcon, ResendIcon, ChatIcon, VaultIcon } from "@/components/ui/ConnectIcons";
 // Leaflet touches `window` — load client-only
 const GeoMap = dynamic(() => import("@/components/ui/GeoMap"), { ssr: false });
 import { getDayLabel, parseAttachments, type Attachment, type Message } from "./dmTypes";
@@ -30,12 +33,9 @@ interface DMMessageListProps {
   onReply: (msg: Message) => void;
   // Delete
   onDelete: (messageId: string) => void;
-  // Context menu (three-dot)
-  openMessageMenuId: string | null;
-  onToggleMenu: (id: string) => void;
-  // Emoji picker for reactions
-  showEmojiPicker: string | null;
-  onToggleEmojiPicker: (id: string) => void;
+  /* FIX-DM-DOTS: меню «три точки» убрано целиком — все действия переехали в
+     hover-бар сообщения. Поэтому пропсы его состояния (openMessageMenuId,
+     onToggleMenu, showEmojiPicker, onToggleEmojiPicker) больше не нужны. */
   onToggleReaction: (messageId: string, emoji: string) => void;
   // Pin
   onPin: (messageId: string) => void;
@@ -98,6 +98,9 @@ function jumpToDMMessage(id: string) {
 }
 
 export default function DMMessageList(props: DMMessageListProps) {
+  /* Меню одно на весь список: открыта всегда ровно одна копия, и не нужно плодить
+     по подписке на mousedown/keydown для каждого вложения в длинной переписке. */
+  const imageMenu = useImageContextMenu();
   const {
     messages,
     currentUserId,
@@ -108,10 +111,6 @@ export default function DMMessageList(props: DMMessageListProps) {
     onCancelEdit,
     onReply,
     onDelete,
-    openMessageMenuId,
-    onToggleMenu,
-    showEmojiPicker,
-    onToggleEmojiPicker,
     onToggleReaction,
     onPin,
     onOpenThread,
@@ -137,19 +136,6 @@ export default function DMMessageList(props: DMMessageListProps) {
     onScrollToBottom,
   } = props;
 
-  // Close context menu when clicking outside
-  const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!openMessageMenuId) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onToggleMenu(openMessageMenuId); // toggles to closed
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [openMessageMenuId, onToggleMenu]);
-
   // Render aggregated reactions for a message
   const renderReactions = (msg: Message) => {
     const reactions = msg.reactions || [];
@@ -163,107 +149,27 @@ export default function DMMessageList(props: DMMessageListProps) {
       if (r.userId === currentUserId) grouped[r.emoji].userReacted = true;
     }
     return (
-      <div className="flex flex-wrap gap-1 mt-1">
+      <div className="tz-reaction-row mt-1">
         {Object.entries(grouped).map(([emoji, info]) => (
           <button
             key={emoji}
             onClick={() => onToggleReaction(msg.id, emoji)}
             title={info.users.join(", ")}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs transition-colors ${
+            /* FIX-EMOJI: тот же случай, что и в каналах — глиф 20px внутри строки 16px.
+               Выравнивание вынесено в tz-reaction-pill, чтобы три места с реакциями
+               не расходились при следующей правке. */
+            className={`tz-reaction-pill px-2 py-1 rounded-full text-[12px] transition-colors ${
               info.userReacted
                 ? "bg-violet-500/20 dark:bg-cyan-400/20 border border-violet-400 dark:border-cyan-400"
                 : "bg-black/5 dark:bg-white/10 border border-transparent hover:bg-black/10 dark:hover:bg-white/15"
             }`}
           >
             <TriozEmoji emoji={emoji} size={20} />
-            <span className={info.userReacted ? "text-violet-600 dark:text-cyan-300" : "text-neutral-500 dark:text-gray-400"}>
+            <span className={`tz-reaction-count ${info.userReacted ? "text-violet-600 dark:text-cyan-300" : "text-neutral-500 dark:text-gray-400"}`}>
               {info.count}
             </span>
           </button>
         ))}
-      </div>
-    );
-  };
-
-  // Render the action menu (shared between grouped/non-grouped)
-  const renderActionMenu = (msg: Message, menuAlign: "left" | "right" = "left") => {
-    if (!openMessageMenuId || openMessageMenuId !== msg.id) return null;
-    return (
-      <div
-        ref={menuRef}
-        className={`absolute z-30 min-w-[180px] rounded-xl border border-[var(--cn-border)] bg-[var(--cn-sidebar)] shadow-xl p-1.5 space-y-0.5 ${menuAlign === "right" ? "top-6 right-0" : "top-7 left-0"}`}
-      >
-        <button
-          onClick={() => { onReply(msg); onToggleMenu(msg.id); }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
-        >
-          <ReplyIcon size={18} />
-          <span>Ответить</span>
-        </button>
-        <div className="relative">
-          <button
-            onClick={() => onToggleEmojiPicker(msg.id)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
-          >
-            {/* Значок в одном ряду с соседними пунктами меню, а не цветной
-                эмодзи: у «Ответить» и «Закрепить» контурные значки того же
-                размера. */}
-            <EmojiIcon size={18} />
-            <span>Реакция</span>
-          </button>
-          {showEmojiPicker === msg.id && (
-            <div className={`absolute top-0 ${menuAlign === "right" ? "right-full mr-2" : "left-full ml-2"} bg-[var(--cn-sidebar)] border border-[var(--cn-border)] rounded-lg p-1.5 flex gap-0.5 shadow-lg z-10`}>
-              <TriozEmojiGrid compact onSelect={(emoji) => { onToggleReaction(msg.id, emoji); onToggleMenu(msg.id); }} />
-            </div>
-          )}
-        </div>
-        <button
-          onClick={() => { onPin(msg.id); onToggleMenu(msg.id); }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
-        >
-          <PinIcon size={18} />
-          <span>{msg.pinned ? "Открепить" : "Закрепить"}</span>
-        </button>
-        {msg.userId === currentUserId && (
-          <button
-            onClick={() => { onStartEdit(msg); onToggleMenu(msg.id); }}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
-            aria-label="Редактировать сообщение"
-          >
-            <EditIcon size={18} />
-            <span>Редактировать</span>
-          </button>
-        )}
-        <button
-          onClick={() => { onDelete(msg.id); onToggleMenu(msg.id); }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
-          aria-label="Удалить сообщение"
-        >
-          <TrashIcon size={18} tone="danger" />
-          <span>Удалить</span>
-        </button>
-        <button
-          onClick={() => { onOpenThread(msg); onToggleMenu(msg.id); }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
-        >
-          <ThreadIcon size={18} />
-          <span>Тред</span>
-        </button>
-        <button
-          onClick={() => { onForward(msg); onToggleMenu(msg.id); }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
-        >
-          <ForwardIcon size={18} />
-          <span>Переслать</span>
-        </button>
-        <button
-          onClick={() => { onFavorite(msg); onToggleMenu(msg.id); }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
-          aria-label="Добавить в Сейф"
-        >
-          <VaultIcon size={18} />
-          <span>В Сейф</span>
-        </button>
       </div>
     );
   };
@@ -308,10 +214,11 @@ export default function DMMessageList(props: DMMessageListProps) {
             // строки — обычные <div>, чтобы не держать тысячи framer-motion компонентов
             // при большой истории (совместно с content-visibility в globals.css).
             const isLast = idx === messages.length - 1;
-            // Открытые меню/пикер выступают за рамку строки — снимаем с неё
-            // content-visibility (paint-containment), иначе всплывашка обрежется.
-            const cvShow = openMessageMenuId === msg.id || showEmojiPicker === msg.id;
-            const dmRowClassName = `tz-msg-row tz-dm-msg-row ${cvShow ? "tz-cv-show " : ""}${msg.userId === currentUserId ? "tz-dm-own flex-row-reverse" : "tz-dm-peer"} group/dm flex items-end gap-2 py-1 ${msg.pinned ? "bg-amber-50/50 dark:bg-amber-400/5 px-2 rounded-xl" : ""}`;
+            /* FIX-DM-DOTS: класс tz-cv-show снимал paint-containment ради
+               выпадающего меню. Меню больше нет, а свой пикер реакций hover-бар
+               снимает сам (см. MessageHoverToolbar) — значит и дёргать раскладку
+               строки при открытии меню больше нечем. */
+            const dmRowClassName = `tz-msg-row tz-dm-msg-row ${msg.userId === currentUserId ? "tz-dm-own flex-row-reverse" : "tz-dm-peer"} group/dm flex items-end gap-2 py-1 ${msg.pinned ? "bg-amber-50/50 dark:bg-amber-400/5 px-2 rounded-xl" : ""}`;
             const dmRowBody = (
               <>
                   {!msg.deleted && (
@@ -325,14 +232,17 @@ export default function DMMessageList(props: DMMessageListProps) {
                       onDelete={() => onDelete(msg.id)}
                       onPin={() => onPin(msg.id)}
                       onForward={() => onForward(msg)}
+                      onThread={() => onOpenThread(msg)}
+                      onReact={(emoji) => onToggleReaction(msg.id, emoji)}
                       boardContext={{ authorName: msg.user?.name }}
                     >
-                      <div className="relative">
-                        <button type="button" onClick={() => onToggleMenu(msg.id)} title="Ещё" aria-label="Действия с сообщением">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-                        </button>
-                        {renderActionMenu(msg, msg.userId === currentUserId ? "right" : "left")}
-                      </div>
+                      {/* FIX-DM-DOTS: раньше здесь были «три точки», открывавшие
+                          выпадающее меню поверх переписки. Теперь это просто ещё
+                          одна кнопка бара — без всплывающей панели, которой было
+                          некуда поместиться. */}
+                      <button type="button" onClick={() => onFavorite(msg)} title="В Сейф" aria-label="Добавить в Сейф">
+                        <VaultIcon size={16} />
+                      </button>
                     </MessageHoverToolbar>
                   )}
                   <div className={`max-w-[78%] md:max-w-[680px] rounded-2xl px-3.5 py-2.5 border shadow-sm ${
@@ -420,11 +330,15 @@ export default function DMMessageList(props: DMMessageListProps) {
                           ) : att.isImage && safeAttachmentUrl(att.url) ? (
                             <div key={i} className="mt-1">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
+                              {/* FIX-IMGMENU: та же привязка, что и в каналах — правый клик плюс
+                                  долгое нажатие. Имя вложения здесь есть, и именно под ним файл
+                                  сохранится. */}
                               <img
                                 src={safeAttachmentUrl(att.url) as string}
                                 alt={att.name}
                                 className="w-auto max-w-full sm:max-w-[320px] max-h-[360px] object-cover rounded-xl border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
                                 onClick={() => onImageClick(safeAttachmentUrl(att.url) as string)}
+                                {...imageMenu.bind(safeAttachmentUrl(att.url) as string, att.name)}
                               />
                             </div>
                           ) : safeAttachmentUrl(att.url) ? (
@@ -540,6 +454,20 @@ export default function DMMessageList(props: DMMessageListProps) {
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
         </motion.button>
+      )}
+
+      {/* FIX-IMGMENU: само меню рисуется через портал, поэтому место в разметке ему
+          безразлично — важно лишь, чтобы оно было в дереве раз и не попадало в
+          обрезающий контейнер сообщения. */}
+      {imageMenu.menu && (
+        <ImageContextMenu
+          src={imageMenu.menu.src}
+          name={imageMenu.menu.name}
+          x={imageMenu.menu.x}
+          y={imageMenu.menu.y}
+          onClose={imageMenu.close}
+          onOpen={() => onImageClick(imageMenu.menu!.src)}
+        />
       )}
     </>
   );

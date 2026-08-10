@@ -44,18 +44,20 @@ import {
 export function NewsReactions({ reactions, size = 16 }: { reactions: NewsReaction[]; size?: number }) {
   if (!reactions || reactions.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="tz-reaction-row">
       {reactions.map((reaction) => (
         <span
           key={reaction.emoji}
-          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] ${
+          /* FIX-EMOJI: третье место с той же пилюлей. Выравнивание общее
+             (tz-reaction-pill), чтобы лента новостей и чат выглядели одинаково. */
+          className={`tz-reaction-pill rounded-full border px-2 py-1 text-[12px] ${
             reaction.mine
               ? "border-violet-200 bg-violet-50 text-accent dark:border-cyan-400/30 dark:bg-cyan-400/10"
               : "border-[var(--cn-border)] bg-neutral-50 text-neutral-500 dark:bg-white/5 dark:text-neutral-400"
           }`}
         >
           <TriozEmoji emoji={reaction.emoji} size={size} />
-          <span>{reaction.count}</span>
+          <span className="tz-reaction-count">{reaction.count}</span>
         </span>
       ))}
     </div>

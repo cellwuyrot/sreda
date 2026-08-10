@@ -10,8 +10,15 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { messageIds, channelId } = await req.json();
-  if (!Array.isArray(messageIds) || messageIds.length === 0) {
-    return NextResponse.json({ error: "messageIds required" }, { status: 400 });
+  const ids0: string[] = Array.isArray(messageIds) ? messageIds : [];
+
+  /* FIX-NEWS-READ: раньше отметка прочтения требовала списка сообщений. В переписке
+     это естественно: видны конкретные строки, и галочки ставятся именно им. А в
+     новостях читается раздел целиком и галочек нет вовсе — ленте нужно только
+     продвинуть lastRead, чтобы погас счётчик. Поэтому допускается вызов с одним
+     channelId. Права проверяются ниже точно так же, что и раньше (FIX-SEC-IDOR). */
+  if (ids0.length === 0 && !channelId) {
+    return NextResponse.json({ error: "messageIds or channelId required" }, { status: 400 });
   }
 
   const userId = (session.user as { id: string }).id;
@@ -24,7 +31,7 @@ export async function POST(req: Request) {
     if (!perm?.canView) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const ids = messageIds.slice(0, 100);
+  const ids = ids0.slice(0, 100);
   await Promise.all(
     ids.map((messageId: string) =>
       prisma.messageRead.upsert({

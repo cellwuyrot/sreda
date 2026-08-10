@@ -1,3 +1,64 @@
+# Эмодзи, форматы вложений, скачивание картинок и счётчик новостей
+
+Подробный разбор причин — [docs/explainers/emoji-attachments-images-news.md](./explainers/emoji-attachments-images-news.md).
+Миграций Prisma не требуется: всё необходимое в схеме уже есть.
+
+## 1. Эмодзи больше не кривые
+- `apps/web/src/components/ui/TriozEmoji.tsx` — вывод на классах `tz-emoji`/`tz-emoji-glyph`:
+  `line-height: 1`, `vertical-align: middle`, `object-contain`, `max-width: none`. Размер
+  задаётся и в `style`, а не только атрибутами: `img { max-width: 100% }` из Tailwind
+  preflight сплющивал глиф в узкой пилюле реакции.
+- `apps/web/src/app/globals.css` — новые правила `.tz-emoji`, `.tz-emoji-glyph`,
+  `.tz-reaction-pill`, `.tz-reaction-count`, `.tz-reaction-row`: холст больше не режется
+  ни line-height, ни paint containment (`content-visibility: auto` на строках сообщений).
+- Пилюли реакций в `MessageArea.tsx`, `connect/dm/DMMessageList.tsx`,
+  `connect/news/NewsPostCard.tsx` и сетка `TriozEmojiGrid` — один размер и одно выравнивание.
+- `apps/android/…/MainActivity.kt` — `textZoom = 100` в `configureWebView()`. Без этого
+  системный масштаб шрифта рос у текста, но не у картинки — отсюда «кривые эмодзи»
+  именно в андроид-версии.
+- `apps/web/tailwind.config.ts` — стек `fontFamily.emoji` (утилита `font-emoji`) для
+  unicode-глифов вне фирменного пака.
+
+## 2. Форматы файлов: md, rar, zip
+- `apps/web/src/lib/attachmentTypes.ts` (новый) — единый список типов вложений:
+  `resolveAttachment()` (MIME, а если он бесполезен — расширение), `CHAT_ATTACHMENT_ACCEPT`,
+  `documentSignatureError()`, `isRar()`, `isZip()`, `isPdf()`.
+- `apps/web/src/app/api/messages/upload/route.ts` — белый список по MIME заменён на
+  общий модуль; добавлена проверка сигнатуры RAR (оба поколения формата). Лимиты
+  размера и замедление для бесплатных аккаунтов без изменений.
+- `apps/web/src/lib/uploadPaths.ts` — `.md` и `.rar` в таблице типов раздачи.
+- `accept` в `MessageArea.tsx`, `connect/dm/DMMessageComposer.tsx` и
+  `connect/news/NewsComposer.tsx` — одна константа вместо трёх разных списков.
+
+## 3. Скачивание картинки по правому клику
+- `apps/web/src/lib/downloadFile.ts` (новый) — `downloadUrl()` и `startFileDownload()`
+  с ветками Android / Electron / браузер; логика вынесена из `DocsPanel`.
+- `apps/web/src/components/ui/ImageContextMenu.tsx` (новый) — меню по образцу
+  `UserContextMenu`: портал, клампинг во вьюпорт, Esc/клик вне/прокрутка. Пункты:
+  открыть, скачать, копировать ссылку, открыть в новой вкладке.
+- Хук `useImageContextMenu()` — правый клик и долгое нажатие (500 мс, отмена при
+  сдвиге больше 10 px) для тач-устройств.
+- Подключено в каналах (`MessageArea.tsx`), личных сообщениях (`DMMessageList.tsx`) и
+  новостях (`NewsPostScreen.tsx`); в `ImageLightbox.tsx` добавлена кнопка скачивания.
+
+## 4. Новости: честный счётчик и заглушка
+- `apps/web/src/app/api/channels/unread/route.ts` — для каналов `type = "NEWS"` считаются
+  только опубликованные посты верхнего уровня: `threadId: null`, `draft: false`,
+  `publishAt` пуст или уже наступил. Заглушённые каналы и каналы заглушённых
+  сообществ из подсчёта исключаются.
+- `apps/web/src/app/api/messages/read/route.ts` — допускается вызов только с
+  `channelId`, без списка сообщений: в новостях нужно только `lastRead`.
+  Проверка доступа к каналу сохранена.
+- `apps/web/src/components/connect/news/NewsFeed.tsx` — лента отмечает раздел
+  прочитанным при открытии и показывает разделитель «ранее» после новых постов.
+- `apps/web/src/components/connect/MessageArea.tsx` — в шапке раздела новостей
+  появился переключатель заглушки на существующей `ChannelMute`.
+
+## 5. Тесты
+- `apps/web/src/lib/attachmentTypes.test.ts` (новый) — разрешение типов, согласованность
+  `accept` с сервером, сигнатуры rar/zip/pdf.
+- `apps/web/src/lib/downloadFile.test.ts` (новый) — сборка адреса `?dl=1&name=`.
+
 # 0.3.3 — иконка приложения и версия
 
 Логотип приложения теперь один на весь проект: `docs/logostol.png` (1024×1024,

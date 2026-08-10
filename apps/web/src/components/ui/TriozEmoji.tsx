@@ -33,10 +33,51 @@ export const TRIOZ_EMOJI_PACK = [
 const PACK_BY_EMOJI = new Map<string, (typeof TRIOZ_EMOJI_PACK)[number]>(TRIOZ_EMOJI_PACK.map((item) => [item.emoji, item] as const));
 const EMOJI_REGEX = new RegExp(`(${TRIOZ_EMOJI_PACK.map((item) => item.emoji.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gu");
 
+/**
+ * FIX-EMOJI: как рисуется глиф набора.
+ *
+ * Раньше здесь был `<img>` с атрибутами `width`/`height` и классом
+ * `align-text-bottom`, и этого оказалось мало сразу по трём причинам:
+ *
+ *  1. preflight Tailwind ставит всем картинкам `max-width: 100%`. Внутри узкой
+ *     пилюли реакции доступной ширины меньше холста, картинка сжимается по
+ *     горизонтали, а высота остаётся от атрибута — глиф приплюснут. Отсюда
+ *     «кривые эмодзи». Лечится `max-width: none` плюс `object-fit: contain`, а
+ *     размер задаётся стилем, а не только атрибутом.
+ *  2. `align-text-bottom` привязывает картинку к базовой линии текста. В пилюле
+ *     с `text-xs` (line-height 16px) холст 20px не помещается в строку и
+ *     обрезается. `vertical-align: middle` и `line-height: 1` на самом глифе
+ *     убирают вклад базовой линии.
+ *  3. Размер в пикселях фиксируется в inline-стиле намеренно: в Android WebView
+ *     системный масштаб шрифта тянет текст, но не картинку (см. textZoom в
+ *     MainActivity).
+ *
+ * Unicode-глиф вне набора теперь тоже получает коробку и свой стек шрифтов:
+ * иначе соседние реакции — картинка и символ — стоят на разной высоте.
+ */
 export function TriozEmoji({ emoji, size = 20, className = "" }: { emoji: string; size?: number; className?: string }) {
   const item = PACK_BY_EMOJI.get(emoji);
-  if (!item) return <span className={className}>{emoji}</span>;
-  return <img src={`/emojis/trioz/${item.id}.svg`} alt={item.label} title={item.label} width={size} height={size} className={`inline-block shrink-0 align-text-bottom ${className}`} draggable={false} />;
+  if (!item) {
+    return (
+      <span className={`tz-emoji tz-emoji-glyph ${className}`} style={{ fontSize: size, width: size, height: size }}>
+        {emoji}
+      </span>
+    );
+  }
+  return (
+    /* Оптимизация картинок в проекте отключена намеренно. */
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img
+      src={`/emojis/trioz/${item.id}.svg`}
+      alt={item.label}
+      title={item.label}
+      width={size}
+      height={size}
+      style={{ width: size, height: size }}
+      className={`tz-emoji ${className}`}
+      draggable={false}
+    />
+  );
 }
 
 export function TriozText({ text }: { text: string }) {
@@ -80,7 +121,7 @@ export function TriozEmojiGrid({ onSelect, compact = false, groupEmojis = [] }: 
               >
                 {/* Оптимизация картинок в проекте отключена намеренно. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={item.url} alt={`:${item.name}:`} width={34} height={34} loading="lazy" decoding="async" className="w-[34px] h-[34px] object-contain" draggable={false} />
+                <img src={item.url} alt={`:${item.name}:`} width={34} height={34} loading="lazy" decoding="async" style={{ width: 34, height: 34 }} className="tz-emoji" draggable={false} />
               </button>
             ))}
           </div>
@@ -89,7 +130,10 @@ export function TriozEmojiGrid({ onSelect, compact = false, groupEmojis = [] }: 
       <div className="px-1 pb-2 text-[10px] uppercase tracking-[0.12em] font-semibold text-neutral-400">TrioZ reactions</div>
       <div className="grid grid-cols-5 gap-1">
         {TRIOZ_EMOJI_PACK.map((item) => (
-          <button key={item.id} type="button" onClick={() => onSelect(item.emoji)} title={item.label} aria-label={item.label} className="w-full min-h-11 aspect-square rounded-xl flex items-center justify-center hover:bg-violet-500/10 dark:hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:focus-visible:ring-cyan-400 transition-colors">
+          <button key={item.id} type="button" onClick={() => onSelect(item.emoji)} title={item.label} aria-label={item.label} className="w-full min-h-11 aspect-square rounded-xl flex items-center justify-center leading-none hover:bg-violet-500/10 dark:hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:focus-visible:ring-cyan-400 transition-colors">
+            {/* FIX-EMOJI: ячейка уже квадратная и центрирующая, но без `leading-none`
+                строка внутри кнопки добавляла свою высоту, и глиф 34px в ячейке
+                min-h-11 (44px) стоял чуть ниже центра. */}
             <TriozEmoji emoji={item.emoji} size={34} />
           </button>
         ))}

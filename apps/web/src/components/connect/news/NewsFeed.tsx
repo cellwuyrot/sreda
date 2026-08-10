@@ -31,7 +31,7 @@
  * один слой.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useMobile } from "@/hooks/useMobile";
 import { useHistoryLayer } from "@/components/connect/hooks/useMobileHistoryStack";
 import { NewsIcon } from "@/components/ui/ConnectIcons";
@@ -125,9 +125,17 @@ export default function NewsFeed({
   const [openPost, setOpenPost] = useState<NewsPost | null>(null);
   const [pull, setPull] = useState(0);
 
+  /* FIX-NEWS-READ: сколько постов было новыми на момент входа в раздел. Цифра
+     снимается ОДИН раз — до того, как лента отметит себя прочитанной, иначе
+     разделитель «новые посты» исчез бы раньше, чем человек его увидит. */
+  const [newCount, setNewCount] = useState(0);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const pullStartRef = useRef<number | null>(null);
+  /* Отмечаем раздел прочитанным один раз на открытие: повторные POST на каждое
+     перечитывание ленты — лишний трафик и лишние записи в базу. */
+  const readSentRef = useRef<string | null>(null);
 
   /* Экран поста — слой в истории, а не просто div поверх ленты.
      Без этого системная «назад» Android (кнопка или жест от края) шла мимо
@@ -183,6 +191,44 @@ export default function NewsFeed({
       alive = false;
     };
   }, [fetchPage, refreshToken]);
+
+  /* FIX-NEWS-READ: до этого лента не звала /api/messages/read никогда, и lastRead в
+     новостном канале не двигался вообще: бейдж загорался один раз и висел до
+     конца времён, сколько бы человек ни читал. Порядок важен: сначала узнаём
+     число непрочитанных (для разделителя), потом гасим счётчик. */
+  useEffect(() => {
+    if (status !== "ready") return;
+    if (readSentRef.current === channelId) return;
+    readSentRef.current = channelId;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/channels/unread", { credentials: "include" });
+        if (res.ok) {
+          const data = (await res.json()) as { unread?: Record<string, number> };
+          const count = data.unread?.[channelId] ?? 0;
+          if (alive) setNewCount(count);
+        }
+      } catch {
+        /* разделитель — украшение; его отсутствие не повод мешать чтению */
+      }
+      try {
+        await fetch("/api/messages/read", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          /* Списка сообщений тут нет осмысленно: в новостях нет галочек
+             прочтения у каждого поста, нужно только lastRead раздела. */
+          body: JSON.stringify({ channelId, messageIds: [] }),
+        });
+      } catch {
+        /* оффлайн — отметка уйдёт при следующем открытии раздела */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [status, channelId]);
 
   /* Наверх сообщаем только о смене признака. Родитель нередко передаёт стрелку
      прямо в разметке — без этой проверки он получал бы вызов на каждую отрисовку
@@ -267,7 +313,7 @@ export default function NewsFeed({
     [posts, refresh],
   );
 
-  /* Потягивание вниз. Событие не отменяется намеренно: React вешает touchmove
+  /* Потягивание вниз. Событие не отменяется намеренно: React веша��т touchmove
      пассивным, preventDefault в нём всё равно не сработает. Вместо этого лента
      тянется только от самого верха, а overscroll-contain не пускает жест в
      собственное обновление WebView — иначе Android перезагружал бы страницу
@@ -351,8 +397,23 @@ export default function NewsFeed({
 
           {posts.length > 0 && (
             <div className="space-y-3 px-3 py-3">
-              {posts.map((post) => (
-                <NewsPostCard key={post.id} post={post} onOpen={setOpenPost} />
+              {posts.map((post, index) => (
+                <Fragment key={post.id}>
+                  {/* FIX-NEWS-READ: разделитель стоит ПОСЛЕ последнего нового поста:
+                      лента идёт сверху вниз от свежего к старому, значит всё новое —
+                      сверху. Закреплённые посты могут перемешать границу на одну-две
+                      карточки — это допустимо: разделитель ориентир, а не гарантия. */}
+                  {newCount > 0 && index === Math.min(newCount, posts.length) && (
+                    <div className="flex items-center gap-3 px-1 py-1" aria-hidden="true">
+                      <span className="h-px flex-1 bg-violet-300 dark:bg-cyan-500/40" />
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-violet-500 dark:text-cyan-400">
+                        ранее
+                      </span>
+                      <span className="h-px flex-1 bg-violet-300 dark:bg-cyan-500/40" />
+                    </div>
+                  )}
+                  <NewsPostCard post={post} onOpen={setOpenPost} />
+                </Fragment>
               ))}
             </div>
           )}

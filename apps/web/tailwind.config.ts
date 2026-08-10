@@ -12,6 +12,22 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         display: ["var(--font-playfair)", "Georgia", "serif"],
+        /* FIX-EMOJI: стек для unicode-глифов ВНЕ фирменного набора.
+
+           В наборе 25 символов, а реакция и текст сообщения могут содержать любой
+           другой. Без явного стека такой символ пытается нарисоваться Inter, там
+           его нет, и браузер берёт первый попавшийся шрифт системы — то чёрно-белый
+           контур, то глиф другого кегля. Отсюда часть жалоб на «кривые эмодзи»:
+           сам набор тут ни при чём. */
+        emoji: [
+          "Apple Color Emoji",
+          "Segoe UI Emoji",
+          "Segoe UI Symbol",
+          "Noto Color Emoji",
+          "Android Emoji",
+          "EmojiSymbols",
+          "sans-serif",
+        ],
       },
       colors: {
         background: "var(--background)",

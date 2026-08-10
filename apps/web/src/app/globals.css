@@ -987,11 +987,35 @@ html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto
 /* DM messages share the same component language as Connect without allowing
    the hover toolbar to cover message text. */
 .tz-dm-msg-row { min-height: 42px; }
-.tz-dm-msg-row .tz-msg-toolbar { top: -34px; }
+/* FIX-DM-BAR: бар действий обязан помещаться В ОБЛАСТИ СООБЩЕНИЯ.
+
+   Было две независимые ошибки, и обе резали картинку.
+
+   1) По вертикали бар висел на 34–36px ВЫШЕ строки, то есть целиком за её
+      пределами. Но строка сообщения обрезает всё выступающее: у неё
+      `content-visibility: auto` (см. .tz-msg-row), а это paint-containment с
+      запасом `overflow-clip-margin`. При наведении бар и верхняя кромка
+      «пузыря» попадали под обрезку — это и выглядело как «сообщение
+      урезается». Опускаем бар внутрь строки: обрезать больше нечего.
+
+   2) По горизонтали DM-правила переопределяли `left`/`right`, но НЕ трогали
+      `transform: translate(-50%, …)` из базового правила (там бар центруется
+      через left:50%). В итоге к уже выставленному краю добавлялся сдвиг на
+      половину собственной ширины, и бар уезжал наружу — «панель плывёт».
+      Сбрасываем сдвиг по X, оставляя только анимацию по Y. */
+.tz-dm-msg-row .tz-msg-toolbar {
+  top: 2px;
+  transform: translate(0, 2px);
+}
+.tz-dm-msg-row:hover .tz-msg-toolbar,
+.tz-dm-msg-row:focus-within .tz-msg-toolbar,
+.tz-dm-msg-row .tz-msg-toolbar:focus-within {
+  transform: translate(0, 0);
+}
 .tz-dm-own .tz-msg-toolbar { right: 6px; left: auto; }
 .tz-dm-peer .tz-msg-toolbar { left: 6px; right: auto; }
 @media (hover: none) {
-  .tz-dm-msg-row .tz-msg-toolbar { top: -36px; }
+  .tz-dm-msg-row .tz-msg-toolbar { top: 2px; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1134,4 +1158,89 @@ html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto
 .tz-chat-body {
   font-size: var(--tz-chat-body-size);
   line-height: var(--tz-chat-body-leading);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   FIX-EMOJI: холст эмодзи.
+
+   До этой правки в файле не было ни одного правила про эмодзи — всё держалось на
+   inline-атрибутах <img width height>. Этого мало сразу по трём причинам, и каждая
+   по отдельности даёт «кривой» глиф:
+
+   1. preflight Tailwind ставит `img { max-width: 100% }`. В узкой пилюле реакции
+      доступная ширина меньше холста, картинка сжимается по горизонтали, а высота
+      остаётся от атрибута — глиф приплюснут.
+   2. Пилюля набрана `text-xs`, то есть line-height 16px. Глиф 20px в такую строку не
+      помещается: вклад базовой линии срезает его сверху и снизу.
+   3. У строки сообщения включён `content-visibility: auto` (см. .tz-msg-row), а это
+      paint containment: всё, что вышло за рамку строки, обрезается по
+      `overflow-clip-margin`. Глиф, выпирающий из строки из-за пункта 2, попадал
+      ровно под эту обрезку.
+
+   Лечим в одном месте, а не в каждой пилюле: класс на самом глифе.
+   ────────────────────────────────────────────────────────────────────────── */
+.tz-emoji {
+  display: inline-block;
+  flex: 0 0 auto;
+  /* Против preflight: холст задаётся размером, а не шириной родителя. */
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  /* Убирает вклад базовой линии: холст центрируется по строке целиком. */
+  vertical-align: middle;
+  line-height: 1;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Unicode-символ вне фирменного набора. Рисуется шрифтом, поэтому ему нужен свой
+   стек (font-emoji в tailwind.config) и та же коробка, что у картинки — иначе
+   соседние реакции стоят на разной высоте. */
+.tz-emoji-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji", "Android Emoji", "EmojiSymbols", sans-serif;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Пилюля реакции. Класс ставится в MessageArea, DMMessageList и NewsPostCard —
+   раньше каждое из трёх мест задавало выравнивание само и по-своему.
+
+   `line-height: 1` здесь ключевой: он снимает пункт 2 из списка выше на уровне
+   контейнера, поэтому высоту пилюли задаёт холст глифа, а не наоборот. */
+.tz-reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+  /* Пилюля не должна схлопываться, когда реакций много и они переносятся. */
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.tz-reaction-pill > * {
+  line-height: 1;
+}
+
+/* Счётчик набран мельче глифа, и без явного выравнивания он «висит» сверху.
+   tabular-nums — чтобы пилюля не дёргалась по ширине при 9 → 10. */
+.tz-reaction-count {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Ряд реакций внутри строки сообщения.
+
+   Строка обрезает выступающее (paint containment), а ряд реакций — последнее, что
+   в ней есть. Собственный отступ снизу гарантирует, что нижняя кромка пилюли
+   лежит внутри рамки строки и не срезается. */
+.tz-reaction-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 1px;
 }

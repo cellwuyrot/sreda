@@ -4,12 +4,13 @@ import { useSession } from "next-auth/react";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import Spinner from "@/components/ui/Spinner";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { isOnline, timeAgo } from "@/lib/timeAgo";
 
 import { useAdminBackHref } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
+import AdminCommunities from "@/components/admin/AdminCommunities"; // ADMCOMM
 interface User {
   id: string;
   email: string;
@@ -286,22 +287,74 @@ export default function AdminUsersPage() {
   const [newUsername, setNewUsername] = useState("");
   const [usernameError, setUsernameError] = useState("");
 
+  /* ADMSEARCH/ADMCOMM: поиск, листание и выбранная вкладка раздела. */
+  const [tab, setTab] = useState<"users" | "communities">("users");
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  /* Полноэкранный спиннер показываем только на первой загрузке. Раньше
+     ранний возврат смотрел на `loading`, и с появлением поиска каждая буква
+     гасила бы всю страницу вместе с полем ввода — фокус терялся бы после
+     первого же символа. */
+  const [firstLoad, setFirstLoad] = useState(true);
+
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN" && session?.user?.role !== "EDITOR") {
       router.push("/");
     }
   }, [session, status, router]);
 
-  const fetchUsers = async () => {
-    const res = await fetch("/api/users");
-    const data = await res.json();
-    setUsers(data);
-    setLoading(false);
-  };
+  /* ADMSEARCH: запрос уходит на сервер с задержкой в 300 мс. Фильтровать на
+     клиенте нельзя: в памяти лежит только текущий лист из 20 человек, а искать
+     надо по всей базе. При новом запросе возвращаемся на первый лист. */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  /* Номер запроса отсекает устаревшие ответы: медленный запрос по короткой
+     строке может вернуться после быстрого по длинной и затереть актуальный
+     результат чужими строками. */
+  const requestId = useRef(0);
+
+  const fetchUsers = useCallback(async () => {
+    const current = ++requestId.current;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), perPage: "20" });
+      if (debouncedQuery) params.set("q", debouncedQuery);
+      const res = await fetch(`/api/users?${params.toString()}`);
+      const data = await res.json();
+      if (current !== requestId.current) return;
+      /* Маршрут отдаёт конверт с листами, когда переданы параметры, и голый
+         массив без них — так его читают «Значки» и «Премиум». Здесь параметры
+         есть всегда, но проверка страхует от расхождения форм. */
+      const list = Array.isArray(data) ? data : data.users ?? [];
+      setUsers(list);
+      if (Array.isArray(data)) {
+        setPages(1);
+        setTotal(list.length);
+      } else {
+        setPages(data.pages ?? 1);
+        setTotal(data.total ?? 0);
+        if (data.page && data.page !== page) setPage(data.page);
+      }
+    } finally {
+      if (current === requestId.current) {
+        setLoading(false);
+        setFirstLoad(false);
+      }
+    }
+  }, [page, debouncedQuery]);
 
   useEffect(() => {
     if ((session?.user?.role === "ADMIN" || session?.user?.role === "EDITOR")) fetchUsers();
-  }, [session]);
+  }, [session, fetchUsers]);
 
   const handleBan = async (userId: string, reason: string, bannedUntil: string | null) => {
     await fetch(`/api/users/${userId}`, {
@@ -358,7 +411,7 @@ export default function AdminUsersPage() {
     fetchUsers();
   };
 
-  if (status === "loading" || loading) {
+  if (status === "loading" || firstLoad) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-dark-900">
         <Spinner />
@@ -388,9 +441,53 @@ export default function AdminUsersPage() {
             </Link>
             <h1 className="text-2xl font-bold text-white">Управление пользователями</h1>
           </div>
-          <span className="text-gray-400">{users.length} пользователей</span>
+          <span className="text-gray-400">
+            {tab === "users" ? `${total} пользователей` : "модерация сообществ"}
+          </span>
         </div>
 
+        {/* ADMCOMM: вкладки раздела. Сообщества — только для ADMIN: приостановка
+            сообщества — мера административная, и сервер всё равно ответит 403
+            редактору — показывать ему нерабочую вкладку не надо. */}
+        {session?.user?.role === "ADMIN" && (
+          <div className="mb-6 flex gap-2">
+            {([
+              { id: "users" as const, label: "Пользователи" },
+              { id: "communities" as const, label: "Сообщества" },
+            ]).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+                  tab === item.id
+                    ? "bg-cyan-500/20 text-cyan-300"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === "users" ? (
+          <>
+            {/* ADMSEARCH: строка поиска по всей базе пользователей. */}
+            <div className="mb-4 flex items-center gap-3">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Поиск по имени или логину…"
+                className="flex-1 rounded-lg bg-black/30 border border-white/10 px-4 py-2 text-sm text-white outline-none focus:border-white/30"
+              />
+              {loading && <span className="text-xs text-gray-500 whitespace-nowrap">поиск…</span>}
+            </div>
+
+            {users.length === 0 ? (
+              <p className="text-gray-400 py-8 text-center">
+                {debouncedQuery ? "Никого не найдено" : "Пользователей пока нет"}
+              </p>
+            ) : (
         <div className="space-y-3">
           {users.map((user, i) => (
             <motion.div
@@ -529,6 +626,34 @@ export default function AdminUsersPage() {
             </motion.div>
           ))}
         </div>
+            )}
+
+            {/* ADMSEARCH: листы по 20 пользователей на странице. */}
+            {pages > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-3">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Назад
+                </button>
+                <span className="text-sm text-gray-400">
+                  Страница {page} из {pages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                  disabled={page >= pages}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Вперёд
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <AdminCommunities />
+        )}
       </div>
 
       {/* Ban Modal */}

@@ -132,10 +132,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Context menu & emoji picker
-  const [openMessageMenuId, setOpenMessageMenuId] = useState<string | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
-
   // Threads
   const [activeThread, setActiveThread] = useState<{ id: string; user: string; content: string } | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
@@ -480,7 +476,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     resetWindow();
     setReplyTo(null);
     setEditingId(null);
-    setOpenMessageMenuId(null);
     setShowPinned(false);
     setActiveThread(null);
     setPeerPublicKey(null);
@@ -1497,16 +1492,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     textareaRef.current?.focus();
   }, []);
 
-  // ── Menu toggle ──────────────────────────────────────────────────────────────
-  const toggleMenu = useCallback((id: string) => {
-    setOpenMessageMenuId((prev) => (prev === id ? null : id));
-    setShowEmojiPicker(null);
-  }, []);
-
-  const toggleEmojiPicker = useCallback((id: string) => {
-    setShowEmojiPicker((prev) => (prev === id ? null : id));
-  }, []);
-
   // ════════════════════════════════════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════════════════════════════════════
@@ -1640,10 +1625,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onCancelEdit={cancelEdit}
               onReply={handleReply}
               onDelete={(id) => setConfirmDelete(id)}
-              openMessageMenuId={openMessageMenuId}
-              onToggleMenu={toggleMenu}
-              showEmojiPicker={showEmojiPicker}
-              onToggleEmojiPicker={toggleEmojiPicker}
               onToggleReaction={toggleReaction}
               onPin={pinMessage}
               onOpenThread={openThread}
