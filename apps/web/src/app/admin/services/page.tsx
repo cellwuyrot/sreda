@@ -13,6 +13,9 @@ import { useAdminBackHref } from "@/components/admin/useAdminBackHref"; // FIX-E
 // STAGES: шестерёнка рядом с карандашом открывает этапы работ по этой услуге.
 // Именно они показываются заказчику в личном кабинете (см. lib/orderStages.ts).
 import ServiceStagesModal from "@/components/admin/ServiceStagesModal";
+// BUSINESS-PAY: вторая кнопка рядом — договоры и приложения к этой услуге.
+// Они подтягиваются в форму оплаты делового чата и видны клиенту только там.
+import ServiceDocumentsModal from "@/components/admin/ServiceDocumentsModal";
 import { GearIcon } from "@/components/ui/ConnectIcons";
 
 interface Service {
@@ -262,6 +265,8 @@ export default function AdminServicesPage() {
   const [editingService, setEditingService] = useState<Service | null>(null);
   /** STAGES: услуга, у которой сейчас правят этапы работ. */
   const [stagesService, setStagesService] = useState<Service | null>(null);
+  // BUSINESS-PAY: открытая карточка документов услуги (шаблоны договоров).
+  const [docsService, setDocsService] = useState<Service | null>(null);
   const [form, setForm] = useState({ title: "", description: "", icon: "", order: 0 });
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
@@ -445,6 +450,20 @@ export default function AdminServicesPage() {
                   </svg>
                 </button>
 
+                {/* BUSINESS-PAY: документы услуги */}
+                <button
+                  onClick={() => setDocsService(service)}
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                  title="Документы услуги"
+                  aria-label={`Документы услуги: ${service.title}`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                    <path strokeLinecap="round" strokeWidth={2} d="M14 3v5h5" />
+                  </svg>
+                </button>
+
                 {/* Stages editor */}
                 <button
                   onClick={() => setStagesService(service)}
@@ -495,6 +514,17 @@ export default function AdminServicesPage() {
             serviceId={stagesService.id}
             serviceTitle={stagesService.title}
             onClose={() => setStagesService(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* BUSINESS-PAY: documents modal */}
+      <AnimatePresence>
+        {docsService && (
+          <ServiceDocumentsModal
+            serviceId={docsService.id}
+            serviceTitle={docsService.title}
+            onClose={() => setDocsService(null)}
           />
         )}
       </AnimatePresence>

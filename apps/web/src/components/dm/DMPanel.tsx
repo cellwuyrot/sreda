@@ -14,6 +14,9 @@ import DMConversationList from "./DMConversationList";
 import DMMessageHeader from "./DMMessageHeader";
 import DMMessageList from "./DMMessageList";
 import DMMessageComposer from "./DMMessageComposer";
+// BUSINESS-PAY: окно оплаты за кнопкой в шапке делового разговора.
+import BusinessPaymentModal from "./BusinessPaymentModal";
+import type { BusinessPaymentView } from "@/lib/businessPayment";
 import DMThreadPanel from "./DMThreadPanel";
 import DMUserContextMenu, { DMAttachmentsModal, DMAutoReplyModal, DM_SETTINGS_DEFAULTS, type DmSettings } from "./DMUserContextMenu"; // FIX-DM
 import {
@@ -132,10 +135,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Context menu & emoji picker
-  const [openMessageMenuId, setOpenMessageMenuId] = useState<string | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
-
   // Threads
   const [activeThread, setActiveThread] = useState<{ id: string; user: string; content: string } | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
@@ -231,6 +230,28 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const otherId = otherUser?.id ?? null;
   const e2eeReady = !!(myPrivateKey && peerPublicKey);
 
+  /* FIX-DM-NTF: говорим глобальной шапке, какая переписка сейчас открыта.
+
+     Тост о новом ЛС показывает Navbar — именно потому, что сообщение должно
+     догнать человека в любом разделе. Цена этого — шапка не знает, что диалог
+     уже открыт. Поэтому панель сама объявляет своё состояние.
+
+     При закрытии и при смене диалога обязательно сбрасываем отметку, иначе
+     ушёдший из раздела человек навсегда перестал бы получать уведомления от
+     последнего собеседника. */
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("tz-dm-active", {
+        detail: { conversationId: selectedConvId, peerId: otherId },
+      }),
+    );
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent("tz-dm-active", { detail: { conversationId: null, peerId: null } }),
+      );
+    };
+  }, [selectedConvId, otherId]);
+
   /* Связка в заголовке делового разговора: тема заявки и кто её ведёт.
      Администрации имя ведущего нужно — иначе двое отвечают одному клиенту, не
      зная друг о друге. Клиенту его не показываем: он обращается к администрации,
@@ -259,6 +280,41 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
   const businessEmptyText =
     "Пока нет разговоров по заявкам. Новая заявка на сотрудничество открывает разговор здесь.";
+
+  /* BUSINESS-PAY: состояние счёта по открытому деловому разговору.
+     Грузится отдельно от списка диалогов нарочно: список отдаётся целиком и
+     часто, а счёт нужен только для одного разговора — тащить его в каждый
+     ответ списка значило бы платить за данные, которые почти никогда не смотрят.
+     null означает «счёта нет», и это валидное состояние, а не ошибка. */
+  const [payment, setPayment] = useState<BusinessPaymentView | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isBusiness || !selectedConvId) {
+      setPayment(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/business/${selectedConvId}/payment`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setPayment(data.payment ?? null);
+      } catch {
+        /* Молча: отсутствие счёта не должно ломать переписку. */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isBusiness, selectedConvId]);
+
+  /* При смене разговора окно оплаты закрываем: иначе оно останется висеть со
+     старыми данными над чужим диалогом. */
+  useEffect(() => {
+    setPaymentOpen(false);
+  }, [selectedConvId]);
 
   // ── Toast helper ────────────────────────────────────────────────────────
   const showToast = useCallback((msg: string) => {
@@ -480,7 +536,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     resetWindow();
     setReplyTo(null);
     setEditingId(null);
-    setOpenMessageMenuId(null);
     setShowPinned(false);
     setActiveThread(null);
     setPeerPublicKey(null);
@@ -600,11 +655,17 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
     socket.on("dm-message", async (msg: Message) => {
       if (!selectedConvId || msg.conversationId !== selectedConvId) {
-        // Increment unread for the conversation in the list
+        /* FIX-DM-SELF: сервер шлёт событие обеим сторонам, включая отправителя.
+           Без этой проверки собственное сообщение, отправленное при открытом
+           другом диалоге (например, пересылкой) или с другого устройства, ставило
+           твоей же переписке метку непрочитанного. Предпросмотр при этом
+           обновляем всегда: строка в списке должна показывать последнюю реплику
+           независимо от того, кто её написал. */
+        const ownMessage = msg.userId === currentUserId;
         setConversations((prev) =>
           prev.map((c) =>
             c.id === msg.conversationId
-              ? { ...c, unread: (c.unread || 0) + 1, lastMessage: { id: msg.id, content: msg.content, createdAt: msg.createdAt, userId: msg.userId }, lastMessageAt: msg.createdAt }
+              ? { ...c, unread: ownMessage ? (c.unread || 0) : (c.unread || 0) + 1, lastMessage: { id: msg.id, content: msg.content, createdAt: msg.createdAt, userId: msg.userId }, lastMessageAt: msg.createdAt }
               : c,
           ),
         );
@@ -1497,16 +1558,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     textareaRef.current?.focus();
   }, []);
 
-  // ── Menu toggle ──────────────────────────────────────────────────────────────
-  const toggleMenu = useCallback((id: string) => {
-    setOpenMessageMenuId((prev) => (prev === id ? null : id));
-    setShowEmojiPicker(null);
-  }, []);
-
-  const toggleEmojiPicker = useCallback((id: string) => {
-    setShowEmojiPicker((prev) => (prev === id ? null : id));
-  }, []);
-
   // ════════════════════════════════════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════════════════════════════════════
@@ -1564,6 +1615,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                 e.preventDefault();
                 setUserMenu({ x: e.clientX, y: e.clientY });
               }}
+              /* BUSINESS-PAY: undefined в личной переписке — кнопки нет вовсе;
+                 null в деловом — кнопка есть и говорит «Не оплачено». */
+              paymentStatus={isBusiness ? (payment?.status ?? null) : undefined}
+              onOpenPayment={isBusiness ? () => setPaymentOpen(true) : undefined}
             />
 
             {/* FIX-DM: контекстное меню по нику и модалки */}
@@ -1640,16 +1695,16 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onCancelEdit={cancelEdit}
               onReply={handleReply}
               onDelete={(id) => setConfirmDelete(id)}
-              openMessageMenuId={openMessageMenuId}
-              onToggleMenu={toggleMenu}
-              showEmojiPicker={showEmojiPicker}
-              onToggleEmojiPicker={toggleEmojiPicker}
               onToggleReaction={toggleReaction}
               onPin={pinMessage}
               onOpenThread={openThread}
               onForward={openForwardModal}
               onFavorite={addToFavorites}
               onStartEdit={startEdit}
+              /* BUSINESS-PAY: в деловом разговоре убираются «В сейф», «Переслать»
+                 и «На доску»: переписка по заявке — документ двух сторон, её не
+                 растаскивают по личным хранилищам и публичным доскам. */
+              isBusiness={isBusiness}
               peerReadAt={peerReadAt}
               onResend={resendMessage}
               onDecryptFile={handleDecryptFile}
@@ -1837,6 +1892,17 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* BUSINESS-PAY: форма оплаты */}
+      <AnimatePresence>
+        {paymentOpen && selectedConvId && (
+          <BusinessPaymentModal
+            conversationId={selectedConvId}
+            onClose={() => setPaymentOpen(false)}
+            onChanged={setPayment}
+          />
         )}
       </AnimatePresence>
 
