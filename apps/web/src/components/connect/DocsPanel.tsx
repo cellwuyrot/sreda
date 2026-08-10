@@ -5,8 +5,9 @@ import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { DownloadIcon, FileIcon, XIcon } from "@/components/ui/ConnectIcons";
 import { ArchiveIcon, FolderIcon, ImageIcon, PaperclipIcon, PdfIcon, PresentationIcon, SheetIcon, TrashIcon } from "@/components/ui/ConnectIconsExtra";
 import { ModuleSettingsButton } from "@/components/connect/ModuleSettingsModal"; // FIX-DOCSGEAR
-import { isAndroidShell } from "@/lib/shell"; // FIX-DOCS-DL
-import { isDesktop } from "@/lib/desktop"; // FIX-DOCS-DL
+/* FIX-DOCS-DL: сама логика скачивания переехала в lib/downloadFile: теперь так же
+   скачиваются картинки из контекстного меню и лайтбокса. */
+import { startFileDownload } from "@/lib/downloadFile";
 
 type Uploader = { id: string; name: string; username?: string };
 type WFile = { id: string; name: string; url: string; mime: string; size: number; createdAt: string; uploader: Uploader };
@@ -77,43 +78,9 @@ export default function DocsPanel({ channelId, channelName }: DocsPanelProps) {
 
   const onPick = () => inputRef.current?.click();
 
-  /* FIX-DOCS-DL: скачивание идёт по прямому URL с `?dl=1` — сервер отдаёт файл
-     с заголовком `Content-Disposition: attachment` и настоящим именем.
-
-     Предыдущий вариант через blob оказался хуже прежнего: в браузере он
-     работал, но в десктоп-оболочке диалог выбора папки открывался, а файл до
-     диска не доходил (скачивание blob-ссылки идёт мимо перехватчика
-     `/uploads/`, который умеет `downloadURL`), а Android DownloadManager схему
-     `blob:` не поддерживает вовсе. Теперь у каждой оболочки свой проверенный
-     путь, и все три ведут к настоящему сетевому скачиванию. */
-  const downloadHref = (f: WFile) =>
-    `${f.url}${f.url.includes("?") ? "&" : "?"}dl=1&name=${encodeURIComponent(f.name)}`;
-
-  const downloadFile = (f: WFile) => {
-    const href = downloadHref(f);
-    // Android: DownloadListener в WebView срабатывает только на настоящей
-    // навигации, поэтому ссылку не «кликаем», а переходим по ней.
-    if (isAndroidShell()) {
-      // Именно assign, а не присваивание location.href: правило
-      // react-hooks/immutability запрещает менять значения, объявленные вне
-      // компонента, а вызов метода под запрет не попадает.
-      window.location.assign(href);
-      return;
-    }
-    // Десктоп-оболочка: обработчик открытия окна видит путь /uploads/ и
-    // отдаёт файл через downloadURL — этот путь уже проверен на картинках.
-    if (isDesktop()) {
-      window.open(href, "_blank", "noopener");
-      return;
-    }
-    const a = document.createElement("a");
-    a.href = href;
-    a.download = f.name;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
+  /* FIX-DOCS-DL: скачивание идёт по прямому URL с `?dl=1`. Почему именно так и
+     чем плох был вариант через blob — подробно разобрано в lib/downloadFile. */
+  const downloadFile = (f: WFile) => startFileDownload(f.url, f.name);
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;

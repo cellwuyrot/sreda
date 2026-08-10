@@ -23,6 +23,8 @@ import { AttachmentIcon, ClockIcon, XIcon } from "@/components/ui/ConnectIcons";
 import { ImageIcon, LinkIcon, TrashIcon } from "@/components/ui/ConnectIconsExtra";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import { parseNewsAttachments, safeMediaUrl } from "./types";
+/* FIX-FORMATS: четвёртое место со своим списком — теперь общий. */
+import { CHAT_ATTACHMENT_ACCEPT } from "@/lib/attachmentTypes";
 
 /**
  * NEWSPOST: редактор поста новостного канала.
@@ -155,7 +157,7 @@ export default function NewsComposer({
   /** Пост отправлен: черновик уже не нужен и записывать его обратно нельзя. */
   const sentRef = useRef(false);
 
-  /* Восстановление черновика. Отдельным эффектом и с флагом `ready`, потому что
+  /* Восстановление черновика. Отдельным эффектом и с флагом `ready`, по��ому что
      сохранение (ниже) обязано ждать: сработай оно первым, пустое начальное
      состояние затёрло бы в хранилище именно то, что мы собирались вернуть. */
   useEffect(() => {
@@ -561,7 +563,7 @@ export default function NewsComposer({
                 /* Четырнадцать строк — мера для большого экрана: там поле на
                    треть окна и есть ради того, чтобы видеть пост целиком. На
                    телефоне те же четырнадцать строк дают почти четыреста точек,
-                   и с поднятой клавиатурой поле оказывалось выше видимой части
+                   и с поднятой клав��атурой поле оказывалось выше видимой части
                    тела редактора: панель разметки уезжала за верхний край, а
                    заголовок и обложка — тем более. Здесь поле ниже видимой
                    области, панель остаётся под рукой, а длинный текст листается
@@ -587,7 +589,7 @@ export default function NewsComposer({
                   type="file"
                   multiple
                   className="hidden"
-                  accept="image/*,.pdf,.doc,.docx,.txt"
+                  accept={CHAT_ATTACHMENT_ACCEPT}
                   onChange={uploadFiles}
                 />
                 {attachments.length > 0 && (

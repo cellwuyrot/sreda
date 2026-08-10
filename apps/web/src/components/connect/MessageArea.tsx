@@ -10,6 +10,8 @@ import { io, Socket } from "socket.io-client";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
 import ImageLightbox from "@/components/ui/ImageLightbox";
+/* FIX-IMGMENU: правый клик и долгое нажатие на картинке со скачиванием под исходным именем. */
+import ImageContextMenu, { useImageContextMenu } from "@/components/ui/ImageContextMenu";
 import { playMsgNotification, playMentionNotification } from "@/lib/msgSound";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import TypingIndicator from "./TypingIndicator";
@@ -46,6 +48,9 @@ import { useMentions, MentionPopupList, useRoleTagMentions, TagPopupList } from 
 import { TriozEmoji, TriozEmojiButton } from "@/components/ui/TriozEmoji";
 import { type GroupEmojiItem } from "./EmojiPicker";
 import { notifyExternal } from "@/lib/appNotify"; // ANDROID-NOTIFY
+/* FIX-FORMATS: один список типов на клиент и сервер: раньше здесь был свой,
+   самый узкий — и архив в канале было просто не выбрать в диалоге файлов. */
+import { CHAT_ATTACHMENT_ACCEPT } from "@/lib/attachmentTypes";
 import UserContextMenu from "./UserContextMenu";
 import LinkPreviewCard, { firstLink } from "./LinkPreviewCard";
 // MODERATION: ранги берём из общего модуля — здесь была своя копия карты, и в
@@ -152,6 +157,9 @@ const IMAGE_FAILURE_TEXT: Record<ImageFailure, string> = {
 function AttachmentImage({ src, alt, onZoom }: { src: string; alt: string; onZoom: (s: string) => void }) {
   const [failure, setFailure] = useState<ImageFailure | null>(null);
   const safe = safeAttachmentUrl(src);
+  /* FIX-IMGMENU: меню живёт на уровне конкретной картинки, а не всего списка:
+     так оно знает имя вложения без проброса через всю строку сообщения. */
+  const imageMenu = useImageContextMenu();
 
   const diagnose = useCallback(async (url: string) => {
     setFailure("unknown");
@@ -185,7 +193,18 @@ function AttachmentImage({ src, alt, onZoom }: { src: string; alt: string; onZoo
         unoptimized
         onError={() => { void diagnose(safe); }}
         onClick={() => onZoom(safe)}
+        {...imageMenu.bind(safe, alt)}
       />
+      {imageMenu.menu && (
+        <ImageContextMenu
+          src={imageMenu.menu.src}
+          name={imageMenu.menu.name}
+          x={imageMenu.menu.x}
+          y={imageMenu.menu.y}
+          onClose={imageMenu.close}
+          onOpen={() => onZoom(safe)}
+        />
+      )}
     </div>
   );
 }
@@ -256,7 +275,7 @@ const MessageRow = memo(function MessageRow({
   msg, prefs, firstUnread, showDateDivider, isGrouped, animate, flashed, editing, editContent, currentUserId, isPrivilegedRole, canPin, channelId, channelName, channelMembers, roleTags, groupEmoji, groupEmojiList, ignoredIds, revealedIgnored, displayName, openUserCard, cancelUserCardHover, setReplyTo, onJumpToMessage, setEditContent, setRevealedIgnored, setLightboxSrc, openThread, toggleReaction, startEdit, saveEdit, cancelEdit, deleteMessage, pinMessage,
 }: MessageRowProps) {
   const msgDate = new Date(msg.createdAt);
-  /* FIX-EDITBLINK: сообщение скрыто игнором — вместо содержимого заглушка.
+  /* FIX-EDITBLINK: ��ообщение скрыто игнором — вместо содержимого заглушка.
      Признак нужен в двух местах, поэтому считается один раз. */
   const hiddenByIgnore =
     ignoredIds.has(msg.user.id) && !revealedIgnored.has(msg.id) && msg.user.id !== currentUserId;
@@ -468,7 +487,7 @@ const MessageRow = memo(function MessageRow({
                         <AttachmentImage key={i} src={att.url} alt={att.name} onZoom={setLightboxSrc} />
                       ) : (
                         (() => {
-                          // FIX-SEC-XSS: ссылка-вложение только при безопасной схеме URL;
+                          // FIX-SEC-XSS: ссылка-����лож��ние только при безопасной схеме URL;
                           // иначе показываем имя файла как обычный текст (без href).
                           const safe = safeAttachmentUrl(att.url);
                           const inner = (<>
@@ -497,7 +516,7 @@ const MessageRow = memo(function MessageRow({
 
                 {/* Reactions display */}
                 {msg.reactions && msg.reactions.length > 0 && !msg.deleted && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
+                  <div className="tz-reaction-row mt-1.5">
                     {Object.entries(msg.reactions.reduce<Record<string, { count: number; userReacted: boolean }>>((acc, r) => {
                       if (!acc[r.emoji]) acc[r.emoji] = { count: 0, userReacted: false };
                       acc[r.emoji].count++;
@@ -507,7 +526,11 @@ const MessageRow = memo(function MessageRow({
                       <button
                         key={emoji}
                         onClick={() => toggleReaction(msg.id, emoji)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                        /* FIX-EMOJI: выравнивание живёт в tz-reaction-pill, а не здесь.
+                           `text-xs` давал line-height 16px вокруг глифа 20px — холст не
+                           помещался в строку и срезался сверху и снизу. Размер текста
+                           задаём без line-height (`text-[12px]`), высоту считает глиф. */
+                        className={`tz-reaction-pill px-2 py-1 rounded-full text-[12px] border transition-colors ${
                           data.userReacted
                             ? "bg-violet-50 dark:bg-cyan-400/10 border-violet-200 dark:border-cyan-400/30 text-accent"
                             : "bg-[var(--cn-accent-dim)] border-[var(--cn-border)] text-neutral-500 hover:bg-[var(--cn-hover)]"
@@ -517,9 +540,9 @@ const MessageRow = memo(function MessageRow({
                             лежит строкой «:имя:», а рисуется картинкой набора. */}
                         {customEmojiName(emoji) && groupEmoji.get(customEmojiName(emoji)!)
                           /* eslint-disable-next-line @next/next/no-img-element */
-                          ? <img src={groupEmoji.get(customEmojiName(emoji)!)} alt={emoji} title={emoji} width={20} height={20} loading="lazy" decoding="async" className="inline-block shrink-0 align-text-bottom w-5 h-5 object-contain" draggable={false} />
+                          ? <img src={groupEmoji.get(customEmojiName(emoji)!)} alt={emoji} title={emoji} width={20} height={20} loading="lazy" decoding="async" style={{ width: 20, height: 20 }} className="tz-emoji" draggable={false} />
                           : <TriozEmoji emoji={emoji} size={20} />}
-                        <span>{data.count}</span>
+                        <span className="tz-reaction-count">{data.count}</span>
                       </button>
                     ))}
                   </div>
@@ -690,7 +713,7 @@ export default function MessageArea({
   }, [isDragOver]);
   const [errorToast, setErrorToast] = useState<string | null>(null);
   /* CENSOR: карточка о рамках приличия. Показывается только отправителю и только
-     на несколько секунд — это напоминание, а не наказание. Запрет отправки идёт
+     на несколько секунд — эт�� напоминание, а не наказание. Запрет отправки идёт
      обычным отказом (красный тост), здесь же сообщение ушло. */
   const [censorNotice, setCensorNotice] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -827,7 +850,7 @@ export default function MessageArea({
   const [chatPrefs, setChatPrefs] = useState<ChatAppearance>(CHAT_APPEARANCE_DEFAULT);
   /* Тот же объект в ref: эффект автопрокрутки читает настройку, но не должен
      перезапускаться из-за неё — у него свой список зависимостей, и лишний
-     прогон означал бы рывок ленты в момент правки настроек. */
+     прогон означал бы рывок ленты в момент пр��вки настроек. */
   const chatPrefsRef = useRef<ChatAppearance>(CHAT_APPEARANCE_DEFAULT);
   useEffect(() => {
     const store = (next: ChatAppearance) => { chatPrefsRef.current = next; setChatPrefs(next); };
@@ -992,7 +1015,7 @@ export default function MessageArea({
   }, [onOpenDm]);
 
   /* FIX-TAGMENTION: карта тегов сообщества для подсветки «#тег» в сообщениях.
-     Пересобирается только при смене списка ролей — ссылка стабильна, поэтому
+     Пересобирается только при смене списка ролей — ссылка стаби��ьна, поэтому
      мемоизация строк MessageRow сохраняется. */
   const roleTagMap = useMemo(() => {
     const map = new Map<string, RoleTag>();
@@ -1030,7 +1053,7 @@ export default function MessageArea({
 
   /* FIX-TAGMENTION: автодополнение тегов по «#». Отдельная машинка состояний —
      список кандидатов другой, вставляется «#имя ». Носителей тега уведомляет
-     сервер, разбирая текст сообщения. */
+     сервер, разбирая текс�� сообщения. */
   const composerTags = useRoleTagMentions({
     roles: groupMeta?.roles ?? [],
     onApply: (next, caretAfter) => {
@@ -1164,7 +1187,7 @@ export default function MessageArea({
   /* Оконный рендер: в DOM живёт полоса вокруг видимой области, остальное —
      распорки. Без него дерево росло вместе с историей, и каждая догруженная
      страница делала прокрутку тяжелее (см. hooks/useMessageWindow). */
-  /* Разбираем по частям намеренно: сам объект пересоздаётся на каждый рендер, и
+  /* Разбираем по частям намеренно: сам объект пе��есоздаётся на каждый рендер, и
      попади он в зависимости эффекта — эффект перезапускался бы бесконечно.
      Колбэки стабильны, значения меняются вместе с окном. */
   const {
@@ -1349,11 +1372,15 @@ export default function MessageArea({
 
   // Mute state ref
   const isMutedRef = useRef(false);
+  /* FIX-NEWS-MUTE: то же самое значение, но в состоянии: ref годится обработчику
+     входящего сообщения (ему перерисовка не нужна), но кнопка в шапке обязана
+     менять вид сразу после нажатия. */
+  const [channelMuted, setChannelMuted] = useState(false);
 
   // Fetch channel members for tools (polls/tasks assignment) + mute state.
   // Полный список участников здесь нужен честно: по нему работает
   // автодополнение упоминаний, а меню по правому клику должно найти запись
-  // участника для любого автора сообщения, а не только для первой страницы.
+  // участника ��ля любого автора сообщения, а не только для первой страницы.
   // Поэтому список догружается страницами (без тяжёлых полей), а из снимка
   // сообщества берутся только роли-теги.
   useEffect(() => {
@@ -1389,7 +1416,9 @@ export default function MessageArea({
             const groupMuted = muteData.groupMuted ?? false;
             const channelMuted = muteData.channels?.[channelId];
             // Muted if: channel explicitly muted, or group muted and channel not explicitly unmuted
-            isMutedRef.current = channelMuted === true || (groupMuted && channelMuted !== false);
+            const mutedNow = channelMuted === true || (groupMuted && channelMuted !== false);
+            isMutedRef.current = mutedNow;
+            setChannelMuted(mutedNow);
           }
         });
       })
@@ -1465,7 +1494,7 @@ export default function MessageArea({
         // Багфикс: в десктопном приложении нативные тосты показывает сама
         // оболочка (notification bridge) — браузерный Notification здесь давал
         // ВТОРОЙ, дублирующий тост поверх системного.
-        /* ANDROID-NOTIFY: через фасад — в Android-оболочке это настоящее
+        /* ANDROID-NOTIFY: через фасад — в Android-оболочке это на��т��ящее
            системное уведомление, в браузере прежний Web Notification. */
         if (!getDesktopApi() && document.hidden) {
           /* Текст уведомления можно скрыть: всплывающий тост читают все, кто
@@ -1589,7 +1618,7 @@ export default function MessageArea({
          приходилось искать прокруткой вверх — при десятке новых это значит
          «листать вслепую, пока не найдёшь знакомое».
 
-         Первое непрочитанное считаем ровно так же, как это делает пометка
+         П��рво�� непрочитанное считаем ровно так же, как это делает пометка
          прочтения ниже: чужое сообщение без моей отметки в `reads`. Эффект
          прокрутки объявлен ВЫШЕ эффекта пометки, поэтому на первом проходе он
          ещё видит исходные отметки; иначе всё оказалось бы прочитанным ровно
@@ -1750,7 +1779,7 @@ export default function MessageArea({
         body: JSON.stringify({ content, channelId, threadId: activeThread.id }),
       });
       const msg = await res.json();
-      if (!res.ok) throw new Error(msg.error || "Не удалось отправить ответ");
+      if (!res.ok) throw new Error(msg.error || "Не удалось отправить ��твет");
       if (!threadReplyIdsRef.current.has(msg.id)) {
         threadReplyIdsRef.current.add(msg.id);
         setThreadMessages((prev) => [...prev, msg]);
@@ -2306,6 +2335,42 @@ export default function MessageArea({
               в остальных модульных разделах она есть. Показываем её тем, кто
               может настраивать канал (владелец, администратор, модератор). */}
           {isNewsChannel && canPin && <ModuleSettingsButton channelId={channelId} />}
+          {/* FIX-NEWS-MUTE: заглушка раздела новостей. Моделей ради неё не заводим:
+              ChannelMute уже есть и уже учитывается и при рассылке анонсов
+              (lib/newsPost.ts), и теперь при подсчёте непрочитанных. Не хватало
+              ровно этого переключателя. Состояние меняем сразу, а при ошибке
+              возвращаем обратно: молчаливо врать про включённую тишину хуже
+              всего — человек перестанет ждать уведомлений, а они придут. */}
+          {isNewsChannel && (
+            <button
+              onClick={async () => {
+                const next = !channelMuted;
+                setChannelMuted(next);
+                isMutedRef.current = next;
+                try {
+                  const res = await fetch("/api/channels/mute", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ channelId, muted: next }),
+                  });
+                  if (!res.ok) throw new Error(String(res.status));
+                } catch {
+                  setChannelMuted(!next);
+                  isMutedRef.current = !next;
+                }
+              }}
+              className={`p-1.5 rounded-lg transition-colors ${channelMuted ? "text-violet-500 dark:text-cyan-400 bg-violet-50 dark:bg-cyan-900/20" : "text-neutral-400 hover:text-neutral-600 dark:hover:text-white"}`}
+              aria-label={channelMuted ? "Включить уведомления о новостях" : "Заглушить новости"}
+              aria-pressed={channelMuted}
+              title={channelMuted ? "Новости заглушены" : "Заглушить новости"}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0m6 0H9" />
+                {channelMuted && <path strokeLinecap="round" d="M4 4l16 16" />}
+              </svg>
+            </button>
+          )}
           <button
             onClick={() => { setShowPinned(!showPinned); if (!showPinned) fetchPinned(); }}
             className={`p-1.5 rounded-lg transition-colors ${showPinned ? "text-violet-500 dark:text-cyan-400 bg-violet-50 dark:bg-cyan-900/20" : "text-neutral-400 hover:text-neutral-600 dark:hover:text-white"}`}
@@ -2446,7 +2511,7 @@ export default function MessageArea({
             <div className="flex items-center justify-center h-full text-neutral-400">
               <div className="text-center">
                 <span className="block mb-4 flex justify-center opacity-80"><ChatIcon size={56} tone="inactive" /></span>
-                <p className="text-base font-semibold text-neutral-600 dark:text-neutral-300">Здесь пока пусто</p>
+                <p className="text-base font-semibold text-neutral-600 dark:text-neutral-300">Зде��ь пока пусто</p>
                 <p className="text-sm mt-1 text-neutral-400">Будьте первым — напишите сообщение, чтобы начать обсуждение.</p>
               </div>
             </div>
@@ -2673,7 +2738,7 @@ export default function MessageArea({
                       ))}
                     </div>
                   )}
-                  {/* relative — под панель записи заметки: на время записи
+                  {/* relative — под панель записи за��етки: на время записи
                       мини-редактор раскрывается во всю ширину строки поверх поля
                       ввода (см. MediaNoteRecorder). */}
                   <div className="relative flex w-full items-end gap-2">
@@ -2691,7 +2756,7 @@ export default function MessageArea({
                       отдельная кнопка была ошибкой — свои эмодзи ищут там, где
                       все остальные. */}
                   <TriozEmojiButton onSelect={insertEmoji} groupEmojis={groupEmojis} />
-                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.doc,.docx,.txt" multiple />
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept={CHAT_ATTACHMENT_ACCEPT} multiple />
                   <div className="relative flex-1">
                     {composerMentions.open && (
                       <MentionPopupList
