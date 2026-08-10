@@ -1,0 +1,85 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# ── Dependencies ─────────────────────────────────────────────────────
+node_modules/
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# ── Build output ─────────────────────────────────────────────────────
+# Next.js (apps/web), TypeScript builds (apps/desktop, packages/shared),
+# electron-builder output (apps/desktop/release).
+**/.next/
+**/out/
+packages/*/dist/
+apps/desktop/dist/
+apps/desktop/release/
+
+# pdf.js worker + assets copied from node_modules at build time
+# (see apps/web/next.config.mjs).
+apps/web/public/pdf.worker.min.js
+apps/web/public/pdfjs/
+
+# ── Testing ──────────────────────────────────────────────────────────
+/coverage
+
+# ── Misc ─────────────────────────────────────────────────────────────
+.DS_Store
+*.pem
+
+# ── Debug logs ───────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Local env files ──────────────────────────────────────────────────
+.env
+.env*.local
+
+# ── Vercel ───────────────────────────────────────────────────────────
+.vercel
+
+# ── TypeScript ───────────────────────────────────────────────────────
+*.tsbuildinfo
+**/next-env.d.ts
+
+apps/web/src/generated/prisma
+
+# ── Local database ───────────────────────────────────────────────────
+apps/web/prisma/*.db
+apps/web/prisma/*.db-journal
+apps/web/prisma.config.ts
+dev.db
+
+# ── Editor / agent tooling ───────────────────────────────────────────
+.vscode/
+.idea/
+.claude/
+.agents/
+skills-lock.json
+
+# ── User uploads — do NOT delete on deploy (avatars, group icons, etc.) ──
+# The folder structure is tracked via .gitkeep files, but actual files are not.
+apps/web/public/uploads/avatars/*
+apps/web/public/uploads/groups/*
+apps/web/public/uploads/messages/*
+apps/web/public/uploads/banners/*
+!apps/web/public/uploads/avatars/.gitkeep
+!apps/web/public/uploads/groups/.gitkeep
+!apps/web/public/uploads/messages/.gitkeep
+!apps/web/public/uploads/banners/.gitkeep
+
+# ── Приватные загрузки — вне public/, отдаются только после проверки входа ──
+# Вложения переписки, голосовые, видео, документы, файлы задач и проектов.
+# Файлы не отслеживаются, каталог держится .gitkeep.
+apps/web/storage/uploads/*
+!apps/web/storage/uploads/.gitkeep
+
+# ── Self-hosted desktop installers — populated at deploy, not tracked ─────
+# `npm run desktop:publish` copies electron-builder output here; served from
+# /desktop/ and by /api/download/desktop. The folder is tracked via .gitkeep
+# and README.md; the (large) binaries and update feeds are not.
+apps/web/public/desktop/*
+!apps/web/public/desktop/.gitkeep
+!apps/web/public/desktop/README.md

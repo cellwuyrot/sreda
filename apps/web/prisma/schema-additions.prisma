@@ -1,0 +1,34 @@
+// ============================================================
+// ДОБАВЛЕНИЯ В apps/web/prisma/schema.prisma
+// Этот файл НЕ копируется в проект — это инструкция, что вставить.
+// ============================================================
+
+// --- 1. В модель Group добавьте поля (рядом с sectionsEnabled): ---
+//
+//   banner        String?  @db.Text        // баннер сообщества (data URL, как User.profileBanner)
+//   requireRules  Boolean  @default(false) // требовать принятия правил участниками
+//   auditEntries  GroupAuditEntry[]        // журнал аудита
+
+// --- 2. В модель GroupMember добавьте поля (рядом с muted): ---
+//
+//   mutedUntil DateTime?                   // тайм-аут: до какого момента участник не может писать
+//   muteReason String?   @db.VarChar(300)  // причина тайм-аута
+
+// --- 3. Новая модель — добавьте целиком в конец schema.prisma: ---
+
+// Журнал аудита модераторских действий внутри группы.
+// Пишется из API-маршрутов через src/lib/groupAudit.ts.
+model GroupAuditEntry {
+  id         String   @id @default(cuid())
+  groupId    String
+  actorId    String
+  actorName  String
+  action     String   // settings.update | member.role | member.kick | member.timeout | member.untimeout | ban.add | ban.remove | invite.create | invite.revoke
+  targetId   String?
+  targetName String?
+  details    String?  @db.Text
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([groupId, createdAt])
+}

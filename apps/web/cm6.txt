@@ -1,0 +1,6 @@
+feat: username rules, password visibility toggle, voice channel delete kick
+
+- Register: username must be 6-20 chars AND contain at least one digit
+- Profile: changing username to a digit-free one is allowed only for Premium users; otherwise a digit is required (existing users untouched)
+- Settings: password fields now have an eye toggle with hover tooltip to reveal/hide the password
+- Fix: deleting a voice channel now force-kicks users who were in it (server-side socketsLeave + voice-channel-deleted event + client leaveVoice)

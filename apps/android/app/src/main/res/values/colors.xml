@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the desktop shell's near-black backgroundColor (#0b0d12). -->
+    <color name="brand_background">#0B0D12</color>
+    <color name="brand_accent">#22D3EE</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+    <!-- ANDROID-ICON: фон адаптивной иконки — почти чёрный, как в макете -->
+    <color name="ic_launcher_background">#0A0A0A</color>
+</resources>

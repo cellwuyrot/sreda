@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>TrioZ — оверлей голосового чата</title>
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; user-select: none; }
+  #root { display: none; box-sizing: border-box; width: 100vw; height: 100vh; padding: 8px; }
+  #root.visible { display: block; }
+  .panel { background: rgba(12, 14, 18, 0.82); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 14px; color: #fff; overflow: hidden; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); backdrop-filter: blur(6px); }
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; -webkit-app-region: drag; }
+  header .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.7); flex-shrink: 0; }
+  header .title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  header button { -webkit-app-region: no-drag; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: rgba(255, 255, 255, 0.55); cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+  header button:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+  #screen-wrap { position: relative; display: none; }
+  #screen-wrap.visible { display: block; }
+  #screen { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; }
+  #sharer { position: absolute; left: 6px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.7); font-size: 9px; color: rgba(255, 255, 255, 0.75); max-width: calc(100% - 12px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #users { list-style: none; margin: 0; padding: 6px; max-height: 190px; overflow-y: auto; }
+  #users::-webkit-scrollbar { width: 4px; }
+  #users::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+  /* FIX-OVL: участники по умолчанию полупрозрачные (65%); говорящий выделяется
+     полной непрозрачностью и зелёной подсветкой. */
+  #users li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; font-size: 12px; opacity: 0.65; transition: opacity 0.15s ease, background-color 0.15s ease; }
+  #users li.speaking { opacity: 1; background: rgba(34, 197, 94, 0.10); }
+  #users li .avatar { position: relative; width: 22px; height: 22px; border-radius: 50%; background: rgba(122, 162, 255, 0.25); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; border: 2px solid transparent; box-sizing: border-box; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+  #users li.speaking .avatar { border-color: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.6); }
+  #users li .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.85); }
+  #users li.speaking .name { color: #86efac; }
+  #users li .you { font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.45); flex-shrink: 0; }
+  #users li .badges { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  #users li .badges svg { display: block; width: 14px; height: 14px; }
+  .badge-muted { color: #f87171; }
+  .badge-deafened { color: #f87171; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="panel">
+    <header>
+      <span class="dot"></span>
+      <span class="title" id="channel">Голосовой канал</span>
+      <button id="open" title="Открыть TrioZ">⤢</button>
+      <button id="close" title="Скрыть оверлей">✕</button>
+    </header>
+    <div id="screen-wrap"><img id="screen" alt=""><div id="sharer"></div></div>
+    <ul id="users"></ul>
+  </div>
+</div>
+<script>
+(function () {
+  var api = window.triozOverlay;
+  if (!api) return;
+  var root = document.getElementById("root");
+  var panel = document.querySelector(".panel");
+
+  /* FIX-OVL-SIZE: окно оверлея фиксированной высоты (380px) было выше самой
+     панели — прозрачный «хвост» под панелью перехватывал клики мыши поверх
+     игры. Меряем реальную высоту панели и просим main-процесс подогнать
+     высоту окна ровно под контент (панель + отступы root по 8px). */
+  function reportHeight() {
+    if (!panel || typeof api.resize !== "function") return;
+    var h = Math.ceil(panel.getBoundingClientRect().height) + 16;
+    if (h > 16) api.resize(h);
+  }
+  if (panel && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(reportHeight).observe(panel);
+  }
+  var channelEl = document.getElementById("channel");
+  var usersEl = document.getElementById("users");
+  var screenWrap = document.getElementById("screen-wrap");
+  var screenEl = document.getElementById("screen");
+  var sharerEl = document.getElementById("sharer");
+  document.getElementById("open").addEventListener("click", function () { api.action("open-app"); });
+  document.getElementById("close").addEventListener("click", function () { api.action("close"); });
+  function esc(s) { var d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
+
+  // Иконка выключенного микрофона (мьют): микрофон с перечёркиванием.
+  var MIC_OFF =
+    '<svg class="badge-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Микрофон выключен">'
+    + '<path d="M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.9-.7"/>'
+    + '<path d="M17 11a5 5 0 0 1-.5 2.2M5 11a7 7 0 0 0 10.8 5.9M12 18v3"/>'
+    + '<line x1="3" y1="3" x2="21" y2="21"/></svg>';
+  // Иконка выключенного звука (deafen): наушники с перечёркиванием.
+  var DEAF_OFF =
+    '<svg class="badge-deafened" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Звук выключен">'
+    + '<path d="M4 14v-2a8 8 0 0 1 13-6.2M20 10v4"/>'
+    + '<path d="M4 14a2 2 0 0 1 2 2v2a2 2 0 1 1-4 0M20 14a2 2 0 0 0-2 2"/>'
+    + '<line x1="3" y1="3" x2="21" y2="21"/></svg>';
+
+  api.onState(function (state) {
+    if (!state || !state.inVoice) { root.classList.remove("visible"); return; }
+    root.classList.add("visible");
+    setTimeout(reportHeight, 0); /* FIX-OVL-SIZE */
+    channelEl.textContent = state.channelName || "Голосовой канал";
+    if (state.screenThumb) {
+      screenWrap.classList.add("visible");
+      screenEl.src = state.screenThumb;
+      sharerEl.textContent = state.sharerName ? "Демонстрация: " + state.sharerName : "";
+    } else {
+      screenWrap.classList.remove("visible");
+      screenEl.removeAttribute("src");
+    }
+    usersEl.innerHTML = (state.users || []).map(function (u) {
+      var initials = (u.name || "?").trim().split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0); }).join("").toUpperCase();
+      var badges = (u.muted ? MIC_OFF : "") + (u.deafened ? DEAF_OFF : "");
+      return '<li class="' + (u.speaking ? "speaking" : "") + '">'
+        + '<span class="avatar">' + esc(initials) + "</span>"
+        + '<span class="name">' + esc(u.name) + "</span>"
+        + (u.self ? '<span class="you">вы</span>' : "")
+        + (badges ? '<span class="badges">' + badges + "</span>" : "")
+        + "</li>";
+    }).join("");
+  });
+})();
+</script>
+</body>
+</html>

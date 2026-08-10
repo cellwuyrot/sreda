@@ -1,0 +1,30 @@
+version: "3.9"
+
+# Development overrides: hot-reload, exposed ports, no nginx
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps
+    # Build the shared contract, then run the custom server from the web
+    # workspace (its cwd must be apps/web so Next finds .next/).
+    command: ["sh", "-lc", "npm run build:shared && npm run dev -w apps/web"]
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/web/.next
+    environment:
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"

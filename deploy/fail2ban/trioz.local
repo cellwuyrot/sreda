@@ -1,0 +1,50 @@
+# TrioZ / TZ.Connect — правила fail2ban.
+#
+# Экран (deploy/firewall.sh) отсекает поток соединений, а это — про упорство:
+# перебор пароля, долбёж по закрытым путям, поток отказов 429. Такие адреса
+# уходят в бан на время, а не отбиваются пакет за пакетом.
+#
+# Установка:
+#   cp deploy/fail2ban/trioz.local /etc/fail2ban/jail.d/trioz.local
+#   cp deploy/fail2ban/filter-trioz-auth.conf /etc/fail2ban/filter.d/trioz-auth.conf
+#   systemctl restart fail2ban && fail2ban-client status
+#
+# ВАЖНО: banaction=nftables — чтобы бан ложился в тот же nftables, что и экран.
+# С iptables-действием по умолчанию правила окажутся в другой таблице и на
+# практике могут не сработать.
+
+[DEFAULT]
+banaction = nftables-multiport
+backend = auto
+# Свои адреса не банятся никогда: иначе первая же ошибка в скрипте выкинет вас.
+# ЗАПОЛНИТЬ своим адресом.
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+maxretry = 4
+findtime = 10m
+bantime = 1h
+
+# Перебор входа в приложение: nginx отвечает 401/429 на /api/auth.
+[trioz-auth]
+enabled = true
+filter = trioz-auth
+logpath = /var/log/nginx/access.log
+port = http,https
+maxretry = 20
+findtime = 5m
+# Час: перебору это дорого, а человеку, который трижды не туда ввёл пароль,
+# столько ждать не придётся — у него не 20 попыток за 5 минут.
+bantime = 1h
+
+# Поток отказов по лимиту: адрес, который упирается в 429 сотнями, уже не
+# «активный пользователь».
+[trioz-flood]
+enabled = true
+filter = trioz-auth
+logpath = /var/log/nginx/access.log
+port = http,https
+maxretry = 200
+findtime = 1m
+bantime = 15m

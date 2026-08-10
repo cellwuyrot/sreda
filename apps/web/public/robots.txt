@@ -1,0 +1,9 @@
+# Закрываем тестовую точку входа от индексации поисковиками.
+User-agent: *
+Disallow: /aclbttestping
+
+# Системные/приватные пути тоже не индексируем.
+Disallow: /api/
+Disallow: /auth/
+Disallow: /admin/
+Allow: /

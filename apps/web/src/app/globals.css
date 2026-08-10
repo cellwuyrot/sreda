@@ -1,0 +1,1137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Bottom inset reserved by native shell chrome (the desktop notification
+     status bar). 0 in a normal browser; the Electron preload overrides it with
+     the bar's height so full-viewport layouts can subtract it and avoid an
+     overflow scrollbar. Analogous to env(safe-area-inset-bottom) on mobile. */
+  --tz-desktop-inset-bottom: 0px;
+
+  /* ── Светлая — «Лист» ───────────────────────────────────────────────────
+     Переработка прежней «Бумажной студии». Что было не так: сине-серые
+     поверхности (#eef0f5 при синих чернилах #1c2130) давали ощущение
+     выцветшего экрана, а глубина набиралась многослойными мягкими тенями —
+     от них интерфейс выглядел набором наклеенных карточек.
+
+     Стало: нейтральная шкала без синевы, белый лист контента и разделение
+     волосяной линией вместо размытых теней. Контраст текста поднят
+     (#17171a вместо #1c2130), чернила нейтральные — поэтому серые тона
+     остаются серыми и не уходят в холодный.
+
+     Акцент оставлен фиолетовым: это цвет продукта, а не оформление темы.
+     Материальные правила — в блоке «Лист» в конце файла. */
+  --background: #f2f2f3;
+  --foreground: #17171a;
+  --card-bg: #ffffff;
+  --card-border: #e5e5e8;
+  --muted: #5b5b64;
+  --muted-bg: #f4f4f6;
+  --tag-bg: #ececef;
+  --tag-text: #3a3a42;
+  /* Accent stored as RGB channels so Tailwind can apply opacity (text-accent/30) */
+  --accent: 109 40 217;
+  --accent-hover: 91 33 182;
+  /* «Чернила» для линий и сеток (RGB-каналы; в warm — тёплые). */
+  --lt-ink: 23 23 26;
+
+  /* Connect panel variables (light) */
+  --cn-rail:        #e8e8ea;
+  --cn-sidebar:     #f4f4f5;
+  --cn-main:        #ffffff;
+  --cn-border:      rgba(23,23,26,0.09);
+  --cn-accent:      #6d28d9;
+  --cn-accent-dim:  rgba(109,40,217,0.08);
+  --cn-accent-text: #5b21b6;
+  --cn-pill:        #6d28d9;
+  --cn-text:        #17171a;
+  --cn-muted:       #5b5b64;
+  --cn-hover:       rgba(23,23,26,0.05);
+}
+
+/* ── Light Warm variant ──────────────────────────────────────────────────
+   Тёплая пара «Листа»: та же структура (слой, кромка, свет), но крафтовая
+   палитра — солома, охра, тёплые чернила сепии. */
+.light.warm {
+  --background: #f5f0e8;
+  --foreground: #241c12;
+  --card-bg: #fffdf9;
+  --card-border: #eadfce;
+  --muted: #77685a;
+  --muted-bg: #f6efe4;
+  --tag-bg: #f3e8d5;
+  --tag-text: #92400e;
+  --accent: 234 88 12;
+  --accent-hover: 194 65 12;
+  --lt-ink: 74 55 33;
+
+  --cn-rail:        #ede4d6;
+  --cn-sidebar:     #f6f0e7;
+  --cn-main:        #fffdf9;
+  --cn-border:      rgba(74,55,33,0.10);
+  --cn-accent:      #ea580c;
+  --cn-accent-dim:  rgba(234,88,12,0.10);
+  --cn-accent-text: #c2410c;
+  --cn-pill:        #ea580c;
+  --cn-text:        #241c12;
+  --cn-muted:       #77685a;
+  --cn-hover:       rgba(74,55,33,0.05);
+}
+
+/* ── Cyber Dark (default dark) ─────────────────────────────────────────── */
+.dark {
+  --background: #0a0a0f;
+  --foreground: #e0e0e0;
+  --card-bg: rgba(255,255,255,0.05);
+  --card-border: rgba(255,255,255,0.1);
+  --muted: #9ca3af;
+  --muted-bg: rgba(255,255,255,0.05);
+  --tag-bg: rgba(255,255,255,0.08);
+  --tag-text: #d1d5db;
+  --accent: 0 240 255;
+  --accent-hover: 0 212 224;
+
+  --cn-rail:        #070709;
+  --cn-sidebar:     #0f0f17;
+  --cn-main:        #12121c;
+  --cn-border:      rgba(0,212,255,0.08);
+  --cn-accent:      #00d4ff;
+  --cn-accent-dim:  rgba(0,212,255,0.10);
+  --cn-accent-text: #00d4ff;
+  --cn-pill:        #00d4ff;
+  --cn-text:        #e8eaf0;
+  --cn-muted:       #8b93a3;             /* FIX-B5: было #4a5568, контраст ~3.2:1 */
+  --cn-hover:       rgba(0,212,255,0.05);
+}
+
+/* ── Monochrome (premium) — "Cinematic Industrial" ──────────────────────────
+   Not a grayscale filter but a re-imagined material design. Dominant tones are
+   black, graphite, charcoal, steel and ash; accents are cold white, smoky
+   chrome and faded silver. Surfaces are real materials — dark matte panels,
+   brushed metal, tempered glass and dusty translucent layers — carrying
+   micro-roughness, erosion and industrial wear. Built on the dark base
+   (`.dark.mono`) so Tailwind `dark:` utilities keep working. Premium only. */
+.dark.mono {
+  --background: #060607;
+  --foreground: #e9eaec;
+  --card-bg: rgba(22,23,26,0.72);        /* tempered glass tint */
+  --card-border: rgba(255,255,255,0.09);
+  --muted: #83858c;                      /* steel / ash */
+  --muted-bg: rgba(255,255,255,0.04);
+  --tag-bg: rgba(255,255,255,0.06);
+  --tag-text: #d2d4da;
+  --accent: 210 213 219;                 /* faded silver */
+  --accent-hover: 236 238 243;           /* cold white */
+
+  --cn-rail:        #08080a;
+  --cn-sidebar:     #0e0e10;
+  --cn-main:        #0b0b0d;
+  --cn-border:      rgba(255,255,255,0.08);
+  --cn-accent:      #cfd2d8;             /* cold silver */
+  --cn-accent-dim:  rgba(255,255,255,0.07);
+  --cn-accent-text: #eef0f4;
+  --cn-pill:        #cfd2d8;
+  --cn-text:        #e9eaec;
+  --cn-muted:       #7b7d84;             /* ashy steel */
+  --cn-hover:       rgba(255,255,255,0.045);
+
+  /* ── Material textures (data-URI SVG; no assets needed) ──────────────────
+     --mono-grain : fine fractal noise → micro-roughness / film grain / dust
+     --mono-brush : anisotropic streaks → brushed metal & scratch / wear      */
+  --mono-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E");
+  --mono-brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.008 0.7' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23b)'/%3E%3C/svg%3E");
+}
+/* Cinematic backdrop: charcoal gradient + cold overhead key-light + edge
+   vignette + a dusting of grain, pinned to the viewport for a filmic feel. */
+.dark.mono body {
+  background:
+    var(--mono-grain),
+    radial-gradient(120% 82% at 50% -14%, rgba(200,206,216,0.10) 0%, transparent 58%),
+    radial-gradient(150% 125% at 50% 44%, transparent 50%, rgba(0,0,0,0.62) 100%),
+    linear-gradient(180deg, #050506 0%, #0a0a0c 46%, #0e0f12 100%);
+  background-attachment: fixed;
+  background-size: 140px 140px, 100% 100%, 100% 100%, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: #d4d4d8 #f5f5f5; }
+.dark * { scrollbar-color: #2a2a40 #0a0a0f; }
+.dark.mono * { scrollbar-color: #3a3a3e #070708; }
+
+*::-webkit-scrollbar { width: 6px; }
+*::-webkit-scrollbar-track { background: #f5f5f5; }
+.dark *::-webkit-scrollbar-track { background: #0a0a0f; }
+*::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+.dark *::-webkit-scrollbar-thumb { background: #2a2a40; border-radius: 3px; }
+.dark.mono *::-webkit-scrollbar-thumb { background: linear-gradient(180deg,#3d3e43,#212226); border-radius: 3px; }
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  overflow-x: hidden;
+}
+
+::selection { background: rgba(139,92,246,0.3); color: #fff; }
+.dark ::selection { background: rgba(0,240,255,0.3); color: #fff; }
+.dark.mono ::selection { background: rgba(255,255,255,0.22); color: #fff; }
+
+/* ── Native <select> dropdowns ───────────────────────────────────────────────
+   Electron on Windows (and some browsers) paint the native <option> popup with
+   the OS *light* palette, so in dark mode the list came out white-on-white and
+   the labels were invisible (see «Конфиденциальность» settings). Switching
+   `color-scheme` re-themes the whole native control — including its popup — to a
+   dark palette, and the explicit option colours are a belt-and-suspenders
+   fallback for engines that ignore `color-scheme` on <select>. */
+.dark select { color-scheme: dark; }
+.dark select option,
+.dark select optgroup {
+  background-color: #14141c;
+  color: #e8eaf0;
+}
+
+/* ── Connect 3-panel layout CSS helpers ─────────────────────────────────── */
+.cn-rail    { background: var(--cn-rail); border-right: 1px solid var(--cn-border); }
+.cn-sidebar { background: var(--cn-sidebar); border-right: 1px solid var(--cn-border); }
+.cn-main    { background: var(--cn-main); }
+
+.cn-nav-btn {
+  position: relative;
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none;
+  background: transparent;
+  color: var(--cn-muted);
+  transition: border-radius 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.cn-nav-btn:hover {
+  border-radius: 12px;
+  background: var(--cn-accent-dim);
+  color: var(--cn-accent-text);
+}
+.cn-nav-btn.active {
+  border-radius: 12px;
+  background: var(--cn-accent-dim);
+  color: var(--cn-accent-text);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--cn-accent) 35%, transparent);
+}
+/* Left pill indicator */
+.cn-nav-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -12px; top: 50%; /* FIX-B2: -16px обрезался overflow-hidden рельсы */
+  transform: translateY(-50%);
+  width: 4px; height: 32px;
+  background: var(--cn-pill);
+  border-radius: 0 3px 3px 0;
+}
+
+.cn-channel-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: calc(100% - 12px); margin: 1px 6px;
+  padding: 5px 8px 5px 10px;
+  border-radius: 6px; border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--cn-text) 62%, transparent);
+  font-size: 14px; font-weight: 400;
+  text-align: left; cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-left-color 0.15s;
+  border-left: 2px solid transparent;
+}
+.cn-channel-btn:hover {
+  background: var(--cn-hover);
+  color: var(--cn-text);
+}
+.cn-channel-btn.active {
+  background: var(--cn-accent-dim);
+  color: var(--cn-accent-text);
+  border-left-color: var(--cn-accent);
+  font-weight: 600;
+}
+
+.cn-section-label {
+  padding: 4px 8px 2px 16px;
+  font-size: 11px; font-weight: 700;
+  color: var(--cn-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes tz-glow-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card backdrop-blur-xl border border-card-border rounded-2xl shadow-sm dark:shadow-none;
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-500
+      hover:bg-neutral-50 dark:hover:bg-white/10
+      hover:border-accent/40
+      hover:shadow-md dark:hover:shadow-[0_0_30px_rgba(0,240,255,0.15)];
+  }
+
+  .glow-text {
+    text-shadow: 0 0 20px rgba(139,92,246,0.5), 0 0 40px rgba(139,92,246,0.3);
+  }
+  .dark .glow-text {
+    text-shadow: 0 0 20px rgba(0,240,255,0.5), 0 0 40px rgba(0,240,255,0.3);
+  }
+  /* Monochrome is a flat, strict design — no coloured glow. */
+  .dark.mono .glow-text {
+    text-shadow: none;
+  }
+
+  .glow-border {
+    box-shadow: 0 0 15px rgba(139,92,246,0.2), inset 0 0 15px rgba(139,92,246,0.05);
+  }
+  .dark .glow-border {
+    box-shadow: 0 0 15px rgba(0,240,255,0.2), inset 0 0 15px rgba(0,240,255,0.05);
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-cyan-500 dark:to-cyan-400
+    text-white dark:text-dark-900 font-semibold rounded-xl
+    transition-all duration-300 hover:shadow-lg hover:shadow-violet-500/30 dark:hover:shadow-[0_0_25px_rgba(0,240,255,0.5)] hover:scale-105 active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 border border-accent/30 text-accent rounded-xl
+    transition-all duration-300 hover:bg-accent/10 hover:border-accent/60;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-red-50 dark:bg-red-600/20 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 rounded-lg
+    transition-all duration-300 hover:bg-red-100 dark:hover:bg-red-600/40;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-neutral-50 dark:bg-dark-800 border border-neutral-200 dark:border-white/10 rounded-xl
+    text-neutral-900 dark:text-white
+    placeholder-neutral-400 dark:placeholder-gray-500
+    focus:border-violet-400 dark:focus:border-cyan-400/50 focus:outline-none focus:ring-2 focus:ring-violet-400/20 dark:focus:ring-cyan-400/30
+    transition-all duration-300;
+  }
+
+  .section-title {
+    @apply text-3xl md:text-4xl font-display font-bold
+    bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-cyan-400 dark:to-fantasy-purple bg-clip-text text-transparent;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  /* Custom PNG icons: black fill on light theme, original on dark theme.
+     Apply to <img> replacing inline SVG icons. Inherits current size classes (w-x h-x). */
+  .cn-icon {
+    display: inline-block;
+    object-fit: contain;
+    /* Light theme: full black fill */
+    filter: brightness(0);
+    opacity: 1;
+  }
+  .dark .cn-icon {
+    /* Dark theme: white monochrome fill */
+    filter: brightness(0) invert(1);
+  }
+}
+
+/* ── Mobile-specific ─────────────────────────────────────────────────── */
+@media (max-width: 767.98px) /* FIX-B7: не пересекается с Tailwind md: (min-width: 768px) */ {
+  /* Prevent body scroll when bottom sheets / modals are open */
+  .overflow-y-auto,
+  .overflow-y-scroll {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Replace hover effects with active on touch */
+  .hover\:scale-105:active { transform: scale(1.02); }
+
+  /* Safe area awareness */
+  body {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* MOBILE-UI: без серой вспышки при тапах — активные состояния задаём сами */
+  * { -webkit-tap-highlight-color: transparent; }
+
+  /* MOBILE-UI: поля ввода не мельче 16px — мобильные браузеры не приближают
+     страницу при фокусе (авто-zoom срабатывает на шрифте < 16px) */
+  .input-field,
+  textarea.input-field,
+  input.input-field { font-size: 16px; }
+
+  /* MOBILE-UI: тулбар действий с сообщением раскрывается долгим нажатием
+     (класс tz-msg-touch вешает обработчик в MessageArea) — hover на таче нет */
+  .tz-msg-row.tz-msg-touch { background: var(--cn-accent-dim, rgba(127,127,127,0.08)); border-radius: 0.75rem; }
+  .tz-msg-row.tz-msg-touch .tz-msg-toolbar { opacity: 1; transform: none; pointer-events: auto; }
+
+  /* MOBILE-UI: у тулбара сообщений увеличенные тач-таргеты */
+  .tz-msg-toolbar button { min-width: 36px; min-height: 36px; }
+
+  /* MOBILE-FIX: каркас мессенджера — каскад высот от старых WebView к новым:
+     100vh (везде) → 100dvh (Chromium 108+) → --tz-app-h (JS, живёт при клавиатуре). */
+  .cn-main {
+    height: 100vh;
+    height: 100dvh;
+    height: var(--tz-app-h, 100dvh);
+  }
+
+  /* MOBILE-FIX: btn-primary/secondary — блочные (@apply px-6 py-3): при
+     увеличенных тач-таргетах (min-height) текст прижимался к верху и кнопки
+     выглядели «сломанными». На таче центрируем содержимое и глушим hover-скейл. */
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-primary:hover,
+  .btn-secondary:hover { transform: none; }
+}
+
+/* ── ANDROID-LOCK: Android-оболочка Connect (класс ставится до первой отрисовки) ── */
+/* Оболочка живёт строго в /connect: элементы, ведущие в сайтовые разделы
+   (лендинг, /settings, /user/…), помечены data-shell-hide и скрываются. */
+.tz-android [data-shell-hide="true"] { display: none !important; }
+
+/* MOBILE-UI: удобный отступ под системную полосу жестов */
+.tz-safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+@keyframes particle-float {
+  0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  50% { transform: translateY(-100px) translateX(30px); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
+}
+
+/* ── Cosmic / space decor (used by the /about page) ─────────────────────── */
+@keyframes tz-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.7); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+@keyframes tz-nebula-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(4%, -3%, 0) scale(1.08); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes tz-orbit-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes tz-orbit-spin-rev {
+  from { transform: rotate(360deg); }
+  to   { transform: rotate(0deg); }
+}
+@keyframes tz-float-y {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-14px); }
+}
+/* A shooting star streaks diagonally, then rests invisibly until the next run. */
+@keyframes tz-shoot {
+  0%       { transform: translate3d(0, 0, 0) rotate(18deg); opacity: 0; }
+  4%       { opacity: 1; }
+  18%      { opacity: 1; }
+  30%, 100%{ transform: translate3d(-460px, 150px, 0) rotate(18deg); opacity: 0; }
+}
+
+.tz-twinkle       { animation: tz-twinkle var(--tz-dur, 4s) ease-in-out infinite; }
+.tz-nebula-drift  { animation: tz-nebula-drift 22s ease-in-out infinite; }
+.tz-orbit-spin    { animation: tz-orbit-spin 60s linear infinite; transform-origin: center; }
+.tz-orbit-spin-rev{ animation: tz-orbit-spin-rev 90s linear infinite; transform-origin: center; }
+.tz-float-y       { animation: tz-float-y 7s ease-in-out infinite; }
+.tz-shoot         { animation: tz-shoot var(--tz-dur, 7s) ease-in var(--tz-delay, 0s) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tz-twinkle, .tz-nebula-drift, .tz-orbit-spin, .tz-orbit-spin-rev,
+  .tz-float-y, .tz-shoot {
+    animation: none !important;
+  }
+}
+
+/* ── Workspace canvas (Рабочая среда) — monochrome dot grid ─────────────── */
+.tzw-grid {
+  background-color: #f2f2f3;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: -1px -1px;
+}
+.dark .tzw-grid {
+  background-color: #0a0a0a;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+}
+.dark.mono .tzw-grid {
+  background-color: #070708;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Monochrome (premium) — "Cinematic Industrial" material overrides.
+   These sit at the end of the file so they win over earlier component styles.
+   The whole app carries `.mono` on <html>, so the material language is applied
+   everywhere; /connect additionally has its ambient JS motion gated off in
+   React (DayNightBackground returns null, ConnectWelcome static, framer-motion
+   reduced). The goal is a re-imagined design — matte panels, brushed metal,
+   tempered glass, dusty layers, erosion & wear — not a grayscale filter.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* 1) Structural panels — dark matte + brushed metal, lit from above. ─────── */
+.mono .cn-rail {
+  background:
+    var(--mono-brush),
+    linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 26%),
+    linear-gradient(180deg, #0b0b0d 0%, #050506 100%) !important;
+  background-size: 240px 240px, 100% 100%, 100% 100%;
+  background-blend-mode: soft-light, normal, normal;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), inset -1px 0 0 rgba(0,0,0,0.65);
+}
+.mono .cn-sidebar {
+  background:
+    var(--mono-grain),
+    linear-gradient(180deg, #121215 0%, #0d0d0f 100%) !important;
+  background-size: 140px 140px, 100% 100%;
+  background-blend-mode: overlay, normal;
+  border-right: 1px solid rgba(255,255,255,0.05);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+/* The chat surface: matte charcoal with a cold key-light and edge vignette so
+   the area breathes cinematically now that the day/night scene is gone. */
+.mono .cn-main {
+  background:
+    var(--mono-grain),
+    radial-gradient(120% 80% at 50% -10%, rgba(200,206,216,0.06), transparent 55%),
+    radial-gradient(150% 120% at 50% 46%, transparent 54%, rgba(0,0,0,0.55) 100%),
+    linear-gradient(180deg, #0d0d10 0%, #090a0c 100%) !important;
+  background-size: 140px 140px, 100% 100%, 100% 100%, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal;
+}
+
+/* 2) Tempered glass — cold frosted, hairline edge, top sheen, dusty depth. ── */
+.mono .glass-card,
+.mono .glass-card-hover {
+  background: linear-gradient(180deg, rgba(32,33,37,0.72) 0%, rgba(17,18,21,0.74) 100%) !important;
+  backdrop-filter: blur(14px) saturate(0.55) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(0.55) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.09),
+    inset 0 -1px 0 rgba(0,0,0,0.45),
+    0 18px 48px rgba(0,0,0,0.55) !important;
+}
+.mono .glass-card-hover:hover {
+  border-color: rgba(255,255,255,0.16) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 -1px 0 rgba(0,0,0,0.45),
+    0 22px 60px rgba(0,0,0,0.6) !important;
+}
+/* Coloured glows have no place in the monochrome material language. */
+.mono .glow-border { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06) !important; }
+
+/* 3) Smoky chrome controls — brushed steel with a bright top edge. ───────── */
+.mono .btn-primary {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0) 42%),
+    linear-gradient(180deg, #3b3c41 0%, #202024 55%, #141416 100%) !important;
+  color: #f5f6f8 !important;
+  border: 1px solid rgba(255,255,255,0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 6px 18px rgba(0,0,0,0.5) !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.45);
+}
+.mono .btn-primary:hover {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0) 44%),
+    linear-gradient(180deg, #47484e 0%, #26262b 55%, #17171a 100%) !important;
+}
+.mono .btn-secondary {
+  border-color: rgba(255,255,255,0.18) !important;
+  color: #e9eaec !important;
+}
+.mono .btn-secondary:hover { background: rgba(255,255,255,0.06) !important; }
+
+/* 4) Inset steel input fields with a cold-white focus ring. ─────────────── */
+.mono .input-field {
+  background: linear-gradient(180deg, #0c0c0f, #101013) !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.6) !important;
+}
+.mono .input-field:focus {
+  border-color: rgba(232,234,240,0.45) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.6), 0 0 0 3px rgba(210,213,219,0.13) !important;
+}
+
+/* 5) Headings — brushed cold-white → ash. No coloured text glow. ────────── */
+.mono .section-title {
+  /* Use background-image (not the `background` shorthand) so it doesn't reset
+     background-clip back to border-box and paint a solid block. */
+  background-image: linear-gradient(90deg, #ffffff 0%, #c9cace 45%, #85868c 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.mono .glow-text { text-shadow: 0 1px 12px rgba(255,255,255,0.12) !important; }
+
+/* 6) Reduced motion — remove ambient/decorative loops; keep functional feedback.
+   Subtle CSS transitions (hover, focus) are intentionally kept so the metal &
+   glass feel tactile and premium. The loading spinner (animate-spin) stays. */
+.mono .animate-pulse,
+.mono .animate-ping,
+.mono .animate-bounce,
+.mono .animate-fade-in,
+.mono .tz-twinkle,
+.mono .tz-nebula-drift,
+.mono .tz-orbit-spin,
+.mono .tz-orbit-spin-rev,
+.mono .tz-float-y,
+.mono .tz-shoot {
+  animation: none !important;
+}
+/* No bouncy scaling — industrial UI stays composed under the pointer. */
+.mono .hover\:scale-105:hover,
+.mono .hover\:scale-\[1\.02\]:hover,
+.mono .active\:scale-95:active {
+  transform: none !important;
+}
+
+/* 7) Premium welcome chips — brushed chrome. The /connect welcome background is
+   no longer a brushed-metal texture: it is now an open charcoal void with a
+   drifting line-art space scene (see MonoSpaceDrift in ConnectWelcome.tsx). */
+.mono .mono-chip {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0) 45%),
+    linear-gradient(135deg, #3f4045 0%, #222327 55%, #141517 100%) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), 0 10px 30px rgba(0,0,0,0.55) !important;
+  color: #f5f6f8 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   TZ.Connect — ОБНОВЛЕНИЕ: фиксы Monochrome · тема Monochrome Lite · UX чата
+   Добавьте содержимое этого файла В КОНЕЦ apps/web/src/app/globals.css.
+   Порядок важен: блок должен идти после существующих правил, чтобы побеждать.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── FIX-1 · Скроллбар в mono: трек оставался цвета Cyber (#0a0a0f) ────── */
+.dark.mono *::-webkit-scrollbar-track { background: #070708; }
+
+/* ── FIX-2 · У активной кнопки рейла оставалось цветное свечение —
+   в Monochrome его быть не должно (философия «no coloured glow») ───────── */
+.mono .cn-nav-btn.active {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 0 0 1px rgba(255,255,255,0.07);
+}
+
+/* ── FIX-3 · `animation: none` замораживал функциональные состояния.
+   Скелетоны загрузки и live-индикаторы снова «дышат», но сдержанно.
+   Декоративные циклы (tz-twinkle, tz-orbit-* и т.д.) остаются
+   выключенными базовым блоком mono. ───────────────────────────────────── */
+@keyframes tz-func-pulse { 0%, 100% { opacity: .55; } 50% { opacity: .95; } }
+.mono .animate-pulse { animation: tz-func-pulse 2s ease-in-out infinite !important; }
+
+/* ── FIX-4 · Производительность: background-attachment: fixed форсирует
+   repaint всего вьюпорта на каждый кадр скролла и игнорируется iOS Safari.
+   Кинематографический задник переезжает на фиксированный псевдослой.
+   Старое правило `.dark.mono body { ... }` можно удалить — этот блок его
+   перекрывает. ──────────────────────────────────────────────────────────── */
+.dark.mono body { background: #060607 !important; }
+.dark.mono body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    var(--mono-grain),
+    radial-gradient(120% 82% at 50% -14%, rgba(200,206,216,0.10) 0%, transparent 58%),
+    radial-gradient(150% 125% at 50% 44%, transparent 50%, rgba(0,0,0,0.62) 100%),
+    linear-gradient(180deg, #050506 0%, #0a0a0c 46%, #0e0f12 100%);
+  background-size: 140px 140px, 100% 100%, 100% 100%, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal;
+}
+
+/* ── FIX-5 · Контраст приглушённого текста (WCAG AA на фоне #0b0b0d) ───── */
+.dark.mono { --cn-muted: #8f9199; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Monochrome Lite — строгий минимализм: ТОЛЬКО чёрный текст на белом фоне.
+   Никаких текстур, градиентов и виньеток; единственное допустимое отклонение —
+   немногочисленные серые элементы (границы, вторичный текст, hover). На /connect
+   фон убран полностью — панели просто белые с тонкими серыми разделителями.
+   Строится на light-базе (`.light.mono-lite`), поэтому light-утилиты
+   Tailwind продолжают работать.
+   ════════════════════════════════════════════════════════════════════════ */
+.light.mono-lite {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card-bg: #ffffff;
+  --card-border: rgba(0,0,0,0.12);
+  --muted: #5f6167;          /* серый — вспомогательный текст */
+  --muted-bg: rgba(0,0,0,0.04);
+  --tag-bg: rgba(0,0,0,0.06);
+  --tag-text: #000000;
+  --accent: 0 0 0;           /* чёрный */
+  --accent-hover: 0 0 0;
+
+  --cn-rail: #ffffff;
+  --cn-sidebar: #ffffff;
+  --cn-main: #ffffff;
+  --cn-border: rgba(0,0,0,0.10);
+  --cn-accent: #000000;
+  --cn-accent-dim: rgba(0,0,0,0.06);   /* светло-серая подсветка активного пункта */
+  --cn-accent-text: #000000;
+  --cn-pill: #000000;
+  --cn-text: #000000;
+  --cn-muted: #5f6167;       /* серый — вторичный текст */
+  --cn-hover: rgba(0,0,0,0.05);
+}
+
+/* Чистый белый фон без текстур, градиентов и оверлея */
+.light.mono-lite body { background: #ffffff !important; }
+.light.mono-lite body::before { content: none !important; display: none !important; background: none !important; }
+
+/* Жёсткий монохромный контур Mono Lite. Фильтр применяется к итоговому
+   изображению страницы, поэтому гасит любые обходные источники цвета:
+   inline-стили, изображения, видео, canvas, SVG, emoji и сторонние виджеты. */
+html.light.mono-lite body {
+  filter: grayscale(1) saturate(0) !important;
+}
+
+/* Структурные панели /connect — фон полностью убран (просто белый),
+   разделяются только тонкими серыми линиями */
+.mono-lite .cn-rail {
+  background: #ffffff !important;
+  border-right: 1px solid rgba(0,0,0,0.10);
+  box-shadow: none !important;
+}
+.mono-lite .cn-sidebar {
+  background: #ffffff !important;
+  border-right: 1px solid rgba(0,0,0,0.10);
+  box-shadow: none !important;
+}
+.mono-lite .cn-main {
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+/* Карточки — плоский белый с серой границей, без стекла и теней */
+.mono-lite .glass-card,
+.mono-lite .glass-card-hover {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(0,0,0,0.12) !important;
+  box-shadow: none !important;
+}
+.mono-lite .glass-card-hover:hover {
+  border-color: rgba(0,0,0,0.22) !important;
+  box-shadow: none !important;
+}
+.mono-lite .glow-border { box-shadow: inset 0 0 0 1px rgba(0,0,0,0.10) !important; }
+.mono-lite .glow-text { text-shadow: none !important; }
+
+/* Кнопки — белый/серый фон, чёрный текст, серая граница */
+.mono-lite .btn-primary {
+  background: #f2f2f2 !important;
+  color: #000000 !important;
+  border: 1px solid rgba(0,0,0,0.20) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+.mono-lite .btn-primary:hover { background: #e6e6e6 !important; }
+.mono-lite .btn-secondary { border-color: rgba(0,0,0,0.20) !important; color: #000000 !important; background: transparent !important; }
+.mono-lite .btn-secondary:hover { background: rgba(0,0,0,0.05) !important; }
+
+/* Поля ввода — белый фон, серая граница, чёрный текст */
+.mono-lite .input-field {
+  background: #ffffff !important;
+  border-color: rgba(0,0,0,0.18) !important;
+  color: #000000 !important;
+  box-shadow: none !important;
+}
+.mono-lite .input-field:focus {
+  border-color: rgba(0,0,0,0.55) !important;
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.08) !important;
+}
+
+/* Заголовки — сплошной чёрный (без градиента) */
+.mono-lite .section-title {
+  background: none !important;
+  background-image: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: #000000 !important;
+  color: #000000 !important;
+}
+
+/* Дисциплина движения — как в mono: без декоративных циклов и подпрыгиваний */
+.mono-lite .animate-ping,
+.mono-lite .animate-bounce,
+.mono-lite .animate-fade-in,
+.mono-lite .tz-twinkle,
+.mono-lite .tz-nebula-drift,
+.mono-lite .tz-orbit-spin,
+.mono-lite .tz-orbit-spin-rev,
+.mono-lite .tz-float-y,
+.mono-lite .tz-shoot { animation: none !important; }
+.mono-lite .animate-pulse { animation: tz-func-pulse 2s ease-in-out infinite !important; }
+.mono-lite .hover\:scale-105:hover,
+.mono-lite .hover\:scale-\[1\.02\]:hover,
+.mono-lite .active\:scale-95:active { transform: none !important; }
+
+/* Скроллбар и выделение — серый на белом */
+.light.mono-lite * { scrollbar-color: #cfcfcf #ffffff; }
+.light.mono-lite *::-webkit-scrollbar-track { background: #ffffff; }
+.light.mono-lite *::-webkit-scrollbar-thumb { background: #cfcfcf; border-radius: 3px; }
+.light.mono-lite ::selection { background: rgba(0,0,0,0.12); color: #000000; }
+
+/* Дот-сетка рабочей среды — серые точки на белом */
+.light.mono-lite .tzw-grid {
+  background-color: #ffffff;
+  background-image: radial-gradient(rgba(0,0,0,0.10) 1px, transparent 1px);
+}
+
+/* Чипы приветствия /connect — белый/серый, чёрный текст, без металла */
+.mono-lite .mono-chip {
+  background: #f2f2f2 !important;
+  border: 1px solid rgba(0,0,0,0.18) !important;
+  box-shadow: none !important;
+  color: #000000 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   UX чата: hover-тулбар сообщений, dropzone, индикатор «печатает…»
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Hover-тулбар. Обёртке строки сообщения нужен класс `tz-msg-row`. */
+.tz-msg-row { position: relative; }
+
+/* PERF-CHAT: нативная «виртуализация» длинной ленты сообщений.
+   `content-visibility: auto` разрешает браузеру пропускать раскладку и отрисовку
+   строк, находящихся за пределами вьюпорта, — при десятках тысяч сообщений это
+   убирает лаги и делает прокрутку плавной. `contain-intrinsic-size: auto <h>`
+   задаёт оценку высоты для ещё не отрисованных строк (и запоминает фактическую
+   после первого показа), поэтому скроллбар не «прыгает». Строки остаются в DOM,
+   так что переходы к сообщению, дозагрузка и автоскролл вниз работают как прежде.
+   Ничего не меняется визуально: свойство влияет только на off-screen строки.
+
+   ВАЖНО: `content-visibility: auto` включает paint-containment и «обрезает»
+   всё, что выступает за рамку строки. У сообщения над рамкой всплывает hover-
+   тулбар, вниз/вверх — пикеры реакций и меню. Поэтому:
+   • `overflow-clip-margin` даёт запас, в который целиком помещается hover-тулбар.
+     Запас именно 56px, и это не «на всякий случай»: в канале тулбар выступает над
+     строкой на 14px, а в личных сообщениях — на 34–36px (см. `.tz-dm-msg-row
+     .tz-msg-toolbar`), плюс тень. Прежних 24px хватало только потому, что
+     containment снимало наведение;
+   • при фокусе внутри строки (или явном классе `tz-cv-show`, когда открыто меню
+     или пикер) containment снимается — эти всплывашки в запас не влезают.
+
+   FIX-HOVER-JUMP: здесь БЫЛО ещё `:hover`, и это оказалось багом. Пока строка
+   пропущена, её высоту задаёт оценка `contain-intrinsic-size` (48px); наведение
+   снимало containment, высота становилась фактической, и всё, что ниже,
+   подпрыгивало. Замер на трёх строках: наведённая строка стояла на месте, а
+   следующая за ней съезжала на 35px — отсюда и «часть текста прыгает, часть
+   нет». Наведение мышью не должно менять раскладку вообще, поэтому правило
+   убрано, а тулбару хватает запаса обрезки. */
+.tz-msg-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+  overflow-clip-margin: 56px;
+}
+.tz-msg-row:focus-within,
+.tz-msg-row.tz-cv-show {
+  content-visibility: visible;
+}
+/* FIX-TOOLBAR-CENTER: тулбар стоял у правого края строки, а строка тянется на
+   всю ширину чата — от текста сообщения до него было полэкрана. Теперь он
+   по центру строки: до него одинаково близко из любой точки сообщения.
+   Сдвиг по X живёт в самом transform, поэтому анимация появления его учитывает. */
+.tz-msg-toolbar {
+  position: absolute; top: -14px; left: 50%; z-index: 20;
+  display: flex; align-items: center; gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--cn-sidebar);
+  border: 1px solid var(--cn-border);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  opacity: 0; transform: translate(-50%, 2px);
+  pointer-events: none;
+  transition: opacity .12s ease, transform .12s ease;
+}
+.tz-msg-row:hover .tz-msg-toolbar,
+.tz-msg-row:focus-within .tz-msg-toolbar,
+.tz-msg-toolbar:focus-within { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.tz-msg-toolbar button {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: 999px; border: none;
+  background: transparent; color: var(--cn-muted);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.tz-msg-toolbar button:hover { background: var(--cn-hover); color: var(--cn-text); }
+.tz-msg-toolbar button.danger:hover { color: #ef4444; background: rgba(239,68,68,0.10); }
+.tz-msg-toolbar .tz-toolbar-feedback {
+  padding: 0 8px; font-size: 12px; font-weight: 600; color: var(--cn-accent-text);
+  white-space: nowrap;
+}
+/* Материальные версии тулбара */
+.mono .tz-msg-toolbar {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 24px rgba(0,0,0,0.45);
+}
+.mono-lite .tz-msg-toolbar {
+  box-shadow: inset 0 1px 0 #ffffff, 0 8px 20px rgba(25,26,30,0.14);
+}
+
+/* Dropzone-оверлей перетаскивания файлов */
+.tz-dropzone {
+  position: absolute; inset: 8px; z-index: 40; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px dashed color-mix(in srgb, var(--cn-accent) 55%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cn-accent) 8%, transparent);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  color: var(--cn-accent-text);
+  font-weight: 600; font-size: 15px; letter-spacing: .02em;
+}
+
+/* Индикатор «печатает…» — функциональная анимация, живёт и в mono/mono-lite */
+@keyframes tz-typing-dot {
+  0%, 60%, 100% { opacity: .25; transform: translateY(0); }
+  30%           { opacity: 1;   transform: translateY(-2px); }
+}
+.tz-typing {
+  display: flex; align-items: center; gap: 6px;
+  min-height: 20px; padding: 0 16px 4px;
+  font-size: 12px; color: var(--cn-muted);
+}
+.tz-typing-dots { display: inline-flex; gap: 3px; }
+.tz-typing-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: currentColor;
+  animation: tz-typing-dot 1.2s ease-in-out infinite;
+}
+.tz-typing-dot:nth-child(2) { animation-delay: .15s; }
+.tz-typing-dot:nth-child(3) { animation-delay: .3s; }
+/* Явно исключаем из глушилки анимаций mono/mono-lite */
+.mono .tz-typing-dot, .mono-lite .tz-typing-dot {
+  animation: tz-typing-dot 1.2s ease-in-out infinite !important;
+}
+
+/* ══════════════════ FIX-BATCH (июль 2026) ══════════════════
+   Исправления заметных (B1–B6) и средних (B7–B12) багов дизайна.
+   Шкала z-index после нормализации (FIX-B10):
+     40 — плавающие элементы страницы    50 — навбар / дропдауны
+     60 — модалки                         70 — вложенные модалки / оверлеи
+     80 — полноэкранная демонстрация      85 — мини-профиль
+     90 — лайтбокс / сплэш                95 — системные индикаторы
+   ════════════════════════════════════════════════════════════ */
+
+/* FIX-B1/B18: высота навбара — одна переменная вместо магических 64px */
+:root {
+  --tz-navbar-h: 64px;
+}
+
+/* FIX-B6: класс tz-desktop ставится анти-flash-скриптом в <head> (layout.tsx)
+   до первой отрисовки — веб-навигация не мигает в Electron-оболочке. */
+html.tz-desktop .tz-web-only { display: none !important; }
+html.tz-desktop .tz-navbar-inner { max-width: none; }
+html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto; }
+
+/* FIX-B11: резервируем место под полосу прокрутки — контент не сдвигается
+   на 6px при её появлении/исчезновении (только desktop). */
+@media (min-width: 768px) {
+  html { scrollbar-gutter: stable; }
+}
+
+/* FIX-B12: видимый фокус для клавиатурной навигации */
+.cn-nav-btn:focus-visible,
+.cn-channel-btn:focus-visible,
+.tz-msg-toolbar button:focus-visible {
+  outline: 2px solid var(--cn-accent);
+  outline-offset: 2px;
+}
+
+/* TrioZ screen-share launch effect. The stage itself stays flat and rectangular;
+   only this short, non-blocking overlay animates when a stream is selected. */
+.tz-share-launch-fx { position:absolute; inset:0; z-index:20; overflow:hidden; display:grid; place-items:center; pointer-events:none; background:rgba(10,12,14,.78); }
+.tz-share-launch-card { position:relative; z-index:4; min-width:230px; padding:16px 18px; border:1px solid rgba(255,255,255,.12); border-radius:12px; background:#171a1d; color:#f5f7f8; display:grid; justify-items:center; box-shadow:0 16px 45px rgba(0,0,0,.42); animation:tz-share-card-in 1.55s ease both; }
+.tz-share-launch-card strong { margin-top:9px; font-size:13px; }
+.tz-share-launch-card small { margin-top:4px; color:rgba(255,255,255,.42); font-size:9px; }
+.tz-share-launch-icon { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; color:#d6c9f6; background:rgba(139,92,246,.18); border:1px solid rgba(167,139,250,.35); }
+.tz-share-ring { position:absolute; left:50%; top:50%; width:70px; height:70px; margin:-35px 0 0 -35px; border:1px solid rgba(167,139,250,.75); border-radius:50%; opacity:0; animation:tz-share-ring 1.45s ease-out both; }
+.tz-share-ring-2 { animation-delay:.12s; border-color:rgba(34,211,238,.65); }
+.tz-share-ring-3 { animation-delay:.24s; }
+.tz-share-scan { position:absolute; left:8%; right:8%; top:16%; height:2px; background:#55b8c8; box-shadow:0 0 18px rgba(85,184,200,.8); opacity:0; animation:tz-share-scan 1.45s .18s ease-in-out both; }
+@keyframes tz-share-ring { 0%{transform:scale(.25);opacity:0} 20%{opacity:.9} 100%{transform:scale(11);opacity:0} }
+@keyframes tz-share-scan { 0%{top:16%;opacity:0} 16%{opacity:1} 82%{top:84%;opacity:.8} 100%{top:84%;opacity:0} }
+@keyframes tz-share-card-in { 0%{transform:translateY(8px) scale(.94);opacity:0} 18%,72%{transform:none;opacity:1} 100%{transform:translateY(-5px) scale(.98);opacity:0} }
+@media (prefers-reduced-motion:reduce){ .tz-share-ring,.tz-share-scan,.tz-share-launch-card{animation:none}.tz-share-launch-fx{display:none} }
+
+/* DM messages share the same component language as Connect without allowing
+   the hover toolbar to cover message text. */
+.tz-dm-msg-row { min-height: 42px; }
+.tz-dm-msg-row .tz-msg-toolbar { top: -34px; }
+.tz-dm-own .tz-msg-toolbar { right: 6px; left: auto; }
+.tz-dm-peer .tz-msg-toolbar { left: 6px; right: auto; }
+@media (hover: none) {
+  .tz-dm-msg-row .tz-msg-toolbar { top: -36px; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Светлая — «Лист»: материальные правила.
+
+   Прежняя редакция («Бумажная студия») набирала глубину размытыми тенями:
+   каждая панель и карточка отбрасывала своё облако, и экран читался как
+   стопка наклеек. Здесь глубина строится иначе — одной волосяной кромкой на
+   стыке поверхностей и разной светлотой самих поверхностей. Тень осталась
+   ровно там, где элемент действительно поднят над листом: у карточки при
+   наведении и у модальных слоёв, которые рисуются своими правилами.
+
+   Палитра нейтральная, без синевы; акцент — фиолет продукта (в warm-варианте
+   охра, подхватывается через --lt-ink / --cn-accent автоматически).
+   Scoped `.light:not(.mono-lite)` — Monochrome Lite остаётся строгим ч/б.
+   Блок в конце файла, чтобы побеждать базовые правила компонентов.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* 0) Подложка: ровный нейтральный тон. Прежний верхний градиент убран — он
+   давал сероватую полосу под шапкой и ничего не сообщал. */
+.light:not(.mono-lite) body {
+  background: var(--background);
+}
+
+/* 1) Три поверхности разной светлоты, разделённые волосяной кромкой:
+   рейл темнее сайдбара, сайдбар темнее листа контента. Порядок светлот и
+   есть иерархия — подсказывать её тенями не нужно. */
+.light:not(.mono-lite) .cn-rail {
+  background: var(--cn-rail);
+  border-right: 1px solid rgb(var(--lt-ink) / 0.08);
+  box-shadow: none;
+}
+.light:not(.mono-lite) .cn-sidebar {
+  border-right: 1px solid rgb(var(--lt-ink) / 0.07);
+  box-shadow: none;
+}
+.light:not(.mono-lite) .cn-main {
+  background: var(--cn-main);
+}
+
+/* 2) Карточки: чёткая кромка вместо облака. Поднимается карточка только под
+   курсором — тогда тень означает «это можно нажать», а не украшение. */
+.light:not(.mono-lite) .glass-card,
+.light:not(.mono-lite) .glass-card-hover {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  box-shadow: none;
+}
+.light:not(.mono-lite) .glass-card-hover:hover {
+  border-color: color-mix(in srgb, var(--cn-accent) 32%, transparent);
+  box-shadow: 0 6px 18px -10px rgb(var(--lt-ink) / 0.28);
+}
+
+/* 3) Активная кнопка рейла: заливка акцентом малой плотности и кромка. */
+.light:not(.mono-lite) .cn-nav-btn.active {
+  background: var(--cn-accent-dim);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cn-accent) 34%, transparent);
+}
+
+/* 4) Поля ввода: кромка чуть темнее фона, без внутренней тени. */
+.light:not(.mono-lite) .input-field {
+  border-color: rgb(var(--lt-ink) / 0.14);
+  box-shadow: none;
+}
+.light:not(.mono-lite) .input-field:focus {
+  border-color: color-mix(in srgb, var(--cn-accent) 55%, transparent);
+}
+
+/* 5) Скроллбар и выделение — нейтральный графит, а не сине-серый. */
+.light:not(.mono-lite) * { scrollbar-color: #c4c4c9 transparent; }
+.light:not(.mono-lite) *::-webkit-scrollbar-track { background: transparent; }
+.light:not(.mono-lite) *::-webkit-scrollbar-thumb { background: #c4c4c9; border-radius: 3px; }
+.light:not(.mono-lite) *::-webkit-scrollbar-thumb:hover { background: #a9a9b0; }
+.light:not(.mono-lite) ::selection {
+  background: color-mix(in srgb, var(--cn-accent) 18%, transparent);
+  color: #17171a;
+}
+
+/* 6) Дот-сетка рабочей среды. */
+.light:not(.mono-lite) .tzw-grid {
+  background-color: #fafafa;
+  background-image: radial-gradient(rgb(var(--lt-ink) / 0.10) 1px, transparent 1px);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Типографика чата
+   ════════════════════════════════════════════════════════════════════════
+
+   Имя автора сливалось с текстом сообщения: и то и другое было `text-sm`,
+   разница только в весе шрифта — на таком размере её почти не видно. Теперь
+   имя крупнее и заметно плотнее по насыщенности, а у текста увеличен
+   интерлиньяж, чтобы абзацы читались.
+
+   Размеры вынесены в переменные, а не прописаны классами Tailwind, потому что
+   их правит пользователь в «Настройки → TZ.Connect → Кастомизация чата».
+   Переменная меняется на корне документа один раз — без перерисовки тысяч
+   мемоизированных строк сообщений (см. lib/chatAppearance.ts). */
+:root {
+  --tz-chat-author-size: 15px;
+  --tz-chat-author-weight: 600;
+  --tz-chat-body-size: 14px;
+  --tz-chat-body-leading: 1.55;
+  --tz-chat-row-pad: 2px;
+  --tz-chat-max-width: none;
+}
+
+/* Ширина ленты и плотность.
+
+   Ограничение ширины стоит на самой строке, а не на контейнере списка: строки
+   и так блочные, а контейнер участвует в прокрутке и виртуализации — трогать
+   его рискованнее.
+
+   Отступ добавляется через padding, а не margin: вертикальные margin у строк
+   уже расставлены классами Tailwind (mt-1 / mt-3 в зависимости от группировки),
+   и переопределять их из этого файла значило бы спорить со специфичностью. */
+.tz-msg-row {
+  max-width: var(--tz-chat-max-width);
+  padding-block: var(--tz-chat-row-pad);
+}
+
+/* Личные сообщения — «пузыри» со своей раскладкой, ограничение ширины у них
+   своё, поэтому общее правило к ним не применяем. */
+.tz-dm-msg-row {
+  max-width: none;
+}
+
+/* Аватары в ленте можно выключить ради компактности. Колонка убирается
+   целиком, текст занимает освободившееся место. */
+:root[data-tz-chat-avatars="off"] .tz-msg-avatar {
+  display: none;
+}
+
+.tz-chat-author {
+  font-size: var(--tz-chat-author-size);
+  font-weight: var(--tz-chat-author-weight);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.tz-chat-body {
+  font-size: var(--tz-chat-body-size);
+  line-height: var(--tz-chat-body-leading);
+}

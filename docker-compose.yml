@@ -1,0 +1,172 @@
+version: "3.9"
+
+# FIX-SEC-INFRA: изменения этого файла требуют действий на сервере — порядок
+# описан в docs/server-actions.md. Коротко: у секретов больше нет значений по
+# умолчанию (сборка не поднимется без переменных), порты базы и Redis больше не
+# смотрят наружу, а приватные загрузки живут в отдельном томе.
+
+services:
+  # ─── PostgreSQL ───────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trioz}
+      # Пароль обязателен: прежнее значение по умолчанию (trioz_secret) лежало
+      # в открытом репозитории, то есть паролем не было.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD не задан}
+      POSTGRES_DB: ${POSTGRES_DB:-trioz}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Только с самой машины: приложение ходит по внутренней сети Docker, а
+      # снаружи открытый 5432 нужен разве что тому, кто подбирает пароли.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trioz}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trioz-net
+
+  # ─── Redis ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Пароль необязателен, но если REDIS_PASSWORD задан — Redis его потребует.
+    # Тогда же пропишите REDIS_URL вида redis://default:пароль@redis:6379.
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - trioz-net
+
+  # ─── TURN Server (coturn) ─────────────────────────────────────────────
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    # Учётные данные передаются параметром запуска, а не лежат в конфигурации:
+    # turnserver.conf хранится в репозитории, и всё записанное в нём — публично.
+    command:
+      [
+        "-c",
+        "/etc/turnserver.conf",
+        "--user=${TURN_USERNAME:-trioz}:${TURN_CREDENTIAL:?TURN_CREDENTIAL не задан}",
+      ]
+
+  # ─── TrioZ App ────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${CI_REGISTRY_IMAGE:-trioz-app}:${CI_COMMIT_SHORT_SHA:-latest}
+    restart: unless-stopped
+    ports:
+      # Только с самой машины: наружу смотрит nginx, а опубликованный на всех
+      # интерфейсах порт 3000 означал бы, что приложение доступно напрямую —
+      # мимо всех лимитов и заголовков переднего края, и находится обычным
+      # сканом порта. Для отладки: ssh -L 3000:127.0.0.1:3000.
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trioz}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD не задан}@postgres:5432/${POSTGRES_DB:-trioz}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET не задан}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      # Отдельный ключ шифрования данных в базе. Без него код берёт
+      # NEXTAUTH_SECRET, и один утёкший ключ вскрывает сразу и подписи, и данные.
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?ENCRYPTION_SECRET не задан}
+      TURN_URL: ${TURN_URL:-turn:localhost:3478}
+      TURN_USERNAME: ${TURN_USERNAME:-trioz}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL:?TURN_CREDENTIAL не задан}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Публичные картинки: аватары, баннеры, иконки — раздаются как раньше.
+      - uploads_data:/app/apps/web/public/uploads
+      # Приватные вложения: переписка, документы, задачи, проекты. Отдельный том
+      # вне public/, содержимое отдаётся только после проверки входа.
+      - uploads_private:/app/apps/web/storage/uploads
+      - desktop_data:/app/apps/web/public/desktop
+    networks:
+      - trioz-net
+
+  # ─── Desktop installer publisher (one-shot) ───────────────────────────
+  # Copies freshly built installers (apps/desktop/release/*) straight into the
+  # `desktop_data` volume that `app` serves from — the piece that closes the
+  # gap between "built an installer" and "the /about button hands it out". It
+  # mounts the *same* named volume as `app`, so files land exactly where the
+  # download route (GET /api/download/desktop) and /desktop/ read from. The
+  # route is force-dynamic, so published files appear on the next request with
+  # no app restart.
+  #
+  # Guarded behind the `publish` profile so a normal `docker compose up` never
+  # starts it. Run it after building the installers:
+  #
+  #   npm run desktop:dist                                   # → apps/desktop/release
+  #   docker compose --profile publish run --rm desktop-publish
+  #
+  # (or `npm run desktop:publish:docker`, which wraps that command).
+  desktop-publish:
+    image: node:20-alpine
+    profiles:
+      - publish
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./apps/desktop/release:/release:ro
+      - desktop_data:/desktop-store
+    environment:
+      # Reuse scripts/publish-desktop.mjs, pointed at the mounts above.
+      DESKTOP_RELEASE_DIR: /release
+      DESKTOP_DOWNLOAD_DIR: /desktop-store
+      DESKTOP_PUBLISH_CLEAN: "1"
+    command: ["node", "/scripts/publish-desktop.mjs"]
+
+  # ─── Nginx Reverse Proxy (optional, for production) ────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/maintenance.html:/etc/nginx/html/__maintenance.html:ro
+      - nginx_certs:/etc/nginx/certs
+    depends_on:
+      - app
+    networks:
+      - trioz-net
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+  uploads_private:
+  desktop_data:
+  nginx_certs:
+
+networks:
+  trioz-net:
+    driver: bridge

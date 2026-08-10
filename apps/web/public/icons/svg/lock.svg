@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+     fill="none" stroke="currentColor" stroke-width="1.9"
+     stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="lock">
+  <title>lock — заменяет «🔒» (Приватный канал)</title>
+  <path d="M5 11.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2V19a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7.5z" />
+  <path d="M8 9.5V8a4 4 0 1 1 8 0v1.5" />
+  <path d="M12 14.5v2" />
+</svg>

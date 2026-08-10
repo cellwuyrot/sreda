@@ -1,0 +1,1852 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  city                   String?
+  id                     String                      @id @default(cuid())
+  email                  String                      @unique
+  username               String                      @unique
+  name                   String
+  password               String
+  avatar                 String?
+  role                   String                      @default("USER")
+  emailVerified          Boolean                     @default(false)
+  banned                 Boolean                     @default(false)
+  banReason              String?
+  bannedUntil            DateTime?
+  bio                    String?                     @db.VarChar(200)
+  socialLinks            String?                     @db.Text
+  customStatus           String?                     @db.VarChar(100)
+  statusEmoji            String?                     @db.VarChar(10)
+  statusType             String?                     @default("online") @db.VarChar(20)
+  activityEnabled        Boolean                     @default(false) // FIX-ACT: чекбокс «Показывать мою активность»
+  activityStatus         String?                     @db.VarChar(80) // FIX-ACT: «Слушает музыку в Spotify» (от десктопа)
+  activityUpdatedAt      DateTime? // FIX-ACT: свежесть активности (TTL на чтении)
+  privacyOnline          String                      @default("everyone")
+  privacyFriends         String                      @default("everyone")
+  privacyEmail           Boolean                     @default(false)
+  notifySound            Boolean                     @default(true)
+  notifyPush             Boolean                     @default(true)
+  /// Письма по обращениям через тот же почтовый сервис, что рассылает коды
+  /// входа. Клиенту — об ответе и смене состояния его заявки, администратору и
+  /// редактору — о новых заявках. По умолчанию включено: письмо приходит либо по
+  /// обращению, которое человек сам начал, либо по работе, которая ему поручена.
+  notifyEmail            Boolean                     @default(true)
+  mutedGroups            String?                     @db.Text
+  mutedChannels          String?                     @db.Text
+  messages               Message[]
+  channelMembers         ChannelMember[]
+  groupMembers           GroupMember[]
+  ownedGroups            Group[]                     @relation("GroupOwner")
+  groupBans              GroupBan[]                  @relation("GroupBanUser")
+  groupBansIssued        GroupBan[]                  @relation("GroupBanIssuer")
+  reportsFiled           GroupReport[]               @relation("GroupReportReporter")
+  reportsAgainst         GroupReport[]               @relation("GroupReportTarget")
+  reportsHandled         GroupReport[]               @relation("GroupReportHandler")
+  ignoring               UserIgnore[]                @relation("UserIgnoreOwner")
+  ignoredBy              UserIgnore[]                @relation("UserIgnoreTarget")
+  identities             UserIdentity[]
+  invitesCreated         Invite[]
+  aiChats                AiChat[]
+  friendsSent            Friendship[]                @relation("FriendshipSender")
+  friendsReceived        Friendship[]                @relation("FriendshipReceiver")
+  hostedGameRooms        GameRoom[]                  @relation("GameHost")
+  gamePlayers            GamePlayer[]
+  gameInvitesSent        GameInvite[]                @relation("GameInviteSender")
+  gameInvitesRecvd       GameInvite[]                @relation("GameInviteReceiver")
+  reactions              Reaction[]
+  badges                 UserBadge[]
+  sessions               UserSession[]
+  dmConversations1       DirectConversation[]        @relation("DMUser1")
+  dmConversations2       DirectConversation[]        @relation("DMUser2")
+  dmHandled              DirectConversation[]        @relation("DMHandler")
+  directMessages         DirectMessage[]
+  notifications          Notification[]
+  /// Уведомления, возникшие ИЗ-ЗА этого человека. Каскад: удалили аккаунт —
+  /// исчезли и уведомления о нём, а не остались текстом без хозяина.
+  notificationsCaused    Notification[]              @relation("NotificationActor")
+  onboardingApplications OnboardingApplication[]     @relation("OnboardingApplicant")
+  onboardingInvites      OnboardingInvite[]
+  vpnPeer                VpnPeer?
+  pushDevices            PushDevice[]
+  onboardingReviews      OnboardingApplication[]     @relation("OnboardingReviewer")
+  calendarSubscriptions  CalendarEventSubscription[] @relation("CalendarSubscriptions")
+  workspaceState         WorkspaceState?
+  /// REMIND: напоминания, поставленные на карточках рабочей среды.
+  cardReminders          CardReminder[]
+  /// NEWSPOST: посты ленты новостей, которые человек уже просмотрел.
+  postViews              PostView[]
+  // FIX-DM: персональные настройки ЛС (ЧС / голосовые / автоответ)
+  dmSettingsOwned        DmUserSetting[]             @relation("DmSettingOwner")
+  dmSettingsTargeted     DmUserSetting[]             @relation("DmSettingTarget")
+  groupLayout            GroupLayout?
+  channelMutes           ChannelMute[]
+  polls                  Poll[]                      @relation("UserPolls")
+  pollVotes              PollVote[]
+  tasksCreated           ChannelTask[]               @relation("TaskCreator")
+  tasksAssigned          ChannelTask[]               @relation("TaskAssignee")
+  tasksClosed            ChannelTask[]               @relation("TaskClosedBy")
+  taskComments           TaskComment[]
+  taskAttachments        TaskAttachment[]            @relation("UserTaskAttachments")
+  messageReads           MessageRead[]
+  scheduledMsgs          ScheduledMessage[]
+  qaThreads              QAThread[]
+  appeals                Appeal[]
+  appealMessages         AppealMessage[]
+  wikiArticles           WikiArticle[]               @relation("WikiAuthor")
+  qaAnswers              QAAnswer[]
+  qaVotes                QAVote[]
+  wikiRevisions          WikiRevision[]              @relation("WikiEditor")
+  calendarEvents         CalendarEvent[]             @relation("UserCalendarEvents")
+  workspaceFiles         WorkspaceFile[]             @relation("UserWorkspaceFiles")
+  avatarGlowEnabled      Boolean                     @default(false)
+  avatarGlowColors       String?
+  profileBanner          String?                     @db.Text
+  e2eePublicKey          String?                     @db.Text
+  isPremium              Boolean                     @default(false)
+  showOnline             Boolean                     @default(true)
+  tosAccepted            Boolean                     @default(false)
+  lastSeen               DateTime?
+  usernameChangedAt      DateTime?
+  partnerProjects        PartnerProject[]            @relation("UserPartnerProjects") // FIX-CABINET
+  projectMessages        PartnerProjectMessage[]     @relation("UserProjectMessages") // FIX-CABINET
+  premiumSubscriptions   PremiumSubscription[]       @relation("UserPremiumSubs") // PREMIUM-PAY
+  premiumSubsGranted     PremiumSubscription[]       @relation("PremiumSubGranter") // PREMIUM-PAY
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+
+  @@index([email])
+  @@index([username])
+}
+
+model VerificationCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  type      String   @default("register")
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email, code])
+}
+
+model Group {
+  id                     String                  @id @default(cuid())
+  name                   String
+  icon                   String?
+  description            String                  @default("")
+  rules                  String                  @default("") @db.Text
+  isMain                 Boolean                 @default(false)
+  sectionsEnabled        Boolean                 @default(false)
+  ownerId                String
+  owner                  User                    @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  channels               Channel[]
+  members                GroupMember[]
+  invites                Invite[]
+  roles                  GroupRole[]
+  bans                   GroupBan[]
+  reports                GroupReport[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  banner                 String?                 @db.Text
+  requireRules           Boolean                 @default(false)
+  /// NEW: пауза группы («скелетирование»): контент виден только OWNER/ADMIN
+  paused                 Boolean                 @default(false)
+  auditEntries           GroupAuditEntry[]
+  onboardingForm         OnboardingForm?
+  onboardingApplications OnboardingApplication[]
+  emojis                 GroupEmoji[]
+  censorWords            GroupCensorWord[]
+  censorHits             CensorHit[]
+}
+
+// A user banned from a specific group: removed from the member list and
+// blocked from re-joining through invites until the ban is lifted.
+model GroupBan {
+  id         String   @id @default(cuid())
+  groupId    String
+  userId     String
+  reason     String?  @db.VarChar(300)
+  bannedById String
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user       User     @relation("GroupBanUser", fields: [userId], references: [id], onDelete: Cascade)
+  bannedBy   User     @relation("GroupBanIssuer", fields: [bannedById], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+/// MODERATION: жалоба участника на сообщение или на человека.
+///
+/// Единственная мера, доступная обычному участнику помимо игнора: игнор
+/// прячет собеседника от него одного, жалоба зовёт модератора. Без неё
+/// «обычный участник может только игнорировать» означало бы, что позвать на
+/// помощь нельзя вообще.
+///
+/// `excerpt` — копия текста на момент жалобы. Она нужна именно потому, что
+/// нарушитель удаляет своё сообщение первым: без снимка модератор открыл бы
+/// пустую карточку и не понял, о чём речь.
+model GroupReport {
+  id          String    @id @default(cuid())
+  groupId     String
+  reporterId  String
+  targetId    String
+  /// Сообщение, если жаловались на него. Внешнего ключа на Message нет
+  /// намеренно: сообщение удалят, а жалоба должна пережить удаление.
+  messageId   String?
+  channelId   String?
+  excerpt     String?   @db.VarChar(300)
+  reason      String    @db.VarChar(300)
+  /// OPEN | RESOLVED | DISMISSED
+  status      String    @default("OPEN")
+  handledById String?
+  handledAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  group     Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  reporter  User  @relation("GroupReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  target    User  @relation("GroupReportTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  handledBy User? @relation("GroupReportHandler", fields: [handledById], references: [id], onDelete: SetNull)
+
+  /// Одна жалоба на одно сообщение от одного человека — иначе кнопка
+  /// превращается в способ завалить модератора одинаковыми карточками.
+  @@unique([groupId, reporterId, messageId])
+  @@index([groupId, status, createdAt])
+  @@index([targetId])
+}
+
+/// MODERATION: персональный игнор. Раньше список жил в localStorage вкладки —
+/// терялся при смене устройства и при очистке браузера. Теперь он привязан к
+/// учётной записи.
+model UserIgnore {
+  id        String   @id @default(cuid())
+  userId    String
+  ignoredId String
+  createdAt DateTime @default(now())
+
+  user    User @relation("UserIgnoreOwner", fields: [userId], references: [id], onDelete: Cascade)
+  ignored User @relation("UserIgnoreTarget", fields: [ignoredId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ignoredId])
+  @@index([ignoredId])
+}
+
+model GroupMember {
+  mutedUntil    DateTime?
+  muteReason    String?           @db.VarChar(300)
+  id            String            @id @default(cuid())
+  userId        String
+  groupId       String
+  role          String            @default("MEMBER")
+  rulesAccepted Boolean           @default(false)
+  sortOrder     Int               @default(0)
+  muted         Boolean           @default(false)
+  /// «Общественность»: накопленное время в голосовых каналах группы (секунды).
+  voiceSeconds  Int               @default(0)
+  /// «Профиль сервера»: имя, аватар и фон мини-профиля, свои для этой группы.
+  /// Пусто — берётся глобальный профиль пользователя.
+  displayName   String?           @db.VarChar(50)
+  avatar        String?           @db.Text
+  profileBanner String?           @db.Text
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group         Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  tags          GroupMemberRole[]
+  joinedAt      DateTime          @default(now())
+
+  @@unique([userId, groupId])
+  // Составной уникальный ключ начинается с userId, поэтому выборкам вида
+  // «все участники сообщества» он не помогает — а их много: список участников,
+  // упоминание @everyone, рассылки, подсчёты, удаление сообщества.
+  @@index([groupId])
+}
+
+model Invite {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  groupId   String
+  createdBy String
+  maxUses   Int       @default(0)
+  uses      Int       @default(0)
+  expiresAt DateTime?
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  creator   User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+}
+
+model Channel {
+  id               String                 @id @default(cuid())
+  name             String
+  type             String                 @default("TEXT")
+  icon             String?
+  groupId          String
+  isRestricted     Boolean                @default(false)
+  postAccess       String                 @default("ALL")
+  // FIX-NEWSACL: кто может ЧИТАТЬ канал — ALL (все участники), MOD
+  // (модераторы и выше) или ADMIN (владелец и администраторы). Дополняет
+  // postAccess, который отвечает за право публиковать.
+  readAccess       String                 @default("ALL")
+  // FIX-QAACL: кто может ЗАДАВАТЬ вопросы и кто может ОТВЕЧАТЬ в разделе
+  // «Вопросы-ответы». ALL | MOD | ADMIN | ROLES. ROLES — участники с тегами из
+  // allowedRoles соответствующего scope (ASK / ANSWER).
+  askAccess        String                 @default("ALL")
+  answerAccess     String                 @default("ALL")
+  hidden           Boolean                @default(false)
+  slowmode         Int                    @default(0)
+  serviceId        String?
+  parentId         String?
+  channelGroupType String?
+  sortOrder        Int                    @default(0)
+  parent           Channel?               @relation("ChannelTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children         Channel[]              @relation("ChannelTree")
+  group            Group                  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  members          ChannelMember[]
+  messages         Message[]
+  polls            Poll[]
+  tasks            ChannelTask[]
+  allowedRoles     ChannelRoleAccess[]
+  mutes            ChannelMute[]
+  scheduledMsgs    ScheduledMessage[]
+  qaThreads        QAThread[]
+  appeals          Appeal[]
+  wikiArticles     WikiArticle[]
+  wikiCollections  WikiCollection[] // FIX-WIKI: полки базы знаний
+  calendarEvents   CalendarEvent[]
+  workspaceFiles   WorkspaceFile[]
+  workspaceState   ChannelWorkspaceState? // GROUP-WORKSPACE: совместные холсты модуля CANVAS
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([groupId])
+  @@index([serviceId])
+  @@index([parentId])
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  userId    String
+  channelId String
+  role      String   @default("MEMBER")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+  lastRead  DateTime @default(now())
+
+  @@unique([userId, channelId])
+  // Счётчик участников канала считается для каждого канала при открытии
+  // сообщества; по одному userId-ключу это перебор таблицы.
+  @@index([channelId])
+}
+
+model Message {
+  id            String        @id @default(cuid())
+  content       String
+  userId        String
+  channelId     String
+  edited        Boolean       @default(false)
+  editedAt      DateTime?
+  deleted       Boolean       @default(false)
+  pinned        Boolean       @default(false)
+  pinnedBy      String?
+  pinnedAt      DateTime?
+  replyToId     String?
+  replyTo       Message?      @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies       Message[]     @relation("MessageReplies")
+  threadId      String?
+  threadParent  Message?      @relation("MessageThreads", fields: [threadId], references: [id], onDelete: SetNull)
+  threadReplies Message[]     @relation("MessageThreads")
+  threadCount   Int           @default(0)
+  attachments   String?
+  mentions      String?       @db.Text
+  reactions     Reaction[]
+  reads         MessageRead[]
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel       Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  createdAt     DateTime      @default(now())
+
+  /// NEWSPOST: поля ленты новостей.
+  ///
+  /// Пост — это то же самое сообщение. Отдельная таблица дала бы вторую копию
+  /// всего, что у сообщения уже есть и что посту нужно один в один: вложения,
+  /// реакции, закрепление, отметка о правке, ветка обсуждения (она же —
+  /// комментарии). Пришлось бы дублировать и код вокруг: загрузку файлов,
+  /// удаление автором, права модерации. Любая починка в одном месте не
+  /// доезжала бы во второе.
+  ///
+  /// Поэтому поля необязательные и осмысленны только в канале type=NEWS: в
+  /// обычной переписке они остаются пустыми и ни на что не влияют.
+
+  /// Заголовок поста. Пусто — карточка показывает один текст.
+  title          String?    @db.VarChar(200)
+  /// Обложка карточки — путь внутри хранилища (/uploads/...). Чужой адрес сюда
+  /// не попадает (см. sanitizePostCover): иначе лента стала бы способом
+  /// подгружать картинку с чужого сервера и отдавать ему адреса читателей.
+  cover          String?    @db.VarChar(400)
+  /// Просмотры. Число хранится рядом с постом, потому что считать COUNT(*) по
+  /// PostView на каждую карточку — это по подзапросу на строку ленты.
+  views          Int        @default(0)
+  /// Комментарии закрыты автором или модерацией.
+  commentsClosed Boolean    @default(false)
+  /// Черновик: виден только автору и никого не уведомляет.
+  draft          Boolean    @default(false)
+  /// Отложенная публикация: пока время не наступило, пост виден только автору.
+  publishAt      DateTime?
+  /// Когда разослали уведомление о публикации. Без этой отметки обход
+  /// отложенных постов слал бы уведомление о каждом из них каждые полминуты —
+  /// пост-то остаётся опубликованным.
+  announcedAt    DateTime?
+  postViews      PostView[]
+
+  @@index([channelId, createdAt])
+  @@index([replyToId])
+  @@index([threadId])
+  // Статистика за сутки считает сообщения без привязки к каналу — индекс по
+  // каналу с датой такой запрос не покрывает.
+  @@index([createdAt])
+  // Список закреплённых в канале: их единицы на десятки тысяч сообщений.
+  @@index([channelId, pinned])
+  // NEWSPOST: лента новостей — закреплённые первыми, дальше по убыванию даты.
+  @@index([channelId, pinned, createdAt])
+  // NEWSPOST: обход отложенных публикаций идёт раз в полминуты. Без индекса
+  // это перебор всей таблицы сообщений дважды в минуту.
+  @@index([publishAt, announcedAt])
+}
+
+/// NEWSPOST: кто уже видел пост.
+///
+/// Одного счётчика на посте мало: без этих строк просмотры накручивались бы
+/// обновлением страницы, и число под постом перестало бы что-либо значить.
+/// Уникальность пары решает и гонку двух вкладок — на уровне базы, а не
+/// проверкой «нет ли уже» перед вставкой, которая как раз в гонке и врёт.
+model PostView {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  userId    String
+  messageId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, messageId, emoji])
+  @@index([messageId])
+}
+
+model DirectConversation {
+  id            String          @id @default(cuid())
+  /// PERSONAL: порядок пары не значит ничего (id сортируются при создании).
+  /// BUSINESS: user1 — ВСЕГДА клиент, user2 — сторона администрации. Порядок
+  /// здесь несёт смысл: по нему список деловых разговоров понимает, кто из двух
+  /// человек заказчик, и не выводит клиенту его же имя вместо собеседника.
+  user1Id       String
+  user2Id       String
+  user1         User            @relation("DMUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2         User            @relation("DMUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages      DirectMessage[]
+  /// PERSONAL — обычная личная переписка, BUSINESS — разговор по обращению.
+  ///
+  /// Разделение нужно, чтобы деловой разговор не терялся среди переписки с
+  /// друзьями, а список «Сообщения» не разбавлялся заявками.
+  kind          String          @default("PERSONAL") @db.VarChar(16)
+  /// Обращение, из которого вырос разговор. Уникально: одно обращение — один
+  /// чат, сколько бы раз администратор ни отвечал.
+  appealId      String?         @unique
+  /// Кто из администрации ведёт этот разговор. null — заявку ещё не взяли.
+  ///
+  /// Это и есть связка: доступ к деловому чату даёт роль (любой администратор и
+  /// редактор видит очередь), а отвечает по заявке один человек, и остальные
+  /// должны видеть, кто именно, — иначе двое отвечают одному клиенту разное.
+  handlerId     String?
+  handler       User?           @relation("DMHandler", fields: [handlerId], references: [id], onDelete: SetNull)
+  /// BUSINESS: администрация закрыла клиенту отправку сообщений в этом разговоре.
+  ///
+  /// Нужно потому, что игнорировать клиента в деловом разговоре нельзя: чёрного
+  /// списка здесь нет и быть не может (сторона — администрация, а не человек), а
+  /// закрытая заявка отправку не запрещала. Запрет односторонний: администрация
+  /// отвечать по-прежнему может, иначе последнее слово осталось бы за клиентом.
+  locked        Boolean         @default(false)
+  lockedAt      DateTime?
+  lastMessageAt DateTime?
+  user1ReadAt   DateTime?
+  user2ReadAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  /// Парной уникальности здесь больше нет, и это исправление ошибки: с ключом
+  /// [user1Id, user2Id, kind] второе обращение того же клиента к тому же
+  /// администратору создать было НЕЛЬЗЯ — вставка падала на уникальности, а код
+  /// молча оставался без чата. Одно обращение — один чат, и это уже гарантирует
+  /// уникальный appealId. Для личной переписки уникальность пары сохранена
+  /// частичным индексом (WHERE kind = 'PERSONAL') в миграции: Prisma частичные
+  /// индексы описывать не умеет, поэтому в схеме он выглядит обычным.
+  @@index([user1Id, user2Id, kind])
+  @@index([kind, lastMessageAt])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@index([handlerId])
+}
+
+model DirectMessage {
+  id             String             @id @default(cuid())
+  content        String
+  userId         String
+  conversationId String
+  edited         Boolean            @default(false)
+  editedAt       DateTime?
+  pinned         Boolean            @default(false)
+  pinnedAt       DateTime?
+  pinnedById     String?
+  deleted        Boolean            @default(false)
+  attachments    String?
+  replyToId      String?
+  encrypted      Boolean            @default(false)
+  replyTo        DirectMessage?     @relation("DMReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        DirectMessage[]    @relation("DMReply")
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([conversationId, pinned])
+  @@index([replyToId])
+  // То же, что у Message: сводка за сутки по всей таблице.
+  @@index([createdAt])
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  name        String
+  description String      @db.Text
+  icon        String?
+  imageUrl    String?
+  rarity      String      @default("common")
+  active      Boolean     @default(true)
+  users       UserBadge[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  awardedBy String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  awardedAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent String?
+  ip        String?
+  token     String   @unique
+  active    Boolean  @default(true)
+  lastUsed  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Article {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String   @unique
+  content   String   @db.Text
+  category  String
+  tags      String   @default("")
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Service {
+  id          String  @id @default(cuid())
+  title       String
+  description String  @db.Text
+  icon        String?
+  order       Int     @default(0)
+  active      Boolean @default(true)
+
+  /// STAGES: свой набор этапов работ по этой услуге — [{ id, title }, …].
+  ///
+  /// null означает «набор не правили»: этапы берутся из каталога по названию
+  /// услуги (см. lib/orderStages.ts). Пустой массив равносилен null и
+  /// отбрасывается при чтении — услуга без единого этапа показала бы заказчику
+  /// карточку без прогресса.
+  ///
+  /// Идентификатор этапа хранится ВМЕСТЕ с названием, а не выводится из
+  /// порядка: по нему в проектах отмечены выполненные этапы. Переименование и
+  /// перестановка идентификатор сохраняют — и отметки заказчиков переживают
+  /// правку набора.
+  stages      Json?
+
+  projects    PartnerProject[]
+}
+
+// Custom roles (tags) for groups — no admin/mod powers, just labels
+model GroupRole {
+  id              String              @id @default(cuid())
+  name            String
+  color           String              @default("#808080")
+  priority        Int                 @default(0)
+  groupId         String
+  group           Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  members         GroupMemberRole[]
+  channels        ChannelRoleAccess[]
+  onboardingForms OnboardingForm[]
+  createdAt       DateTime            @default(now())
+
+  @@unique([groupId, name])
+  @@index([groupId])
+}
+
+// Many-to-many: which members have which tags
+model GroupMemberRole {
+  id       String      @id @default(cuid())
+  memberId String
+  roleId   String
+  member   GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  role     GroupRole   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, roleId])
+  @@index([roleId])
+}
+
+// Which roles can see a restricted channel.
+// FIX-QAACL: одна и та же таблица хранит теперь три независимых списка тегов —
+// scope различает, для чего роль допущена: VIEW (видеть раздел, прежнее
+// поведение), ASK (задавать вопросы), ANSWER (отвечать).
+model ChannelRoleAccess {
+  id        String    @id @default(cuid())
+  channelId String
+  roleId    String
+  scope     String    @default("VIEW")
+  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  role      GroupRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, roleId, scope])
+  @@index([channelId])
+}
+
+/// SERVER-MESH: реестр серверов проекта. Ровно одна запись с role = "MAIN" —
+/// сервер, где живёт это приложение; остальные — дочерние узлы (медиа, VPN,
+/// вычисления), которые сами отчитываются о себе по токену агента.
+///
+/// Токен в открытом виде НЕ хранится: в базе только SHA-256, а сам токен
+/// показывается администратору один раз при создании или перевыпуске.
+model ServerNode {
+  id   String @id @default(cuid())
+  name String @unique
+  /// MAIN | CHILD
+  role String @default("CHILD")
+  /// Назначение узла: APP | MEDIA | VPN | COMPUTE | STORAGE
+  kind String @default("APP")
+  /// Базовый адрес для служебных запросов, например https://vpn1.example.ru.
+  /// У VPN-узла смысла не имеет: связка работает «на вытягивание», мы никогда
+  /// не обращаемся к узлу по HTTP.
+  url    String @default("")
+  /// VPN-ENDPOINT: точка подключения WireGuard для клиентов — IP или домен и
+  /// UDP-порт, например «203.0.113.10:51820». У WireGuard нет URL: клиент
+  /// пишет в конфиг именно host:port, поэтому для VPN-узла это и есть
+  /// «адрес». Пусто — берём то, что узел сообщил о себе в отчёте.
+  endpointHost String @default("")
+  /// VPN-TRANSPORT: PLAIN | OBFUSCATED. Выбирает администратор в карточке узла.
+  /// OBFUSCATED означает, что на машине поднят обфусцированный вариант WireGuard
+  /// и клиентам нужно выдавать соответствующие параметры. Название протокола
+  /// намеренно не фигурирует ни в поле, ни в интерфейсе.
+  transport String @default("PLAIN")
+  /// Параметры обфускации, как их сообщил агент узла: JSON вида
+  /// {"Jc":4,"Jmin":40,...}. Не секрет, но и не для показа — они просто
+  /// подставляются в выдаваемый профиль. Пусто = узел их ещё не сообщил.
+  obfuscation String @default("") @db.Text
+  region      String @default("")
+  /// VPN-EXIT: пул внешних адресов узла через запятую, например
+  /// "1.2.3.4, 1.2.3.5". Один узел = один внешний IP на всех — это и есть
+  /// главный потолок масштабирования; пул его снимает. Пусто — узел выпускает
+  /// трафик своим основным адресом через MASQUERADE, как раньше.
+  publicIps String @default("")
+  /// STORAGE-PRIORITY: адрес объектного хранилища узла (S3-совместимый), вида
+  /// https://files1.example.ru:9000. Пусто — узел файлы не принимает и в выборе
+  /// места не участвует, даже если помечен как STORAGE. Это намеренно: узел без
+  /// настроенного хранилища ничем не лучше главного сервера, и молча гонять на
+  /// него файлы значило бы терять их.
+  storageEndpoint String @default("")
+  /// Имя корзины на узле.
+  storageBucket String @default("")
+  /// Регион для подписи запроса. Для собственного узла подходит любой, важно
+  /// лишь совпадение с настройкой самого хранилища.
+  storageRegion String @default("us-east-1")
+  /// Идентификатор ключа доступа. Сам по себе не секрет — секрет ниже.
+  storageKeyId String @default("")
+  /// Секретный ключ, зашифрованный ENCRYPTION_SECRET (см. lib/encryption).
+  /// В открытом виде не хранится и наружу не отдаётся никогда.
+  storageSecretEnc String @default("") @db.Text
+  /// SHA-256 токена агента в hex.
+  tokenHash String?
+  /// Последний отчёт узла (JSON: версия, нагрузка, число пиров).
+  lastReport String?   @db.Text
+  lastSeenAt DateTime?
+  enabled    Boolean   @default(true)
+  note       String    @default("") @db.VarChar(300)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  vpnPeers VpnPeer[]
+
+  @@index([role])
+  @@index([kind])
+}
+
+/// VPN-PANEL: единственная запись с настройками сервиса VPN (id = "default").
+///
+/// `enabled` — настоящий выключатель, а не косметика: при выключении узлам в
+/// ответе на отчёт уходит ПУСТОЙ список пиров, и через минуту все туннели
+/// реально отпадают. Кнопка, которая прячет интерфейс, но оставляет доступ
+/// работающим, хуже отсутствия кнопки.
+model VpnSettings {
+  id      String  @id @default("default")
+  enabled Boolean @default(false)
+  /// DNS, который получает клиент внутри туннеля.
+  dns String @default("1.1.1.1")
+  /// VPN-ROUTING: маршруты режима «весь трафик» — того, что человек выбирает
+  /// первым вариантом при включении.
+  allowedIps String @default("0.0.0.0/0, ::/0")
+  /// VPN-ROUTING: маршруты режима «только сервисы TZ» — второго варианта выбора.
+  /// Здесь перечисляются адреса самого проекта; по умолчанию только подсеть
+  /// туннеля. Смысл вариантов задаёт администратор, выбор между ними — человек.
+  serviceAllowedIps String @default("10.8.0.0/24")
+  /// Потолок пиров на один узел — выбор узла уважает вместимость.
+  maxPeersPerNode Int      @default(200)
+  updatedAt       DateTime @updatedAt
+}
+
+/// VPN-WG: пир WireGuard, привязанный к аккаунту. Один аккаунт — один пир
+/// (`userId @unique`), поэтому доступ нельзя размножить по устройствам.
+///
+/// ПРИВАТНОГО КЛЮЧА ЗДЕСЬ НЕТ И БЫТЬ НЕ МОЖЕТ. Пара ключей создаётся на
+/// устройстве владельца, приватная половина остаётся в защищённом хранилище ОС
+/// и не покидает машину; на сервер уходит только публичный ключ. Поэтому ни
+/// администратор, ни сама система физически не могут выдать чужой доступ —
+/// выдавать нечего.
+model VpnPeer {
+  id     String @id @default(cuid())
+  userId String @unique
+  nodeId String
+  /// Публичный ключ WireGuard (base64, 44 символа).
+  publicKey String @unique
+  /// Адрес внутри туннеля, например 10.8.0.7. Уникален В ПРЕДЕЛАХ УЗЛА (см.
+  /// `@@unique` ниже): подсеть у каждого узла своя и одинаковая, поэтому
+  /// 10.8.0.2 на двух узлах — это два разных туннеля.
+  address String
+  /// VPN-EXIT: закреплённый внешний адрес выхода. Закрепление важно: у банков и
+  /// сессий смена внешнего IP посреди работы означает разлогин, поэтому адрес
+  /// выдаётся один раз и держится за пиром. Пусто — общий MASQUERADE узла.
+  exitIp          String    @default("")
+  /// VPN-ROUTING: что идёт через туннель у этого человека — ALL либо SERVICES.
+  /// Выбирается при выдаче доступа; смена режима означает перевыпуск профиля,
+  /// потому что `AllowedIPs` живёт в конфиге на устройстве.
+  routing         String    @default("ALL")
+  enabled         Boolean   @default(true)
+  /// Последнее рукопожатие, как его увидел агент узла.
+  lastHandshakeAt DateTime?
+  /// Метка устройства для самого владельца — понять, что за пир.
+  label     String   @default("") @db.VarChar(80)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  node ServerNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  /// Адрес занят в пределах узла, а не всей системы. Глобальная уникальность
+  /// была прямой поломкой второго узла: адреса выдаются из подсети узла, и
+  /// первый же пир на новом узле получал отказ на записи, а не доступ.
+  @@unique([nodeId, address])
+  @@index([nodeId])
+}
+
+model EcosystemItem {
+  id          String  @id @default(cuid())
+  title       String
+  description String  @db.Text
+  imageUrl    String?
+  linkUrl     String?
+  section     String
+  order       Int     @default(0)
+  active      Boolean @default(true)
+}
+
+model WindowConfig {
+  id             String  @id @default(cuid())
+  windowKey      String  @unique
+  title          String
+  subtitle       String  @default("")
+  description    String  @default("")
+  href           String  @default("")
+  accentColor    String  @default("#ff4444")
+  backgroundUrl  String?
+  backgroundType String  @default("gradient")
+  gradientFrom   String  @default("#1a0000")
+  gradientTo     String  @default("#0a0a0f")
+  order          Int     @default(0)
+  active         Boolean @default(true)
+}
+
+model SiteConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String @db.Text
+}
+
+// PREMIUM-PAY: запись о подписке Premium, привязанной к платежу.
+// Создаётся администратором в админ-панели при связи с профилем клиента:
+// админ выбирает способ оплаты (СБП / эквайринг), сумму и ссылку/чек, а сервис
+// одновременно выдаёт пользователю Premium и сохраняет здесь метаданные платежа.
+// Несколько записей на пользователя = история подписок/платежей.
+model PremiumSubscription {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation("UserPremiumSubs", fields: [userId], references: [id], onDelete: Cascade)
+  plan          String    @default("month") // month | quarter | year | lifetime
+  paymentMethod String    @default("manual") // sbp | acquiring | manual
+  amount        Int       @default(0) // сумма платежа в минимальной валюте (рубли)
+  currency      String    @default("RUB")
+  reference     String?   @db.VarChar(200) // номер платежа / чек / комментарий
+  note          String?   @db.Text
+  status        String    @default("active") // active | canceled | expired
+  startedAt     DateTime  @default(now())
+  expiresAt     DateTime? // null = бессрочно
+  grantedById   String?
+  grantedBy     User?     @relation("PremiumSubGranter", fields: [grantedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AiChat {
+  id        String      @id @default(cuid())
+  userId    String
+  title     String      @default("Новый диалог")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([userId])
+}
+
+model Friendship {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  status     String   @default("PENDING")
+  sender     User     @relation("FriendshipSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   User     @relation("FriendshipReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId])
+}
+
+model GameRoom {
+  id         String       @id @default(cuid())
+  name       String
+  hostId     String
+  host       User         @relation("GameHost", fields: [hostId], references: [id], onDelete: Cascade)
+  status     String       @default("LOBBY")
+  gameType   String       @default("velderan")
+  maxPlayers Int          @default(6)
+  inviteCode String       @unique
+  gameState  String?      @db.Text
+  players    GamePlayer[]
+  invites    GameInvite[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model GamePlayer {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  faction   String?
+  color     String?
+  isReady   Boolean  @default(false)
+  turnOrder Int      @default(0)
+  room      GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@unique([roomId, userId])
+  @@unique([roomId, faction])
+}
+
+model GameInvite {
+  id        String   @id @default(cuid())
+  roomId    String
+  inviterId String
+  inviteeId String
+  status    String   @default("PENDING")
+  room      GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  inviter   User     @relation("GameInviteSender", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee   User     @relation("GameInviteReceiver", fields: [inviteeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([roomId, inviteeId])
+}
+
+model AiMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  role      String
+  content   String   @db.Text
+  chat      AiChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  username  String
+  action    String
+  target    String
+  targetId  String?
+  details   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+model Poll {
+  id        String       @id @default(cuid())
+  channelId String
+  userId    String
+  question  String
+  anonymous Boolean      @default(false)
+  multiple  Boolean      @default(false)
+  closed    Boolean      @default(false)
+  channel   Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User         @relation("UserPolls", fields: [userId], references: [id], onDelete: Cascade)
+  options   PollOption[]
+  createdAt DateTime     @default(now())
+
+  @@index([channelId])
+}
+
+model PollOption {
+  id     String     @id @default(cuid())
+  pollId String
+  text   String
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes  PollVote[]
+
+  @@index([pollId])
+}
+
+model PollVote {
+  id       String     @id @default(cuid())
+  optionId String
+  userId   String
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, userId])
+}
+
+model ChannelTask {
+  id          String              @id @default(cuid())
+  channelId   String
+  number      Int                 @default(0)
+  creatorId   String
+  assigneeId  String?
+  title       String
+  description String?
+  status      String              @default("open")
+  priority    String              @default("normal")
+  dueDate     DateTime?
+  closedAt    DateTime?
+  closedById  String?
+  tags        String              @default("") // comma-separated labels, e.g. "frontend,bug"
+  parentId    String? // set when this task is a subtask of another task
+  comments    TaskComment[]
+  checklist   TaskChecklistItem[]
+  attachments TaskAttachment[]
+  channel     Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  creator     User                @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  assignee    User?               @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  closedBy    User?               @relation("TaskClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  parent      ChannelTask?        @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks    ChannelTask[]       @relation("TaskSubtasks")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([channelId, number])
+  @@index([channelId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([parentId])
+}
+
+// Checklist items ("subtask" line items) that live inside a single task's card
+model TaskChecklistItem {
+  id        String      @id @default(cuid())
+  taskId    String
+  text      String
+  done      Boolean     @default(false)
+  order     Int         @default(0)
+  task      ChannelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([taskId])
+}
+
+// Files (documents/images) attached to a task. Images are re-encoded to WebP on
+// upload; documents are stored verbatim. Rows cascade away with their task.
+model TaskAttachment {
+  id         String      @id @default(cuid())
+  taskId     String
+  uploaderId String
+  name       String
+  url        String
+  mime       String
+  size       Int
+  task       ChannelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploader   User        @relation("UserTaskAttachments", fields: [uploaderId], references: [id], onDelete: Cascade)
+  createdAt  DateTime    @default(now())
+
+  @@index([taskId])
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  content   String   @db.Text
+  mentions  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task   ChannelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([authorId])
+}
+
+/// Уведомление получателю.
+///
+/// Кроме получателя запись знает ДВЕ вещи о себе, и обе появились из багов:
+///
+/// 1. `actorId` — из-за кого уведомление возникло. Раньше о человеке оставался
+///    только замороженный текст («andycoulbot: Сотрудничество»), поэтому после
+///    удаления аккаунта уведомление о нём продолжало висеть в колокольчике и
+///    вести в пустоту. Каскад по этому полю убирает такие записи вместе с
+///    человеком.
+/// 2. `entityType` + `entityId` — о чём уведомление. Раньше «прочитано»
+///    вычислялось сопоставлением ТЕКСТА ссылки (`link contains "section=business"`,
+///    `link contains "dm=<id>&"`), а у обращений ссылка ведёт в раздел, а не в
+///    заявку, — значит сопоставить было нечего, и прочитанное обращение
+///    оставалось непрочитанным уведомлением навсегда. Предмет заменяет эту
+///    догадку точным признаком.
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  link      String?
+  read      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Из-за кого уведомление. null — событие не про человека (системное).
+  actorId   String?
+  actor     User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  /// О чём уведомление: appeal | dm | channel и тому подобное.
+  entityType String? @db.VarChar(32)
+  entityId   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
+  /// Погасить или убрать всё по предмету — одним запросом.
+  @@index([userId, entityType, entityId])
+  @@index([actorId])
+  // Лента уведомлений: свои, по убыванию даты. Индекс [userId, read] сортировку
+  // не покрывает, и база каждый раз сортировала выборку целиком.
+  @@index([userId, createdAt])
+}
+
+/// PUSH: устройство, на которое можно доставить уведомление, пока приложение
+/// закрыто.
+///
+/// Зачем нужно вообще: уведомления показывались только пока приложение открыто —
+/// они приходили живым соединением, и закрытый мессенджер молчал. Доставку в
+/// закрытое приложение выполняет служба доставки сообщений телефона, а ей нужен
+/// адрес конкретного устройства — он и хранится здесь.
+///
+/// Токен уникален и ПЕРЕПРИВЯЗЫВАЕТСЯ: на одном телефоне может войти другой
+/// человек, и тогда устройство должно принадлежать ему, а прежний владелец
+/// перестать получать на него уведомления. Поэтому уникальность по токену, а не
+/// по паре «человек и токен».
+model PushDevice {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Адрес устройства в службе доставки. Не секрет, но и не публичное значение.
+  token     String   @unique
+  /// android — пока единственная оболочка с доставкой в закрытое приложение.
+  platform  String   @default("android") @db.VarChar(16)
+  createdAt DateTime @default(now())
+  /// Последнее подтверждение, что устройство живо: обновляется при каждом входе.
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model ChannelMute {
+  id        String  @id @default(cuid())
+  userId    String
+  channelId String
+  muted     Boolean @default(false)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@index([userId])
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  userId    String
+  messageId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([userId, messageId])
+  @@index([messageId])
+}
+
+model ScheduledMessage {
+  id          String   @id @default(cuid())
+  content     String
+  userId      String
+  channelId   String
+  scheduledAt DateTime
+  sent        Boolean  @default(false)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([scheduledAt, sent])
+  @@index([userId])
+}
+
+// Q&A section: questions, answers, upvotes
+model QAThread {
+  id               String     @id @default(cuid())
+  channelId        String
+  authorId         String
+  title            String
+  body             String     @db.Text
+  status           String     @default("OPEN") // OPEN | RESOLVED
+  tags             String     @default("")
+  acceptedAnswerId String?
+  channel          Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author           User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  answers          QAAnswer[]
+  votes            QAVote[]
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([channelId])
+  @@index([authorId])
+}
+
+model QAAnswer {
+  id        String   @id @default(cuid())
+  threadId  String
+  authorId  String
+  body      String   @db.Text
+  thread    QAThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  votes     QAVote[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([threadId])
+  @@index([authorId])
+}
+
+model QAVote {
+  id        String    @id @default(cuid())
+  userId    String
+  threadId  String?
+  answerId  String?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  thread    QAThread? @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  answer    QAAnswer? @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, threadId])
+  @@unique([userId, answerId])
+  @@index([threadId])
+  @@index([answerId])
+}
+
+model WikiArticle {
+  id           String   @id @default(cuid())
+  channelId    String
+  title        String
+  term         String?
+  slug         String
+  content      String   @default("") @db.Text
+  category     String   @default("")
+  restricted   Boolean  @default(false) // FIX-WIKI: статью видят только модератор и старше
+  collectionId String? // FIX-WIKI: полка (группа статей или словарь)
+  updatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  channel    Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  collection WikiCollection? @relation(fields: [collectionId], references: [id], onDelete: SetNull) // FIX-WIKI
+  updatedBy  User?           @relation("WikiAuthor", fields: [updatedById], references: [id], onDelete: SetNull)
+  revisions  WikiRevision[]
+
+  @@unique([channelId, slug])
+  @@index([channelId])
+  @@index([collectionId])
+}
+
+// FIX-WIKI: «полка» базы знаний — группа статей или отдельный словарь.
+// restricted = true — полку и все её статьи видят только модератор и старше.
+model WikiCollection {
+  id         String   @id @default(cuid())
+  channelId  String
+  name       String
+  kind       String   @default("GROUP") // GROUP | DICTIONARY
+  restricted Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  channel  Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  articles WikiArticle[]
+
+  @@index([channelId])
+}
+
+model WikiRevision {
+  id        String   @id @default(cuid())
+  articleId String
+  content   String   @db.Text
+  editorId  String?
+  createdAt DateTime @default(now())
+
+  article WikiArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  editor  User?       @relation("WikiEditor", fields: [editorId], references: [id], onDelete: SetNull)
+
+  @@index([articleId])
+}
+
+model CalendarEvent {
+  id            String                      @id @default(cuid())
+  channelId     String
+  authorId      String
+  title         String
+  description   String?                     @db.Text
+  location      String?
+  color         String                      @default("#3b82f6")
+  allDay        Boolean                     @default(false)
+  start         DateTime
+  end           DateTime?
+  channel       Channel                     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author        User                        @relation("UserCalendarEvents", fields: [authorId], references: [id], onDelete: Cascade)
+  subscriptions CalendarEventSubscription[]
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+
+  @@index([channelId])
+  @@index([start])
+  // События канала по времени — основная выборка календаря.
+  @@index([channelId, start])
+}
+
+model WorkspaceFile {
+  id         String   @id @default(cuid())
+  channelId  String
+  uploaderId String
+  name       String
+  url        String
+  mime       String
+  size       Int
+  channel    Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  uploader   User     @relation("UserWorkspaceFiles", fields: [uploaderId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([channelId])
+}
+
+model Appeal {
+  id        String          @id @default(cuid())
+  channelId String
+  authorId  String
+  subject   String
+  body      String          @db.Text
+  category  String          @default("")
+  status    String          @default("OPEN") // OPEN | IN_PROGRESS | CLOSED
+  channel   Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author    User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  messages  AppealMessage[]
+  /// CHAT: проекты кабинета, разговор по которым ведётся в чате этого обращения.
+  projects  PartnerProject[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([channelId])
+  @@index([authorId])
+  @@index([status])
+}
+
+model AppealMessage {
+  id        String   @id @default(cuid())
+  appealId  String
+  authorId  String
+  body      String   @db.Text
+  isAdmin   Boolean  @default(false)
+  appeal    Appeal   @relation(fields: [appealId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([appealId])
+  @@index([authorId])
+}
+
+// Состояние рабочей среды /workspace (JSON StoredState как строка).
+// Один экземпляр на пользователя — общий для веба и десктопа.
+model WorkspaceState {
+  userId    String   @id
+  data      String   @db.Text
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// WS-HISTORY: снимки состояния рабочей среды.
+///
+/// Отмена живёт только в текущей вкладке и исчезает вместе с ней, истории
+/// версий не было вовсе, а холст можно потерять целиком — чужим сохранением или
+/// собственной неосторожностью. Снимок — дешёвая страховка ровно там, где её не
+/// было никакой.
+///
+/// `ownerKey` один на оба режима: идентификатор человека для личной среды и
+/// «channel:<id>» для общего холста канала. Отдельная таблица на каждый режим
+/// означала бы две одинаковые реализации и два места, где можно забыть чистку
+/// старых записей.
+model WorkspaceSnapshot {
+  id        String   @id @default(cuid())
+  /// Кому принадлежит: id пользователя либо "channel:<id>".
+  ownerKey  String
+  /// Полный снимок состояния — та же строка, что и в рабочем состоянии.
+  data      String   @db.Text
+  /// Кто сохранился последним перед снимком. Пусто — снимок сделан не человеком.
+  byUserId  String?
+  createdAt DateTime @default(now())
+
+  @@index([ownerKey, createdAt])
+}
+
+// GROUP-WORKSPACE: совместная «Рабочая среда» группы — состояние холстов
+// модульного канала типа CANVAS. Одна запись на канал (модуль); внутри JSON
+// StoredState с несколькими именованными холстами (до 5). Правки участников
+// сохраняются последней записью (last-write-wins) и рассылаются по комнате
+// канала через socket.io — так же, как личная среда синхронит устройства.
+model ChannelWorkspaceState {
+  channelId   String   @id
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  data        String   @db.Text
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}
+
+// Раскладка списка сообществ: порядок и папки (JSON как строка).
+model GroupLayout {
+  userId    String   @id
+  data      String   @db.Text
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model GroupAuditEntry {
+  id         String   @id @default(cuid())
+  groupId    String
+  actorId    String
+  actorName  String
+  action     String
+  targetId   String?
+  targetName String?
+  details    String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
+}
+
+// НОВОЕ: известные идентификаторы сети/устройства пользователя: IP-адреса и
+// ID устройства (хэш MAC-адресов из десктоп-клиента). Используются для
+// остановки учётной записи по IP и MAC при глобальном бане.
+model UserIdentity {
+  id       String   @id @default(cuid())
+  userId   String
+  kind     String // "IP" | "DEVICE" (хэш MAC-адресов из десктоп-клиента)
+  value    String
+  lastSeen DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, value])
+  @@index([kind, value])
+}
+
+// НОВОЕ: заблокированные идентификаторы. Вход и регистрац��я с этих IP/устройств
+// невозможны, пока запись не удалена (снимается при разбане пользователя).
+model BlockedIdentity {
+  id        String   @id @default(cuid())
+  kind      String
+  value     String
+  userId    String? // чей бан породил блокировку (для снятия при разбане)
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([kind, value])
+  @@index([userId])
+}
+
+// FIX-CABINET: проект личного кабинета (бывш. Партнёрская). Клиент (CONSULTANT)
+// создаёт заявку с материалами, админ/редактор ведёт её по этапам услуги
+// (см. apps/web/src/lib/orderStages.ts). Выполненный этап откатить нельзя,
+// поэтому прогресс только растёт.
+model PartnerProject {
+  id        String                  @id @default(cuid())
+  ownerId   String
+  name      String
+  purpose   String                  @db.Text
+  domain    String                  @default("")
+  /// STAGES: идентификаторы выполненных этапов — ["site-1", "site-2", …].
+  ///
+  /// Раньше здесь лежали НОМЕРА пунктов единственного вшитого списка. Номера
+  /// пережить правку набора этапов не могут: удалённый шаг сдвигает все
+  /// следующие, и у проекта оказываются отмечены не те работы. Миграция
+  /// 20260911000000 перевела уже накопленные номера в идентификаторы.
+  stepsDone Json                    @default("[]")
+  files     Json                    @default("[]") // материалы: [{ url, name, size }]
+  status    String                  @default("NEW") // NEW | IN_PROGRESS | LAUNCHED
+  /// STAGES: услуга, по которой ведётся проект. От неё зависит набор этапов.
+  ///
+  /// Необязательна и обнуляется при удалении услуги, а не удаляет проект:
+  /// работа по нему уже сделана и оплачена, терять её из-за уборки в списке
+  /// услуг нельзя. Проект без услуги показывает набор «Создание сайтов» —
+  /// единственный, который до появления этой связи в кабинете и существовал.
+  serviceId String?
+  service   Service?                @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  /// CHAT: обращение, в разговоре по которому обсуждается этот проект.
+  ///
+  /// Своего чата у проекта больше нет: разговор ведётся в деловом чате по
+  /// обращению (DirectConversation kind = BUSINESS, см. lib/businessChat.ts).
+  /// Ссылка проставляется при первом переходе в чат и дальше ведёт ровно в тот
+  /// же разговор — без неё каждое нажатие заводило бы новое обращение.
+  appealId  String?
+  appeal    Appeal?                 @relation(fields: [appealId], references: [id], onDelete: SetNull)
+  owner     User                    @relation("UserPartnerProjects", fields: [ownerId], references: [id], onDelete: Cascade)
+  messages  PartnerProjectMessage[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([serviceId])
+  @@index([appealId])
+}
+
+// FIX-CABINET: мини-чат по проекту между клиентом и админом/редактором.
+//
+// CHAT: интерфейса у этого чата больше нет — разговор по проекту переехал в
+// деловой чат по обращению, чтобы не держать два места для одного разговора.
+// Таблица оставлена намеренно: в ней лежит уже накопленная переписка, и
+// удалять её вместе с интерфейсом значило бы стереть историю работ.
+model PartnerProjectMessage {
+  id        String         @id @default(cuid())
+  projectId String
+  authorId  String
+  body      String         @db.Text
+  isStaff   Boolean        @default(false)
+  project   PartnerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author    User           @relation("UserProjectMessages", fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@index([projectId])
+}
+
+// FIX-DM: персональные настройки личных сообщений: owner настраивает
+// поведение по отношению к target (чёрный список, запрет голосовых, автоответ).
+model DmUserSetting {
+  id               String    @id @default(cuid())
+  ownerId          String
+  targetId         String
+  blacklisted      Boolean   @default(false)
+  voiceBan         Boolean   @default(false)
+  autoReplyEnabled Boolean   @default(false)
+  autoReplyText    String?   @db.Text
+  lastAutoReplyAt  DateTime?
+  owner            User      @relation("DmSettingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  target           User      @relation("DmSettingTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([ownerId, targetId])
+  @@index([targetId])
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// «Общественность» (модуль COMMUNITY): онбординг и подписки календаря.
+// ════════════════════════════════════════════════════════════════════════
+
+/// Онбординг-форма группы: настраивается создателем или админом (НЕ модератором).
+/// Участник заполняет её, чтобы получить роль-тег roleId после одобрения.
+model OnboardingForm {
+  id          String   @id @default(cuid())
+  groupId     String   @unique
+  active      Boolean  @default(false)
+  description String   @default("") @db.Text
+  /// JSON-массив строк-вопросов (парсится в API)
+  questions   String   @default("[]") @db.Text
+  roleId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  group        Group                   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role         GroupRole?              @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  applications OnboardingApplication[]
+  invites      OnboardingInvite[]
+}
+
+/// FIX-ONBSEND: адресная рассылка формы. Управляющий группой отправляет анкету
+/// выбранным участникам и/или всем носителям тега — каждый получает личное
+/// уведомление от имени группы. Приглашение даёт право заполнить форму даже
+/// когда она не включена для всей группы (`OnboardingForm.active = false`).
+model OnboardingInvite {
+  id     String @id @default(cuid())
+  formId String
+  /// Дублируется скаляром: рассылка живёт в контексте группы, но связь
+  /// достаточно держать через форму (groupId нужен только для выборок).
+  groupId   String
+  userId    String
+  /// Кто отправил (id пользователя) и через какой тег попал получатель.
+  sentById  String?
+  viaRoleId String?
+  createdAt DateTime @default(now())
+
+  form OnboardingForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, userId])
+  @@index([groupId, createdAt])
+  @@index([userId])
+}
+
+/// Заявка участника по онбординг-форме. Не чаще одной в сутки на пользователя.
+model OnboardingApplication {
+  id           String    @id @default(cuid())
+  formId       String
+  groupId      String
+  userId       String
+  /// JSON-массив строк-ответов (по порядку вопросов формы на момент подачи)
+  answers      String    @default("[]") @db.Text
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewNote   String?   @db.VarChar(300)
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  form       OnboardingForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  group      Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user       User           @relation("OnboardingApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User?          @relation("OnboardingReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([groupId, status])
+  @@index([userId, groupId, createdAt])
+}
+
+/// Подписка пользователя на событие календаря: за ~15 минут до начала придёт
+/// личное уведомление (тик рассылки — в server.ts). remindedAt защищает от
+/// повторной отправки.
+model CalendarEventSubscription {
+  id         String    @id @default(cuid())
+  eventId    String
+  userId     String
+  remindedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User          @relation("CalendarSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+}
+
+/// GAMES-CATALOG: карточка игры в разделе /games.
+///
+/// Раньше список игр был захардкоженным массивом в `app/games/page.tsx`: чтобы
+/// открыть или скрыть игру, нужен был релиз. Здесь каталог живёт в базе, а
+/// админ включает и выключает игры кнопкой.
+///
+/// Две природы записи (`kind`):
+///   OWN     — наша игра, живёт внутри проекта, `launchUrl` — внутренний путь
+///             вида `/games/velderan`;
+///   PARTNER — игра сторонней студии. Мы не размещаем её код: разработчик даёт
+///             базовый адрес своего API и ключ, мы забираем манифест и держим
+///             карточку в актуальном состоянии.
+model GameEntry {
+  id String @id @default(cuid())
+
+  /// Часть URL для своих игр и стабильный идентификатор для партнёрских.
+  slug        String  @unique
+  title       String
+  description String  @default("") @db.Text
+  /// Обложка: внутренний путь (/games/...) или абсолютный https-адрес.
+  cover   String?
+  players String  @default("")
+  /// Метки для карточки, через запятую. Массив здесь не нужен: значения
+  /// приходят целиком, поиска по отдельной метке нет.
+  tags String @default("")
+
+  /// OWN | PARTNER
+  kind String @default("OWN")
+  /// Показывать ли игру в /games. Новая запись выключена: партнёрскую карточку
+  /// сначала нужно связать с API и убедиться, что манифест отвечает.
+  active    Boolean @default(false)
+  sortOrder Int     @default(0)
+
+  /// Куда ведёт карточка. Для партнёрских заполняется из манифеста.
+  launchUrl String @default("")
+
+  // ── Партнёрская интеграция ────────────────────────────────────────────
+  /// База API разработчика, только https. Пусто у своих игр.
+  apiBaseUrl String @default("")
+  /// Ключ разработчика в зашифрованном виде (`lib/encryption`). Наружу не
+  /// отдаётся никогда — ни в админку, ни тем более в публичный список: в
+  /// ответах фигурирует только `apiKeyPreview` из последних символов.
+  apiKey String?
+  /// PENDING | OK | ERROR — состояние последней сверки с манифестом.
+  linkState String @default("PENDING")
+  /// Текст последней ошибки связки, чтобы админ не гадал, почему нет игры.
+  linkError String  @default("") @db.VarChar(500)
+  /// Название студии из манифеста.
+  partnerName String @default("")
+  /// Сколько игроков онлайн по данным партнёра, если он их отдаёт.
+  onlinePlayers Int?
+  lastSyncAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@index([kind])
+}
+
+/// Указатель «файл → чему он принадлежит».
+///
+/// Нужен, чтобы при выдаче файла можно было спросить право на канал, беседу
+/// или задачу. До него такого пути не было: вложения сообщений хранятся в
+/// JSON-поле, и от адреса файла к его месту было не дойти — поэтому ссылка,
+/// попавшая к постороннему участнику платформы, работала.
+///
+/// Связей (relation) намеренно нет: строка переживает удаление сообщения.
+/// Автоочистка вложений по сроку отозвана — файл живёт столько же, сколько
+/// сообщение, к которому приложен.
+/// BUILDS: задача на сборку клиентского приложения на сервере.
+///
+/// До этого сборки делались руками на своём ПК и заливались на сервер. Теперь
+/// очередь живёт здесь: администратор ставит задачу в панели, агент сборки
+/// (apps/builder) её забирает и кладёт готовые файлы в то же хранилище
+/// загрузок, откуда они раздавались раньше — путь скачивания не меняется.
+model BuildJob {
+  id String @id @default(cuid())
+  /// ANDROID | WINDOWS
+  target String
+  /// QUEUED | RUNNING | SUCCESS | FAILED | CANCELED
+  status String @default("QUEUED")
+  /// Ветка или коммит, с которого собираем.
+  ref String @default("main")
+  /// Версия собранного приложения — как её сообщил агент.
+  version String @default("")
+  /// Кто поставил задачу. Пусто — поставлена не человеком (по расписанию).
+  requestedById String?
+  /// Узел-сборщик, взявший задачу. Обычно это агент на главном сервере.
+  nodeId String?
+  /// Хвост журнала сборки: начало обрезается, конец нужнее — ошибка в нём.
+  log String @default("") @db.Text
+  /// Файлы, попавшие в хранилище загрузок, через запятую.
+  artifacts String @default("") @db.Text
+  /// Короткая причина отказа для показа в панели.
+  error     String    @default("") @db.VarChar(300)
+  createdAt DateTime  @default(now())
+  startedAt DateTime?
+  /// Последняя весточка от агента: по ней видно зависшую сборку.
+  heartbeatAt DateTime?
+  finishedAt  DateTime?
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model UploadedFile {
+  id             String   @id @default(cuid())
+  /// Путь внутри каталога загрузок: "messages/uuid.webp".
+  path           String   @unique
+  /// Первый сегмент пути: messages, voice, documents, tasks, projects.
+  dir            String
+  uploaderId     String
+  channelId      String?
+  conversationId String?
+  taskId         String?
+  /// STORAGE-PRIORITY: где физически лежит файл. null — на главном сервере
+  /// (диск приложения), иначе id узла хранения. Адрес файла в переписке при
+  /// переезде НЕ меняется: место знает только раздатчик.
+  nodeId         String?
+  /// Размер в байтах на момент записи. Нужен переносу: по нему видно, сколько
+  /// осталось переложить, и он же служит проверкой после копирования.
+  size           Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([nodeId])
+  @@index([channelId])
+  @@index([conversationId])
+  @@index([taskId])
+}
+
+/// Свои эмодзи сообщества.
+///
+/// Принадлежат сообществу и только ему: перенести эмодзи в другое сообщество
+/// нельзя — набор всегда часть места, где его собрали. Поэтому groupId стоит в
+/// уникальном ключе вместе с именем, а не отдельная «библиотека наборов».
+///
+/// Имя — то, что человек печатает в сообщении: `:name:`. Уникально внутри
+/// сообщества, чтобы разбор текста был однозначным.
+/// Словарь цензуры сообщества.
+///
+/// Запись — корень или слово в нижнем регистре: разбор идёт подстрокой, чтобы
+/// не вносить в словарь все падежи (см. lib/censor). Уровень решает, что
+/// произойдёт при упоминании: запрет отправки, предупреждение человеку или
+/// молчаливый учёт.
+///
+/// Раздел доступен, когда у владельца сообщества есть Premium. Проверка живёт в
+/// маршруте, а не в схеме: подписка приходит и уходит, а словарь при её
+/// окончании стирать неправильно — он вернётся вместе с подпиской.
+model GroupCensorWord {
+  id          String   @id @default(cuid())
+  groupId     String
+  word        String   @db.VarChar(64)
+  /// BLOCK | WARN | WATCH — значения перечислены в lib/censor.
+  level       String   @default("WATCH") @db.VarChar(8)
+  createdById String
+  createdAt   DateTime @default(now())
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, word])
+  @@index([groupId])
+}
+
+/// Замеченное упоминание слова из словаря — то, из чего складывается счётчик.
+///
+/// Слово хранится снимком, а не ссылкой на запись словаря: администратор может
+/// убрать слово из словаря, и тогда история наблюдений не должна опустеть — она
+/// объясняет, почему у человека такой счётчик.
+///
+/// Связи с User намеренно нет, только userId: строка переживает удаление
+/// участника, а имена для сводки берутся отдельным запросом.
+model CensorHit {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  word      String   @db.VarChar(64)
+  level     String   @db.VarChar(8)
+  /// Где замечено. Пусто, если сообщение было не в канале.
+  channelId String?
+  createdAt DateTime @default(now())
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, userId])
+  @@index([groupId, createdAt])
+}
+
+model GroupEmoji {
+  id          String   @id @default(cuid())
+  groupId     String
+  /// Короткое имя без двоеточий: буквы, цифры и подчёркивание.
+  name        String   @db.VarChar(32)
+  /// Адрес готовой картинки 128×128 (WebP), собранной сервером при загрузке.
+  url         String
+  createdById String
+  createdAt   DateTime @default(now())
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, name])
+  @@index([groupId])
+}
+
+/// REMIND: напоминание, поставленное на карточке рабочей среды.
+///
+/// Само время лежит и в карточке — чтобы колокольчик показывал состояние без
+/// запроса, — но сработать карточка не может: это кусок JSON, который читают
+/// только при открытии холста. Поэтому время дублируется сюда, а сервер раз в
+/// полминуты проверяет, чему пора (см. sweeper в server.ts).
+///
+/// Одна карточка — одно напоминание: повторная постановка заменяет прежнее.
+model CardReminder {
+  id       String @id @default(cuid())
+  userId   String
+  /// Идентификатор карточки на холсте. Уникален в пределах человека.
+  cardId   String
+  /// Заголовок карточки на момент постановки: в уведомлении нужен текст, а
+  /// заглянуть в чужой JSON состояния сервер не может.
+  title    String @db.VarChar(160)
+  /// Куда открыть по нажатию: путь внутри приложения.
+  link     String @db.VarChar(300)
+  remindAt DateTime
+  /// Когда сработало. Пусто — ещё ждёт.
+  firedAt   DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cardId])
+  @@index([remindAt, firedAt])
+}

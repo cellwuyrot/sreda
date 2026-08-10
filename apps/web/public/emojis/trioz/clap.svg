@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <g transform="rotate(-24 76 150)">
+    <rect x="16" y="106" width="106" height="80" rx="34" fill="#F0B32E" stroke="#15181B" stroke-width="12"/>
+    <rect x="62" y="164" width="52" height="46" rx="23" fill="#F0B32E" stroke="#15181B" stroke-width="12"/>
+    <rect x="16" y="106" width="106" height="80" rx="34" fill="#F0B32E"/>
+    <rect x="62" y="164" width="52" height="46" rx="23" fill="#F0B32E"/>
+    <path d="M50 132h46M50 158h46" stroke="#15181B" stroke-width="10" stroke-linecap="round"/>
+  </g>
+  <g transform="rotate(24 180 150)">
+    <rect x="134" y="106" width="106" height="80" rx="34" fill="#F0B32E" stroke="#15181B" stroke-width="12"/>
+    <rect x="142" y="164" width="52" height="46" rx="23" fill="#F0B32E" stroke="#15181B" stroke-width="12"/>
+    <rect x="134" y="106" width="106" height="80" rx="34" fill="#F0B32E"/>
+    <rect x="142" y="164" width="52" height="46" rx="23" fill="#F0B32E"/>
+    <path d="M160 132h46M160 158h46" stroke="#15181B" stroke-width="10" stroke-linecap="round"/>
+  </g>
+  <path d="M128 62V26M62 80L40 52M194 80l22-28" stroke="#15181B" stroke-width="14" stroke-linecap="round"/>
+</svg>

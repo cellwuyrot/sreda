@@ -1,0 +1,26 @@
+# Android / Gradle build artifacts
+.gradle/
+build/
+/app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties
+
+# Signing — never commit keystores or credentials
+*.jks
+*.keystore
+keystore.properties
+
+# PUSH: файл доступов службы доставки уведомлений. Не секрет в строгом смысле, но
+# привязан к конкретному проекту Firebase и в репозитории ему делать нечего:
+# сборка без него не падает (см. app/build.gradle.kts).
+google-services.json
+app/google-services.json
+
+# OS noise
+.DS_Store

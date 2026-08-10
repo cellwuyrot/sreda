@@ -1,0 +1,74 @@
+appId: ru.trioz.connect.desktop
+productName: TrioZ Connect
+copyright: Copyright © TrioZ
+
+directories:
+  output: release
+  buildResources: build
+
+# Everything the packaged app needs at runtime. `static/` (the voice overlay and
+# splash) and `resources/` (icons) are resolved relative to the app root, so
+# they must be bundled alongside the compiled `dist/`.
+#
+# Иконки в build/ и resources/ не хранятся в git: их раскладывает
+# scripts/prepare-icons.mjs из docs/logostol.png на шаге `npm run build`.
+files:
+  - dist/**/*
+  - static/**/*
+  - resources/**/*
+  - package.json
+
+extraMetadata:
+  main: dist/main/index.js
+
+# Registers the trioz:// deep-link scheme with the OS installer.
+protocols:
+  - name: TrioZ Connect
+    schemes:
+      - trioz
+
+mac:
+  category: public.app-category.social-networking
+  icon: build/icon.png
+  target:
+    - dmg
+    - zip
+
+win:
+  # .ico отдельно не держим: electron-builder делает его из png сам, а лишняя
+  # копия картинки в git означала бы старый логотип при следующей смене.
+  icon: build/icon.png
+  target:
+    # nsis-web  → маленький онлайн-установщик (стаб), скачивает приложение с
+    #             вашего сервера во время установки (модель, как у Discord).
+    # nsis      → обычный автономный установщик (один самодостаточный .exe).
+    - nsis-web
+    - nsis
+
+# Общие настройки установщика (применяются к обоим NSIS-таргетам).
+nsis:
+  oneClick: false                       # мастер установки, а не «тихая» установка
+  perMachine: false                     # ставится для пользователя, без прав администратора
+  allowToChangeInstallationDirectory: true  # даёт выбрать папку/диск
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# Онлайн-установщик берёт пакет приложения (.7z) с этого адреса. Должен
+# совпадать с `publish.url` ниже — туда вы загружаете собранные файлы.
+nsisWeb:
+  appPackageUrl: https://connect.trioz.ru/desktop/
+
+linux:
+  icon: build/icon.png
+  category: Network
+  target:
+    - AppImage
+    - deb
+
+# Фид, откуда клиент качает пакет приложения и обновления (electron-updater
+# читает отсюда latest.yml). Замените URL на адрес, куда будете заливать файлы
+# из папки release/.  Для приватного репозитория можно вместо generic
+# использовать provider: github.
+publish:
+  - provider: generic
+    url: https://connect.trioz.ru/desktop/

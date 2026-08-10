@@ -1,0 +1,50 @@
+name: Codebase Memory Graph
+
+# Автообновление графа кодовой базы (.codebase-memory/graph.db.zst)
+# для AI-агентов — см. AGENTS.md. Коммит артефакта помечается [skip ci],
+# поэтому повторного запуска пайплайнов он не вызывает.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.codebase-memory/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: codebase-memory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install codebase-memory-mcp
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash -s -- --skip-config
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Reindex repository
+        run: |
+          codebase-memory-mcp config set auto_watch false
+          codebase-memory-mcp cli index_repository \
+            --repo-path "$GITHUB_WORKSPACE" \
+            --name trioz \
+            --persistence true
+
+      - name: Commit refreshed artifact
+        run: |
+          if [[ -n "$(git status --porcelain .codebase-memory)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .codebase-memory
+            git commit -m "chore: обновление графа кодовой базы [skip ci]"
+            git push
+          else
+            echo "Артефакт не изменился — коммит не нужен"
+          fi

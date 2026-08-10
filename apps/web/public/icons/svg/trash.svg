@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+     fill="none" stroke="currentColor" stroke-width="1.9"
+     stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="trash">
+  <title>trash — заменяет «🗑» (Удалить)</title>
+  <path d="M4 7h16" />
+  <path d="M9 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5V7" />
+  <path d="M6 7l1 12a2 2 0 0 0 2 1.9h6a2 2 0 0 0 2-1.9l1-12" />
+  <path d="M10 11v6" />
+  <path d="M14 11v6" />
+</svg>

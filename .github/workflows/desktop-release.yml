@@ -1,0 +1,120 @@
+name: Build desktop installers
+
+# Как запустить БЕЗ консоли:
+#   1) Вкладка Actions в GitHub → "Build desktop installers" → "Run workflow".
+#   Либо создайте тег версии (v0.1.0) — тогда файлы ещё и прикрепятся к Release.
+#
+# Десктоп-клиент живёт в этом монорепозитории (apps/desktop). Сборка запускается
+# только по тегам v*, поэтому обычные коммиты веба сборку десктопа не триггерят.
+#
+# ВАЖНО: сайт раздаёт установщики сам (self-hosted, см. README → «Релизы
+# десктопа»). Веб-загрузка НЕ читает GitHub Releases. Этот workflow только
+# СОБИРАЕТ установщики; чтобы кнопка «Скачать» на /about заработала, положите
+# артефакты в хранилище раздачи `apps/web/public/desktop`. В Docker это том
+# `desktop_data`, поэтому на сервере используйте `npm run desktop:publish:docker`
+# (`docker compose --profile publish run --rm desktop-publish`), который кладёт
+# файлы прямо в том; локально/без Docker — `npm run desktop:publish`. Шаг
+# «Attach to GitHub Release» ниже оставлен как удобный источник артефактов и
+# необязателен.
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # нужно, чтобы прикреплять файлы к GitHub Release по тегу
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest # → .exe (онлайн-установщик + автономный)
+          - os: macos-latest   # → .dmg / .zip
+          - os: ubuntu-latest  # → .AppImage / .deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Install the whole workspace without running lifecycle scripts. This
+      # avoids the web workspace's `prisma migrate deploy` postinstall (which
+      # needs a database) — the desktop build doesn't need the web app at all.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # --ignore-scripts skipped Electron's own postinstall, so fetch its
+      # prebuilt binary explicitly (electron-builder needs it to package).
+      - name: Fetch Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: Build shared contract
+        run: npm run build:shared
+
+      - name: Compile desktop TypeScript
+        run: npm run build -w apps/desktop
+
+      # Stamp the version from the git tag so every release advertises a
+      # strictly-greater version than the one already installed — the single
+      # thing electron-updater checks before offering an update. Without this
+      # the version stays whatever is in package.json (historically frozen at
+      # 0.1.0), so clients never see a newer build and never auto-update.
+      #
+      # `-c.extraMetadata.version=<v>` overrides package.json only for this
+      # build; on a manual (untagged) run we fall back to package.json so dev
+      # builds still work. `shell: bash` keeps the syntax identical across the
+      # Windows / macOS / Linux matrix runners.
+      - name: Build installers
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "Building tagged release version $VERSION"
+            npx electron-builder --publish never -c.extraMetadata.version="$VERSION"
+          else
+            echo "No version tag — building package.json version"
+            npx electron-builder --publish never
+          fi
+        env:
+          # electron-builder needs this only for its housekeeping requests;
+          # code-signing secrets (Windows/macOS) are added separately — see the
+          # desktop README.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Готовые установщики можно скачать со страницы запуска workflow.
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          retention-days: 14
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.nsis.7z
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+
+      # При сборке по тегу — сразу прикрепить файлы к GitHub Release этого репо.
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.nsis.7z
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml

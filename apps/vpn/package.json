@@ -1,0 +1,15 @@
+{
+  "name": "trioz-vpn",
+  "version": "0.1.0",
+  "description": "Агент дочернего узла WireGuard: тянет список пиров с главного сервера и приводит интерфейс к нему.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "src/index.mjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.mjs"
+  }
+}

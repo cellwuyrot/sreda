@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base application theme: a dark, action-bar-less shell that matches the
+         near-black TZ.Connect palette so system bars blend with the web UI. -->
+    <style name="Theme.Connect" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/brand_background</item>
+        <item name="android:navigationBarColor">@color/brand_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/brand_background</item>
+        <item name="colorPrimary">@color/brand_accent</item>
+    </style>
+
+    <!-- Launch theme handled by androidx.core:core-splashscreen. Shows the logo
+         on the brand background until the WebView paints its first frame. -->
+    <style name="Theme.Connect.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/brand_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Connect</item>
+    </style>
+
+</resources>

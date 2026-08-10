@@ -1,0 +1,43 @@
+{
+  "name": "trioz-connect-desktop",
+  "productName": "TZ Connect",
+  "version": "0.3.3",
+  "description": "Connect communication platform.",
+  "author": {
+    "name": "TrioZ",
+    "email": "noreply@trioz.ru"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "npm run icons && tsc -p tsconfig.json && npm run bundle:preload",
+    "icons": "node scripts/prepare-icons.mjs",
+    "bundle:preload": "esbuild src/preload/index.ts src/preload/overlay.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist/preload --log-level=warning",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && cross-env TRIOZ_DEV=1 electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:dir": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@trioz/shared": "*",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "cross-env": "^7.0.3",
+    "electron": "33.2.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.28.1",
+    "eslint": "^8.57.1",
+    "rimraf": "^5.0.10",
+    "typescript": "^5.6.3"
+  }
+}

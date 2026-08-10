@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trioz_test
+          POSTGRES_PASSWORD: trioz_test
+          POSTGRES_DB: trioz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trioz_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://trioz_test:trioz_test@localhost:5432/trioz_test
+      NEXTAUTH_SECRET: ci-test-secret-key-do-not-use-in-production
+      NEXTAUTH_URL: http://localhost:3000
+      # The web CI never runs Electron; skip the desktop workspace's ~200 MB
+      # binary download during `npm ci`.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared contract
+        run: npm run build:shared
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema apps/web/prisma/schema.prisma
+
+      - name: Run migrations
+        run: npx prisma db push --skip-generate --schema apps/web/prisma/schema.prisma
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

@@ -1,0 +1,15 @@
+{
+  "name": "trioz-builder",
+  "version": "0.1.0",
+  "description": "Агент сборки клиентских приложений: берёт задачи с главного сервера и кладёт готовые APK и установщики в хранилище загрузок.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "src/index.mjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.mjs"
+  }
+}

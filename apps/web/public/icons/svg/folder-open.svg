@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+     fill="none" stroke="currentColor" stroke-width="1.9"
+     stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="folder-open">
+  <title>folder-open — заменяет «📂» (Раскрытая папка / рубрика статьи)</title>
+  <path d="M4 8V7a2 2 0 0 1 2-2h3.6a1 1 0 0 1 .8.4L12 7h5a2 2 0 0 1 2 2v1" />
+  <path d="M3.4 10.6h17.2a1 1 0 0 1 .96 1.27l-1.7 6A2 2 0 0 1 17.9 19H6a2 2 0 0 1-2-1.7l-1-6a1 1 0 0 1 .4-.7z" />
+</svg>

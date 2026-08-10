@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- WebView cookies/storage hold the login session; excluding them keeps a
+         restored backup from carrying another device's session. -->
+    <exclude domain="database" path="webview.db" />
+    <exclude domain="sharedpref" path="WebViewChromiumPrefs.xml" />
+</full-backup-content>

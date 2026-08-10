@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ANDROID-ICON: фон почти чёрный (как на присланном макете), передний
+         слой — логотип из docs/logostol.png. Картинка не лежит в ресурсах:
+         её копирует туда задача syncLauncherIcon (см. app/build.gradle.kts),
+         чтобы копия логотипа в проекте была одна.
+
+         Логотип занимает кадр почти целиком, а маска адаптивной иконки
+         обрезает углы и края — поэтому inset — без него у круглой маски
+         срезало бы края рисунка. monochrome нужен для тематических иконок
+         Android 13+ и остаётся векторным: из растра силуэт не собрать. -->
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground>
+        <inset android:drawable="@drawable/ic_launcher_image" android:inset="18%" />
+    </foreground>
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

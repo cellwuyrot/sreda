@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Connect</string>
+    <string name="download_started">Загрузка началась…</string>
+    <string name="download_in_progress">Загрузка файла</string>
+    <string name="download_failed">Не удалось загрузить файл</string>
+    <string name="no_app_to_open_link">Нет приложения для открытия ссылки</string>
+    <!-- ANDROID-NOTIFY: канал системных уведомлений о сообщениях -->
+    <string name="notification_channel_messages">Сообщения</string>
+    <string name="notification_channel_messages_desc">Новые сообщения в каналах и личных чатах</string>
+</resources>

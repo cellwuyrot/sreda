@@ -1,0 +1,234 @@
+stages:
+  - lint
+  - build
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  IMAGE_LATEST: $CI_REGISTRY_IMAGE:latest
+
+# ─── Lint & TypeCheck ───────────────────────────────────────────────────
+lint:
+  stage: lint
+  tags:
+    - trioz-production
+  image: node:20-alpine
+  variables:
+    # The lint job never runs Electron; skip the desktop workspace's binary
+    # download during `npm ci`.
+    ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-npm
+    paths:
+      - node_modules/
+  before_script:
+    - npm ci
+    - npm run build:shared
+    - npx prisma generate --schema apps/web/prisma/schema.prisma
+  script:
+    - npm run lint
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ─── Build Docker Image ─────────────────────────────────────────────────
+build:
+  stage: build
+  tags:
+    - trioz-production
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $IMAGE_TAG -t $IMAGE_LATEST .
+    - docker push $IMAGE_TAG
+    - docker push $IMAGE_LATEST
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# ─── Build desktop installers (Windows + Linux) ──────────────────────────
+# Runs on every push to the default branch *and* on version tags like `v0.1.1`.
+# Produces the installers *and* the electron-updater feed (latest*.yml) and
+# hands them to `deploy` as artifacts; deploy then copies them into the
+# `desktop_data` volume via its existing `desktop-publish` step. That published
+# feed is what lets an already-installed client auto-update without a reinstall.
+#
+# Why run on the default branch too? The web app and the desktop client ship
+# from the *same* commits, but the web app redeploys on every merge while the
+# desktop client used to rebuild only on tags — so a merge could update the web
+# UI and leave the installed desktop client behind (e.g. the reworked screen-
+# share launch window from #307 never reaching desktop users). Building here on
+# each merge keeps the two halves in lock-step: the next production deploy
+# republishes a matching desktop build.
+#
+# Versioning: on a tag we stamp the tag (v1.2.3 → 1.2.3); on a branch build we
+# derive `0.<minor>.<commit-count>` via scripts/desktop-version.mjs, which is
+# strictly greater on every new commit — the one thing electron-updater checks.
+# `GIT_DEPTH: 0` disables the shallow clone so the commit count is accurate.
+#
+# `allow_failure: true` keeps a desktop-build hiccup from blocking the (manual)
+# production web deploy: if it fails there simply are no artifacts and the
+# publish step is a no-op, exactly as before this job ran on merges.
+#
+# macOS (.dmg) can't be cross-built/signed on a Linux runner, so it is produced
+# separately on GitHub Actions (.github/workflows/desktop-release.yml); publish
+# those artifacts the same way (npm run desktop:publish:docker).
+desktop-build:
+  stage: build
+  tags:
+    - trioz-production
+  image: electronuserland/builder:wine
+  allow_failure: true
+  variables:
+    ELECTRON_CACHE: "$CI_PROJECT_DIR/.cache/electron"
+    ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
+    # Full history so scripts/desktop-version.mjs can count commits for the
+    # auto-derived version (a shallow clone would count 1 → frozen version).
+    GIT_DEPTH: "0"
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-desktop
+    paths:
+      - node_modules/
+      - .cache/
+  before_script:
+    # --ignore-scripts skips the web workspace's DB-touching postinstall; the
+    # desktop build doesn't need it. Fetch Electron's binary explicitly since
+    # that skipped its postinstall too.
+    - npm ci --ignore-scripts
+    - node node_modules/electron/install.js
+    - npm run build:shared
+    - npm run build -w apps/desktop
+  script:
+    # A tag build stamps the tag version; a branch build derives a strictly-
+    # increasing 0.<minor>.<commit-count> (same scheme as `npm run desktop:release`).
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        VERSION="${CI_COMMIT_TAG#v}"
+      else
+        VERSION="$(node scripts/desktop-version.mjs)"
+      fi
+    - echo "Building desktop installers for version $VERSION"
+    - cd apps/desktop
+    - npx electron-builder --linux --win --publish never -c.extraMetadata.version="$VERSION"
+  artifacts:
+    paths:
+      - apps/desktop/release/*.exe
+      - apps/desktop/release/*.AppImage
+      - apps/desktop/release/*.deb
+      - apps/desktop/release/*.nsis.7z
+      - apps/desktop/release/*.blockmap
+      - apps/desktop/release/latest*.yml
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v/
+
+# ─── Deploy to Production ────────────────────────────────────────────────
+deploy:
+  stage: deploy
+  tags:
+    - trioz-production
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  variables:
+    COMPOSE_PROJECT_NAME: trioz
+  before_script:
+    - apk add --no-cache docker-compose || true
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    # Pull latest image
+    - docker pull $IMAGE_TAG || true
+    # Create .env from CI variables
+    - |
+      cat > .env <<EOF
+      CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE
+      CI_COMMIT_SHORT_SHA=$CI_COMMIT_SHORT_SHA
+      POSTGRES_USER=$POSTGRES_USER
+      POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+      POSTGRES_DB=$POSTGRES_DB
+      NEXTAUTH_URL=$NEXTAUTH_URL
+      NEXTAUTH_SECRET=$NEXTAUTH_SECRET
+      ALLOWED_ORIGINS=$ALLOWED_ORIGINS
+      ENCRYPTION_SECRET=$ENCRYPTION_SECRET
+      TURN_URL=$TURN_URL
+      TURN_USERNAME=$TURN_USERNAME
+      TURN_CREDENTIAL=$TURN_CREDENTIAL
+      SMTP_HOST=$SMTP_HOST
+      SMTP_PORT=$SMTP_PORT
+      SMTP_USER=$SMTP_USER
+      SMTP_PASSWORD=$SMTP_PASSWORD
+      SMTP_FROM=$SMTP_FROM
+      APP_PORT=${APP_PORT:-3000}
+      EOF
+    # Ensure the stateful/infra services are up. `up -d` is a no-op for any
+    # container that is already running at the desired spec, so a deploy no
+    # longer restarts Postgres/Redis/coturn (and drops every connection) the way
+    # `down --remove-orphans` did.
+    - docker-compose up -d postgres redis coturn
+    # Wait for Postgres to actually accept connections before migrating
+    # (replaces a blind `sleep 10`).
+    - |
+      for i in $(seq 1 30); do
+        if docker-compose exec -T postgres pg_isready -U "${POSTGRES_USER:-trioz}" >/dev/null 2>&1; then break; fi
+        sleep 2
+      done
+    # Run migrations
+    - docker-compose run --rm app npx prisma db push --skip-generate
+    # Recreate ONLY the app container, in place. nginx, Postgres, Redis and
+    # coturn keep running, so the reverse proxy is unable to reach the app for
+    # just the couple of seconds Docker needs to swap the container — instead of
+    # the whole stack going down. That collapses the long 502 window (and the
+    # desktop "рассинхронизация") into a brief, self-healing blip.
+    - docker-compose up -d --no-deps app
+    # Publish freshly built desktop installers straight into the desktop_data
+    # volume the app serves from. The `desktop-build` job now runs on every
+    # default-branch pipeline (and on tags), so a normal production deploy
+    # carries a matching desktop build and refreshes the volume on its own.
+    # No-op when there are no artifacts (e.g. desktop-build failed / was
+    # skipped), leaving the previously published build in place.
+    - |
+      if ls apps/desktop/release/* >/dev/null 2>&1; then
+        docker-compose --profile publish run --rm desktop-publish || true
+      fi
+    # Cleanup old images
+    - docker image prune -f || true
+  environment:
+    name: production
+    url: $NEXTAUTH_URL
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+    - if: $CI_COMMIT_TAG
+      when: manual
+  when: manual
+
+# ─── Rollback (manual) ───────────────────────────────────────────────────
+rollback:
+  stage: deploy
+  tags:
+    - trioz-production
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  variables:
+    COMPOSE_PROJECT_NAME: trioz
+  before_script:
+    - apk add --no-cache docker-compose || true
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "Rolling back to previous image..."
+    - docker-compose pull app
+    - docker-compose up -d app
+  environment:
+    name: production
+    action: stop
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  when: manual

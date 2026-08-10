@@ -1,0 +1,30 @@
+{
+  "name": "trioz-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TrioZ monorepo — the Next.js web app (apps/web), the Electron desktop shell (apps/desktop) and the shared Socket.IO contract (packages/shared).",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w packages/shared",
+    "dev": "npm run build:shared && npm run dev -w apps/web",
+    "build": "npm run build:shared && npm run build -w apps/web",
+    "start": "npm run start -w apps/web",
+    "lint": "npm run lint -w apps/web",
+    "seed": "npm run seed -w apps/web",
+    "migrate": "npm run migrate -w apps/web",
+    "typecheck": "npm run build:shared && npm run typecheck -w apps/desktop",
+    "desktop:dev": "npm run build:shared && npm run dev -w apps/desktop",
+    "desktop:build": "npm run build:shared && npm run build -w apps/desktop",
+    "desktop:dist": "npm run build:shared && npm run dist -w apps/desktop",
+    "desktop:dist:auto": "npm run desktop:build && node scripts/build-desktop.mjs",
+    "desktop:version": "node scripts/desktop-version.mjs",
+    "desktop:publish": "node scripts/publish-desktop.mjs",
+    "desktop:publish:docker": "docker compose --profile publish run --rm desktop-publish",
+    "desktop:release": "npm run desktop:dist:auto && npm run desktop:publish -- --clean",
+    "desktop:release:docker": "npm run desktop:dist:auto && npm run desktop:publish:docker"
+  }
+}

@@ -1,0 +1,546 @@
+"use client";
+
+import { Fragment, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import { motion } from "framer-motion";
+import VoicePlayer from "@/components/ui/VoicePlayer";
+import VideoPlayer from "@/components/ui/VideoPlayer";
+import VideoNotePlayer from "@/components/ui/VideoNotePlayer";
+import MessageBody from "@/components/connect/MessageBody";
+import MessageHoverToolbar from "@/components/connect/MessageHoverToolbar";
+import { TriozEmoji, TriozEmojiGrid } from "@/components/ui/TriozEmoji";
+// FIX-ICONS: единый стиль иконок — фирменные SVG вместо PNG (/icons/*) и глифов ✓✕💬
+import { ReplyIcon, PinIcon, ThreadIcon, ForwardIcon, ShieldIcon, XIcon, CheckIcon, DoubleCheckIcon, ClockIcon, ResendIcon, ChatIcon, VaultIcon, EmojiIcon } from "@/components/ui/ConnectIcons";
+import { EditIcon, TrashIcon } from "@/components/ui/ConnectIconsExtra";
+// Leaflet touches `window` — load client-only
+const GeoMap = dynamic(() => import("@/components/ui/GeoMap"), { ssr: false });
+import { getDayLabel, parseAttachments, type Attachment, type Message } from "./dmTypes";
+
+interface DMMessageListProps {
+  messages: Message[];
+  currentUserId: string;
+  selectedConvId: string;
+  // Editing state
+  editingId: string | null;
+  editContent: string;
+  onEditContentChange: (v: string) => void;
+  onSaveEdit: (messageId: string) => void;
+  onCancelEdit: () => void;
+  // Reply
+  onReply: (msg: Message) => void;
+  // Delete
+  onDelete: (messageId: string) => void;
+  // Context menu (three-dot)
+  openMessageMenuId: string | null;
+  onToggleMenu: (id: string) => void;
+  // Emoji picker for reactions
+  showEmojiPicker: string | null;
+  onToggleEmojiPicker: (id: string) => void;
+  onToggleReaction: (messageId: string, emoji: string) => void;
+  // Pin
+  onPin: (messageId: string) => void;
+  // Thread
+  onOpenThread: (msg: Message) => void;
+  // Forward
+  onForward: (msg: Message) => void;
+  // Add to favorites (self-conversation)
+  onFavorite: (msg: Message) => void;
+  // Start edit helper
+  onStartEdit: (msg: Message) => void;
+  // Read receipt
+  peerReadAt: string | null;
+  // Resend failed message
+  onResend: (messageId: string) => void;
+  // E2EE file decryption
+  onDecryptFile: (encrypted: ArrayBuffer, iv: string) => Promise<ArrayBuffer>;
+  // Image lightbox
+  onImageClick: (src: string) => void;
+  // Scroll handling
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
+  /* Оконный рендер: границы и высоты распорок считает DMPanel через
+     useMessageWindow — здесь только отрисовка. */
+  winStart: number;
+  winEnd: number;
+  winPadTop: number;
+  winPadBottom: number;
+  messagesEndRef: React.RefObject<HTMLDivElement>;
+  onScroll: () => void;
+  hasMore: boolean;
+  nextCursor: string | null;
+  messagesLoading: boolean;
+  onLoadMore: () => void;
+  showScrollBtn: boolean;
+  onScrollToBottom: () => void;
+}
+
+// FIX-SEC-XSS: в src/href вложений допускаем только безопасные схемы. URL
+// приходит в JSON сообщения — нельзя доверять слепо (иначе javascript:/data:
+// сработают по клику/при загрузке картинки).
+function safeAttachmentUrl(url: unknown): string | null {
+  if (typeof url !== "string" || !url) return null;
+  if (url.startsWith("/uploads/")) return url;
+  try {
+    const u = new URL(url, "https://x.invalid");
+    if (u.protocol === "http:" || u.protocol === "https:") return url;
+  } catch { /* невалидный URL */ }
+  return null;
+}
+
+function jumpToDMMessage(id: string) {
+  const el = document.getElementById(`dm-msg-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  const prevBg = el.style.backgroundColor;
+  el.style.transition = "background-color 0.4s ease";
+  el.style.borderRadius = "0.5rem";
+  el.style.backgroundColor = "rgba(34,211,238,0.18)";
+  window.setTimeout(() => { el.style.backgroundColor = prevBg; }, 1400);
+}
+
+export default function DMMessageList(props: DMMessageListProps) {
+  const {
+    messages,
+    currentUserId,
+    editingId,
+    editContent,
+    onEditContentChange,
+    onSaveEdit,
+    onCancelEdit,
+    onReply,
+    onDelete,
+    openMessageMenuId,
+    onToggleMenu,
+    showEmojiPicker,
+    onToggleEmojiPicker,
+    onToggleReaction,
+    onPin,
+    onOpenThread,
+    onForward,
+    onFavorite,
+    onStartEdit,
+    peerReadAt,
+    onResend,
+    onDecryptFile,
+    onImageClick,
+    scrollContainerRef,
+    winStart,
+    winEnd,
+    winPadTop,
+    winPadBottom,
+    messagesEndRef,
+    onScroll,
+    hasMore,
+    nextCursor,
+    messagesLoading,
+    onLoadMore,
+    showScrollBtn,
+    onScrollToBottom,
+  } = props;
+
+  // Close context menu when clicking outside
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openMessageMenuId) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onToggleMenu(openMessageMenuId); // toggles to closed
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openMessageMenuId, onToggleMenu]);
+
+  // Render aggregated reactions for a message
+  const renderReactions = (msg: Message) => {
+    const reactions = msg.reactions || [];
+    if (reactions.length === 0) return null;
+    // Group by emoji
+    const grouped: Record<string, { count: number; users: string[]; userReacted: boolean }> = {};
+    for (const r of reactions) {
+      if (!grouped[r.emoji]) grouped[r.emoji] = { count: 0, users: [], userReacted: false };
+      grouped[r.emoji].count++;
+      grouped[r.emoji].users.push(r.user?.name || "User");
+      if (r.userId === currentUserId) grouped[r.emoji].userReacted = true;
+    }
+    return (
+      <div className="flex flex-wrap gap-1 mt-1">
+        {Object.entries(grouped).map(([emoji, info]) => (
+          <button
+            key={emoji}
+            onClick={() => onToggleReaction(msg.id, emoji)}
+            title={info.users.join(", ")}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs transition-colors ${
+              info.userReacted
+                ? "bg-violet-500/20 dark:bg-cyan-400/20 border border-violet-400 dark:border-cyan-400"
+                : "bg-black/5 dark:bg-white/10 border border-transparent hover:bg-black/10 dark:hover:bg-white/15"
+            }`}
+          >
+            <TriozEmoji emoji={emoji} size={20} />
+            <span className={info.userReacted ? "text-violet-600 dark:text-cyan-300" : "text-neutral-500 dark:text-gray-400"}>
+              {info.count}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  // Render the action menu (shared between grouped/non-grouped)
+  const renderActionMenu = (msg: Message, menuAlign: "left" | "right" = "left") => {
+    if (!openMessageMenuId || openMessageMenuId !== msg.id) return null;
+    return (
+      <div
+        ref={menuRef}
+        className={`absolute z-30 min-w-[180px] rounded-xl border border-[var(--cn-border)] bg-[var(--cn-sidebar)] shadow-xl p-1.5 space-y-0.5 ${menuAlign === "right" ? "top-6 right-0" : "top-7 left-0"}`}
+      >
+        <button
+          onClick={() => { onReply(msg); onToggleMenu(msg.id); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
+        >
+          <ReplyIcon size={18} />
+          <span>Ответить</span>
+        </button>
+        <div className="relative">
+          <button
+            onClick={() => onToggleEmojiPicker(msg.id)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
+          >
+            {/* Значок в одном ряду с соседними пунктами меню, а не цветной
+                эмодзи: у «Ответить» и «Закрепить» контурные значки того же
+                размера. */}
+            <EmojiIcon size={18} />
+            <span>Реакция</span>
+          </button>
+          {showEmojiPicker === msg.id && (
+            <div className={`absolute top-0 ${menuAlign === "right" ? "right-full mr-2" : "left-full ml-2"} bg-[var(--cn-sidebar)] border border-[var(--cn-border)] rounded-lg p-1.5 flex gap-0.5 shadow-lg z-10`}>
+              <TriozEmojiGrid compact onSelect={(emoji) => { onToggleReaction(msg.id, emoji); onToggleMenu(msg.id); }} />
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => { onPin(msg.id); onToggleMenu(msg.id); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
+        >
+          <PinIcon size={18} />
+          <span>{msg.pinned ? "Открепить" : "Закрепить"}</span>
+        </button>
+        {msg.userId === currentUserId && (
+          <button
+            onClick={() => { onStartEdit(msg); onToggleMenu(msg.id); }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
+            aria-label="Редактировать сообщение"
+          >
+            <EditIcon size={18} />
+            <span>Редактировать</span>
+          </button>
+        )}
+        <button
+          onClick={() => { onDelete(msg.id); onToggleMenu(msg.id); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
+          aria-label="Удалить сообщение"
+        >
+          <TrashIcon size={18} tone="danger" />
+          <span>Удалить</span>
+        </button>
+        <button
+          onClick={() => { onOpenThread(msg); onToggleMenu(msg.id); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
+        >
+          <ThreadIcon size={18} />
+          <span>Тред</span>
+        </button>
+        <button
+          onClick={() => { onForward(msg); onToggleMenu(msg.id); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
+        >
+          <ForwardIcon size={18} />
+          <span>Переслать</span>
+        </button>
+        <button
+          onClick={() => { onFavorite(msg); onToggleMenu(msg.id); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)]"
+          aria-label="Добавить в Сейф"
+        >
+          <VaultIcon size={18} />
+          <span>В Сейф</span>
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 md:px-5 py-4 space-y-1" role="log" aria-label="Личные сообщения">
+        {hasMore && (
+          <button onClick={onLoadMore} disabled={messagesLoading} className="mx-auto block text-xs text-violet-500 dark:text-cyan-400 hover:underline disabled:opacity-50">
+            {messagesLoading ? "Загрузка..." : "Загрузить ранее"}
+          </button>
+        )}
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-neutral-400">
+            <div className="text-center">
+              <ChatIcon size={44} className="mx-auto mb-3" tone="muted" />
+              <p className="text-sm">Нет сообщений. Начните общение!</p>
+            </div>
+          </div>
+        ) : (
+          <>
+          {/* Распорка вместо скрытых сверху строк: держит длину ползунка. */}
+          {winPadTop > 0 && <div aria-hidden style={{ height: winPadTop }} />}
+          {messages.slice(winStart, winEnd).map((msg, sliceIdx) => {
+            /* Индекс в ПОЛНОМ массиве: от него зависят группировка с предыдущим
+               сообщением и анимация последнего. */
+            const idx = winStart + sliceIdx;
+            const prev = idx > 0 ? messages[idx - 1] : null;
+            // Message grouping: same user, no reply, not pinned, < 5 min apart
+            const isGrouped = prev
+              && prev.userId === msg.userId
+              && !msg.replyTo
+              && !msg.pinned
+              && (new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime()) < 5 * 60 * 1000;
+            const msgDate = new Date(msg.createdAt);
+            const prevDate = prev ? new Date(prev.createdAt) : null;
+            const showDateDivider = !prev
+              || prevDate!.getDate() !== msgDate.getDate()
+              || prevDate!.getMonth() !== msgDate.getMonth()
+              || prevDate!.getFullYear() !== msgDate.getFullYear();
+            // PERF-CHAT: анимируем «въезд» только у самого свежего сообщения. Остальные
+            // строки — обычные <div>, чтобы не держать тысячи framer-motion компонентов
+            // при большой истории (совместно с content-visibility в globals.css).
+            const isLast = idx === messages.length - 1;
+            // Открытые меню/пикер выступают за рамку строки — снимаем с неё
+            // content-visibility (paint-containment), иначе всплывашка обрежется.
+            const cvShow = openMessageMenuId === msg.id || showEmojiPicker === msg.id;
+            const dmRowClassName = `tz-msg-row tz-dm-msg-row ${cvShow ? "tz-cv-show " : ""}${msg.userId === currentUserId ? "tz-dm-own flex-row-reverse" : "tz-dm-peer"} group/dm flex items-end gap-2 py-1 ${msg.pinned ? "bg-amber-50/50 dark:bg-amber-400/5 px-2 rounded-xl" : ""}`;
+            const dmRowBody = (
+              <>
+                  {!msg.deleted && (
+                    <MessageHoverToolbar
+                      message={{ id: msg.id, content: msg.content, attachments: parseAttachments(msg.attachments).map((a) => ({ url: a.url, name: a.name, mime: a.type })) }}
+                      canEdit={msg.userId === currentUserId}
+                      canDelete={msg.userId === currentUserId}
+                      pinned={msg.pinned}
+                      onReply={() => onReply(msg)}
+                      onEdit={() => onStartEdit(msg)}
+                      onDelete={() => onDelete(msg.id)}
+                      onPin={() => onPin(msg.id)}
+                      onForward={() => onForward(msg)}
+                      boardContext={{ authorName: msg.user?.name }}
+                    >
+                      <div className="relative">
+                        <button type="button" onClick={() => onToggleMenu(msg.id)} title="Ещё" aria-label="Действия с сообщением">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+                        </button>
+                        {renderActionMenu(msg, msg.userId === currentUserId ? "right" : "left")}
+                      </div>
+                    </MessageHoverToolbar>
+                  )}
+                  <div className={`max-w-[78%] md:max-w-[680px] rounded-2xl px-3.5 py-2.5 border shadow-sm ${
+                    msg.userId === currentUserId
+                      ? "bg-violet-600 dark:bg-cyan-700 border-violet-500/30 dark:border-cyan-500/30 text-white rounded-br-md"
+                      : "bg-[var(--cn-card)] border-[var(--cn-border)] text-neutral-900 dark:text-white rounded-bl-md"
+                  }`}>
+                    {/* Pin indicator */}
+                    {msg.pinned && (
+                      <div className={`flex items-center gap-1 text-[10px] mb-0.5 ${msg.userId === currentUserId ? "text-amber-200" : "text-amber-500"}`}>
+                        <PinIcon size={14} style={{ color: "inherit" }} className="!text-current" />
+                        Закреплено
+                      </div>
+                    )}
+
+                    {/* Reply reference */}
+                    {msg.replyTo && (
+                      <button
+                        type="button"
+                        onClick={() => jumpToDMMessage(msg.replyTo!.id)}
+                        title="Перейти к исходному сообщению"
+                        className={`group/reply w-full text-left flex items-stretch gap-1.5 mb-1 rounded-md overflow-hidden transition-colors ${msg.userId === currentUserId ? "bg-white/10 hover:bg-white/20" : "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10"}`}
+                      >
+                        <span className={`w-0.5 flex-shrink-0 rounded-full ${msg.userId === currentUserId ? "bg-white/60" : "bg-violet-500 dark:bg-cyan-400"}`} />
+                        <span className="flex-1 min-w-0 py-0.5 pr-1 text-[11px] leading-tight">
+                          <span className={`font-medium ${msg.userId === currentUserId ? "text-white/90" : "text-violet-600 dark:text-cyan-400"}`}>{msg.replyTo.user.name}</span>{" "}
+                          <span className={`truncate inline-block max-w-[150px] align-bottom ${msg.userId === currentUserId ? "text-white/70" : "text-neutral-500 dark:text-neutral-400"}`}>{msg.replyTo.content?.slice(0, 50) || "[файл]"}</span>
+                        </span>
+                        <svg className={`w-3 h-3 mt-0.5 mr-0.5 flex-shrink-0 opacity-0 group-hover/reply:opacity-100 transition-opacity ${msg.userId === currentUserId ? "text-white/70" : "text-neutral-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+                      </button>
+                    )}
+
+                    {editingId === msg.id ? (
+                      <div className="flex gap-1">
+                        <input
+                          value={editContent}
+                          onChange={(e) => onEditContentChange(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && onSaveEdit(msg.id)}
+                          className="flex-1 bg-transparent border-b border-white/30 text-sm outline-none"
+                          autoFocus
+                        />
+                        <button onClick={() => onSaveEdit(msg.id)} className="opacity-70 hover:opacity-100" aria-label="Сохранить"><CheckIcon size={14} style={{ color: "inherit" }} /></button>
+                        <button onClick={onCancelEdit} className="opacity-70 hover:opacity-100" aria-label="Отменить"><XIcon size={14} style={{ color: "inherit" }} /></button>
+                      </div>
+                    ) : (
+                      /* Длинное сообщение показывается свёрнутым — см. MessageBody. */
+                      /* div, а не p: внутри бывают блоки — код и свёрнутый
+                         длинный текст, — абзац их не допускает. */
+                      msg.content && <div data-i18n-skip className="tz-chat-body whitespace-pre-wrap break-words"><MessageBody text={msg.content} /></div>
+                    )}
+
+                    {/* FIX-EDITBLINK: вложения живут ВНЕ ветки редактирования.
+                        Раньше они стояли внутри неё, и переключение «читаю →
+                        редактирую → сохранил» снимало их с дерева и вешало
+                        заново. Для React это новый узел, для браузера — новая
+                        картинка: она перерисовывается с нуля, и это видно как
+                        мигание. Заодно во время правки сообщения его картинки
+                        были не видны — а правят как раз подпись к ним. */}
+                    {parseAttachments(msg.attachments).map((att: Attachment, i) => (
+                          att.isVoice ? (
+                            <div key={i} className="mt-1">
+                              <VoicePlayer
+                                url={att.url}
+                                duration={att.duration}
+                                isOwn={msg.userId === currentUserId}
+                                e2eeIv={att.e2eeIv}
+                                e2eeDecrypt={att.e2eeIv ? onDecryptFile : undefined}
+                              />
+                            </div>
+                          ) : att.isGeo && att.lat != null && att.lng != null ? (
+                            <div key={i} className="mt-1 w-[220px]">
+                              <GeoMap lat={att.lat} lng={att.lng} height={140} interactive={false} />
+                              {/* FIX-GEO: показываем адрес (улица, дом, город), если он определён */}
+                              <p className={`text-[10px] mt-1 ${msg.userId === currentUserId ? "text-white/60" : "text-neutral-400"}`}>
+                                {att.address || `${att.lat.toFixed(4)}, ${att.lng.toFixed(4)}`}
+                              </p>
+                            </div>
+                          ) : att.isVideoNote ? (
+              /* Видеосообщение — квадрат, играет по касанию. */
+              <VideoNotePlayer key={i} url={att.url} duration={att.duration} />
+            ) : att.isVideo ? (
+                            <div key={i} className="mt-1">
+                              <VideoPlayer url={att.url} isOwn={msg.userId === currentUserId} />
+                            </div>
+                          ) : att.isImage && safeAttachmentUrl(att.url) ? (
+                            <div key={i} className="mt-1">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={safeAttachmentUrl(att.url) as string}
+                                alt={att.name}
+                                className="w-auto max-w-full sm:max-w-[320px] max-h-[360px] object-cover rounded-xl border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => onImageClick(safeAttachmentUrl(att.url) as string)}
+                              />
+                            </div>
+                          ) : safeAttachmentUrl(att.url) ? (
+                            <a key={i} href={safeAttachmentUrl(att.url) as string} target="_blank" rel="noopener noreferrer" className="mt-1 block text-xs underline opacity-80">
+                              {att.name}
+                            </a>
+                          ) : (
+                            // FIX-SEC-XSS: небезопасная схема URL — показываем имя без ссылки
+                            <span key={i} className="mt-1 block text-xs opacity-60" title="Небезопасная ссылка">{att.name}</span>
+                          )
+                        ))}
+                    {editingId !== msg.id && (
+                      <>
+                        {renderReactions(msg)}
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className={`text-[10px] ${msg.userId === currentUserId ? "text-white/60" : "text-neutral-400"}`}>
+                            {new Date(msg.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {msg.edited && <span className={`text-[9px] ${msg.userId === currentUserId ? "text-white/40" : "text-neutral-400"}`}>(ред.)</span>}
+                          {/* Status icons (own messages only) */}
+                          {msg.userId === currentUserId && (
+                            <>
+                              {msg.status === "failed" ? (
+                                <button
+                                  onClick={() => onResend(msg.id)}
+                                  className="flex items-center gap-0.5 text-[9px] text-red-400 hover:text-red-300"
+                                  title="Отправить повторно"
+                                  aria-label="Отправить повторно"
+                                >
+                                  <ResendIcon size={15} style={{ color: "inherit" }} />
+                                </button>
+                              ) : msg.status === "sending" ? (
+                                <span title="Отправляется" aria-label="Отправляется">
+                                  <ClockIcon size={15} className="animate-pulse" style={msg.userId === currentUserId ? { color: "rgba(255,255,255,.85)" } : undefined} />
+                                </span>
+                              ) : peerReadAt && new Date(peerReadAt) >= new Date(msg.createdAt) ? (
+                                <span title="Прочитано" aria-label="Прочитано">
+                                  <DoubleCheckIcon size={15} style={msg.userId === currentUserId ? { color: "rgba(255,255,255,.85)" } : undefined} />
+                                </span>
+                              ) : msg.status === "sent" ? (
+                                <span title="Отправлено" aria-label="Отправлено">
+                                  <CheckIcon size={15} style={msg.userId === currentUserId ? { color: "rgba(255,255,255,.85)" } : undefined} />
+                                </span>
+                              ) : null}
+                            </>
+                          )}
+                          {msg._encrypted && (
+                            <span title="Зашифровано" aria-label="Зашифровано">
+                              <ShieldIcon size={15} style={{ color: "inherit" }} />
+                            </span>
+                          )}
+                          {/* Thread count indicator */}
+                          {(msg.threadCount ?? 0) > 0 && (
+                            <button
+                              onClick={() => onOpenThread(msg)}
+                              className={`flex items-center gap-0.5 text-[9px] ${msg.userId === currentUserId ? "text-white/70 hover:text-white" : "text-violet-500 dark:text-cyan-400 hover:underline"}`}
+                              title="Открыть тред"
+                            >
+                              <ThreadIcon size={15} style={{ color: "inherit" }} />
+                              {msg.threadCount}
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+              </>
+            );
+            return (
+              <Fragment key={msg.id}>
+                {showDateDivider && (
+                  <div className="flex items-center gap-3 mt-4 mb-1 first:mt-0">
+                    <div className="flex-1 h-px bg-[var(--cn-border)]" />
+                    <span className="text-[11px] font-medium text-neutral-400 dark:text-gray-500 px-2">
+                      {getDayLabel(msgDate)}
+                    </span>
+                    <div className="flex-1 h-px bg-[var(--cn-border)]" />
+                  </div>
+                )}
+                {isLast ? (
+                  <motion.div
+                    id={`dm-msg-${msg.id}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                    className={dmRowClassName}
+                  >
+                    {dmRowBody}
+                  </motion.div>
+                ) : (
+                  <div id={`dm-msg-${msg.id}`} className={dmRowClassName}>
+                    {dmRowBody}
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+          {winPadBottom > 0 && <div aria-hidden style={{ height: winPadBottom }} />}
+          </>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Scroll-to-bottom button */}
+      {showScrollBtn && (
+        <motion.button
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0, opacity: 0 }}
+          onClick={onScrollToBottom}
+          className="absolute bottom-20 right-4 z-20 w-10 h-10 rounded-full bg-[var(--cn-sidebar)] border border-[var(--cn-border)] shadow-lg flex items-center justify-center text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)] transition-colors"
+          aria-label="Прокрутить вниз"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+        </motion.button>
+      )}
+    </>
+  );
+}
