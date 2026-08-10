@@ -75,7 +75,9 @@ const GROUPS: NavGroup[] = [
     label: "Сервисы и система",
     items: [
       { title: "ИИ-ассистент", description: "API-ключ, модель, промт", href: "/admin/ai", icon: <Icon path={<><rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /><circle cx="12" cy="12" r="2.5" /></>} /> },
-      { title: "Платежи Premium", description: "Реквизиты СБП и интернет-эквайринга", href: "/admin/payments", icon: <Icon path={<><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></>} /> },
+      /* BUSINESS-SUB: раздел перестал быть только премиумным: теперь в нём две
+         независимые группы реквизитов — подписка Premium и счета бизнеса. */
+      { title: "Платежи", description: "Реквизиты Premium и счетов бизнеса", href: "/admin/payments", icon: <Icon path={<><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></>} /> },
       { title: "Логи редактора", description: "Кто и что редактировал", href: "/admin/logs", icon: <Icon path={<><path d="M4 5h16M4 12h16M4 19h10" /></>} /> },
       /* FIX-ADMCOUNT: страница управления услугами существовала, но входа в неё
          из панели не было — счётчик «Услуг» в обзоре выглядел взявшимся из
@@ -102,7 +104,7 @@ const QUICK_ACTIONS = [
   { title: "Создать статью", href: "/admin/content" },
   { title: "Управление пользователями", href: "/admin/users" },
   { title: "Управление премиумом", href: "/admin/premium" },
-  { title: "Платежи Premium", href: "/admin/payments" },
+  { title: "Платежи", href: "/admin/payments" },
   { title: "Рассылка уведомлений", href: "/admin/broadcast" },
 ];
 
