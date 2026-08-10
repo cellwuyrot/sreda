@@ -2,6 +2,7 @@
 
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import { isOnline, timeAgo } from "@/lib/timeAgo";
+import { isPaid, statusLabel, type PaymentStatus } from "@/lib/businessPayment";
 import type { DMUser } from "./dmTypes";
 
 interface DMMessageHeaderProps {
@@ -23,6 +24,17 @@ interface DMMessageHeaderProps {
   onBack: () => void;
   /** FIX-DM: ПКМ по нику/аватару — меню действий с пользователем. */
   onUserMenu?: (e: React.MouseEvent) => void;
+  /**
+   * BUSINESS-PAY: состояние счёта по деловому разговору.
+   *
+   * null и undefined различаются намеренно:
+   *   undefined — разговор не деловой, кнопки вообще нет;
+   *   null      — разговор деловой, но счёт ещё не выставлен.
+   * Во втором случае кнопка нужна: администрация через неё видит, что счёта нет,
+   * а клиент — что платить пока не за что.
+   */
+  paymentStatus?: PaymentStatus | null;
+  onOpenPayment?: () => void;
 }
 
 function HeaderButton({ active = false, label, onClick, children }: { active?: boolean; label: string; onClick: () => void; children: React.ReactNode }) {
@@ -39,8 +51,13 @@ function HeaderButton({ active = false, label, onClick, children }: { active?: b
   );
 }
 
-export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeEnabled, showPinned, onToggleE2EE, onTogglePinned, onBack, onUserMenu }: DMMessageHeaderProps) {
+export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeEnabled, showPinned, onToggleE2EE, onTogglePinned, onBack, onUserMenu, paymentStatus, onOpenPayment }: DMMessageHeaderProps) {
   const online = isOnline(other.lastSeen);
+  /* Кнопка оплаты показывается только там, где есть обе части: и признак
+     делового разговора, и обработчик. Иначе в личной переписке могла бы
+     проскочить кнопка, ничего не делающая по нажатию. */
+  const showPayment = paymentStatus !== undefined && !!onOpenPayment;
+  const paid = isPaid(paymentStatus ?? "UNPAID");
   return (
     <header className="min-h-[64px] px-3 md:px-4 border-b border-[var(--cn-border)] bg-[var(--cn-sidebar)]/95 backdrop-blur-sm flex items-center gap-3 relative z-20">
       <button type="button" onClick={onBack} className="md:hidden min-w-[44px] min-h-[44px] rounded-xl border border-[var(--cn-border)] inline-flex items-center justify-center text-neutral-500 active:bg-[var(--cn-hover)]" aria-label="Назад к списку диалогов">
@@ -66,6 +83,30 @@ export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeEnable
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        {/* BUSINESS-PAY: плашка «Оплачено / Не оплачено» рядом с именем
+            собеседника. Форма такая же, как у переключателя шифрования ниже
+            (h-10 px-3 rounded-xl border) — шапка не должна разъезжаться на два
+            разных вида кнопок. На узком экране остаётся только значок. */}
+        {showPayment && (
+          <button
+            type="button"
+            onClick={onOpenPayment}
+            title={statusLabel(paymentStatus ?? "UNPAID")}
+            aria-label={`Оплата: ${statusLabel(paymentStatus ?? "UNPAID")}`}
+            className={`h-10 px-3 rounded-xl border inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:focus-visible:ring-cyan-400 ${
+              paid
+                ? "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"
+                : "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+            }`}
+          >
+            {paid ? (
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m5 13 4 4L19 7" /></svg>
+            ) : (
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2" strokeWidth={2} /><path strokeLinecap="round" strokeWidth={2} d="M3 10h18" /></svg>
+            )}
+            <span className="hidden sm:inline text-[11px] font-medium">{statusLabel(paymentStatus ?? "UNPAID")}</span>
+          </button>
+        )}
         <HeaderButton active={showPinned} label="Закреплённые сообщения" onClick={onTogglePinned}>
           <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3h6l1 7 2 2H6l2-2 1-7ZM12 12v9"/></svg>
         </HeaderButton>

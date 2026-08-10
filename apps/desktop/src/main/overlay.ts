@@ -1,8 +1,8 @@
 import { BrowserWindow, screen } from "electron";
 import { setVoiceActive } from "./recovery"; // разговор важнее автоперезагрузки
 import path from "path";
-import { getConfig } from "./config";
-import { getMainWindow, focusMainWindow, isPipMode } from "./mainWindow";
+import { getConfig, updateConfig } from "./config";
+import { getMainWindow, focusMainWindow, isPipMode, navigate } from "./mainWindow";
 import { IPC } from "../shared/constants";
 import type { VoiceOverlayState } from "../shared/types";
 
@@ -83,7 +83,18 @@ function createOverlayWindow(): BrowserWindow {
     transparent: true,
     resizable: false,
     movable: true,
-    focusable: false, // не отбирает фокус у игры/другого приложения
+    // FIX-OVL-BTN: раньше здесь было `focusable: false` — именно из-за этого не
+    // работали кнопки «расширить» и «закрыть». Нефокусируемое окно (на Windows это
+    // стиль WS_EX_NOACTIVATE) не активируется по клику, и браузерный слой не доводит
+    // до rendererа полную пару mousedown+mouseup — событие click просто не рождается,
+    // поэтому обработчики в static/overlay/index.html никогда не вызывались (при этом
+    // перетаскивание работало — его делает сама оболочка через -webkit-app-region,
+    // поэтому со стороны выглядело «окно живое, а кнопки мёртвые»).
+    //
+    // Фокус у игры при этом не отбирается: окно показывается через showInactive()
+    // (см. syncOverlay) — оно всплывает поверх без активации и забирает фокус
+    // только тогда, когда пользователь сам по нему кликнул, то есть когда это и нужно.
+    focusable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
@@ -93,6 +104,15 @@ function createOverlayWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // FIX-OVL-THROTTLE: окно оверлея по своей природе НИКОГДА не получает фокус
+      // (показывается через showInactive) и живёт поверх чужого полноэкранного
+      // приложения. Без
+      // этого флага Chromium троттлит его renderer как фоновую вкладку, поэтому
+      // приходящие по IPC обновления состояния (индикация речи, мьют, живое
+      // превью демонстрации экрана) переставали своевременно отрисовываться —
+      // панель выглядела «зависшей» или пустой. Держим renderer оверлея всегда
+      // активным.
+      backgroundThrottling: false,
     },
   });
   win.setAlwaysOnTop(true, "screen-saver");
@@ -191,14 +211,42 @@ export function updateVoiceOverlayState(state: VoiceOverlayState | null): void {
   syncOverlay();
 }
 
-/** Действие, запрошенное из окна оверлея. */
+/**
+ * Действие, запрошенное из окна оверлея (кнопки ⤔ и ✕ в его шапке).
+ *
+ * FIX-OVL-BTN: раньше оба действия были половинчатыми:
+ * • «расширить» только поднимало окно, но не открывало Коннект: если человек ушёл
+ *   в настройки/новости, он там и оказывался, а не в голосовом канале;
+ * • «закрыть» прятало оверлей только до следующего захода в канал и НЕ было
+ *   связано с переключателем «Оверлей (десктоп)» в настройках профиля,
+ *   поэтому оверлей возвращался сам собой и выглядело как «закрытие не работает».
+ */
 export function handleOverlayAction(action: string): void {
   if (action === "open-app") {
+    // «Расширить» = показать полноценный Коннект с голосовым каналом, в котором
+    // человек сейчас сидит. Само подключение живёт в rendererе, поэтому рвать его
+    // перезагрузкой нельзя: navigate() шлёт мягкий переход по IPC.NAVIGATE.
+    // Если Коннект и так открыт — ничего не трогаем и просто поднимаем окно,
+    // чтобы не сбить выбранное сообщество/канал.
+    const win = getMainWindow();
+    let onConnect = false;
+    if (win && !win.isDestroyed()) {
+      try {
+        onConnect = new URL(win.webContents.getURL()).pathname === "/connect";
+      } catch {
+        onConnect = false;
+      }
+    }
+    if (!onConnect) navigate("/connect");
     focusMainWindow();
   } else if (action === "close") {
-    // Пользователь скрыл оверлей вручную — прячем до возвращения в TrioZ или
-    // повторного захода в голосовой канал (см. syncOverlay / updateVoiceOverlayState).
+    // «Закрыть» = выключить оверлей насовсем, а не «до следующего раза». Пишем
+    // overlayEnabled: false в тот же сохраняемый конфиг, из которого читает и пишет
+    // переключатель «Оверлей (десктоп)» в настройках профиля, — так крестик и
+    // переключатель всегда показывают одно и то же состояние. Включить обратно —
+    // тем же переключателем в настройках.
     userDismissed = true;
+    updateConfig({ overlayEnabled: false });
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
   }
 }

@@ -14,6 +14,21 @@ export async function GET(req: Request) {
     // Admins requesting all=true see everything; public sees only active
     where: isAdmin && all ? {} : { active: true },
     orderBy: { order: "asc" },
+    /* BUSINESS-PAY: раньше отдавалась вся запись целиком. С появлением поля
+       documents это стало утечкой: ссылки на шаблоны договоров уезжали бы в
+       публичный каталог услуг, а они показываются только оплатившему клиенту.
+       Поэтому список полей теперь явный, а сами документы выдаются только
+       администрации и только по явному запросу all=true. */
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      icon: true,
+      order: true,
+      active: true,
+      stages: true,
+      documents: isAdmin && all,
+    },
   });
 
   return NextResponse.json(services);
