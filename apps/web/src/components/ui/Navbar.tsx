@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { unregisterShellPushDevice } from "@/hooks/usePushDevice";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { useTheme } from "@/components/Providers";
@@ -24,30 +24,6 @@ export default function Navbar() {
   const accountRole = (session?.user as { role?: string } | undefined)?.role;
   const [unread, setUnread] = useState(0);
   const [dmToast, setDmToast] = useState<{ title: string; body: string } | null>(null);
-
-  /* FIX-DM-NTF: какой диалог сейчас открыт на экране.
-
-     Шапка живёт выше раздела сообщений и про его состояние ничего не знает,
-     поэтому DMPanel сам сообщает об открытой переписке событием окна — так же,
-     как сделано с tz-notifications-read. Храним в ref, а не в состоянии: значение
-     читается внутри обработчика сокета, и переподписывать сокет на каждую смену
-     диалога нельзя. */
-  const activeDmRef = useRef<{ conversationId: string | null; peerId: string | null }>({
-    conversationId: null,
-    peerId: null,
-  });
-
-  useEffect(() => {
-    function onActiveDm(e: Event) {
-      const detail = (e as CustomEvent<{ conversationId?: string | null; peerId?: string | null }>).detail;
-      activeDmRef.current = {
-        conversationId: detail?.conversationId ?? null,
-        peerId: detail?.peerId ?? null,
-      };
-    }
-    window.addEventListener("tz-dm-active", onActiveDm);
-    return () => window.removeEventListener("tz-dm-active", onActiveDm);
-  }, []);
 
   // Счётчик непрочитанных уведомлений (колокольчик у ника)
   useEffect(() => {
@@ -93,25 +69,9 @@ export default function Navbar() {
       userId?: string;
       content?: string;
       pushEnabled?: boolean;
-      conversationId?: string;
       user?: { name?: string; username?: string };
     }) => {
       if (payload.userId === userId) return; // server also echoes to sender
-
-      /* FIX-DM-NTF: не уведомляем о сообщении в том диалоге, который человек
-         сейчас читает: сообщение уже появилось в переписке у него на глазах, и
-         тост со звуком поверх него — шум, а не извещение.
-
-         Сверка идёт и по разговору, и по собеседнику: в событии есть оба признака,
-         но у только что созданной переписки на клиенте может ещё не быть идентификатора.
-
-         Условие по document.hidden обязательно: диалог может быть открыт, но
-         приложение свёрнуто — тогда человек ничего не видит и известить его надо. */
-      const activeDm = activeDmRef.current;
-      const inThisDialog =
-        (!!payload.conversationId && activeDm.conversationId === payload.conversationId) ||
-        (!!payload.userId && activeDm.peerId === payload.userId);
-      if (inThisDialog && !document.hidden) return;
       if (isDesktop()) return; // Electron's main-process bridge owns its toast
       const title = payload.user?.name || payload.user?.username || "Личное сообщение";
       const body = payload.content?.startsWith("e2ee:")
