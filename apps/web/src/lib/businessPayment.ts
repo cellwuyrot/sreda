@@ -176,6 +176,15 @@ export interface BusinessPaymentView {
   currency: string;
   requisites: string | null;
   status: PaymentStatus;
+  /* BUSINESS-SUB: способ выставления и состояние подписки. Правила переходов
+     живут в businessPaymentFlow.ts — здесь только форма данных. */
+  mode: "ONE_TIME" | "SUBSCRIPTION";
+  period: "MONTH" | "QUARTER" | "YEAR" | null;
+  cycles: number | null;
+  paidCycles: number;
+  nextDueAt: string | null;
+  /** Наступил ли срок очередного платежа — считает сервер, не браузер. */
+  dueNow: boolean;
   documents: ServiceDocument[];
   signedAt: string | null;
   signedName: string | null;

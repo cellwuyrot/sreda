@@ -8,11 +8,20 @@ import { sanitizeText } from "@/lib/sanitize";
 import { isStaffRole, staffIds } from "@/lib/businessChat";
 import {
   isPaid,
-  isSigned,
   parseDocuments,
   type BusinessPaymentView,
   type PaymentStatus,
 } from "@/lib/businessPayment";
+/* BUSINESS-SUB: правила переходов и арифметика сроков — в одном чистом модуле,
+   чтобы маршрут, админка и тесты судили об оплате по одним и тем же правилам. */
+import {
+  applyAction,
+  applyDueTransition,
+  isBillingPeriod,
+  isCycleDue,
+  isPaymentMode,
+  type PaymentFlowState,
+} from "@/lib/businessPaymentFlow";
 
 /**
  * BUSINESS-PAY: счёт глазами участника разговора (кнопка в шапке диалога).
@@ -82,6 +91,11 @@ async function buildView(conversationId: string, viewerId: string): Promise<Busi
       declaredNote: true,
       paidAt: true,
       createdAt: true,
+      mode: true,
+      period: true,
+      cycles: true,
+      paidCycles: true,
+      nextDueAt: true,
       service: { select: { title: true } },
       contracts: {
         select: {
@@ -100,7 +114,25 @@ async function buildView(conversationId: string, viewerId: string): Promise<Busi
   });
   if (!payment) return null;
 
-  const paid = isPaid(payment.status);
+  /* BUSINESS-SUB: наступивший срок подписки учитывается ПРИ ЧТЕНИИ, а не планировщиком:
+     фоновая задача — ещё одно место, которое может не запуститься, а счёт всё равно
+     смотрят глазами. В базе статус перепишется при следующем действии клиента. */
+  const now = new Date();
+  const raw: PaymentFlowState = {
+    status: payment.status as PaymentStatus,
+    mode: isPaymentMode(payment.mode) ? payment.mode : "ONE_TIME",
+    period: isBillingPeriod(payment.period) ? payment.period : null,
+    cycles: payment.cycles ?? null,
+    paidCycles: payment.paidCycles ?? 0,
+    nextDueAt: payment.nextDueAt ?? null,
+  };
+  const dueNow = isCycleDue(raw, now);
+  const flow = applyDueTransition(raw, now);
+
+  /* Договоры остаются доступны, если хоть один период был оплачен: закрыть доступ
+     к своим же подписанным бумагам в день продления подписки — наказание без вины. */
+  const paid = isPaid(flow.status);
+  const contractsVisible = paid || flow.paidCycles > 0;
 
   return {
     id: payment.id,
@@ -112,7 +144,13 @@ async function buildView(conversationId: string, viewerId: string): Promise<Busi
     amount: payment.amount,
     currency: payment.currency,
     requisites: payment.requisites,
-    status: payment.status as PaymentStatus,
+    status: flow.status,
+    mode: flow.mode,
+    period: flow.period,
+    cycles: flow.cycles,
+    paidCycles: flow.paidCycles,
+    nextDueAt: payment.nextDueAt?.toISOString() ?? null,
+    dueNow,
     documents: parseDocuments(payment.documents),
     signedAt: payment.signedAt?.toISOString() ?? null,
     signedName: payment.signedName,
@@ -122,7 +160,7 @@ async function buildView(conversationId: string, viewerId: string): Promise<Busi
     createdAt: payment.createdAt.toISOString(),
     /* Договоры ОТСЕКАЮТСЯ на сервере, а не прячутся в вёрстке: прислать их и
        не показать значило бы отдать ссылки любому, кто откроет ответ запроса. */
-    contracts: paid
+    contracts: contractsVisible
       ? payment.contracts.map((c) => ({
           id: c.id,
           name: c.name,
@@ -163,9 +201,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const payment = await prisma.businessPayment.findUnique({
     where: { conversationId: id },
-    select: { id: true, title: true, status: true, amount: true, currency: true },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      amount: true,
+      currency: true,
+      mode: true,
+      period: true,
+      cycles: true,
+      paidCycles: true,
+      nextDueAt: true,
+    },
   });
   if (!payment) return NextResponse.json({ error: "Счёт ещё не выставлен" }, { status: 404 });
+
+  /* Состояние счёта для машины переходов. Допустимость шага решает она, а не
+     цепочка if'ов в каждом маршруте: иначе подписка и разовый счёт неизбежно
+     разошлись бы в поведении. */
+  const now = new Date();
+  const state: PaymentFlowState = {
+    status: payment.status as PaymentStatus,
+    mode: isPaymentMode(payment.mode) ? payment.mode : "ONE_TIME",
+    period: isBillingPeriod(payment.period) ? payment.period : null,
+    cycles: payment.cycles ?? null,
+    paidCycles: payment.paidCycles ?? 0,
+    nextDueAt: payment.nextDueAt ?? null,
+  };
 
   /* Оба действия — волеизъявление заказчика. Администратор, подписавший договор
      за клиента, — это не ошибка интерфейса, а подлог. */
@@ -174,7 +236,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === "sign") {
-    if (isSigned(payment.status)) {
+    const step = applyAction(state, "sign", now);
+    if (!step.ok) {
       /* Повторная подпись — не ошибка, а двойное нажатие. Отвечаем текущим
          состоянием, а не красным окном. */
       return NextResponse.json({ payment: await buildView(id, access.userId) });
@@ -186,7 +249,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await prisma.businessPayment.update({
       where: { conversationId: id },
-      data: { status: "SIGNED", signedAt: new Date(), signedName: name },
+      data: { status: step.state.status, signedAt: now, signedName: name },
     });
 
     await logAction({
@@ -201,17 +264,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === "declare") {
-    if (!isSigned(payment.status)) {
-      return NextResponse.json({ error: "Сначала нужно ознакомиться с документами" }, { status: 400 });
-    }
-    if (isPaid(payment.status)) {
-      return NextResponse.json({ payment: await buildView(id, access.userId) });
+    const step = applyAction(state, "declare", now);
+    if (!step.ok) {
+      /* Ожидание проверки и уже оплаченный счёт — повторное нажатие, а не ошибка
+         человека. Ошибкой является только попытка платить без подписи. */
+      if (state.status === "AWAITING" || state.status === "PAID") {
+        return NextResponse.json({ payment: await buildView(id, access.userId) });
+      }
+      return NextResponse.json({ error: step.error ?? "Шаг невозможен" }, { status: 400 });
     }
 
     const note = sanitizeText(typeof body?.note === "string" ? body.note : "").trim().slice(0, 1000);
     await prisma.businessPayment.update({
       where: { conversationId: id },
-      data: { status: "AWAITING", declaredAt: new Date(), declaredNote: note || null },
+      data: { status: step.state.status, declaredAt: now, declaredNote: note || null },
     });
 
     /* Заявление об оплате должно дойти до ВСЕЙ администрации, а не только до

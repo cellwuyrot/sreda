@@ -1,5 +1,5 @@
 "use client";
-
+​
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Spinner from "@/components/ui/Spinner";
@@ -12,7 +12,16 @@ import {
   type PaymentStatus,
   type ServiceDocument,
 } from "@/lib/businessPayment";
-
+/* BUSINESS-SUB: счёт теперь бывает разовым и подписным. */
+import {
+  describeTerms,
+  formatDueDate,
+  isSubscription,
+  periodLabel,
+  type BillingPeriod,
+  type PaymentMode,
+} from "@/lib/businessPaymentFlow";
+​
 /**
  * BUSINESS-PAY: подраздел «Бизнес» в «Админ → Пользователи».
  *
@@ -24,13 +33,18 @@ import {
  * Сумма хранится в копейках, а вводится в рублях: дробные деньги в числах с
  * плавающей точкой — классический способ потерять копейку на округлении.
  */
-
+​
 interface PaymentRow {
   id: string;
   title: string;
   amount: number;
   currency: string;
   status: PaymentStatus;
+  mode: PaymentMode;
+  period: BillingPeriod | null;
+  cycles: number | null;
+  paidCycles: number;
+  nextDueAt: string | null;
   serviceId: string | null;
   serviceTitle: string | null;
   description: string | null;
@@ -43,7 +57,7 @@ interface PaymentRow {
   paidAt: string | null;
   contractCount: number;
 }
-
+​
 interface ConversationRow {
   id: string;
   appealId: string | null;
@@ -53,13 +67,13 @@ interface ConversationRow {
   handlerName: string | null;
   payment: PaymentRow | null;
 }
-
+​
 interface ServiceRow {
   id: string;
   title: string;
   documentCount: number;
 }
-
+​
 function StatusPill({ status }: { status: PaymentStatus }) {
   const paid = isPaid(status);
   const awaiting = status === "AWAITING";
@@ -77,7 +91,7 @@ function StatusPill({ status }: { status: PaymentStatus }) {
     </span>
   );
 }
-
+​
 export default function AdminBusiness() {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [services, setServices] = useState<ServiceRow[]>([]);
@@ -87,13 +101,13 @@ export default function AdminBusiness() {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [editing, setEditing] = useState<ConversationRow | null>(null);
-
+​
   /* Поиск с задержкой: без неё каждая буква была бы отдельным запросом к базе. */
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 350);
     return () => clearTimeout(t);
   }, [query]);
-
+​
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/admin/business${debounced ? `?q=${encodeURIComponent(debounced)}` : ""}`);
@@ -108,11 +122,11 @@ export default function AdminBusiness() {
       setLoading(false);
     }
   }, [debounced]);
-
+​
   useEffect(() => {
     void load();
   }, [load]);
-
+​
   async function setStatus(conversationId: string, status: PaymentStatus) {
     if (status === "PAID") {
       const ok = await confirmDialog({
@@ -137,11 +151,11 @@ export default function AdminBusiness() {
       setBusy(false);
     }
   }
-
+​
   if (loading) {
     return <div className="py-16 flex justify-center"><Spinner /></div>;
   }
-
+​
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
@@ -153,9 +167,9 @@ export default function AdminBusiness() {
         />
         <span className="text-xs text-gray-500 whitespace-nowrap">{conversations.length} обращений</span>
       </div>
-
+​
       {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
-
+​
       {conversations.length === 0 ? (
         <p className="py-12 text-center text-sm text-gray-500">Деловых обращений пока нет</p>
       ) : (
@@ -184,6 +198,33 @@ export default function AdminBusiness() {
                       {c.payment.contractCount ? ` · договоров: ${c.payment.contractCount}` : ""}
                     </p>
                   )}
+                  {/* BUSINESS-SUB: для подписки важна не столько сумма, сколько срок
+                      следующего платежа и сколько периодов уже закрыто. */}
+                  {c.payment && isSubscription({ mode: c.payment.mode }) && (
+                    <p className="text-[11px] text-cyan-300/80 mt-0.5">
+                      {describeTerms(
+                        {
+                          status: c.payment.status,
+                          mode: c.payment.mode,
+                          period: c.payment.period,
+                          cycles: c.payment.cycles,
+                          paidCycles: c.payment.paidCycles,
+                          nextDueAt: c.payment.nextDueAt ? new Date(c.payment.nextDueAt) : null,
+                        },
+                        formatAmount(c.payment.amount, c.payment.currency),
+                      )}
+                      {c.payment.nextDueAt
+                        ? ` · следующий платёж: ${formatDueDate(new Date(c.payment.nextDueAt))}`
+                        : " · платежей больше нет"}
+                      {` · оплачено периодов: ${c.payment.paidCycles}`}
+                      {c.payment.cycles
+                        ? ` из ${c.payment.cycles} (осталось ${Math.max(
+                            0,
+                            c.payment.cycles - c.payment.paidCycles,
+                          )})`
+                        : ""}
+                    </p>
+                  )}
                   {c.payment?.signedName && (
                     <p className="text-[11px] text-gray-500 mt-0.5">Подписал: {c.payment.signedName}</p>
                   )}
@@ -193,7 +234,7 @@ export default function AdminBusiness() {
                     </p>
                   )}
                 </div>
-
+​
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -209,7 +250,7 @@ export default function AdminBusiness() {
                       onClick={() => setStatus(c.id, "PAID")}
                       className="px-3 py-2 rounded-lg bg-green-500/15 hover:bg-green-500/25 text-xs text-green-300 disabled:opacity-40"
                     >
-                      Оплата получена
+                      {isSubscription({ mode: c.payment.mode }) ? "Период оплачен" : "Оплата получена"}
                     </button>
                   )}
                   {c.payment && isPaid(c.payment.status) && (
@@ -229,7 +270,7 @@ export default function AdminBusiness() {
           ))}
         </div>
       )}
-
+​
       <AnimatePresence>
         {editing && (
           <PaymentFormModal
@@ -246,9 +287,9 @@ export default function AdminBusiness() {
     </div>
   );
 }
-
+​
 /* ── Форма выставления счёта ────────────────────────────────────── */
-
+​
 function PaymentFormModal({
   conversation,
   services,
@@ -265,16 +306,21 @@ function PaymentFormModal({
   const [title, setTitle] = useState(p?.title ?? "");
   const [description, setDescription] = useState(p?.description ?? "");
   const [requisites, setRequisites] = useState(p?.requisites ?? "");
+  /* BUSINESS-SUB: способ выставления. У подписки сумма — за один период. */
+  const [mode, setMode] = useState<PaymentMode>(p?.mode ?? "ONE_TIME");
+  const [period, setPeriod] = useState<BillingPeriod>(p?.period ?? "MONTH");
+  /* Пустое поле = бессрочно, до отмены. */
+  const [cycles, setCycles] = useState(p?.cycles ? String(p.cycles) : "");
   /* В поле — рубли, в базе — копейки. */
   const [amount, setAmount] = useState(p ? String(p.amount / 100) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
+​
   const selectedService = useMemo(
     () => services.find((s) => s.id === serviceId) ?? null,
     [services, serviceId],
   );
-
+​
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -282,7 +328,7 @@ function PaymentFormModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
+​
   async function save() {
     const rub = Number(amount.replace(",", "."));
     if (!title.trim()) {
@@ -306,6 +352,9 @@ function PaymentFormModal({
           description,
           requisites,
           amount: Math.round(rub * 100),
+          mode,
+          period: mode === "SUBSCRIPTION" ? period : null,
+          cycles: mode === "SUBSCRIPTION" && cycles.trim() ? Number(cycles) : null,
         }),
       });
       const data = await res.json();
@@ -317,7 +366,7 @@ function PaymentFormModal({
       setBusy(false);
     }
   }
-
+​
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -349,14 +398,14 @@ function PaymentFormModal({
             ✕
           </button>
         </div>
-
+​
         {p && (
           <p className="text-[11px] text-amber-400">
             Счёт уже выставлен. Сохранение изменит условия и сбросит подпись клиента —
             ему придётся ознакомиться с документами заново.
           </p>
         )}
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Услуга (отсюда берутся документы)</span>
           <select
@@ -377,7 +426,7 @@ function PaymentFormModal({
             </span>
           )}
         </label>
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Название счёта</span>
           <input
@@ -387,9 +436,52 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
           />
         </label>
-
+​
+        {/* BUSINESS-SUB: альтернативный счёт по системе подписки. */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-xs text-gray-400">Способ выставления</span>
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value === "SUBSCRIPTION" ? "SUBSCRIPTION" : "ONE_TIME")}
+              className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
+            >
+              <option value="ONE_TIME">Разовый счёт</option>
+              <option value="SUBSCRIPTION">Подписка</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-gray-400">Период</span>
+            <select
+              value={period}
+              disabled={mode !== "SUBSCRIPTION"}
+              onChange={(e) => setPeriod(e.target.value as BillingPeriod)}
+              className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none disabled:opacity-40"
+            >
+              <option value="MONTH">Месяц</option>
+              <option value="QUARTER">Квартал</option>
+              <option value="YEAR">Год</option>
+            </select>
+          </label>
+        </div>
+​
+        {mode === "SUBSCRIPTION" && (
+          <label className="block">
+            <span className="text-xs text-gray-400">Сколько периодов оплатить (пусто — бессрочно)</span>
+            <input
+              value={cycles}
+              onChange={(e) => setCycles(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+              inputMode="numeric"
+              placeholder="например, 12"
+              className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
+            />
+          </label>
+        )}
+​
         <label className="block">
-          <span className="text-xs text-gray-400">Сумма, ₽</span>
+          <span className="text-xs text-gray-400">
+            {mode === "SUBSCRIPTION" ? `Сумма за один ${periodLabel(period)}, ₽` : "Сумма, ₽"}
+          </span>
           <input
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
@@ -398,7 +490,7 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
           />
         </label>
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Описание для клиента</span>
           <textarea
@@ -408,7 +500,7 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none resize-none"
           />
         </label>
-
+​
         <label className="block">
           <span className="text-xs text-gray-400">Реквизиты для оплаты</span>
           <textarea
@@ -419,7 +511,7 @@ function PaymentFormModal({
             className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none resize-none"
           />
         </label>
-
+​
         {p && p.documents.length > 0 && (
           <div className="text-[11px] text-gray-500">
             В текущем счёте документов: {p.documents.length}
@@ -427,9 +519,9 @@ function PaymentFormModal({
             {p.documents.map((d) => `${d.name} (${formatSize(d.size)})`).join(", ")}
           </div>
         )}
-
+​
         {error && <p className="text-xs text-red-400">{error}</p>}
-
+​
         <button
           type="button"
           disabled={busy}
@@ -442,3 +534,4 @@ function PaymentFormModal({
     </motion.div>
   );
 }
+​
