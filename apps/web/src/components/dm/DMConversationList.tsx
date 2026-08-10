@@ -30,8 +30,8 @@ interface DMConversationListProps {
 const FAVORITES_KEY = "tz-dm-favorites";
 const MAX_FAVORITES = 5;
 
-// FIX-DM-SORT: направление ранжирования по времени сообщения. По запросу
-// «чем раньше писал, тем выше» — восходящий порядок (самые ранние сверху).
+// FIX-DM-SORT: направление ранжирования по началу переписки (см. convTime).
+// По запросу «чем раньше писал, тем выше» — восходящий порядок.
 // Вынесено отдельной константой, чтобы поведение можно было перевернуть на
 // «самые свежие сверху» одной правкой (EARLIEST_FIRST = false).
 const EARLIEST_FIRST = true;
@@ -50,9 +50,25 @@ function readFavorites(): string[] {
   }
 }
 
-/** Timestamp (ms) used to rank a conversation; 0 when it has no messages. */
+/**
+ * Момент, по которому диалог занимает место в списке, — начало переписки,
+ * а не последнее сообщение.
+ *
+ * Раньше здесь стоял `lastMessageAt`. При восходящем порядке это давало
+ * обратный эффект: каждый новый ответ отправлял собеседника в самый низ
+ * списка. Человек, написавший первым год назад, стоял наверху ровно до
+ * своей следующей реплики, после чего уезжал вниз, и список перетасовывался
+ * от любого сообщения.
+ *
+ * Начало переписки — величина постоянная, поэтому правило «кто написал
+ * раньше, тот выше» теперь держится, а место собеседника не меняется посреди
+ * разговора. Запасной вариант — lastMessageAt: у старых записей createdAt могло не
+ * дойти до клиента. 0 — у переписок без сообщений.
+ */
 function convTime(conv: Conversation): number {
-  const t = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+  const raw = conv.createdAt ?? conv.lastMessageAt;
+  if (!raw) return 0;
+  const t = new Date(raw).getTime();
   return Number.isFinite(t) ? t : 0;
 }
 
@@ -115,8 +131,8 @@ export default function DMConversationList({
   // FIX-DM-SORT + FIX-DM-FAV: порядок выдачи.
   //   1) «Сейф» (переписка с собой) — всегда самый верх.
   //   2) Избранные диалоги — закреплены следующими.
-  //   3) Остальные — по времени сообщения (по умолчанию: чем раньше писал, тем
-  //      выше). Внутри избранных — тот же временной порядок.
+  //   3) Остальные — по началу переписки (чем раньше написал, тем выше).
+  //      Внутри избранных — тот же порядок.
   const ordered = useMemo(() => {
     const favSet = new Set(favorites);
     const rank = (conv: Conversation) => {
@@ -128,7 +144,7 @@ export default function DMConversationList({
       const ra = rank(a);
       const rb = rank(b);
       if (ra !== rb) return ra - rb;
-      // Внутри одного уровня — по времени. Диалоги без сообщений опускаются вниз
+      // Внутри одного уровня — по началу переписки. Без сообщений — вниз
       // своего уровня независимо от направления сортировки.
       const ta = convTime(a);
       const tb = convTime(b);

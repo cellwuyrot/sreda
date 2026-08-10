@@ -66,6 +66,9 @@ model User {
   dmConversations1       DirectConversation[]        @relation("DMUser1")
   dmConversations2       DirectConversation[]        @relation("DMUser2")
   dmHandled              DirectConversation[]        @relation("DMHandler")
+  /// BUSINESS-PAY: счета, выставленные этим сотрудником, и загруженные им договоры.
+  businessPayments       BusinessPayment[]           @relation("BusinessPaymentAuthor")
+  businessContracts      BusinessContract[]          @relation("BusinessContractAuthor")
   directMessages         DirectMessage[]
   notifications          Notification[]
   /// Уведомления, возникшие ИЗ-ЗА этого человека. Каскад: удалили аккаунт —
@@ -484,6 +487,10 @@ model DirectConversation {
   /// отвечать по-прежнему может, иначе последнее слово осталось бы за клиентом.
   locked        Boolean         @default(false)
   lockedAt      DateTime?
+  /// BUSINESS-PAY: счёт по этому деловому разговору. Один разговор — один счёт:
+  /// разговор вырастает из одного обращения по одной задаче, и второй счёт в той же
+  /// переписке означал бы, что клиент не понимает, за что именно платит.
+  payment       BusinessPayment?
   lastMessageAt DateTime?
   user1ReadAt   DateTime?
   user2ReadAt   DateTime?
@@ -605,7 +612,17 @@ model Service {
   /// правку набора.
   stages      Json?
 
+  /// BUSINESS-PAY: договоры и приложения, привязанные к услуге, —
+  /// [{ id, name, url, size, mime, uploadedAt }, …].
+  ///
+  /// Хранятся Json, а не отдельной таблицей, по той же причине, что и stages:
+  /// это небольшой список, который всегда читается целиком вместе с услугой и никогда
+  /// не ищется поиском. Клиенту эти файлы ВИДНЫ ТОЛЬКО в его счёте — в самой услуге
+  /// они не публичны (см. /api/services — поле не отдаётся наружу).
+  documents   Json?
+
   projects    PartnerProject[]
+  payments    BusinessPayment[]
 }
 
 // Custom roles (tags) for groups — no admin/mod powers, just labels
@@ -1849,4 +1866,105 @@ model CardReminder {
 
   @@unique([userId, cardId])
   @@index([remindAt, firedAt])
+}
+
+/// ───────────────────────────────────────────────────────────────────────────
+/// BUSINESS-PAY: счёт по деловому разговору.
+///
+/// Как это работает целиком:
+///
+///   услуга (Service.documents) ──копия при выставлении──► счёт (documents)
+///        администрация готовит               клиент читает и подписывает
+///                                                        │
+///                                            после оплаты ─► BusinessContract[]
+///
+/// Документы КОПИРУЮТСЯ в счёт, а не читаются из услуги по ссылке, и это главное
+/// решение здесь. Клиент подписывает конкретные бумаги в конкретный день. Если бы
+/// счёт ссылался на услугу, то любая правка договора администрацией задним числом
+/// меняла бы то, под чем человек уже подписался. Так делать нельзя.
+/// ───────────────────────────────────────────────────────────────────────────
+model BusinessPayment {
+  id             String             @id @default(cuid())
+
+  /// Разговор, в шапке которого горит кнопка «Оплачено / Не оплачено».
+  conversationId String             @unique
+  conversation   DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// Услуга, из которой взяты документы. SetNull, а не Cascade: удалённая услуга
+  /// не должна уносить с собой оплаченный счёт и подписанные договоры.
+  serviceId      String?
+  service        Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  title          String             @db.VarChar(200)
+  description    String?            @db.Text
+
+  /// Сумма в КОПЕЙКАХ (целое). Деньги дробным числом — классическая ошибка
+  /// округления, а цена здесь — юридически значимое число.
+  amount         Int                @default(0)
+  currency       String             @default("RUB") @db.VarChar(8)
+
+  /// Реквизиты/инструкция к оплате текстом. Заполняет администрация; если
+  /// пусто — клиенту показываются общие реквизиты проекта (lib/paymentSettings).
+  requisites     String?            @db.Text
+
+  /// Снимок документов услуги на момент выставления — тот же формат,
+  /// что и Service.documents.
+  documents      Json?
+
+  /// UNPAID → SIGNED → AWAITING → PAID. Строкой, как и остальные статусы в проекте.
+  ///
+  ///   UNPAID   — счёт выставлен, клиент ещё не подписал документы;
+  ///   SIGNED   — ознакомился и подписал, можно платить;
+  ///   AWAITING — нажал «Я оплатил», ждёт проверки;
+  ///   PAID     — администрация подтвердила поступление.
+  ///
+  /// Подтверждает оплату человек, а не кнопка клиента: самопровозглашённая оплата
+  /// открывала бы доступ к работам бесплатно.
+  status         String             @default("UNPAID") @db.VarChar(16)
+
+  /// Подпись клиента: когда ознакомился с документами и именем, которым подписался.
+  signedAt       DateTime?
+  signedName     String?            @db.VarChar(200)
+
+  /// Когда клиент сообщил об оплате и что написал (номер чека и т. п.).
+  declaredAt     DateTime?
+  declaredNote   String?            @db.Text
+
+  /// Когда администрация подтвердила поступление денег.
+  paidAt         DateTime?
+
+  createdById    String?
+  createdBy      User?              @relation("BusinessPaymentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  contracts      BusinessContract[]
+
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([status, createdAt])
+  @@index([serviceId])
+}
+
+/// BUSINESS-PAY: подписанный договор по оплаченному счёту.
+///
+/// Добавлять могут ОБЕ стороны, и это не послабление: подписанный экземпляр
+/// есть у каждой, и требовать, чтобы клиент пересылал свой скан сообщением в чат,
+/// а администрация вручную его подшивала, — тот же самый беспорядок, от которого
+/// уходим. Видны только участникам разговора и администрации.
+model BusinessContract {
+  id           String          @id @default(cuid())
+  paymentId    String
+  payment      BusinessPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  name         String          @db.VarChar(255)
+  url          String
+  size         Int             @default(0)
+  mime         String?         @db.VarChar(128)
+
+  uploadedById String?
+  uploadedBy   User?           @relation("BusinessContractAuthor", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt    DateTime        @default(now())
+
+  @@index([paymentId, createdAt])
 }
