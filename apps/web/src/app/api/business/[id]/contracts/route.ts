@@ -37,6 +37,10 @@ async function resolve(conversationId: string) {
       id: true,
       title: true,
       status: true,
+      /* BUSINESS-SUB: у подписки статус в день продления возвращается к «к оплате», и
+         одного status уже недостаточно: число оплаченных периодов говорит, была ли
+         оплата хоть один раз. */
+      paidCycles: true,
       conversation: { select: { id: true, kind: true, user1Id: true } },
     },
   });
@@ -50,7 +54,9 @@ async function resolve(conversationId: string) {
   if (!isClient && !isStaff) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
-  if (!isPaid(payment.status)) {
+  /* Один оплаченный период открывает раздел навсегда: забрать у клиента его же
+     подписанные договоры в день продления подписки — наказание без вины. */
+  if (!isPaid(payment.status) && (payment.paidCycles ?? 0) < 1) {
     return {
       error: NextResponse.json({ error: "Раздел откроется после подтверждённой оплаты" }, { status: 403 }),
     };

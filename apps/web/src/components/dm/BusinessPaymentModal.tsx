@@ -9,10 +9,12 @@ import {
   isPaid,
   isSigned,
   statusLabel,
+  /* BUSINESS-SUB: счёт бывает разовым или подпиской — тексты условий считает общий модуль. */
   MAX_DOCUMENT_SIZE,
   type BusinessContractView,
   type BusinessPaymentView,
 } from "@/lib/businessPayment";
+import { describeTerms, formatDueDate } from "@/lib/businessPaymentFlow";
 
 /**
  * BUSINESS-PAY: окно оплаты за кнопкой «Оплачено / Не оплачено» в шапке делового чата.
@@ -225,6 +227,33 @@ export default function BusinessPaymentModal({ conversationId, onClose, onChange
               {payment.serviceTitle && (
                 <p className="text-[11px] text-neutral-400 mt-1">Услуга: {payment.serviceTitle}</p>
               )}
+              {/* BUSINESS-SUB: у подписки цифра выше — цена одного периода, а не всего
+                  договора, и об этом надо сказать прямо рядом с суммой. */}
+              {payment.mode === "SUBSCRIPTION" && (
+                <p className="text-[11px] text-violet-500 dark:text-cyan-300 mt-1">
+                  {describeTerms(
+                    {
+                      status: payment.status,
+                      mode: payment.mode,
+                      period: payment.period,
+                      cycles: payment.cycles,
+                      paidCycles: payment.paidCycles,
+                      nextDueAt: payment.nextDueAt ? new Date(payment.nextDueAt) : null,
+                    },
+                    formatAmount(payment.amount, payment.currency),
+                  )}
+                  {payment.nextDueAt
+                    ? ` · следующий платёж: ${formatDueDate(new Date(payment.nextDueAt))}`
+                    : " · платежей больше нет"}
+                  {payment.paidCycles > 0 ? ` · оплачено периодов: ${payment.paidCycles}` : ""}
+                </p>
+              )}
+              {payment.dueNow && (
+                <p className="text-[12px] text-amber-500 mt-2">
+                  Подошёл срок продления подписки — оплатите следующий период.
+                  Подписывать документы заново не нужно.
+                </p>
+              )}
               {payment.description && (
                 <p className="text-[13px] text-neutral-500 dark:text-neutral-300 mt-2 whitespace-pre-wrap">
                   {payment.description}
@@ -312,7 +341,9 @@ export default function BusinessPaymentModal({ conversationId, onClose, onChange
                       onClick={() => act("declare")}
                       className="w-full py-2.5 rounded-xl bg-green-600 text-white text-sm font-medium disabled:opacity-40"
                     >
-                      Я оплатил
+                      {payment.mode === "SUBSCRIPTION" && payment.paidCycles > 0
+                        ? "Я продлил подписку"
+                        : "Я оплатил"}
                     </button>
                   </>
                 )}
