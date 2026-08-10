@@ -29,8 +29,12 @@ export async function GET() {
     const val = config[key];
     masked[key] = val ? val.slice(0, 3) + "•••" + val.slice(-2) : "";
   }
-  // Флаг: задан ли секрет вообще (чтобы UI отличал «пусто» от «скрыто»).
-  masked.pay_acquiring_secret_set = config.pay_acquiring_secret ? "1" : "0";
+  /* Флаги: задан ли секрет вообще (чтобы UI отличал «пусто» от «скрыто»).
+     BUSINESS-SUB: секретов теперь два — терминал Premium и терминал бизнеса,
+     и в большинстве банков это разные магазины с разными ключами. */
+  for (const key of PAYMENT_SECRET_KEYS) {
+    masked[`${key}_set`] = config[key] ? "1" : "0";
+  }
   return NextResponse.json(masked);
 }
 
@@ -59,14 +63,15 @@ export async function PUT(req: Request) {
     changed.push(key);
   }
 
-  // Явная очистка секрета эквайринга.
-  if (body.pay_acquiring_secret_clear === true) {
+  // Явная очистка секретов эквайринга — каждый своей кнопкой в UI.
+  for (const key of PAYMENT_SECRET_KEYS) {
+    if (body[`${key}_clear`] !== true) continue;
     await prisma.siteConfig.upsert({
-      where: { key: "pay_acquiring_secret" },
-      create: { key: "pay_acquiring_secret", value: "" },
+      where: { key },
+      create: { key, value: "" },
       update: { value: "" },
     });
-    changed.push("pay_acquiring_secret(clear)");
+    changed.push(`${key}(clear)`);
   }
 
   await logAction({

@@ -7,7 +7,18 @@ import { logAction } from "@/lib/audit";
 import { createNotification } from "@/lib/createNotification";
 import { sanitizeText } from "@/lib/sanitize";
 import { isStaffRole } from "@/lib/businessChat";
-import { parseDocuments, isPaymentStatus } from "@/lib/businessPayment";
+import { parseDocuments, isPaymentStatus, type PaymentStatus } from "@/lib/businessPayment";
+/* BUSINESS-SUB: подписка и разовый счёт считаются одной и той же машиной переходов. */
+import {
+  applyAction,
+  initialNextDueAt,
+  isBillingPeriod,
+  isPaymentMode,
+  type BillingPeriod,
+  type PaymentFlowState,
+  type PaymentMode,
+} from "@/lib/businessPaymentFlow";
+import { readBusinessRequisitesText } from "@/lib/paymentSettings";
 
 /**
  * BUSINESS-PAY: подраздел «Бизнес» в /admin/users.
@@ -87,6 +98,11 @@ export async function GET(req: NextRequest) {
           declaredAt: true,
           declaredNote: true,
           paidAt: true,
+          mode: true,
+          period: true,
+          cycles: true,
+          paidCycles: true,
+          nextDueAt: true,
           service: { select: { id: true, title: true } },
           _count: { select: { contracts: true } },
         },
@@ -142,6 +158,9 @@ export async function POST(req: NextRequest) {
     amount?: unknown;
     currency?: unknown;
     requisites?: unknown;
+    mode?: unknown;
+    period?: unknown;
+    cycles?: unknown;
   } | null;
 
   const conversationId = typeof body?.conversationId === "string" ? body.conversationId : "";
@@ -189,21 +208,52 @@ export async function POST(req: NextRequest) {
   const currency =
     typeof body?.currency === "string" && /^[A-Z]{3}$/.test(body.currency) ? body.currency : "RUB";
 
+  /* BUSINESS-SUB: способ выставления. Сумма в подписке — цена ОДНОГО периода,
+     а не всего договора: именно её клиент видит в банке каждый раз. */
+  const mode: PaymentMode = isPaymentMode(body?.mode) ? body.mode : "ONE_TIME";
+  const period: BillingPeriod | null =
+    mode === "SUBSCRIPTION" ? (isBillingPeriod(body?.period) ? body.period : "MONTH") : null;
+
+  /* Число списаний: 0 или пусто трактуется как «бессрочно, до отмены». Ограничение
+     сверху — от опечатки: 120 периодов это уже десять лет ежемесячных платежей. */
+  let cycles: number | null = null;
+  if (mode === "SUBSCRIPTION" && typeof body?.cycles === "number" && Number.isFinite(body.cycles)) {
+    const rounded = Math.round(body.cycles);
+    if (rounded > 0) cycles = Math.min(rounded, 120);
+  }
+
+  /* Если администратор не ввёл реквизиты руками — подставляем общие бизнес-реквизиты
+     из раздела «Платежи». Счёт без реквизитов — самая частая причина того, почему
+     клиент «собирался, но не заплатил». */
+  const requisitesFinal = requisites || (await readBusinessRequisitesText()) || "";
+
   const shared = {
     serviceId,
     title,
     description: description || null,
     amount: amountRaw,
     currency,
-    requisites: requisites || null,
+    requisites: requisitesFinal || null,
+    mode,
+    period,
+    cycles,
     documents: documents.length ? (documents as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
 
   const payment = await prisma.businessPayment.upsert({
     where: { conversationId },
-    create: { conversationId, createdById: session.user.id, ...shared },
+    create: {
+      conversationId,
+      createdById: session.user.id,
+      ...shared,
+      /* У подписки первый платёж — сразу: подписка начинается с оплаты,
+         а не с месяца бесплатной работы. */
+      nextDueAt: initialNextDueAt(mode, new Date()),
+    },
     update: {
       ...shared,
+      nextDueAt: initialNextDueAt(mode, new Date()),
+      paidCycles: 0,
       /* Перевыставление — это новые условия. Подпись и заявление об оплате
          сбрасываются: они относились к прежней сумме и прежним бумагам. */
       status: "UNPAID",
@@ -254,19 +304,48 @@ export async function PATCH(req: NextRequest) {
 
   const payment = await prisma.businessPayment.findUnique({
     where: { conversationId },
-    select: { id: true, title: true, status: true, conversation: { select: { user1Id: true } } },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      mode: true,
+      period: true,
+      cycles: true,
+      paidCycles: true,
+      nextDueAt: true,
+      conversation: { select: { user1Id: true } },
+    },
   });
   if (!payment) return NextResponse.json({ error: "Счёт не выставлен" }, { status: 404 });
+
+  /* BUSINESS-SUB: «оплата получена» и «отменить» — шаги машины переходов, а не
+     прямая запись статуса: у подписки подтверждение ещё и считает следующий срок. */
+  const now = new Date();
+  const state: PaymentFlowState = {
+    status: payment.status as PaymentStatus,
+    mode: isPaymentMode(payment.mode) ? payment.mode : "ONE_TIME",
+    period: isBillingPeriod(payment.period) ? payment.period : null,
+    cycles: payment.cycles ?? null,
+    paidCycles: payment.paidCycles ?? 0,
+    nextDueAt: payment.nextDueAt ?? null,
+  };
+
+  const step = applyAction(state, status === "PAID" ? "confirm" : "revoke", now);
+  if (!step.ok) {
+    return NextResponse.json({ error: step.error ?? "Шаг невозможен" }, { status: 400 });
+  }
 
   const updated = await prisma.businessPayment.update({
     where: { conversationId },
     data: {
-      status,
+      status: step.state.status,
+      paidCycles: step.state.paidCycles,
+      nextDueAt: step.state.nextDueAt,
       /* Дата оплаты ставится только вместе со статусом PAID и снимается при откате:
          оставшаяся от прошлого раза дата в неоплаченном счёте читалась бы как сбой. */
-      paidAt: status === "PAID" ? new Date() : null,
+      paidAt: step.state.status === "PAID" ? now : null,
     },
-    select: { id: true, status: true, paidAt: true },
+    select: { id: true, status: true, paidAt: true, paidCycles: true, nextDueAt: true },
   });
 
   await createNotification({
@@ -284,10 +363,18 @@ export async function PATCH(req: NextRequest) {
     action: "business.payment.status",
     target: payment.title,
     targetId: payment.id,
-    details: `${payment.status} → ${status}`,
+    details: `${payment.status} → ${step.state.status}${
+      state.mode === "SUBSCRIPTION" ? ` · периодов оплачено: ${step.state.paidCycles}` : ""
+    }`,
   });
 
-  return NextResponse.json({ ok: true, status: updated.status, paidAt: updated.paidAt });
+  return NextResponse.json({
+    ok: true,
+    status: updated.status,
+    paidAt: updated.paidAt,
+    paidCycles: updated.paidCycles,
+    nextDueAt: updated.nextDueAt,
+  });
 }
 
 /** Проверка используется тестами и соседними маршрутами. */
