@@ -106,7 +106,9 @@ export async function GET(req: Request) {
           other,
           lastMessage,
           lastMessageAt: c.lastMessageAt,
-          /* FIX-DM-SORT: начало переписки — по нему список строит порядок. */
+          /* FIX-DM-SORT: начало переписки. Порядок списка строится по
+             lastMessageAt (свежие сверху), а это поле остаётся запасным для только
+             что заведённых заявок без единого сообщения. */
           createdAt: c.createdAt,
           business: {
             appealId: c.appealId,
@@ -126,8 +128,10 @@ export async function GET(req: Request) {
       const rawOther = c.user1Id === userId ? c.user2 : c.user1;
       // FIX-ACT: если ручного статуса нет — показываем свежую активность с ПК
       const other = { ...rawOther, customStatus: rawOther.customStatus ?? freshActivity(rawOther) };
-      /* FIX-DM-SORT: createdAt — момент начала переписки. Список ранжируется
-         по нему, а не по последнему сообщению (см. DMConversationList). */
+      /* FIX-DM-SORT: список ранжируется по последнему взаимодействию
+         (lastMessageAt, свежие сверху) — см. DMConversationList. Порядок запроса ниже
+         уже такой же, поэтому клиент пересортировкой ничего не ломает. createdAt
+         передаём как запасную отметку для переписок без сообщений. */
       return { id: c.id, other, lastMessage, lastMessageAt: c.lastMessageAt, createdAt: c.createdAt };
     });
 
@@ -199,7 +203,7 @@ export async function POST(req: NextRequest) {
 
      Поиск через findFirst, а не findUnique: составного ключа [user1, user2, kind]
      в схеме больше нет — он не давал создать второй деловой чат тому же клиенту.
-     Уникальность личной пары осталась в базе частичным индексом
+     Уникальность личной пары осталась в базе частичны�� индексом
      (WHERE kind = 'PERSONAL'), поэтому одновременная попытка двоих открыть одну
      переписку по-прежнему упрётся в базу: проигравший перечитывает готовую. */
   let conversation = await prisma.directConversation.findFirst({

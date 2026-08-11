@@ -3,10 +3,23 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Spinner from "@/components/ui/Spinner";
+import { alertDialog } from "@/components/ui/ConfirmDialog";
 import { stageStatusLabel } from "@/lib/orderStages";
+/* ARCHIVE: тот же механизм архива, что и у разговоров: копия файлом на
+   устройство плюс скрытие записи из активного списка этого же устройства. Сам
+   проект на сервере не трогается: за ним стоит работа администрации. */
+import {
+  ARCHIVE_EVENT,
+  addToArchive,
+  archiveFileName,
+  downloadJson,
+  lastActivityAt,
+  readArchive,
+  removeFromArchive,
+} from "@/lib/localArchive";
 import {
   FileChips,
   ProgressBar,
@@ -197,6 +210,12 @@ export default function PartnerPage() {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  /* ARCHIVE: убранные с этого устройства проекты, режим просмотра архива,
+     контекстное меню по ПКМ и отметка текущей выгрузки. */
+  const [archivedProjects, setArchivedProjects] = useState<string[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/auth/signin");
@@ -215,14 +234,77 @@ export default function PartnerPage() {
     if (status === "authenticated" && allowed) fetchProjects();
   }, [status, allowed, fetchProjects]);
 
+  /* ARCHIVE: архив живёт в хранилище браузера, поэтому читаем его после
+     монтирования, а не при первом расчёте: на сервере его просто нет. */
+  useEffect(() => {
+    const sync = () => setArchivedProjects(readArchive("project"));
+    sync();
+    window.addEventListener(ARCHIVE_EVENT, sync);
+    return () => window.removeEventListener(ARCHIVE_EVENT, sync);
+  }, []);
+
+  // Меню закрывается от любого действия мимо него — как и в списке разговоров.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
+  /**
+   * ARCHIVE: выгрузка проекта файлом и уборка его из активного списка.
+   *
+   * Сначала файл, потом скрытие: если выгрузка не удалась, проект остаётся
+   * на месте и человек не решит, что потерял его вместе с историей этапов.
+   */
+  const archiveProject = useCallback(async (project: ProjectItem) => {
+    setMenu(null);
+    setBusyId(project.id);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/export`, { cache: "no-store" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        await alertDialog(data.error || "Не удалось выгрузить проект");
+        return;
+      }
+      downloadJson(archiveFileName("проект", project.name), await res.json());
+      addToArchive("project", project.id);
+      setOpenId((prev) => (prev === project.id ? null : prev));
+    } catch {
+      await alertDialog("Сеть недоступна: проект не выгружен и остался в списке");
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
+  /* ARCHIVE: порядок списка — по убыванию последнего взаимодействия. Сервер уже
+     отдаёт их так, но после добавления проекта без перезагрузки порядок держится
+     только на том, что новая запись приклеивается в начало. Явная сортировка
+     делает правило одинаковым в любой момент. */
+  const visibleProjects = useMemo(() => {
+    const archivedSet = new Set(archivedProjects);
+    return projects
+      .filter((p) => (showArchived ? archivedSet.has(p.id) : !archivedSet.has(p.id)))
+      .sort((a, b) => lastActivityAt(b.updatedAt, b.createdAt) - lastActivityAt(a.updatedAt, a.createdAt));
+  }, [projects, archivedProjects, showArchived]);
+
   if (status === "loading" || (status === "authenticated" && !allowed)) {
     return <div className="flex min-h-screen items-center justify-center bg-neutral-50 dark:bg-neutral-950"><Spinner /></div>;
   }
   if (!allowed) return null;
 
-  const total = projects.length;
-  const launched = projects.filter((p) => progressOf(p) >= 100 || p.status === "LAUNCHED").length;
-  const inWork = projects.filter((p) => { const pr = progressOf(p); return pr > 0 && pr < 100 && p.status !== "LAUNCHED"; }).length;
+  /* ARCHIVE: счётчики считают то, что видно в списке. Иначе «Всего: 8» над тремя
+     строками выглядело бы как ошибка загрузки. */
+  const total = visibleProjects.length;
+  const launched = visibleProjects.filter((p) => progressOf(p) >= 100 || p.status === "LAUNCHED").length;
+  const inWork = visibleProjects.filter((p) => { const pr = progressOf(p); return pr > 0 && pr < 100 && p.status !== "LAUNCHED"; }).length;
 
   const navItemCls = (active: boolean) => active
     ? "flex w-full items-center gap-3 rounded-xl bg-violet-500/10 px-3 py-2 text-sm font-medium text-violet-700 dark:bg-cyan-500/10 dark:text-cyan-300"
@@ -266,7 +348,23 @@ export default function PartnerPage() {
 
               <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-white/10 dark:bg-neutral-900">
                 <div className="flex items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4 dark:border-white/10">
-                  <div><h2 className="font-semibold text-neutral-900 dark:text-white">Мои проекты</h2><p className="text-xs text-neutral-500 dark:text-gray-400">Активные проекты и заявки в работе</p></div>
+                  <div>
+                    <h2 className="font-semibold text-neutral-900 dark:text-white">{showArchived ? "Архив проектов" : "Мои проекты"}</h2>
+                    <p className="text-xs text-neutral-500 dark:text-gray-400">
+                      {showArchived
+                        ? "Убраны с этого устройства — в работе у администрации они остаются"
+                        : "Активные проекты и заявки в работе · правая кнопка мыши — архив"}
+                    </p>
+                  </div>
+                  {/* ARCHIVE: переключатель архива появляется только когда там что-то есть. */}
+                  {(archivedProjects.length > 0 || showArchived) && (
+                    <button
+                      onClick={() => setShowArchived((v) => !v)}
+                      className="ml-auto mr-1 flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 transition hover:bg-neutral-100 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                    >
+                      {showArchived ? "К активным" : `Архив (${archivedProjects.length})`}
+                    </button>
+                  )}
                   <button onClick={() => setShowAdd(true)} className="flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-violet-500 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400">
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     Добавить проект
@@ -275,23 +373,28 @@ export default function PartnerPage() {
 
                 {loadingProjects ? (
                   <div className="grid min-h-72 place-items-center px-6 py-12"><Spinner /></div>
-                ) : projects.length === 0 ? (
+                ) : visibleProjects.length === 0 ? (
                   <div className="grid min-h-72 place-items-center px-6 py-12 text-center">
                     <div>
                       <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-violet-500/10 text-violet-600 dark:bg-cyan-500/10 dark:text-cyan-400"><ProjectsIcon /></div>
-                      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Проектов пока нет</p>
-                      <p className="mt-1 max-w-sm text-xs text-neutral-400">Добавьте текущий проект — заявка появится у администрации, а здесь будет виден прогресс вплоть до запуска.</p>
+                      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{showArchived ? "В архиве пусто" : "Проектов пока нет"}</p>
+                      <p className="mt-1 max-w-sm text-xs text-neutral-400">{showArchived ? "Здесь окажутся проекты, скачанные файлом и убранные из активного списка." : "Добавьте текущий проект — заявка появится у администрации, а здесь будет виден прогресс вплоть до запуска."}</p>
                     </div>
                   </div>
                 ) : (
                   <div className="divide-y divide-neutral-200 dark:divide-white/10">
-                    {projects.map((p) => {
+                    {visibleProjects.map((p) => {
                       const stages = stagesOf(p);
                       const done = doneOf(p, stages);
                       const progress = progressOf(p, stages);
                       const isOpen = openId === p.id;
                       return (
-                        <div key={p.id}>
+                        <div
+                          key={p.id}
+                          /* ARCHIVE: ПКМ по строке проекта — то же место действий, что и в
+                             списке разговоров. */
+                          onContextMenu={(e) => { e.preventDefault(); setMenu({ id: p.id, x: e.clientX, y: e.clientY }); }}
+                        >
                           <button onClick={() => setOpenId(isOpen ? null : p.id)} className="w-full px-5 py-4 text-left transition hover:bg-neutral-50 dark:hover:bg-white/5">
                             <div className="mb-2 flex items-center justify-between gap-3">
                               <div className="flex min-w-0 items-center gap-2">
@@ -349,6 +452,36 @@ export default function PartnerPage() {
           )}
         </main>
       </div>
+
+      {/* ARCHIVE: контекстное меню проекта. Безвозвратного удаления здесь нет
+          сознательно: проект — это заявка, которую ведёт администрация, и его удаление
+          одной стороной стёрло бы чужую работу. */}
+      {menu && (
+        <div
+          className="fixed z-[100] min-w-[220px] overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 text-sm shadow-xl dark:border-white/10 dark:bg-neutral-900"
+          style={{ top: menu.y, left: menu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {archivedProjects.includes(menu.id) ? (
+            <button
+              type="button"
+              onClick={() => { removeFromArchive("project", menu.id); setMenu(null); }}
+              className="w-full px-3 py-2 text-left text-neutral-700 transition hover:bg-neutral-100 dark:text-gray-200 dark:hover:bg-white/5"
+            >
+              Вернуть из архива
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busyId === menu.id}
+              onClick={() => { const p = projects.find((x) => x.id === menu.id); if (p) archiveProject(p); }}
+              className="w-full px-3 py-2 text-left text-neutral-700 transition hover:bg-neutral-100 disabled:opacity-50 dark:text-gray-200 dark:hover:bg-white/5"
+            >
+              {busyId === menu.id ? "Выгружаем…" : "В архив (скачать файл)"}
+            </button>
+          )}
+        </div>
+      )}
 
       {showAdd && (
         <AddProjectModal
