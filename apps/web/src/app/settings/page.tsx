@@ -15,6 +15,7 @@ import { useVoice, REPLAY_MAX_SECONDS, REPLAY_MIN_SECONDS, EQ_BANDS, EQ_MIN_DB, 
 import { getDesktopApi, type DesktopConfig } from "@/lib/desktop";
 import ConnectProfileSettings from "@/components/profile/ConnectProfileSettings";
 import ChatAppearanceSettings from "@/components/profile/ChatAppearanceSettings";
+import PremiumAppearanceSettings from "@/components/profile/PremiumAppearanceSettings"; // PREMIUM-SKIN
 import ChatShowcase from "@/components/profile/ChatShowcase";
 import ServerProfileSection from "@/components/profile/ServerProfileSection";
 import IgnoreListSection from "@/components/profile/IgnoreListSection";
@@ -310,7 +311,7 @@ function CameraDeviceSelect() {
         className="w-full text-sm rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800 px-3 py-2 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:focus:ring-cyan-500/40"
         aria-label="Выбор камеры"
       >
-        <option value="">Камера по умолчанию</option>
+        <option value="">Камера по умолч��нию</option>
         {cameraDevices.map(d => (
           <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
         ))}
@@ -1355,7 +1356,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                   <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                     Пресет
-                    <InfoTooltip text="«Тепло» — поднимает низ и мягко убирает верх. «Радио» — срезает низ и выводит вперёд середину. «Чёткость» — добавляет 3.5 кГц, от этого разборчивее согласные. «Глубина» — усиливает 80 Гц. Стоит подвинуть любой ползунок, и пресет станет «Свои настройки»." />
+                    <InfoTooltip text="«Тепло» — поднимает низ и мягко убирает верх. «Радио» — срезает низ и выводит вперёд середину. «Чёткость» — добавляет 3.5 кГц, от этого разборчивее согласные. «Глубина» — усиливает 80 Гц. Стоит подвинуть любой полз��нок, и пресет станет «Свои настройки»." />
                   </p>
                   <div className="flex flex-wrap justify-end gap-0.5 rounded-lg bg-neutral-200/70 dark:bg-white/10 p-0.5">
                     {EQ_PRESET_ORDER.map((id) => (
@@ -1830,6 +1831,13 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+
+            {/* PREMIUM-SKIN: свободная кастомизация для подписчиков идёт после выбора
+                темы и не перед ним: тема задаёт базу, а этот блок кладётся поверх неё,
+                и порядок на экране повторяет порядок применения. */}
+            <div className="mt-6">
+              <PremiumAppearanceSettings isPremium={effectivePremium} />
+            </div>
           </Section>
         );
 

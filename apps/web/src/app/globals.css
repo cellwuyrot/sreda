@@ -672,7 +672,7 @@ body {
    Monochrome Lite — строгий минимализм: ТОЛЬКО чёрный текст на белом фоне.
    Никаких текстур, градиентов и виньеток; единственное допустимое отклонение —
    немногочисленные серые элементы (границы, вторичный текст, hover). На /connect
-   фон убран полностью — панели просто белые с тонкими серыми разделителями.
+   фон убран полностью — панели просто белые с ��онкими серыми разделителями.
    Строится на light-базе (`.light.mono-lite`), поэтому light-утилиты
    Tailwind продолжают работать.
    ════════════════════════════════════════════════════════════════════════ */
@@ -1261,4 +1261,67 @@ html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto
   align-items: center;
   gap: 4px;
   padding-bottom: 1px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PREMIUM-SKIN: своё оформление TZ.Connect для подписчиков Premium
+   ══════════════════════════════════════════════════════════════════════════
+
+   Значения переменных ставит lib/premiumSkin.ts на <html> в рантайме — в этом
+   файле лежат только правила и безопасные значения по умолчанию, при которых
+   ничего не меняется. Пока человек не включил кастомизацию, слой равен none,
+   и браузер просто не рисует лишнего фона.
+
+   Фон кладётся свойством background-image самого контейнера, а не отдельным
+   слоем-псевдоэлементом: в ленте сообщений уже выстроена своя лестница z-index
+   (шапка, панель ответа, тулбар при наведении), и новый слой неизбежно оказался
+   бы либо поверх сообщений, либо под фоном панели. Затемнение при этом идёт
+   первым слоем того же свойства — в CSS первый слой рисуется поверх остальных. */
+
+:root {
+  --tz-skin-chat-layer: none;
+  --tz-skin-chat-size: auto;
+  --tz-skin-chat-repeat: no-repeat;
+  --tz-skin-wall-layer: none;
+  --tz-skin-wall-size: auto;
+  --tz-skin-wall-repeat: no-repeat;
+}
+
+/* Задний фон переписки: каналы сообщества и личные сообщения. */
+.tz-skin-chat {
+  background-image: var(--tz-skin-chat-layer);
+  background-size: var(--tz-skin-chat-size);
+  background-repeat: var(--tz-skin-chat-repeat);
+  background-position: center center;
+  background-attachment: local;
+}
+
+/* Обои пустого пространства: экраны «выберите канал», «выберите друга»,
+   приветствие TZ.Connect и прочие места, где полотно ничем не занято. */
+.tz-skin-wall {
+  background-image: var(--tz-skin-wall-layer);
+  background-size: var(--tz-skin-wall-size);
+  background-repeat: var(--tz-skin-wall-repeat);
+  background-position: center center;
+}
+
+/* Свой шрифт интерфейса.
+
+   Селектор html[атрибут] body специфичнее, чем класс font-sans на body, поэтому
+   правило выигрывает без !important. Атрибут ставится только когда шрифт
+   действительно выбран: иначе пустая переменная перебила бы шрифт темы. */
+html[data-tz-skin-font="on"] body,
+html[data-tz-skin-font="on"] input,
+html[data-tz-skin-font="on"] textarea,
+html[data-tz-skin-font="on"] button,
+html[data-tz-skin-font="on"] select {
+  font-family: var(--tz-skin-font);
+}
+
+/* Моноширинные блоки кода остаются моноширинными: подменять шрифт в них —
+   значит ломать выравнивание, ради которого код и набирают моноширинным. */
+html[data-tz-skin-font="on"] code,
+html[data-tz-skin-font="on"] pre,
+html[data-tz-skin-font="on"] kbd {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }

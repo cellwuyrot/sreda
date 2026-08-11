@@ -942,7 +942,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [selectedConvId, messages, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, showToast],
   );
 
-  // ── Voice recording ──────────────────────────────────────────────────────────
+  // ── Voice recording ────────────────────────────────────────���─────────────────
   /**
    * Отправка записанной заметки — голосовой или квадратного видеосообщения.
    *
@@ -1588,7 +1588,9 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
         {/* COL 3: chat area */}
         {selectedConv && otherUser ? (
-          <section {...dropPaste.dropProps} className="flex-1 flex flex-col h-full bg-[var(--cn-main)] relative min-w-0">
+          /* PREMIUM-SKIN: тот же фон переписки, что и в каналах сообществ — личные
+             сообщения не должны выглядеть чужим окном. */
+          <section {...dropPaste.dropProps} className="tz-skin-chat flex-1 flex flex-col h-full bg-[var(--cn-main)] relative min-w-0">
             {dropPaste.isDragOver && (
               <div className="tz-dropzone">Отпустите файлы, чтобы прикрепить</div>
             )}
@@ -1782,7 +1784,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onRemoveAttachment={(i) => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
               onVoiceRecorded={handleVoiceRecorded}
               /* Видеосообщение — только в личной переписке. В деловом чате
-                 собеседник — администрация по заявке, и квадрат с камеры там не
+                 собеседник — администрация по з��явке, и квадрат с камеры там не
                  к месту; голосовое остаётся. */
               allowVideoNote={!isBusiness}
               replyTo={replyTo}
@@ -1815,7 +1817,9 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             />
           </section>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-[var(--cn-main)]">
+          /* PREMIUM-SKIN: диалог не выбран — это пустое пространство, значит здесь
+             работают обои главного окна, а не фон чата. */
+          <div className="tz-skin-wall flex-1 flex items-center justify-center bg-[var(--cn-main)]">
             <div className="text-center">
               <ChatIcon size={52} className="mx-auto mb-4" tone="muted" />
               <p className="text-sm text-neutral-400">Выберите диалог, чтобы начать общение</p>
