@@ -726,6 +726,16 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: true, content: "" } : m)));
     });
 
+    /* ARCHIVE: разговор уничтожен безвозвратно — событие приходит ОБОИМ
+       участникам, включая того, кто нажал: у него могла остаться вторая вкладка
+       или телефон, где чат всё ещё открыт. Закрываем его и убираем из списка:
+       попытка отправить сообщение в несуществующую переписку закончится ошибкой
+       без объяснений. */
+    socket.on("dm-purged", ({ conversationId }: { conversationId: string }) => {
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      setSelectedConvId((prev) => (prev === conversationId ? null : prev));
+    });
+
     /* BUSINESS-LOCK: запрет отправки меняется у обеих сторон сразу. Клиенту это
        важнее всего: иначе он узнал бы о закрытии, только набрав текст и получив
        отказ. */
@@ -942,7 +952,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [selectedConvId, messages, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, showToast],
   );
 
-  // ── Voice recording ────────────────────────────────────────����─────────────────
+  // ── Voice recording ────────────────────────────────────────�����─────────────────
   /**
    * Отправка записанной заметки — голосовой или квадратного видеосообщения.
    *
@@ -1584,6 +1594,13 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
           onClose={onClose}
           title={isBusiness ? "Бизнес чат" : "Личные сообщения"}
           emptyText={isBusiness ? businessEmptyText : "Нет диалогов"}
+          /* ARCHIVE: архивы разделов не смешиваются: убранная деловая заявка не
+             должна влиять на список личных сообщений и наоборот. */
+          archiveKind={isBusiness ? "business" : "dm"}
+          onPurged={(convId) => {
+            setConversations((prev) => prev.filter((c) => c.id !== convId));
+            setSelectedConvId((prev) => (prev === convId ? null : prev));
+          }}
         />
 
         {/* COL 3: chat area */}
