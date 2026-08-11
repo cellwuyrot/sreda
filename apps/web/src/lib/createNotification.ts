@@ -36,6 +36,11 @@ export async function createNotification(params: {
    */
   pushEnabled?: boolean;
 }) {
+  // ГРУППИРОВКА (см. ниже): если передан предмет (entityType + entityId) и по
+  // нему уже висит непрочитанное уведомление того же вида, оно обновляется на
+  // месте вместо создания второй строки. Один чат — одно уведомление и одна
+  // цифра в бейдже, сколько бы сообщений подряд ни пришло.
+  //
   // Багфикс: раньше notifyPush=false полностью отменял создание уведомления —
   // пропадала и история в колокольчике/на странице уведомлений. Теперь запись
   // в журнале создаётся всегда, а флаг pushEnabled в socket-событии сообщает
@@ -49,25 +54,73 @@ export async function createNotification(params: {
     pushEnabled = user?.notifyPush !== false;
   }
 
-  const notification = await prisma.notification.create({
-    data: {
-      userId: params.userId,
-      type: params.type,
-      title: params.title,
-      body: params.body,
-      link: params.link,
-      /* Никогда не уведомляем «из-за самого получателя»: такая связь означала бы,
-         что уведомление исчезнет вместе с ним и так (по userId), а смысла в ней
-         нет. */
-      actorId: params.actorId && params.actorId !== params.userId ? params.actorId : null,
-      entityType: params.entityType ?? null,
-      entityId: params.entityId ?? null,
-    },
-  });
+  /* Никогда не уведомляем «из-за самого получателя»: такая связь означала бы,
+     что уведомление исчезнет вместе с ним и так (по userId), а смысла в ней
+     нет. */
+  const actorId = params.actorId && params.actorId !== params.userId ? params.actorId : null;
+
+  /* ГРУППИРОВКА. Если по этому же предмету (беседе) у получателя уже висит
+     НЕПРОЧИТАННОЕ уведомление того же вида — обновляем его на месте, а не плодим
+     ещё одну строку. Так пять сообщений подряд из одного чата дают одно
+     уведомление со счётчиком и одну цифру в бейдже, а не пять.
+
+     Свежий текст/ссылка перетирают прежние (в списке видно последнюю реплику, а
+     переход ведёт к последнему сообщению), а `createdAt` поднимается к «сейчас» —
+     уведомление всплывает наверх ленты, как это делает чат в списке диалогов.
+
+     Прочитанные уведомления в группировке не участвуют: человек их уже видел, и
+     новое событие обязано снова зажечь бейдж — поэтому создаётся новая строка. */
+  let notification: Awaited<ReturnType<typeof prisma.notification.create>> | undefined;
+  let isNew = true;
+  if (params.entityType && params.entityId) {
+    const existing = await prisma.notification.findFirst({
+      where: {
+        userId: params.userId,
+        type: params.type,
+        entityType: params.entityType,
+        entityId: params.entityId,
+        read: false,
+      },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (existing) {
+      notification = await prisma.notification.update({
+        where: { id: existing.id },
+        data: {
+          title: params.title,
+          body: params.body,
+          link: params.link,
+          actorId,
+          count: { increment: 1 },
+          createdAt: new Date(),
+        },
+      });
+      isNew = false;
+    }
+  }
+
+  if (!notification) {
+    notification = await prisma.notification.create({
+      data: {
+        userId: params.userId,
+        type: params.type,
+        title: params.title,
+        body: params.body,
+        link: params.link,
+        actorId,
+        entityType: params.entityType ?? null,
+        entityId: params.entityId ?? null,
+      },
+    });
+  }
 
   const io = getIO();
   if (io) {
-    io.to(`dm-${params.userId}`).emit(SOCKET_EVENTS.NEW_NOTIFICATION, { ...notification, pushEnabled });
+    /* isNew сообщает клиентам, добавилась ли НОВАЯ строка в журнал. Колокольчик
+       увеличивает счётчик только на новую: сгруппированное обновление число
+       непрочитанных не меняет. */
+    io.to(`dm-${params.userId}`).emit(SOCKET_EVENTS.NEW_NOTIFICATION, { ...notification, pushEnabled, isNew });
   }
 
   /* PUSH: доставка в ЗАКРЫТОЕ приложение. Событие выше доходит только до живого
@@ -145,6 +198,9 @@ export async function createNotificationsBulk(params: {
       io.to(`dm-${notification.userId}`).emit(SOCKET_EVENTS.NEW_NOTIFICATION, {
         ...notification,
         pushEnabled: pushByUser.get(notification.userId) !== false,
+        // Пачка всегда вставляет новые строки — счётчик у каждого получателя
+        // растёт (в отличие от сгруппированного обновления).
+        isNew: true,
       });
     }
   }

@@ -140,7 +140,10 @@ export async function GET(req: Request) {
 			read: false,
 			// Багфикс: contains по одному лишь префиксу ID мог пометить прочитанными
 			// уведомления другого канала, чей ID начинается с этого же префикса.
+			// По предмету (entityType/entityId) — точное совпадение; ветка по ссылке
+			// осталась для записей, созданных до появления предмета у уведомлений.
 			OR: [
+				{ entityType: "channel", entityId: channelId },
 				{ link: { contains: `channel=${channelId}&` } },
 				{ link: { endsWith: `channel=${channelId}` } },
 			],
@@ -442,6 +445,10 @@ export async function POST(req: NextRequest) {
 					title: `${senderName} упомянул всех`,
 					body: notificationBody,
 					link: notificationLink,
+					// Предмет — канал: несколько упоминаний подряд группируются в
+					// одно уведомление, и открытие канала гасит их разом.
+					entityType: "channel",
+					entityId: channelId,
 				}).catch(() => {});
 			}
 		} else {
@@ -469,6 +476,10 @@ export async function POST(req: NextRequest) {
 								title: viaTag ? `${senderName} упомянул тег ${viaTag}` : `${senderName} упомянул вас`,
 								body: notificationBody,
 								link: notificationLink,
+								// Предмет — канал: повторные упоминания одного человека
+								// в этом канале схлопываются в одно уведомление.
+								entityType: "channel",
+								entityId: channelId,
 							}).catch(() => {});
 						}
 					}

@@ -85,7 +85,14 @@ export default function Navbar() {
       window.location.reload();
     });
     socket.on("account-role-updated", () => window.location.reload());
-    socket.on("new-notification", () => setUnread((c) => c + 1));
+    /* isNew === false — уведомление сгруппировано с уже висящим непрочитанным
+       (ещё одно сообщение из того же чата). Новой строки в журнале не появилось,
+       поэтому и счётчик непрочитанных расти не должен: беседа как была одной
+       непрочитанной, так и осталась. Растёт бейдж только на действительно новое. */
+    socket.on("new-notification", (payload?: { isNew?: boolean }) => {
+      if (payload?.isNew === false) return;
+      setUnread((c) => c + 1);
+    });
     // This listener lives in the global navbar rather than DMPanel, so an
     // incoming personal message is announced even while the recipient is in a
     // group, friends view, settings, or another conversation.

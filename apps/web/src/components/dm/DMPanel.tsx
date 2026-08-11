@@ -526,6 +526,30 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [],
   );
 
+  /* Отметка о прочтении беседы + синхронизация колокольчика.
+
+     Сервер гасит уведомления беседы по предмету и возвращает остаток
+     непрочитанного (unreadLeft). Прокидываем его тем же событием, что и страница
+     уведомлений (tz-notifications-read), — иначе прочитанный чат оставлял бы
+     «непрочитанное» в бейдже до следующего возврата во вкладку. */
+  const markConversationRead = useCallback((convId: string) => {
+    fetch("/api/dm/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ conversationId: convId }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.unreadLeft === "number") {
+          window.dispatchEvent(
+            new CustomEvent("tz-notifications-read", { detail: { unreadCount: Math.max(0, d.unreadLeft) } }),
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // ── When conversation changes: load messages, peer key, mark read ──────────
   useEffect(() => {
     if (!selectedConvId || !otherId) return;
@@ -546,18 +570,13 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
        появляется, и обещания, которого нельзя выполнить, тоже. */
     if (!isBusiness) fetchPeerKey(otherId);
     loadMessages(selectedConvId);
-    // Mark read
-    fetch("/api/dm/read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ conversationId: selectedConvId }),
-    }).catch(() => {});
+    // Mark read (+ синхронизация бейджа колокольчика по остатку непрочитанного)
+    markConversationRead(selectedConvId);
     // Reset unread counter locally
     setConversations((prev) => prev.map((c) => (c.id === selectedConvId ? { ...c, unread: 0 } : c)));
     // NEW: сразу гасим цифру на значке приложения (десктоп)
     getDesktopApi()?.refreshBadge?.();
-  }, [selectedConvId, otherId, isBusiness, fetchPeerKey, loadMessages, resetWindow]);
+  }, [selectedConvId, otherId, isBusiness, fetchPeerKey, loadMessages, resetWindow, markConversationRead]);
 
   // ── Deep-link from a notification: scroll to and flash the target DM message ──
   // FIX-JUMP: раньше эффект зависел от `messages` и пере-скроллил к цели на каждое
@@ -710,12 +729,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         ),
       );
       // Mark read since we're viewing
-      fetch("/api/dm/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ conversationId: selectedConvId }),
-      }).catch(() => {});
+      markConversationRead(selectedConvId);
     });
 
     socket.on("dm-edited", (msg: Message) => {
