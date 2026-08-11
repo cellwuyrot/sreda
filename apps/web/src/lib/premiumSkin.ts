@@ -24,7 +24,7 @@
  * ── Где хранится ───────────────────────────────────────────────
  *
  * В localStorage, как и кастомизация чата (lib/chatAppearance.ts). Это свойство
- * устройства: на телефоне и на широком мониторе уместны разные обои, а
+ * устройства: на телефоне и на широком мониторе уместны разные фоны, а
  * тяжёлая картинка на мобильном трафике нужна не всегда. Серверу знать
  * об этом нечего: чужой внешний вид никто кроме владельца не видит.
  *
@@ -94,8 +94,6 @@ export interface PremiumSkin {
   enabled: boolean;
   /** Фон ленты сообщений — и в каналах, и в личных. */
   chat: SkinBackground;
-  /** Обои пустого пространства /connect. */
-  wallpaper: SkinBackground;
   palette: SkinPalette;
   font: SkinFont;
 }
@@ -162,7 +160,6 @@ export const PALETTE_FIELDS: {
 export const PREMIUM_SKIN_DEFAULT: PremiumSkin = {
   enabled: false,
   chat: { mode: "none", color: "#12121c", imageUrl: "", fit: "cover", dim: 35 },
-  wallpaper: { mode: "none", color: "#12121c", imageUrl: "", fit: "cover", dim: 25 },
   palette: {
     enabled: false,
     rail: "#070709",
@@ -245,7 +242,6 @@ export function normalizePremiumSkin(raw: unknown): PremiumSkin {
   return {
     enabled: typeof input.enabled === "boolean" ? input.enabled : d.enabled,
     chat: normalizeBackground(input.chat, d.chat),
-    wallpaper: normalizeBackground(input.wallpaper, d.wallpaper),
     palette: {
       enabled: typeof paletteInput.enabled === "boolean" ? paletteInput.enabled : d.palette.enabled,
       rail: sanitizeColor(paletteInput.rail, d.palette.rail),
@@ -270,7 +266,6 @@ function structuredCopy(skin: PremiumSkin): PremiumSkin {
   return {
     enabled: skin.enabled,
     chat: { ...skin.chat },
-    wallpaper: { ...skin.wallpaper },
     palette: { ...skin.palette },
     font: { ...skin.font },
   };
@@ -292,7 +287,7 @@ export function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
- * Слой background-image для области.
+ * Сл��й background-image для области.
  *
  * Затемнение идёт первым слоем того же свойства, а не отдельным элементом:
  * в CSS первый слой рисуется поверх остальных, так что полупрозрачный
@@ -387,9 +382,6 @@ const SKIN_VARS = [
   "--tz-skin-chat-layer",
   "--tz-skin-chat-size",
   "--tz-skin-chat-repeat",
-  "--tz-skin-wall-layer",
-  "--tz-skin-wall-size",
-  "--tz-skin-wall-repeat",
   "--tz-skin-font",
 ];
 
@@ -415,13 +407,10 @@ export function applyPremiumSkin(skin: PremiumSkin): void {
 
   root.dataset.tzSkin = "on";
 
-  /* Фон ленты и обои пустого пространства. */
+  /* Фон ленты сообщений. */
   root.style.setProperty("--tz-skin-chat-layer", backgroundLayer(skin.chat));
   root.style.setProperty("--tz-skin-chat-size", backgroundSize(skin.chat));
   root.style.setProperty("--tz-skin-chat-repeat", backgroundRepeat(skin.chat));
-  root.style.setProperty("--tz-skin-wall-layer", backgroundLayer(skin.wallpaper));
-  root.style.setProperty("--tz-skin-wall-size", backgroundSize(skin.wallpaper));
-  root.style.setProperty("--tz-skin-wall-repeat", backgroundRepeat(skin.wallpaper));
 
   /* Палитра. Производные от акцента считаются, а не спрашиваются: просить
      человека подобрать ещё три почти одинаковых оттенка — верный способ
