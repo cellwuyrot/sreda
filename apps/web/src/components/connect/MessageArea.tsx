@@ -275,7 +275,7 @@ const MessageRow = memo(function MessageRow({
   msg, prefs, firstUnread, showDateDivider, isGrouped, animate, flashed, editing, editContent, currentUserId, isPrivilegedRole, canPin, channelId, channelName, channelMembers, roleTags, groupEmoji, groupEmojiList, ignoredIds, revealedIgnored, displayName, openUserCard, cancelUserCardHover, setReplyTo, onJumpToMessage, setEditContent, setRevealedIgnored, setLightboxSrc, openThread, toggleReaction, startEdit, saveEdit, cancelEdit, deleteMessage, pinMessage,
 }: MessageRowProps) {
   const msgDate = new Date(msg.createdAt);
-  /* FIX-EDITBLINK: ��ообщение скрыто игнором — вместо содержимого заглушка.
+  /* FIX-EDITBLINK: ����ообщение скрыто игнором — вместо содержимого заглушка.
      Признак нужен в двух местах, поэтому считается один раз. */
   const hiddenByIgnore =
     ignoredIds.has(msg.user.id) && !revealedIgnored.has(msg.id) && msg.user.id !== currentUserId;
@@ -713,7 +713,7 @@ export default function MessageArea({
   }, [isDragOver]);
   const [errorToast, setErrorToast] = useState<string | null>(null);
   /* CENSOR: карточка о рамках приличия. Показывается только отправителю и только
-     на несколько секунд — эт�� напоминание, а не наказание. Запрет отправки идёт
+     на несколько секунд — ��т�� напоминание, а не наказание. Запрет отправки идёт
      обычным отказом (красный тост), здесь же сообщение ушло. */
   const [censorNotice, setCensorNotice] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -1015,7 +1015,7 @@ export default function MessageArea({
   }, [onOpenDm]);
 
   /* FIX-TAGMENTION: карта тегов сообщества для подсветки «#тег» в сообщениях.
-     Пересобирается только при смене списка ролей — ссылка стаби��ьна, поэтому
+     Пересобирается только при смене списка ролей — ссылка с��аби��ьна, поэтому
      мемоизация строк MessageRow сохраняется. */
   const roleTagMap = useMemo(() => {
     const map = new Map<string, RoleTag>();
@@ -1589,7 +1589,7 @@ export default function MessageArea({
   /* Возврат позиции после подстановки старых сообщений сверху. Именно
      useLayoutEffect: обычный эффект выполняется после отрисовки, и человек
      успевает увидеть рывок. Считаем от низа — высота выросшей ленты нам заранее
-     не известна, а расстояние до низа не изменилось. */
+     не изв��стна, а расстояние до низа не изменилось. */
   useLayoutEffect(() => {
     const el = scrollContainerRef.current;
     const anchor = prependAnchorRef.current;
@@ -2305,7 +2305,10 @@ export default function MessageArea({
   }
 
   return (
-    <div {...dropPaste.dropProps} className="flex-1 flex flex-col h-full min-w-0 relative">
+    /* PREMIUM-SKIN: класс tz-skin-chat кладёт задний фон переписки, выбранный
+       подписчиком. Пока оформление выключено, переменная равна none и класс
+       ничего не меняет. */
+    <div {...dropPaste.dropProps} className="tz-skin-chat flex-1 flex flex-col h-full min-w-0 relative">
       {dropPaste.isDragOver && (
         <div className="tz-dropzone">Отпустите файлы, чтобы прикрепить</div>
       )}
@@ -2335,7 +2338,7 @@ export default function MessageArea({
               в остальных модульных разделах она есть. Показываем её тем, кто
               может настраивать канал (владелец, администратор, модератор). */}
           {isNewsChannel && canPin && <ModuleSettingsButton channelId={channelId} />}
-          {/* FIX-NEWS-MUTE: заглушка раздела новостей. Моделей ради неё не заводим:
+          {/* FIX-NEWS-MUTE: ��аглушка раздела новостей. Моделей ради неё не заводим:
               ChannelMute уже есть и уже учитывается и при рассылке анонсов
               (lib/newsPost.ts), и теперь при подсчёте непрочитанных. Не хватало
               ровно этого переключателя. Состояние меняем сразу, а при ошибке

@@ -19,6 +19,7 @@ import GroupListPanel from "@/components/connect/GroupListPanel";
 import ChannelSidebar from "@/components/connect/ChannelSidebar";
 import MessageArea from "@/components/connect/MessageArea";
 import { applyChatAppearance, loadChatAppearance } from "@/lib/chatAppearance";
+import { applyPremiumSkin, loadPremiumSkin, PREMIUM_SKIN_EVENT } from "@/lib/premiumSkin"; // PREMIUM-SKIN
 import QAPanel from "@/components/connect/QAPanel";
 import AppealsPanel from "@/components/connect/AppealsPanel";
 import WikiPanel from "@/components/connect/WikiPanel";
@@ -92,6 +93,26 @@ function ConnectPageInner() {
      лента ничего не перерисовывает. */
   useEffect(() => { applyChatAppearance(loadChatAppearance()); }, []);
 
+  /* PREMIUM-SKIN: своё оформление (фон чатов, обои, палитра, шрифт) тоже
+     хранится на устройстве и ставится переменными на корень документа.
+     Применяем отдельным эффектом и подписываемся на событие изменения:
+     настройки могут быть открыты в соседней вкладке того же окна.
+
+     Проверка подписки здесь та же, что у монохромной темы ниже: если Premium
+     закончился, оформление снимается с экрана, но остаётся в хранилище и
+     само вернётся после продления. */
+  useEffect(() => {
+    const user = session?.user as { isPremium?: boolean; role?: string } | undefined;
+    const canSkin = user ? hasPremium(user) : false;
+    const sync = () => {
+      const skin = loadPremiumSkin();
+      applyPremiumSkin(canSkin ? skin : { ...skin, enabled: false });
+    };
+    sync();
+    window.addEventListener(PREMIUM_SKIN_EVENT, sync);
+    return () => window.removeEventListener(PREMIUM_SKIN_EVENT, sync);
+  }, [session]);
+
   // The Monochrome design is a premium perk. If the account can't use it (e.g.
   // premium lapsed), fall back to the standard theme of the same brightness.
   useEffect(() => {
@@ -143,7 +164,7 @@ function ConnectPageInner() {
   const [mobileView, setMobileView] = useState<MobileView>("groups");
   const [showVoicePanel, setShowVoicePanel] = useState(false);
   /* На что смотрит колонка контента: на переписку или на голосовой канал с его
-     показом экрана. Раньше окно демонстрации накрывало колонку и не зависело ни
+     показом экрана. Раньше окно демонстрации накрывало колонку и не ��ависело ни
      от чего: открыть текстовый канал во время показа было невозможно — чат
      оставался под трансляцией, и уйти из неё можно было только выйдя из голоса.
      Само окно умеет сворачиваться в плашку (проп onVoiceChannel), но значение
@@ -512,7 +533,7 @@ function ConnectPageInner() {
     const task = params.get("task");
     const section = params.get("section");
     const dm = params.get("dm");
-    /* CHAT: ?section=business&conv=… — переход из карточки проекта в кабинете.
+    /* CHAT: ?section=business&conv=… — переход из карточки п��оекта в кабинете.
        Разговор адресуется по id, а не по собеседнику: у делового чата вторая
        сторона у всех заявок одна и та же — «Администрация». */
     const conv = params.get("conv");
@@ -822,7 +843,7 @@ function ConnectPageInner() {
         класс max-md:h-dvh стоял на том же элементе и перебивал этот каскад —
         каркас оставался высотой во весь экран, клавиатура накрывала поле ввода,
         а страница начинала прокручиваться целиком. */}
-    <div className="cn-main flex h-[calc(100vh-64px-var(--tz-desktop-inset-bottom))] max-md:h-[var(--tz-app-h,100dvh)] overflow-hidden">
+    <div className="cn-main tz-skin-wall flex h-[calc(100vh-64px-var(--tz-desktop-inset-bottom))] max-md:h-[var(--tz-app-h,100dvh)] overflow-hidden">
 
       {/* ── COL 1: NavRail (desktop only) ── */}
       <NavRail
@@ -955,7 +976,7 @@ function ConnectPageInner() {
                     )
                   ) : (
                     /* Канал ещё не выбран (нет текстовых каналов) */
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                    <div className="tz-skin-wall flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
                       <p className="text-sm text-neutral-400">Выберите канал, чтобы начать общение</p>
                       <button onClick={() => setShowChannelsDrawer(true)} className="btn-primary text-sm min-h-[44px]">Открыть каналы</button>
                     </div>
@@ -1066,7 +1087,7 @@ function ConnectPageInner() {
               { key: "friends" as NavSection, label: "Друзья", icon: <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="3" /><path d="M12 13c-3.31 0-6 1.79-6 4v1h12v-1c0-2.21-2.69-4-6-4z" /><circle cx="4.5" cy="9" r="2" /><path d="M4.5 13C2.57 13 1 14.34 1 16v1h4" /><circle cx="19.5" cy="9" r="2" /><path d="M19.5 13c1.93 0 3.5 1.34 3.5 3v1h-4" /></svg> },
               { key: "dm" as NavSection, label: "Сообщения", icon: <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> },
               /* MOBILE-UI: раздел деловых разговоров на телефоне был недоступен —
-                 панель для него рисовалась, а переключиться на неё было нечем:
+                 панель для него рисовалась, а переключиться на не�� было нечем:
                  в нижней навигации кнопки не было, а боковая полоса на телефоне
                  скрыта. Клиент, подавший заявку с телефона, свой чат не находил.
                  Значок тот же, что в боковой полосе (щит), вписан разметкой, чтобы
@@ -1296,7 +1317,7 @@ function ConnectPageInner() {
             <FriendsPanel onMessageFriend={handleMessageFriend} />
 
             {/* COL 3 — hint */}
-            <div className="flex-1 flex items-center justify-center cn-main">
+            <div className="flex-1 flex items-center justify-center cn-main tz-skin-wall">
               <div className="text-center">
                 <UsersIcon size={44} tone="muted" className="mx-auto mb-3" />
                 <p className="text-sm" style={{ color: "var(--cn-muted)" }}>
