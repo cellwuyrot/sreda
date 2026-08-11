@@ -15,6 +15,11 @@ interface NotificationItem {
   link: string | null;
   read: boolean;
   createdAt: string;
+  /** Сколько событий схлопнуто в это уведомление (группировка беседы). */
+  count?: number;
+  /** Предмет уведомления — по нему гасится вся беседа разом. */
+  entityType?: string | null;
+  entityId?: string | null;
 }
 
 const TYPE_LABELS: Record<string, { label: string; icon: string; color: string }> = {
@@ -78,14 +83,39 @@ export default function NotificationsPage() {
   };
 
   const markRead = async (id: string) => {
-    const wasUnread = notifications.some((n) => n.id === id && !n.read);
-    await fetch("/api/notifications", {
+    const target = notifications.find((n) => n.id === id);
+    if (!target) return;
+    /* Уведомление беседы сгруппировано, но на всякий случай (старые записи,
+       созданные до группировки) гасим по предмету — тогда пропадут все
+       непрочитанные того же чата, а не только эта строка. Так закрывается баг
+       «прочитал одно — остальные из чата висят непрочитанными». */
+    const subject = target.entityType && target.entityId
+      ? { entityType: target.entityType, entityId: target.entityId }
+      : null;
+    const body = subject ?? { id };
+
+    const res = await fetch("/api/notifications", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify(body),
     });
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    const next = wasUnread ? Math.max(0, unreadCount - 1) : unreadCount;
+    const data = await res.json().catch(() => null);
+
+    setNotifications((prev) =>
+      prev.map((n) => {
+        if (n.id === id) return { ...n, read: true };
+        // Соседи из той же беседы тоже прочитаны.
+        if (subject && n.entityType === subject.entityType && n.entityId === subject.entityId) {
+          return { ...n, read: true };
+        }
+        return n;
+      }),
+    );
+    // Остаток непрочитанного берём у сервера (одна правда), а не пересчитываем.
+    const next =
+      data && typeof data.unreadCount === "number"
+        ? data.unreadCount
+        : Math.max(0, unreadCount - 1);
     setUnreadCount(next);
     emitUnread(next);
   };
@@ -217,6 +247,14 @@ export default function NotificationsPage() {
                         <span className={`text-sm font-medium ${n.read ? "text-neutral-500 dark:text-gray-400" : "text-neutral-900 dark:text-white"}`}>
                           {n.title}
                         </span>
+                        {/* Группировка: сколько событий схлопнуто в это уведомление.
+                            Показываем только у непрочитанного — «новых» у прочитанного
+                            не бывает. */}
+                        {!n.read && (n.count ?? 1) > 1 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-500 text-[10px] font-semibold flex-shrink-0">
+                            {(n.count ?? 1) > 99 ? "99+" : n.count} новых
+                          </span>
+                        )}
                         {!n.read && <div className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />}
                       </div>
                       {n.body && (() => {
