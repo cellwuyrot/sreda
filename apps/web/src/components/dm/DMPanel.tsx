@@ -942,7 +942,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [selectedConvId, messages, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, showToast],
   );
 
-  // ── Voice recording ────────────────────────────────────────���─────────────────
+  // ── Voice recording ────────────────────────────────────────����─────────────────
   /**
    * Отправка записанной заметки — голосовой или квадратного видеосообщения.
    *
@@ -1817,9 +1817,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             />
           </section>
         ) : (
-          /* PREMIUM-SKIN: диалог не выбран — это пустое пространство, значит здесь
-             работают обои главного окна, а не фон чата. */
-          <div className="tz-skin-wall flex-1 flex items-center justify-center bg-[var(--cn-main)]">
+          <div className="flex-1 flex items-center justify-center bg-[var(--cn-main)]">
             <div className="text-center">
               <ChatIcon size={52} className="mx-auto mb-4" tone="muted" />
               <p className="text-sm text-neutral-400">Выберите диалог, чтобы начать общение</p>

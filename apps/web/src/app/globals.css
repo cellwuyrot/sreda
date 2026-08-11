@@ -825,7 +825,7 @@ html.light.mono-lite body {
    `content-visibility: auto` разрешает браузеру пропускать раскладку и отрисовку
    строк, находящихся за пределами вьюпорта, — при десятках тысяч сообщений это
    убирает лаги и делает прокрутку плавной. `contain-intrinsic-size: auto <h>`
-   задаёт оценку высоты для ещё не отрисованных строк (и запоминает фактическую
+   задаёт о��енку высоты для ещё не отрисованных строк (и запоминает фактическую
    после первого показа), поэтому скроллбар не «прыгает». Строки остаются в DOM,
    так что переходы к сообщению, дозагрузка и автоскролл вниз работают как прежде.
    Ничего не меняется визуально: свойство влияет только на off-screen строки.
@@ -1282,9 +1282,6 @@ html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto
   --tz-skin-chat-layer: none;
   --tz-skin-chat-size: auto;
   --tz-skin-chat-repeat: no-repeat;
-  --tz-skin-wall-layer: none;
-  --tz-skin-wall-size: auto;
-  --tz-skin-wall-repeat: no-repeat;
 }
 
 /* Задний фон переписки: каналы сообщества и личные сообщения. */
@@ -1294,15 +1291,6 @@ html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto
   background-repeat: var(--tz-skin-chat-repeat);
   background-position: center center;
   background-attachment: local;
-}
-
-/* Обои пустого пространства: экраны «выберите канал», «выберите друга»,
-   приветствие TZ.Connect и прочие места, где полотно ничем не занято. */
-.tz-skin-wall {
-  background-image: var(--tz-skin-wall-layer);
-  background-size: var(--tz-skin-wall-size);
-  background-repeat: var(--tz-skin-wall-repeat);
-  background-position: center center;
 }
 
 /* Свой шрифт интерфейса.

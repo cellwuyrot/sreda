@@ -93,7 +93,7 @@ function ConnectPageInner() {
      лента ничего не перерисовывает. */
   useEffect(() => { applyChatAppearance(loadChatAppearance()); }, []);
 
-  /* PREMIUM-SKIN: своё оформление (фон чатов, обои, палитра, шрифт) тоже
+  /* PREMIUM-SKIN: своё оформление (фон чатов, палитра, шрифт) тоже
      хранится на устройстве и ставится переменными на корень документа.
      Применяем отдельным эффектом и подписываемся на событие изменения:
      настройки могут быть открыты в соседней вкладке того же окна.
@@ -671,7 +671,7 @@ function ConnectPageInner() {
     setUserVolume: voice.setUserVolume,
   };
 
-  /* Начался показ экрана — колонка контента показывает его. Без этого первый
+  /* Начался показ экрана — колонка конте��та показывает его. Без этого первый
      показ открылся бы плашкой, если до него человек читал переписку. */
   const anyScreenShare = voice.screenShares.length > 0;
   useEffect(() => {
@@ -843,7 +843,7 @@ function ConnectPageInner() {
         класс max-md:h-dvh стоял на том же элементе и перебивал этот каскад —
         каркас оставался высотой во весь экран, клавиатура накрывала поле ввода,
         а страница начинала прокручиваться целиком. */}
-    <div className="cn-main tz-skin-wall flex h-[calc(100vh-64px-var(--tz-desktop-inset-bottom))] max-md:h-[var(--tz-app-h,100dvh)] overflow-hidden">
+    <div className="cn-main flex h-[calc(100vh-64px-var(--tz-desktop-inset-bottom))] max-md:h-[var(--tz-app-h,100dvh)] overflow-hidden">
 
       {/* ── COL 1: NavRail (desktop only) ── */}
       <NavRail
@@ -976,7 +976,7 @@ function ConnectPageInner() {
                     )
                   ) : (
                     /* Канал ещё не выбран (нет текстовых каналов) */
-                    <div className="tz-skin-wall flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
                       <p className="text-sm text-neutral-400">Выберите канал, чтобы начать общение</p>
                       <button onClick={() => setShowChannelsDrawer(true)} className="btn-primary text-sm min-h-[44px]">Открыть каналы</button>
                     </div>
@@ -1075,7 +1075,7 @@ function ConnectPageInner() {
           )}
         </div>
 
-        {/* MOBILE-UI: нижняя навигация — Сообщества/Друзья/Сообщения.
+        {/* MOBILE-UI: нижняя ��авигац��я — Сообщества/Друзья/Сообщения.
             Видна только на верхнем уровне стека (список сообществ / друзья / диалоги),
             внутри каналов и чата не занимает место. Высота учитывает системную
             полосу жестов (safe-area-inset-bottom). */}
@@ -1317,7 +1317,7 @@ function ConnectPageInner() {
             <FriendsPanel onMessageFriend={handleMessageFriend} />
 
             {/* COL 3 — hint */}
-            <div className="flex-1 flex items-center justify-center cn-main tz-skin-wall">
+            <div className="flex-1 flex items-center justify-center cn-main">
               <div className="text-center">
                 <UsersIcon size={44} tone="muted" className="mx-auto mb-3" />
                 <p className="text-sm" style={{ color: "var(--cn-muted)" }}>
