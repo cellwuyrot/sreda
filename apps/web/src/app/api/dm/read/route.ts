@@ -56,7 +56,7 @@ export async function POST(req: Request) {
 
      Записи, созданные до появления предмета, гасим прежним способом — иначе у
      людей осталось бы вечное «непрочитанное» просто по дате создания. */
-  await markSubjectNotificationsRead({
+  const read = await markSubjectNotificationsRead({
     userId,
     entityType: "dm",
     entityId: conversationId,
@@ -75,5 +75,9 @@ export async function POST(req: Request) {
     emitToUser(peerId, "dm-read", { conversationId, userId, readAt: now.toISOString() });
   }
 
-  return NextResponse.json({ ok: true });
+  /* Остаток непрочитанного возвращаем клиенту: открыв чат, панель гасит цифру в
+     колокольчике этим числом сразу (событие tz-notifications-read), а не ждёт
+     пересинхронизации по фокусу вкладки. Без этого прочитанный чат оставлял
+     «непрочитанное» в бейдже до следующего возврата во вкладку. */
+  return NextResponse.json({ ok: true, unreadLeft: read.unreadLeft });
 }

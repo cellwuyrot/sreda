@@ -43,7 +43,28 @@ export async function PATCH(req: Request) {
       where: { userId: session.user.id, read: false },
       data: { read: true },
     });
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, unreadCount: 0 });
+  }
+
+  /* Пометка по предмету: нажали на сгруппированное уведомление беседы — гаснут
+     все её непрочитанные записи, а не только та, по которой кликнули. Раньше
+     помечалась ровно одна строка, и остальные уведомления того же чата
+     оставались непрочитанными («залипший» бейдж). Предмет приходит с клиента, но
+     сузить его до своих записей — обязанность сервера. */
+  if (body.entityType && body.entityId) {
+    await prisma.notification.updateMany({
+      where: {
+        userId: session.user.id,
+        read: false,
+        entityType: body.entityType,
+        entityId: body.entityId,
+      },
+      data: { read: true },
+    });
+    const unreadCount = await prisma.notification.count({
+      where: { userId: session.user.id, read: false },
+    });
+    return NextResponse.json({ success: true, unreadCount });
   }
 
   if (body.id) {
@@ -55,7 +76,10 @@ export async function PATCH(req: Request) {
     if (result.count === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    return NextResponse.json({ success: true });
+    const unreadCount = await prisma.notification.count({
+      where: { userId: session.user.id, read: false },
+    });
+    return NextResponse.json({ success: true, unreadCount });
   }
 
   return NextResponse.json({ error: "Invalid request" }, { status: 400 });
