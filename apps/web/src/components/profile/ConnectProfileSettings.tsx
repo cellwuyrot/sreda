@@ -46,12 +46,25 @@ export default function ConnectProfileSettings({
   role,
   isPremium = false,
   onGlowSaved,
+  sections = "all",
 }: {
   role: string;
   /** Оформление профиля — привилегия подписки, а не должности. */
   isPremium?: boolean;
   onGlowSaved?: (settings: ProfileSettings) => void;
+  /**
+   * Какие карточки показывать.
+   *
+   * Карточка «Оформление» по смыслу относится к разделу «Внешний вид», а
+   * остальные (присутствие, звук, шифрование) — к TZ.Connect. Разбивать файл
+   * на два компонента ради этого нельзя: у них общее состояние и одна запись
+   * в /api/profile/me. Поэтому компонент один, а разделы выбираются пропом;
+   * каждый экземпляр сам грузит свои значения и сам их сохраняет.
+   */
+  sections?: "all" | "connect" | "appearance";
 }) {
+  const showConnect = sections !== "appearance";
+  const showAppearance = sections !== "connect";
   const { data: session } = useSession();
   const sessionUser = session?.user as { id?: string; name?: string; username?: string } | undefined;
   /* Свечение аватара, анимированный баннер и фон дня и ночи — платные
@@ -177,14 +190,17 @@ export default function ConnectProfileSettings({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="flex items-center gap-1.5 text-base font-semibold text-neutral-900 dark:text-white">
-          TZ.Connect
-          <InfoTooltip text="Настройки мессенджера, перенесённые из панели TZ.Connect (кнопка-шестерёнка снизу слева)." side="bottom" />
-        </h2>
-      </div>
+      {showConnect && (
+        <div>
+          <h2 className="flex items-center gap-1.5 text-base font-semibold text-neutral-900 dark:text-white">
+            TZ.Connect
+            <InfoTooltip text="Настройки мессенджера, перенесённые из панели TZ.Connect (кнопка-шестерёнка снизу слева)." side="bottom" />
+          </h2>
+        </div>
+      )}
 
       {/* ── Карточка «Присутствие»: превью, статус, кастомный статус, город. ── */}
+      {showConnect && (
       <SettingsCard title="Присутствие">
         {/* Preview */}
         <div className="flex items-center gap-4 p-4 bg-neutral-50 dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5">
@@ -263,9 +279,12 @@ export default function ConnectProfileSettings({
           </SettingsRow>
         </SettingsGroup>
       </SettingsCard>
+      )}
 
       {/* ── Карточка «Оформление»: баннер, свечение аватара, фон дня и ночи. ──
-          Всё это — привилегия Premium (или ADMIN), см. isPrivileged выше. */}
+          Всё это — привилегия Premium (или ADMIN), см. isPrivileged выше.
+          Карточка показывается в разделе «Внешний вид», см. проп sections. */}
+      {showAppearance && (
       <SettingsCard title="Оформление">
         {!isPrivileged && (
           <p className="text-xs text-neutral-500 dark:text-gray-400 border border-neutral-200 dark:border-white/10 rounded-xl px-3 py-2">
@@ -468,8 +487,10 @@ export default function ConnectProfileSettings({
           </div>
         )}
       </SettingsCard>
+      )}
 
       {/* ── Карточка «Звук и активность»: звук сообщений и показ активности. ── */}
+      {showConnect && (
       <SettingsCard title="Звук и активность">
         <SettingsGroup>
           <SettingsRow label="Звук сообщений" hint="Проигрывать звук при получении личного сообщения.">
@@ -515,8 +536,10 @@ export default function ConnectProfileSettings({
           </SettingsRow>
         </SettingsGroup>
       </SettingsCard>
+      )}
 
       {/* ── Карточка «Шифрование»: экспорт и импорт ключей E2EE. ── */}
+      {showConnect && (
       <SettingsCard title="Шифрование">
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-white flex items-center gap-1.5">
           <KeyIcon size={18} tone="active" /> Шифрование E2EE
@@ -544,13 +567,14 @@ export default function ConnectProfileSettings({
               if (!f) return;
               const text = await f.text();
               const ok = await importKeysFromJSON(text);
-              if (ok) { setError(null); setSuccessToast("Ключи восстановлены!"); setTimeout(() => setSuccessToast(null), 3500); }
+              if (ok) { setError(null); setSuccessToast("��лючи восстановлены!"); setTimeout(() => setSuccessToast(null), 3500); }
               else setError("Неверный формат файла ключей");
               e.target.value = "";
             }} />
           </label>
         </div>
       </SettingsCard>
+      )}
 
       {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
 
@@ -560,7 +584,11 @@ export default function ConnectProfileSettings({
           disabled={saving}
           className="px-5 py-2 bg-violet-600 dark:bg-cyan-600 hover:bg-violet-500 dark:hover:bg-cyan-500 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
         >
-          {saving ? "Сохранение..." : "Сохранить настройки TZ.Connect"}
+          {saving
+            ? "Сохранение..."
+            : sections === "appearance"
+              ? "Сохранить оформление"
+              : "Сохранить настройки TZ.Connect"}
         </button>
       </div>
 

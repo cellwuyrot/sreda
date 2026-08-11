@@ -1,13 +1,13 @@
 "use client";
-​
+
 /**
  * PREMIUM-SKIN: «Своё оформление» — блок в разделе «Настройки → Внешний вид».
  *
  * Рядом уже есть выбор темы — четыре готовых пресета. Здесь сознательно
  * другой подход: никаких готовых наборов, человек сам собирает оболочку из
- * четырёх независимых частей — фон переписки, обои пустого пространства,
- * палитра областей и шрифт. Каждая часть включается отдельно: можно поставить
- * только обои и оставить штатные цвета.
+ * трёх независимых частей — фон переписки, палитра областей и шрифт.
+ * Каждая часть включается отдельно: можно поставить только фон чата и
+ * оставить штатные цвета.
  *
  * Почему вкладки, а не один столбец: полей около двадцати, одним списком они
  * превращаются в простыню. Разметка и примитивы взяты из
@@ -22,7 +22,7 @@
  * Сохранение — сразу, как у всего раздела настроек: правка внешнего вида,
  * которую надо «подтверждать», бессмысленна — результат виден глазами.
  */
-​
+
 import { useEffect, useState } from "react";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import {
@@ -54,28 +54,27 @@ import {
   SettingsSwitch as Switch,
   SettingsTabs,
 } from "@/components/settings/SettingsUI";
-​
-type TabId = "chat" | "wallpaper" | "palette" | "font";
-​
+
+type TabId = "chat" | "palette" | "font";
+
 const TABS: { id: TabId; label: string }[] = [
   { id: "chat", label: "Фон чата" },
-  { id: "wallpaper", label: "Обои" },
   { id: "palette", label: "Палитра" },
   { id: "font", label: "Шрифт" },
 ];
-​
+
 const FONT_MODE_OPTIONS: { value: SkinFontMode; label: string }[] = [
   { value: "theme", label: "Как в теме" },
   { value: "builtin", label: "Из списка" },
   { value: "custom", label: "Свой" },
 ];
-​
+
 /** Текстовое поле в едином стиле раздела настроек. */
 const inputClass =
   "w-full px-3 py-2 rounded-xl bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 " +
   "text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 outline-none " +
   "focus:border-violet-500 dark:focus:border-cyan-500 transition-colors";
-​
+
 /**
  * Выбор цвета: системная пипетка плюс поле с HEX.
  *
@@ -116,13 +115,13 @@ function ColorField({
     </div>
   );
 }
-​
+
 export default function PremiumAppearanceSettings({ isPremium }: { isPremium: boolean }) {
   const [skin, setSkin] = useState<PremiumSkin>(PREMIUM_SKIN_DEFAULT);
   const [tab, setTab] = useState<TabId>("chat");
-  const [uploading, setUploading] = useState<"chat" | "wallpaper" | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-​
+
   /* localStorage читается только после монтирования: на сервере его нет, а
      расхождение разметки сервера и клиента даёт ошибку гидратации. */
   useEffect(() => {
@@ -132,31 +131,31 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
        продления всё подобранное должно вернуться само. */
     applyPremiumSkin(isPremium ? loaded : { ...loaded, enabled: false });
   }, [isPremium]);
-​
+
   function update(patch: Partial<PremiumSkin>) {
     setSkin((prev) => savePremiumSkin({ ...prev, ...patch }));
   }
-​
-  function updateBackground(key: "chat" | "wallpaper", patch: Partial<SkinBackground>) {
-    setSkin((prev) => savePremiumSkin({ ...prev, [key]: { ...prev[key], ...patch } }));
+
+  function updateBackground(patch: Partial<SkinBackground>) {
+    setSkin((prev) => savePremiumSkin({ ...prev, chat: { ...prev.chat, ...patch } }));
   }
-​
+
   function reset() {
     setSkin(savePremiumSkin(defaultPremiumSkin()));
     setError("");
   }
-​
+
   /**
    * Загрузка картинки идёт через уже существующий /api/upload/document.
    *
    * Админский маршрут загрузки картинок закрыт для обычных пользователей, а
    * этот доступен любому вошедшему и уже принимает JPG, PNG и WEBP с проверкой
-   * размера и с генерацией имени на сервере. Заводить ради обоев третий
+   * размера и с генерацией имени на сервере. Заводить ради фона третий
    * маршрут с теми же проверками было бы дублированием.
    */
-  async function uploadImage(key: "chat" | "wallpaper", file: File) {
+  async function uploadImage(file: File) {
     setError("");
-    setUploading(key);
+    setUploading(true);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -166,48 +165,51 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
         setError(typeof data?.error === "string" ? data.error : "Не удалось загрузить картинку");
         return;
       }
-      updateBackground(key, { imageUrl: data.url as string, mode: "image" });
+      updateBackground({ imageUrl: data.url as string, mode: "image" });
     } catch {
       setError("Сеть недоступна — попробуйте ещё раз");
     } finally {
-      setUploading(null);
+      setUploading(false);
     }
   }
-​
+
   /**
-   * Общая форма для двух фонов: отличаются они только подписями.
+   * Форма заднего фона переписки.
    *
    * Это именно функция отрисовки, а не вложенный компонент. Компонент,
    * объявленный внутри другого, создаётся заново на каждом рендере, и React
-   * считает его другим типом узла: поддерево размонтируется, а поле адреса
-   * теряет фокус после каждого введённого символа.
+   * считает его другим типом узла: поддерево каждый раз размонтируется.
    *
    * Скрытое поле выбора файла открывается через <label htmlFor>, а не через
    * ref.current.click(): штатная связка label ↔ input даёт тот же результат без
    * ссылок на DOM и попутно работает с клавиатуры и со скринридерами.
+   *
+   * Поля с адресом картинки здесь нет намеренно: путь вроде
+   * /uploads/documents/… — внутренняя кухня хранилища, и показывать его ��
+   * настройках незачем. Картинка выбирается кнопкой.
    */
-  function renderBackgroundForm(which: "chat" | "wallpaper", modeHint: string) {
-    const bg = skin[which];
-    const fileInputId = `skin-file-${which}`;
+  function renderChatBackgroundForm() {
+    const bg = skin.chat;
+    const fileInputId = "skin-file-chat";
     return (
       <Group>
-        <Row label="Чем залить" hint={modeHint}>
+        <Row label="Чем залить" hint="Фон ленты сообщений — и в каналах сообществ, и в личных сообщениях.">
           <Choice
             options={BACKGROUND_MODE_OPTIONS}
             value={bg.mode}
-            onChange={(mode) => updateBackground(which, { mode })}
+            onChange={(mode) => updateBackground({ mode })}
           />
         </Row>
-​
+
         {bg.mode === "color" && (
           <Row label="Цвет">
-            <ColorField value={bg.color} onChange={(color) => updateBackground(which, { color })} />
+            <ColorField value={bg.color} onChange={(color) => updateBackground({ color })} />
           </Row>
         )}
-​
+
         {bg.mode === "image" && (
           <>
-            <Row label="Картинка" hint="JPG, PNG или WEBP до 10 МБ. Можно вместо загрузки вставить ссылку https://">
+            <Row label="Картинка" hint="JPG, PNG или WEBP до 10 МБ.">
               <div className="flex items-center gap-2">
                 <input
                   id={fileInputId}
@@ -216,22 +218,22 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (file) void uploadImage(which, file);
+                    if (file) void uploadImage(file);
                     e.target.value = "";
                   }}
                 />
                 <label
                   htmlFor={fileInputId}
                   className={`px-2.5 py-1 rounded-lg text-[11px] border border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-300 hover:border-violet-500 dark:hover:border-cyan-500 transition-colors cursor-pointer ${
-                    uploading !== null ? "opacity-50 pointer-events-none" : ""
+                    uploading ? "opacity-50 pointer-events-none" : ""
                   }`}
                 >
-                  {uploading === which ? "Загружаем…" : "Загрузить"}
+                  {uploading ? "Загружаем…" : bg.imageUrl ? "Заменить" : "Выбрать картинку"}
                 </label>
                 {bg.imageUrl && (
                   <button
                     type="button"
-                    onClick={() => updateBackground(which, { imageUrl: "" })}
+                    onClick={() => updateBackground({ imageUrl: "" })}
                     className="px-2.5 py-1 rounded-lg text-[11px] border border-neutral-200 dark:border-white/10 text-neutral-500 hover:border-red-500 hover:text-red-500 transition-colors"
                   >
                     Убрать
@@ -239,31 +241,20 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                 )}
               </div>
             </Row>
-​
-            <div className="py-1.5">
-              <input
-                type="text"
-                value={bg.imageUrl}
-                spellCheck={false}
-                placeholder="/uploads/documents/… или https://…"
-                onChange={(e) => updateBackground(which, { imageUrl: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-​
+
             <Row label="Раскладка">
-              <Choice options={FIT_OPTIONS} value={bg.fit} onChange={(fit) => updateBackground(which, { fit })} />
+              <Choice options={FIT_OPTIONS} value={bg.fit} onChange={(fit) => updateBackground({ fit })} />
             </Row>
-​
+
             <Row label="Затемнение" hint="На светлой картинке текст нечитаем — затемнение возвращает контраст.">
               <Slider
-                id={`skin-dim-${which}`}
+                id="skin-dim-chat"
                 min={0}
                 max={85}
                 step={5}
                 value={bg.dim}
                 unit="%"
-                onChange={(dim) => updateBackground(which, { dim })}
+                onChange={(dim) => updateBackground({ dim })}
               />
             </Row>
           </>
@@ -271,17 +262,17 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
       </Group>
     );
   }
-​
-  /* ── Предпросмотр: уменьшенный макет /connect в четыре колонки ────── */
+
+  /* ── Предпросмотр: уменьшенный макет /connect в три колонки ──────── */
   const p = skin.palette;
   const paletteOn = skin.enabled && p.enabled;
   const previewText = paletteOn ? p.text : undefined;
   const previewMuted = paletteOn ? p.muted : undefined;
   const previewFont = skin.enabled ? fontStack(skin.font) : "";
-​
-  function previewLayer(which: "chat" | "wallpaper"): React.CSSProperties {
+
+  function previewLayer(): React.CSSProperties {
     if (!skin.enabled) return {};
-    const bg = skin[which];
+    const bg = skin.chat;
     return {
       backgroundImage: backgroundLayer(bg),
       backgroundSize: backgroundSize(bg),
@@ -289,7 +280,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
       backgroundPosition: "center",
     };
   }
-​
+
   return (
     <SettingsCard
       title={
@@ -297,12 +288,12 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
           Своё оформление TZ.Connect
           <span className="ml-1 align-middle text-[10px] font-semibold text-amber-500">Premium</span>
           <InfoTooltip
-            text="Здесь нет готовых пресетов: фон переписки, обои, цвета областей и шрифт выбираются по отдельности и ложатся поверх выбранной темы. Настройка хранится на этом устройстве и видна только вам."
+            text="Здесь нет готовых пресетов: фон переписки, цвета областей и шрифт выбираются по отдельности и ложатся поверх выбранной темы. Настройка хранится на этом устройстве и видна только вам."
             side="bottom"
           />
         </>
       }
-      subtitle="Фон переписки, обои пустого пространства, цвета отдельных областей и собственный шрифт."
+      subtitle="Фон переписки, цвета отдельных областей и собственный шрифт."
     >
       {!isPremium ? (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
@@ -310,9 +301,9 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
             Свободная кастомизация доступна при активной подписке Premium.
           </p>
           <p className="text-xs text-neutral-500 dark:text-gray-400 mt-1">
-            В неё входят: задний фон чатов (цвет или своя картинка), обои главного окна,
-            палитра всего /connect с отдельным цветом шрифта и каждой области,
-            а также собственный шрифт интерфейса.
+            В неё входят: задний фон чатов (цвет или своя картинка), палитра всего /connect
+            с отдельным цветом шрифта и каждой области, а также собственный шрифт
+            интерфейса.
           </p>
         </div>
       ) : (
@@ -332,7 +323,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                 <span className="w-4 h-4 rounded-lg opacity-40" style={{ background: paletteOn ? p.muted : "var(--cn-muted)" }} />
                 <span className="w-4 h-4 rounded-lg opacity-40" style={{ background: paletteOn ? p.muted : "var(--cn-muted)" }} />
               </div>
-​
+
               <div
                 className="w-24 p-2 space-y-1.5 border-x"
                 style={{
@@ -353,7 +344,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                 <p className="text-[9px]" style={{ color: previewMuted }}># дизайн</p>
                 <p className="text-[9px]" style={{ color: previewMuted }}># релизы</p>
               </div>
-​
+
               <div className="flex-1 flex flex-col min-w-0" style={{ background: paletteOn ? p.main : "var(--cn-main)" }}>
                 <div
                   className="h-6 px-2 flex items-center text-[9px] border-b"
@@ -361,7 +352,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                 >
                   # общий
                 </div>
-                <div className="flex-1 p-2 space-y-1.5" style={previewLayer("chat")}>
+                <div className="flex-1 p-2 space-y-1.5" style={previewLayer()}>
                   <div>
                     <span className="text-[9px] font-semibold" style={{ color: paletteOn ? p.accent : "var(--cn-accent-text)" }}>
                       Михаил
@@ -375,43 +366,22 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                   </div>
                 </div>
               </div>
-​
-              <div
-                className="w-20 flex items-center justify-center text-center border-l"
-                style={{
-                  background: paletteOn ? p.main : "var(--cn-main)",
-                  borderColor: paletteOn ? p.border : "var(--cn-border)",
-                  ...previewLayer("wallpaper"),
-                }}
-              >
-                <span className="text-[8px] px-1" style={{ color: previewMuted }}>Пустое пространство</span>
-              </div>
             </div>
           </div>
-​
+
           <Row
             label="Включить своё оформление"
             hint="Общий выключатель. Выключение возвращает вид темы, не теряя подобранного."
           >
             <Switch checked={skin.enabled} onChange={() => update({ enabled: !skin.enabled })} label="Своё оформление" />
           </Row>
-​
+
           <div className={skin.enabled ? undefined : "opacity-50 pointer-events-none"}>
             <SettingsTabs tabs={TABS} value={tab} onChange={setTab} />
-​
+
             <div className="pt-3">
-              {tab === "chat" &&
-                renderBackgroundForm(
-                  "chat",
-                  "Фон ленты сообщений — и в каналах сообществ, и в личных сообщениях.",
-                )}
-​
-              {tab === "wallpaper" &&
-                renderBackgroundForm(
-                  "wallpaper",
-                  "Обои там, где полотно пусто: экраны «выберите канал» и «выберите друга», пустое поле /connect.",
-                )}
-​
+              {tab === "chat" && renderChatBackgroundForm()}
+
               {tab === "palette" && (
                 <Group>
                   <Row
@@ -424,7 +394,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                       label="Своя палитра"
                     />
                   </Row>
-​
+
                   {PALETTE_FIELDS.map((field) => (
                     <Row key={field.key} label={field.label} hint={field.hint}>
                       <ColorField
@@ -436,7 +406,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                   ))}
                 </Group>
               )}
-​
+
               {tab === "font" && (
                 <Group>
                   <Row label="Шрифт интерфейса" hint="Код и моноширинные блоки остаются моноширинными в любом случае.">
@@ -446,7 +416,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                       onChange={(mode) => update({ font: { ...skin.font, mode } })}
                     />
                   </Row>
-​
+
                   {skin.font.mode === "builtin" && (
                     <Row label="Семейство">
                       <Choice
@@ -456,7 +426,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
                       />
                     </Row>
                   )}
-​
+
                   {skin.font.mode === "custom" && (
                     <div className="py-2 space-y-2">
                       <div>
@@ -498,9 +468,9 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
               )}
             </div>
           </div>
-​
+
           {error && <p className="text-xs text-red-500">{error}</p>}
-​
+
           <div className="flex items-center justify-between pt-1">
             <p className="text-[11px] text-neutral-400 dark:text-gray-500">
               Настройка хранится на этом устройстве и не меняет вид чата для собеседников.
@@ -519,4 +489,3 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
     </SettingsCard>
   );
 }
-​
