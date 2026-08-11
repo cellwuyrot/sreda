@@ -17,7 +17,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prismaMock, row } from "@/test/prismaMock";
 
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
-vi.mock("@/lib/socketEmit", () => ({ getIO: () => null }));
+
+/* Socket.IO подменяем управляемой заглушкой: часть тестов проверяет не только
+   запись в базу, но и полезную нагрузку события new-notification (флаг isNew, по
+   которому колокольчик решает, растить ли счётчик). */
+const emit = vi.fn();
+const io = { to: vi.fn(() => ({ emit })) };
+vi.mock("@/lib/socketEmit", () => ({ getIO: () => io }));
 
 /* Доставку на устройство подменяем: её внутренности проверяет lib/push.test.ts, а
    здесь важно другое — что она вообще вызывается из единственного места, где
@@ -34,12 +40,17 @@ import {
 
 beforeEach(() => {
   queuePush.mockClear();
+  emit.mockClear();
+  io.to.mockClear();
   prismaMock.user.findUnique.mockResolvedValue(row({ notifyPush: true }));
   prismaMock.notification.create.mockResolvedValue(row({ id: "n1", userId: "u1" }));
   prismaMock.notification.createManyAndReturn.mockResolvedValue(row([{ id: "n1", userId: "u1" }]));
+  prismaMock.notification.update.mockResolvedValue(row({ id: "n1", userId: "u1", count: 2 }));
   prismaMock.notification.updateMany.mockResolvedValue(row({ count: 1 }));
   prismaMock.notification.deleteMany.mockResolvedValue(row({ count: 2 }));
   prismaMock.notification.count.mockResolvedValue(row(3));
+  // По умолчанию непрочитанного по предмету нет — создаётся новая запись.
+  prismaMock.notification.findFirst.mockResolvedValue(row(null));
 });
 
 describe("создание: виновник и предмет", () => {
@@ -121,6 +132,92 @@ describe("создание: виновник и предмет", () => {
     };
     expect(args.data.find((item) => item.userId === "a1")?.actorId).toBe("client-9");
     expect(args.data.find((item) => item.userId === "client-9")?.actorId).toBeNull();
+  });
+});
+
+describe("группировка: несколько сообщений одной беседы — одно уведомление", () => {
+  /**
+   * ИНВАРИАНТ И ЕСТЬ САМ БАГ: пять сообщений подряд из одного чата не должны
+   * плодить пять уведомлений и «5» в бейдже. Пока по предмету висит
+   * непрочитанное — оно обновляется на месте, а счётчик схлопнутого растёт.
+   */
+  it("ИНВАРИАНТ: при непрочитанном по предмету обновляет его, а не создаёт новое", async () => {
+    prismaMock.notification.findFirst.mockResolvedValue(row({ id: "existing-1" }));
+    await createNotification({
+      userId: "u1",
+      type: "dm",
+      title: "Новое сообщение от Андрея",
+      body: "второе сообщение",
+      link: "/connect?section=dm&dm=u2&message=m2",
+      actorId: "u2",
+      entityType: "dm",
+      entityId: "conv-1",
+    });
+    expect(prismaMock.notification.create).not.toHaveBeenCalled();
+    const upd = prismaMock.notification.update.mock.calls[0][0] as {
+      where: { id: string };
+      data: { count: { increment: number }; title: string };
+    };
+    expect(upd.where).toEqual({ id: "existing-1" });
+    expect(upd.data.count).toEqual({ increment: 1 });
+    expect(upd.data.title).toBe("Новое сообщение от Андрея");
+  });
+
+  /**
+   * ИНВАРИАНТ: сгруппированное уведомление не растит счётчик непрочитанных.
+   * Событие уходит с isNew=false — колокольчик по нему счётчик не увеличивает.
+   */
+  it("ИНВАРИАНТ: обновление уходит клиенту с isNew=false", async () => {
+    prismaMock.notification.findFirst.mockResolvedValue(row({ id: "existing-1" }));
+    await createNotification({
+      userId: "u1", type: "dm", title: "Ещё сообщение",
+      entityType: "dm", entityId: "conv-1",
+    });
+    const payload = emit.mock.calls[0][1] as { isNew: boolean };
+    expect(payload.isNew).toBe(false);
+  });
+
+  /**
+   * ИНВАРИАНТ: первое непрочитанное по предмету — обычная новая запись с
+   * isNew=true. Только на неё бейдж и растёт.
+   */
+  it("ИНВАРИАНТ: без непрочитанного по предмету создаётся новая запись, isNew=true", async () => {
+    prismaMock.notification.findFirst.mockResolvedValue(row(null));
+    await createNotification({
+      userId: "u1", type: "dm", title: "Первое сообщение",
+      entityType: "dm", entityId: "conv-1",
+    });
+    expect(prismaMock.notification.create).toHaveBeenCalledTimes(1);
+    expect(prismaMock.notification.update).not.toHaveBeenCalled();
+    const payload = emit.mock.calls[0][1] as { isNew: boolean };
+    expect(payload.isNew).toBe(true);
+  });
+
+  /**
+   * ИНВАРИАНТ: без предмета группировать нечего — уведомления не ищутся и всегда
+   * создаётся новая запись (системные объявления, приглашения без сущности).
+   */
+  it("ИНВАРИАНТ: без предмета группировка не применяется", async () => {
+    await createNotification({ userId: "u1", type: "system", title: "Объявление" });
+    expect(prismaMock.notification.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.notification.create).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * ИНВАРИАНТ: группировка идёт по паре получатель+предмет того же вида —
+   * поиск сужен по userId, type, entityType, entityId и read=false. Иначе
+   * схлопнулись бы разные беседы или чужие записи.
+   */
+  it("ИНВАРИАНТ: поиск непрочитанного сужен по получателю, виду и предмету", async () => {
+    prismaMock.notification.findFirst.mockResolvedValue(row(null));
+    await createNotification({
+      userId: "u1", type: "dm", title: "Сообщение",
+      entityType: "dm", entityId: "conv-1",
+    });
+    const args = prismaMock.notification.findFirst.mock.calls[0][0] as { where: Record<string, unknown> };
+    expect(args.where).toEqual({
+      userId: "u1", type: "dm", entityType: "dm", entityId: "conv-1", read: false,
+    });
   });
 });
 

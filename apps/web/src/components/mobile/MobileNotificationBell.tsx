@@ -41,7 +41,12 @@ export default function MobileNotificationBell({ className = "" }: { className?:
 
     const socket: Socket = io({ path: "/api/socketio", withCredentials: true });
     socket.on("connect", () => socket.emit("join-dm", userId));
-    socket.on("new-notification", () => setUnread((c) => c + 1));
+    // isNew === false — уведомление сгруппировано с уже висящим непрочитанным из
+    // того же чата: новой строки нет, счётчик расти не должен (как в Navbar).
+    socket.on("new-notification", (payload?: { isNew?: boolean }) => {
+      if (payload?.isNew === false) return;
+      setUnread((c) => c + 1);
+    });
     socket.on("channel-read", () => loadUnread());
 
     function resync() {

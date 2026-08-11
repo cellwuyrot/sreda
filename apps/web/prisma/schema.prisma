@@ -1111,6 +1111,9 @@ model Notification {
   /// О чём уведомление: appeal | dm | channel и тому подобное.
   entityType String? @db.VarChar(32)
   entityId   String?
+  /// Сколько событий схлопнуто в это уведомление. N сообщений из одной беседы —
+  /// одно уведомление со счётчиком, а не N отдельных строк и N в бейдже.
+  count      Int      @default(1)
   createdAt DateTime @default(now())
 
   @@index([userId, read])
