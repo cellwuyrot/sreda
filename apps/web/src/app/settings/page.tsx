@@ -942,15 +942,15 @@ export default function SettingsPage() {
   const renderCategory = () => {
     switch (activeCat) {
       case "connect":
-        /* Кастомизация чата стоит отдельной карточкой, а не внутри
-           ConnectProfileSettings: там настройки аккаунта, которые уходят на
-           сервер, а здесь — внешний вид на этом устройстве. */
+        /* Всё, что касается внешнего вида («Оформление», «Кастомизация чата»
+           и «Профиль сервера»), переехало в раздел «Внешний вид»: человек
+           ищет настройки облика именно там, рядом с темой. Здесь остаются
+           поведенческие настройки мессенджера: присутствие, звук, шифрование,
+           витрина и список игнора. */
         return (
           <div className="space-y-4">
-            <ConnectProfileSettings role={profile.role} isPremium={effectivePremium} />
-            <ChatAppearanceSettings />
+            <ConnectProfileSettings role={profile.role} isPremium={effectivePremium} sections="connect" />
             <ChatShowcase />
-            <ServerProfileSection />
             <IgnoreListSection />
           </div>
         );
@@ -1831,6 +1831,17 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+
+            {/* Перенесено из раздела TZ.Connect: «Оформление» (баннер, свечение
+                аватара, фон дня и ночи), «Кастомизация чата» и «Профиль сервера».
+                Порядок на экране повторяет порядок применения: сначала тема выше,
+                потом частные настройки, и в самом низу — своё оформление Premium,
+                которое ложится поверх всего остального. */}
+            <div className="mt-6 space-y-4">
+              <ConnectProfileSettings role={profile.role} isPremium={effectivePremium} sections="appearance" />
+              <ChatAppearanceSettings />
+              <ServerProfileSection />
+            </div>
 
             {/* PREMIUM-SKIN: свободная кастомизация для подписчиков идёт после выбора
                 темы и не перед ним: тема задаёт базу, а этот блок кладётся поверх неё,
