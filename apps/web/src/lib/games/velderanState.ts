@@ -1,3 +1,4 @@
+import { secureRandom } from "./random";
 import { getActiveNodes, getNeighbors } from "./velderanMap";
 
 export interface GameUnit {
@@ -117,7 +118,7 @@ const TOTAL_GUARDS = 3;
 /** Shuffle array in place (Fisher-Yates) */
 function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(secureRandom() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
@@ -527,7 +528,7 @@ export function tryDiceGateMove(
   const unit = newState.units.find((u) => u.id === unitId);
   if (!unit) return { state: newState, success: false };
 
-  const d = Math.floor(Math.random() * 6) + 1;
+  const d = Math.floor(secureRandom() * 6) + 1;
   const pass = gate === "even" ? d % 2 === 0 : d % 2 !== 0;
   const playerName = playerNames[unit.playerId] || "Игрок";
   const targetNode = getActiveNodes().find((n) => n.id === targetNodeId);
@@ -744,7 +745,7 @@ export function playGodCard(
       if (!ownUnit) break;
       const destNodes = getActiveNodes().filter((n) => n.type !== "shrine");
       if (destNodes.length > 0) {
-        const rndNode = destNodes[Math.floor(Math.random() * destNodes.length)];
+        const rndNode = destNodes[Math.floor(secureRandom() * destNodes.length)];
         ownUnit.position = rndNode.id;
         newState.log.push(`${playerName} использовал карту Сихварис — перенёс свой отряд в ${rndNode.name}!`);
       }
@@ -758,7 +759,7 @@ export function playGodCard(
       // Move to random non-shrine node
       const nodes = getActiveNodes().filter((n) => n.type !== "shrine");
       if (nodes.length > 0) {
-        const rnd = nodes[Math.floor(Math.random() * nodes.length)];
+        const rnd = nodes[Math.floor(secureRandom() * nodes.length)];
         target2.position = rnd.id;
         newState.log.push(`${playerName} использовал карту Вьеронх — перенёс вражеский отряд в ${rnd.name}!`);
       }
@@ -791,8 +792,8 @@ export function rollDiceForGod(
   newState.godSummonCounts[guardId][shrineId] = prevCount + 1;
   const currentCount = prevCount + 1;
 
-  const d1 = Math.floor(Math.random() * 6) + 1;
-  const d2 = Math.floor(Math.random() * 6) + 1;
+  const d1 = Math.floor(secureRandom() * 6) + 1;
+  const d2 = Math.floor(secureRandom() * 6) + 1;
   const total = d1 + d2;
   const god = GODS[total];
   const playerName = playerNames[playerId] || "Игрок";
@@ -873,7 +874,7 @@ export function rollDiceForGod(
       return node && landTypes.includes(node.type);
     });
     if (enemyArmies.length > 0) {
-      const target = enemyArmies[Math.floor(Math.random() * enemyArmies.length)];
+      const target = enemyArmies[Math.floor(secureRandom() * enemyArmies.length)];
       const targetName = playerNames[target.playerId] || "Противник";
       const node = getActiveNodes().find((n) => n.id === target.position);
       newState.units = newState.units.filter((u) => u.id !== target.id);
@@ -965,7 +966,7 @@ export function playCombatCard(
   if (useDeck) {
     // Draw from deck instead of using hand card
     const drawn = drawCards(newState.battleCards, 1);
-    const deckCard = drawn.length > 0 ? drawn[0] : Math.floor(Math.random() * 5) + 1;
+    const deckCard = drawn.length > 0 ? drawn[0] : Math.floor(secureRandom() * 5) + 1;
     if (isAttacker) {
       newState.combat.attackerCard = deckCard;
       newState.combat.attackerGuess = guess;

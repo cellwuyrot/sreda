@@ -25,7 +25,12 @@
 
     <application
         android:name=".ConnectApp"
-        android:allowBackup="true"
+        <!-- FIX-SEC: было "true". При включённой резервной копии данные
+             приложения (cookie сессии в WebView, токен доставки) уезжают в облако
+             и снимаются через adb backup с разблокированного телефона — то есть
+             войти в аккаунт можно без пароля. Мессенджеру резервная копия
+             состояния не нужна: вся переписка и так на сервере. -->
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

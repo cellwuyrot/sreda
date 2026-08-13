@@ -1,6 +1,7 @@
 import { LRUCache } from "lru-cache";
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "./redis";
+import { clientIpOf } from "./clientIp";
 
 type RateLimitOptions = {
   limit: number;
@@ -36,19 +37,29 @@ function buildResponse(limit: number, windowMs: number): NextResponse {
   );
 }
 
+/**
+ * FIX-SEC: `null` означает «Redis не ответил», а НЕ «лимит не превышен».
+ *
+ * Прежняя версия на любой ошибке возвращала false, а вызывающий доверял этому
+ * ответу, если соединение числилось «ready». Таймаут, NOSCRIPT или нехватка
+ * памяти в Redis молча ОТКЛЮЧАЛИ лимит целиком — вместо того чтобы перевести
+ * счёт в память процесса. Теперь неопределённость выражена отдельным значением,
+ * и запасной счётчик включается в том числе при живом, но сбойном Redis.
+ */
 async function rateLimitRedis(
   cacheKey: string,
   limit: number,
   windowMs: number
-): Promise<boolean> {
+): Promise<boolean | null> {
+  if (redis.status !== "ready") return null;
   try {
-    if (redis.status !== "ready") throw new Error("not connected");
     const current = Number(
       await redis.eval(INCR_EXPIRE_LUA, 1, cacheKey, String(windowMs))
     );
+    if (!Number.isFinite(current)) return null;
     return current > limit;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -61,23 +72,30 @@ function rateLimitMemory(cacheKey: string, limit: number, windowMs: number): boo
   return timestamps.length > limit;
 }
 
+/**
+ * Счётчик по произвольному ключу — для мест, где нет NextRequest (например
+ * проверка пароля в NextAuth: там заголовки приходят простым объектом).
+ */
+export async function isRateLimited(
+  key: string,
+  identifier: string | null | undefined,
+  { limit, windowMs }: RateLimitOptions
+): Promise<boolean> {
+  const cacheKey = `rl:${key}:${identifier || "unknown"}`;
+  const redisResult = await rateLimitRedis(cacheKey, limit, windowMs);
+  /* Redis не ответил — считаем в памяти процесса. Это слабее (счёт у каждого
+     инстанса свой), но это ЕСТЬ лимит, а не его отсутствие. */
+  return redisResult ?? rateLimitMemory(cacheKey, limit, windowMs);
+}
+
 export async function rateLimit(
   req: NextRequest,
   key: string,
   { limit, windowMs }: RateLimitOptions
 ): Promise<NextResponse | null> {
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    req.headers.get("x-real-ip") ||
-    "unknown";
-
-  const cacheKey = `rl:${key}:${ip}`;
-
-  const redisResult = await rateLimitRedis(cacheKey, limit, windowMs);
-  // Use Redis if available (returned a definitive answer), otherwise fall back to in-memory
-  const exceeded = redis.status === "ready"
-    ? redisResult
-    : rateLimitMemory(cacheKey, limit, windowMs);
-
+  /* FIX-SEC: адрес берём из доверенного hop, а не из первого значения
+     X-Forwarded-For, которое присылает сам клиент (см. lib/clientIp.ts). */
+  const ip = clientIpOf(req) || "unknown";
+  const exceeded = await isRateLimited(key, ip, { limit, windowMs });
   return exceeded ? buildResponse(limit, windowMs) : null;
 }

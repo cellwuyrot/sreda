@@ -53,7 +53,26 @@ export async function getOrCreateKeyPair(): Promise<{ publicKeyJwk: JsonWebKey; 
   return { publicKeyJwk, privateKey: keyPair.privateKey };
 }
 
-async function deriveSharedKey(privateKey: CryptoKey, peerPublicKeyJwk: JsonWebKey): Promise<CryptoKey> {
+/** Назначение ключа вшито в сам ключ: см. комментарий к deriveSharedKey. */
+const KDF_INFO = "trioz-e2ee-v2/aes-256-gcm";
+
+/**
+ * Общий ключ пары.
+ *
+ * FIX-CRYPTO: раньше сырой результат ECDH брался как AES-ключ напрямую. Так
+ * делать не принято: в этих битах остаётся структура точки кривой (распределение
+ * не равномерное), и у них нет привязки к назначению — один и тот же секрет
+ * годился бы для любого другого применения. HKDF с явным info даёт ключ ровно
+ * для этой задачи и этой версии формата.
+ *
+ * `legacy: true` восстанавливает старый ключ — только чтобы прочитать переписку,
+ * зашифрованную до этой правки. Шифруется всё новое только по v2.
+ */
+async function deriveSharedKey(
+  privateKey: CryptoKey,
+  peerPublicKeyJwk: JsonWebKey,
+  legacy = false
+): Promise<CryptoKey> {
   const peerPublicKey = await crypto.subtle.importKey(
     "jwk",
     peerPublicKeyJwk,
@@ -68,9 +87,25 @@ async function deriveSharedKey(privateKey: CryptoKey, peerPublicKeyJwk: JsonWebK
     256
   );
 
-  return crypto.subtle.importKey(
-    "raw",
-    sharedBits,
+  if (legacy) {
+    return crypto.subtle.importKey(
+      "raw",
+      sharedBits,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  const hkdfKey = await crypto.subtle.importKey("raw", sharedBits, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(0),
+      info: new TextEncoder().encode(KDF_INFO),
+    },
+    hkdfKey,
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"]
@@ -97,7 +132,10 @@ export async function encryptMessage(
   const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, "0")).join("");
   const ctHex = Array.from(new Uint8Array(ciphertext)).map(b => b.toString(16).padStart(2, "0")).join("");
 
-  return `${E2EE_PREFIX}${ivHex}:${ctHex}`;
+  /* FIX-CRYPTO: в строку добавлена версия вывода ключа. Без неё переход на HKDF
+     сделал бы нечитаемой всю ранее отправленную переписку. Префикс `e2ee:`
+     не трогаем: по нему весь остальной код узнаёт шифрованное сообщение. */
+  return `${E2EE_PREFIX}v2:${ivHex}:${ctHex}`;
 }
 
 export async function decryptMessage(
@@ -108,10 +146,14 @@ export async function decryptMessage(
   if (!encrypted.startsWith(E2EE_PREFIX)) return encrypted;
 
   const data = encrypted.slice(E2EE_PREFIX.length);
-  const [ivHex, ctHex] = data.split(":");
+  const parts = data.split(":");
+  /* Старый формат — две части (iv:ct), новый — три (v2:iv:ct). */
+  const legacy = parts.length < 3;
+  const ivHex = legacy ? parts[0] : parts[1];
+  const ctHex = legacy ? parts[1] : parts[2];
   if (!ivHex || !ctHex) return encrypted;
 
-  const sharedKey = await deriveSharedKey(privateKey, peerPublicKeyJwk);
+  const sharedKey = await deriveSharedKey(privateKey, peerPublicKeyJwk, legacy);
   const iv = new Uint8Array(ivHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
   const ct = new Uint8Array(ctHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
 
@@ -152,14 +194,18 @@ export async function decryptFile(
   privateKey: CryptoKey,
   peerPublicKeyJwk: JsonWebKey
 ): Promise<ArrayBuffer> {
-  const sharedKey = await deriveSharedKey(privateKey, peerPublicKeyJwk);
   const iv = new Uint8Array(ivHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
 
-  return crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
-    sharedKey,
-    encrypted
-  );
+  /* У вложения в отличие от сообщения негде хранить метку версии: в базе лежит
+     только iv. Поэтому сначала пробуем новый ключ, потом старый: AES-GCM
+     проверяет целостностность сам, и неверный ключ даёт ошибку, а не мусор. */
+  try {
+    const sharedKey = await deriveSharedKey(privateKey, peerPublicKeyJwk);
+    return await crypto.subtle.decrypt({ name: "AES-GCM", iv }, sharedKey, encrypted);
+  } catch {
+    const legacyKey = await deriveSharedKey(privateKey, peerPublicKeyJwk, true);
+    return crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyKey, encrypted);
+  }
 }
 
 const keyCache = new Map<string, CryptoKey>();
@@ -194,32 +240,17 @@ export async function exportKeysToJSON(): Promise<string | null> {
   try {
     privateJwk = await crypto.subtle.exportKey("jwk", stored.privateKey);
   } catch {
-    // key was generated non-extractable — regenerate as extractable
-    const kp = await crypto.subtle.generateKey(
-      { name: "ECDH", namedCurve: "P-256" },
-      true,
-      ["deriveKey", "deriveBits"]
+    /* FIX-CRYPTO: здесь раньше СОЗДАВАЛАСЬ новая пара ключей и тихо
+       отправлялась на сервер — попытка СОХРАНИТЬ ключ НАВСЕГДА УНИЧТОЖАЛА
+       всю ранее зашифрованную переписку (старый приватный ключ стирался,
+       и читать старые сообщения больше было нечем). Ключ, созданный
+       неизвлекаемым, выгрузить нельзя — и это надо честно сказать, а не
+       подменять молча. */
+    throw new Error(
+      "Ключ этого устройства создан неизвлекаемым: резервная копия невозможна. " +
+        "Создайте новый ключ на втором устройстве и перенесите его через «Импорт ключа»: " +
+        "так старая переписка останется читаемой."
     );
-    const pubJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
-    const privJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
-    // save new extractable pair
-    const db2 = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db2.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put({ publicKey: pubJwk, privateKey: kp.privateKey }, KEY_ID);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db2.close();
-    // upload new public key
-    try {
-      await fetch("/api/e2ee", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicKey: JSON.stringify(pubJwk) }),
-      });
-    } catch {}
-    return JSON.stringify({ publicKey: pubJwk, privateKey: privJwk });
   }
 
   return JSON.stringify({ publicKey: stored.publicKey, privateKey: privateJwk });
@@ -247,12 +278,15 @@ export async function importKeysFromJSON(json: string): Promise<boolean> {
     });
     db.close();
 
-    // update public key on server
-    await fetch("/api/e2ee", {
+    /* FIX-BUG: публичный ключ уходил СТРОКОЙ (двойной JSON.stringify), а сервер
+       ждёт объект — запрос всегда отклонялся с «Invalid public key», и после
+       переноса ключа собеседник шифровал на старый. Ошибка глоталась тихо. */
+    const res = await fetch("/api/e2ee", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ publicKey: JSON.stringify(publicKey) }),
+      body: JSON.stringify({ publicKey, confirmReplace: true }),
     });
+    if (!res.ok) return false;
 
     keyCache.clear();
     return true;

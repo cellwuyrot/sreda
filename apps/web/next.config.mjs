@@ -86,38 +86,12 @@ const securityHeaders = [
     key: "Permissions-Policy",
     value: "camera=(self), microphone=(self), geolocation=()",
   },
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      // FIX-CSP: base-uri НЕ наследуется от default-src — задаём явно.
-      // 'self' блокирует инъекцию тега <base> (перехват относительных URL при
-      // stored-XSS: подделанный <base href> увёл бы все относительные ссылки и
-      // подгрузку ресурсов на чужой домен).
-      "base-uri 'self'",
-      // FIX-CSP: антикликджекинг современным механизмом — дублирует уже
-      // выставленный заголовок X-Frame-Options: DENY (страницу нельзя встроить
-      // во фрейм ни на каком origin). form-action намеренно НЕ ужесточаем: часть
-      // платёжных сценариев может уходить кросс-доменным POST формы.
-      "frame-ancestors 'none'",
-      // RNNoise is compiled to WebAssembly before being passed to AudioWorklet.
-      // Chromium/Electron requires this explicit CSP capability.
-      "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:",
-      "worker-src 'self' blob:",
-      "object-src 'self' blob:",
-      "frame-src 'self' blob:",
-      "style-src 'self' 'unsafe-inline'",
-      // FIX-CLIENTMEDIA: tzmedia: — локальный кеш картинок десктоп-оболочки
-      // (см. apps/desktop/src/main/mediaCache.ts). Схема зарегистрирована в
-      // Electron как привилегированная; в браузере источник просто не совпадёт
-      // ни с одним запросом, поэтому добавление безопасно.
-      "img-src 'self' data: blob: https: tzmedia:",
-      "font-src 'self' https://fonts.gstatic.com",
-      "connect-src 'self' ws: wss: https://api.openai.com https://api.anthropic.com",
-      "media-src 'self' blob:",
-      "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    ].join("; "),
-  },
+  /* FIX-CSP: правила CSP переехали в src/middleware.ts.
+
+     Здесь заголовок статичен, а значит единственным способом разрешить
+     собственные встроенные скрипты было 'unsafe-inline' — а он сводит защиту
+     от XSS к нулю: ровно таким скриптом и выглядит встроенная в страницу
+     чужая врезка. Middleware выдаёт на каждый ответ свой nonce. */
 ];
 
 const nextConfig = {

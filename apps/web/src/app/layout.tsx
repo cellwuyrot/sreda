@@ -48,17 +48,24 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+import { headers } from "next/headers";
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  /* FIX-CSP: nonce выдаёт middleware на каждый ответ (см. src/middleware.ts).
+     Без него встроенный скрипт темы пришлось бы разрешать через 'unsafe-inline',
+     а это разрешает и любой чужой встроенный скрипт. */
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html lang="ru" className="dark" suppressHydrationWarning>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
         {/* Anti-flash: apply saved theme (dark/light/mono/mono-lite) AND light variant (warm) before first paint */}
-        <script dangerouslySetInnerHTML={{ __html: `
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: `
           (function(){
             var d = document.documentElement;
             var t = localStorage.getItem('trioz-theme') || 'dark';

@@ -17,6 +17,10 @@ model User {
   avatar                 String?
   role                   String                      @default("USER")
   emailVerified          Boolean                     @default(false)
+  /// FIX-SEC: момент последней смены пароля. Сессия живёт в подписанном cookie,
+  /// а не в базе, поэтому только эта отметка позволяет обесценить ранее выданные
+  /// токены: при расхождении с токеном сессия считается завершённой (lib/auth.ts).
+  passwordChangedAt      DateTime?
   banned                 Boolean                     @default(false)
   banReason              String?
   bannedUntil            DateTime?
