@@ -19,6 +19,12 @@ export async function GET(req: NextRequest) {
   if (action) where.action = action;
   if (userId) where.userId = userId;
 
+  // ROLE-STRUCT: журнал целиком — сведения уровня проекта (кто банил, кто менял
+  // оплаты, какие действия вёл админ). Редактору оставляем только его
+  // собственные записи: работу проверить можно, слежку за коллегами — нет.
+  // Фильтр выставляем ПОСЛЕ разбора query, чтобы ?userId= его не обошёл.
+  if (session.user.role !== "ADMIN") where.userId = session.user.id;
+
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
       where,
