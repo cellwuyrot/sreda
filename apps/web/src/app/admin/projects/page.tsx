@@ -18,6 +18,8 @@ import {
   stagesOf,
   type ProjectItem,
 } from "@/components/cabinet/ProjectWidgets";
+// BUSINESS-CABINET: та же деловая часть, что и в кабинете, но в режиме редактирования.
+import ProjectBusinessPanel from "@/components/cabinet/ProjectBusinessPanel";
 
 // FIX-CABINET: обработка заявок личных кабинетов (доступно ADMIN и EDITOR).
 // Проект, созданный клиентом в /partner, появляется здесь как новая заявка.
@@ -30,6 +32,10 @@ const FILTERS: ReadonlyArray<readonly [string, string]> = [
   ["IN_PROGRESS", "В работе"],
   ["LAUNCHED", "Запущенные"],
 ];
+
+/* ROLE-STRUCT: по 10 записей на страницу. Список заявок рос бесконечной
+   прокруткой, и найти в нём конкретный проект было нечем: поиска не было. */
+const PER_PAGE = 10;
 
 export default function AdminProjectsPage() {
   const { data: session, status } = useSession();
@@ -44,6 +50,9 @@ export default function AdminProjectsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [savingStep, setSavingStep] = useState(false);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState(""); // ROLE-STRUCT: поиск проекта
+  const [page, setPage] = useState(1);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/auth/signin");
@@ -84,18 +93,52 @@ export default function AdminProjectsPage() {
     }
   };
 
+  /* ROLE-STRUCT: безвозвратное удаление заявки. Подтверждение обязательно:
+     вместе с проектом каскадом уйдут переписка, счета, документы и история. */
+  const deleteProject = async (project: ProjectItem) => {
+    if (deletingId) return;
+    if (!window.confirm(`Удалить проект «${project.name}» безвозвратно?\nВместе с ним будут удалены переписка, счета, документы и история этапов.`)) return;
+    setDeletingId(project.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) { setError(data?.error || "Не удалось удалить проект"); return; }
+      setProjects((prev) => prev.filter((p) => p.id !== project.id));
+      if (openId === project.id) setOpenId(null);
+    } catch {
+      setError("Нет соединения с сервером");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (status === "loading" || (status === "authenticated" && !allowed)) {
     return <div className="flex min-h-screen items-center justify-center bg-neutral-50 dark:bg-neutral-950"><Spinner /></div>;
   }
   if (!allowed) return null;
 
+  const needle = query.trim().toLowerCase();
   const visible = projects.filter((p) => {
+    /* Поиск по названию, клиенту, услуге и домену: сотрудник ищет заявку
+       по тому, что помнит, а не по внутреннему идентификатору. */
+    if (needle) {
+      const haystack = [p.name, p.domain, p.service?.title, p.owner?.name, p.owner?.username]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
     if (!filter) return true;
     const progress = progressOf(p);
     if (filter === "NEW") return progress === 0 && p.status !== "LAUNCHED";
     if (filter === "IN_PROGRESS") return progress > 0 && progress < 100 && p.status !== "LAUNCHED";
     return p.status === "LAUNCHED" || progress >= 100;
   });
+
+  const pageCount = Math.max(1, Math.ceil(visible.length / PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const pageItems = visible.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
 
   return (
     <div className="min-h-screen bg-neutral-50 px-4 pb-12 pt-8 dark:bg-neutral-950 max-md:px-3">
@@ -124,6 +167,30 @@ export default function AdminProjectsPage() {
           ))}
         </div>
 
+        {/* ROLE-STRUCT: поиск проекта и кнопка напротив него. */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+            placeholder="Поиск проекта: название, клиент, услуга, домен"
+            className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-500 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:focus:border-cyan-500"
+          />
+          <button
+            onClick={() => { setPage(1); fetchProjects(); }}
+            className="flex-shrink-0 rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-violet-500 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+          >
+            Обновить
+          </button>
+          {query && (
+            <button
+              onClick={() => { setQuery(""); setPage(1); }}
+              className="flex-shrink-0 rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 transition hover:bg-neutral-100 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+            >
+              Сбросить
+            </button>
+          )}
+        </div>
+
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
           <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-white/10 dark:bg-neutral-900">
             <div className="flex items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4 dark:border-white/10">
@@ -133,13 +200,13 @@ export default function AdminProjectsPage() {
 
             {loading ? (
               <div className="grid min-h-72 place-items-center px-6 py-12"><Spinner /></div>
-            ) : visible.length === 0 ? (
+            ) : pageItems.length === 0 ? (
               <div className="grid min-h-72 place-items-center px-6 py-12 text-center">
                 <p className="text-sm text-neutral-400">Заявок пока нет</p>
               </div>
             ) : (
               <div className="divide-y divide-neutral-200 dark:divide-white/10">
-                {visible.map((p) => {
+                {pageItems.map((p) => {
                   const stages = stagesOf(p);
                   const done = doneOf(p, stages);
                   const progress = progressOf(p, stages);
@@ -184,11 +251,43 @@ export default function AdminProjectsPage() {
                             {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
                           </div>
                           <ProjectChatLink projectId={p.id} />
+                          <ProjectBusinessPanel projectId={p.id} isStaff />
+                          {/* ROLE-STRUCT: безвозвратное удаление запроса. */}
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => void deleteProject(p)}
+                              disabled={deletingId === p.id}
+                              className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-500 transition hover:bg-red-500/10 disabled:opacity-50"
+                            >
+                              {deletingId === p.id ? "Удаление…" : "Удалить безвозвратно"}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* ROLE-STRUCT: постранично, по 10 записей. */}
+            {pageCount > 1 && (
+              <div className="flex items-center justify-between gap-3 border-t border-neutral-200 px-5 py-3 dark:border-white/10">
+                <button
+                  onClick={() => setPage((v) => Math.max(1, v - 1))}
+                  disabled={currentPage <= 1}
+                  className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                >
+                  Назад
+                </button>
+                <span className="text-xs text-neutral-500 dark:text-gray-400">Страница {currentPage} из {pageCount} · всего {visible.length}</span>
+                <button
+                  onClick={() => setPage((v) => Math.min(pageCount, v + 1))}
+                  disabled={currentPage >= pageCount}
+                  className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                >
+                  Вперёд
+                </button>
               </div>
             )}
           </div>
