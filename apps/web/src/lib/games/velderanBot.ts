@@ -1,3 +1,4 @@
+import { secureRandom } from "./random";
 import { VelderanGameState, getCurrentPlayerId, moveUnit, endTurn, placeFromInventory, finishPlacement, canMoveUnit, rollDiceForGod, playCombatCard, specialAttack, smugglerTeleport, playGodCard, getSpecialAttackTargets } from "./velderanState";
 import { getActiveNodes, getNeighbors } from "./velderanMap";
 
@@ -169,7 +170,7 @@ function botMove(
       // Defensive: maybe stay on own city
       const currentNode = getActiveNodes().find((n) => n.id === currentUnit.position);
       if (currentNode?.type === "city" && newState.cityOwners[currentUnit.position] === botId) {
-        if (Math.random() < CHANCE_STAY_DEFENSIVE) continue;
+        if (secureRandom() < CHANCE_STAY_DEFENSIVE) continue;
       }
 
       const validTargets: { nodeId: string; score: number; reason: string }[] = [];
@@ -179,7 +180,7 @@ function botMove(
         const node = getActiveNodes().find((n) => n.id === neighborId);
         if (!node) continue;
 
-        let score = 1 + Math.random() * 0.5; // base + small randomness
+        let score = 1 + secureRandom() * 0.5; // base + small randomness
 
         // ── Capture undefended enemy city (highest value)
         if (node.type === "city") {
@@ -189,9 +190,9 @@ function botMove(
               (u) => u.position === neighborId && u.playerId !== botId
             );
             if (defenders.length === 0) {
-              score = 12 * (Math.random() < CHANCE_CAPTURE_CITY ? 1 : 0.3);
+              score = 12 * (secureRandom() < CHANCE_CAPTURE_CITY ? 1 : 0.3);
             } else {
-              score = Math.random() < CHANCE_ATTACK_ENEMY ? 7 : 2;
+              score = secureRandom() < CHANCE_ATTACK_ENEMY ? 7 : 2;
             }
           } else if (!owner) {
             score = 9; // neutral city
@@ -204,13 +205,13 @@ function botMove(
             (u) => u.position === neighborId && u.playerId !== botId
           );
           if (enemies.length > 0) {
-            score = Math.random() < CHANCE_ATTACK_ENEMY ? 6 : 1.5;
+            score = secureRandom() < CHANCE_ATTACK_ENEMY ? 6 : 1.5;
           }
         }
 
         // ── Guard → shrine (powerful god summon)
         if (node.type === "shrine" && currentUnit.type === "GUARD") {
-          score = Math.random() < CHANCE_SHRINE_GUARD ? 8 : 3;
+          score = secureRandom() < CHANCE_SHRINE_GUARD ? 8 : 3;
         }
 
         // ── Avoid moving into friendly-crowded nodes
@@ -271,14 +272,14 @@ function botMove(
         // Smuggler: teleport unit to a random enemy port
         const ports = getActiveNodes().filter((n) => n.type === "port");
         if (ports.length > 0) {
-          const target = ports[Math.floor(Math.random() * ports.length)];
+          const target = ports[Math.floor(secureRandom() * ports.length)];
           newState = smugglerTeleport(newState, botId, locId, target.id, playerNames);
         }
       } else {
         // Pirate/Ghost/Camp: attack random valid target
         const targets = getSpecialAttackTargets(newState, botId, locId);
         if (targets.length > 0) {
-          const targetId = targets[Math.floor(Math.random() * targets.length)];
+          const targetId = targets[Math.floor(secureRandom() * targets.length)];
           newState = specialAttack(newState, botId, locId, targetId, playerNames);
           // Resolve combat if triggered
           if (newState.phase === "COMBAT") {
@@ -297,15 +298,15 @@ function botMove(
       let targetId: string | undefined;
       if (card.godId === 3 || card.godId === 9) {
         const enemies = newState.units.filter((u) => u.playerId !== botId);
-        targetId = enemies.length > 0 ? enemies[Math.floor(Math.random() * enemies.length)].id : undefined;
+        targetId = enemies.length > 0 ? enemies[Math.floor(secureRandom() * enemies.length)].id : undefined;
       } else if (card.godId === 5) {
         const enemyPlayers = newState.turnOrder.filter(
           (pid) => pid !== botId && !newState.eliminatedPlayers.includes(pid)
         );
-        targetId = enemyPlayers.length > 0 ? enemyPlayers[Math.floor(Math.random() * enemyPlayers.length)] : undefined;
+        targetId = enemyPlayers.length > 0 ? enemyPlayers[Math.floor(secureRandom() * enemyPlayers.length)] : undefined;
       } else if (card.godId === 8) {
         const myUnits = newState.units.filter((u) => u.playerId === botId && u.type === "ARMY");
-        targetId = myUnits.length > 0 ? myUnits[Math.floor(Math.random() * myUnits.length)].id : undefined;
+        targetId = myUnits.length > 0 ? myUnits[Math.floor(secureRandom() * myUnits.length)].id : undefined;
       }
       // godId 6 (Shent'Ar) and 7 (Giordg) don't need a target — they are passive
       newState = playGodCard(newState, botId, 0, targetId, playerNames);
@@ -345,7 +346,7 @@ function botCombat(
   let card: number;
   if (hand.length > 0) {
     const sorted = [...hand].sort((a, b) => b - a);
-    if (Math.random() < 0.15 && sorted.length > 1) {
+    if (secureRandom() < 0.15 && sorted.length > 1) {
       // Bluff: play a low card
       card = sorted[sorted.length - 1];
     } else {
@@ -353,14 +354,14 @@ function botCombat(
       card = sorted[0];
     }
   } else {
-    card = Math.floor(Math.random() * 5) + 1;
+    card = Math.floor(secureRandom() * 5) + 1;
   }
 
   // Smart guess: weighted toward middle values (3 is most common play)
   // Distribution: 1→8%, 2→18%, 3→35%, 4→25%, 5→14%
   const guessWeights = [8, 18, 35, 25, 14];
   const totalWeight = guessWeights.reduce((a, b) => a + b, 0);
-  let roll = Math.random() * totalWeight;
+  let roll = secureRandom() * totalWeight;
   let guess = 3;
   for (let i = 0; i < guessWeights.length; i++) {
     roll -= guessWeights[i];
