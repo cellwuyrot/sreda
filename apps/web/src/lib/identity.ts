@@ -1,4 +1,5 @@
 import prisma from "./prisma";
+import { clientIpOf } from "./clientIp";
 
 /**
  * НОВОЕ: остановка учётной записи по IP и устройству (MAC).
@@ -60,11 +61,15 @@ export function cookieValue(cookieHeader: string | null | undefined, name: strin
   return null;
 }
 
-/** IP клиента из запроса (за прокси — первый адрес из x-forwarded-for). */
+/**
+ * IP клиента из запроса.
+ *
+ * FIX-SEC: раньше брался первый адрес из `X-Forwarded-For` — то есть значение,
+ * которое клиент дописывает сам. Теперь адрес берётся из доверенного hop
+ * (см. lib/clientIp.ts), иначе блокировку по адресу снимал бы один заголовок.
+ */
 export function getClientIp(req: { headers: Headers }): string | null {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim() || null;
-  return req.headers.get("x-real-ip");
+  return clientIpOf(req);
 }
 
 function normalize(kind: "IP" | "DEVICE", value: string | null | undefined): string | null {

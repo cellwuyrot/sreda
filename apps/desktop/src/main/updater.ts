@@ -101,6 +101,11 @@ function wireEvents(): void {
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  /* FIX-SEC: понижение версии запрещено. Иначе тот, кто управляет фидом или
+     смог вмешаться в соединение, вернёт старую сборку с известной дырой —
+     и она установится тихо, без вопросов. Черновики — тоже не автоматически. */
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.allowPrerelease = false;
 
   autoUpdater.on("error", (err) => {
     console.warn("[updater] error:", err?.message ?? err);

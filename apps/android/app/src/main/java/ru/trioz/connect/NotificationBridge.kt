@@ -30,12 +30,18 @@ import kotlin.math.absoluteValue
  * `apps/web/src/lib/appNotify.ts`, который в обычном браузере остаётся на Web
  * Notifications.
  *
- * Безопасность: интерфейс доступен только странице нашего origin — навигация
- * вне allowlist невозможна (см. Config.kt + AndroidShellGuard), а сам мост
- * умеет ровно одно действие: показать локальное уведомление.
+ * Безопасность: FIX-SEC. Раньше здесь было написано «интерфейс доступен только
+ * странице нашего origin» — но это было не так. addJavascriptInterface вешает мост на
+ * WebView целиком, а значит на ЛЮБОЙ документ, который там окажется: навигационные
+ * правила разбирают клики и историю, но не цепочку переадресаций сервера и не
+ * встроенные фреймы. Поэтому каждый метод теперь спрашивает originOk(): чужая
+ * страница не покажет уведомление от имени мессенджера и не прочитает токен
+ * доставки.
  */
 class NotificationBridge(
     private val activity: Activity,
+    /** На нашем ли адресе текущая страница; считает MainActivity. */
+    private val originOk: () -> Boolean,
     /** Запрос POST_NOTIFICATIONS (Android 13+); реализует MainActivity. */
     private val requestPermission: () -> Unit,
 ) {
@@ -68,6 +74,7 @@ class NotificationBridge(
     /** Показать уведомление о новом сообщении. Зовётся из JS. */
     @JavascriptInterface
     fun notify(title: String?, body: String?, tag: String?) {
+        if (!originOk()) return
         val safeTitle = title?.take(120)?.ifBlank { null }
             ?: activity.getString(R.string.app_name)
         val safeBody = body?.take(400) ?: ""
@@ -113,6 +120,7 @@ class NotificationBridge(
     /** Разрешены ли уведомления (канал + системное разрешение). Зовётся из JS. */
     @JavascriptInterface
     fun areNotificationsEnabled(): Boolean {
+        if (!originOk()) return false
         if (!NotificationManagerCompat.from(activity).areNotificationsEnabled()) return false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             return ContextCompat.checkSelfPermission(
@@ -126,6 +134,7 @@ class NotificationBridge(
     /** Запросить системное разрешение на уведомления. Зовётся из JS. */
     @JavascriptInterface
     fun requestPermission() {
+        if (!originOk()) return
         activity.runOnUiThread { requestPermission.invoke() }
     }
 
@@ -142,5 +151,5 @@ class NotificationBridge(
      * устройстве недоступна (служба не настроена в сборке или ещё не выдала адрес).
      */
     @JavascriptInterface
-    fun pushToken(): String = PushService.storedToken(activity)
+    fun pushToken(): String = if (originOk()) PushService.storedToken(activity) else ""
 }
