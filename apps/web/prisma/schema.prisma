@@ -124,6 +124,7 @@ model User {
   partnerProjects        PartnerProject[]            @relation("UserPartnerProjects") // FIX-CABINET
   projectMessages        PartnerProjectMessage[]     @relation("UserProjectMessages") // FIX-CABINET
   responsibleProjects    PartnerProject[]            @relation("StaffResponsibleProjects") // BUSINESS-CABINET
+  paymentRequisites      PaymentRequisite[]          @relation("PaymentRequisiteOwner") // PAY-TEMPLATE
   premiumSubscriptions   PremiumSubscription[]       @relation("UserPremiumSubs") // PREMIUM-PAY
   premiumSubsGranted     PremiumSubscription[]       @relation("PremiumSubGranter") // PREMIUM-PAY
   createdAt              DateTime                    @default(now())
@@ -2048,6 +2049,12 @@ model BusinessPayment {
   createdById    String?
   createdBy      User?              @relation("BusinessPaymentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
+  /// PAY-TEMPLATE: шаблон реквизитов, из которого счёт выставлен. Текст в
+  /// `requisites` остаётся СНИМКОМ: правка шаблона не переписывает уже
+  /// выставленный счёт — иначе условия менялись бы у клиента за спиной.
+  requisiteId    String?
+  requisite      PaymentRequisite?  @relation(fields: [requisiteId], references: [id], onDelete: SetNull)
+
   contracts      BusinessContract[]
 
   createdAt      DateTime           @default(now())
@@ -2055,6 +2062,86 @@ model BusinessPayment {
 
   @@index([status, createdAt])
   @@index([serviceId])
+  @@index([requisiteId])
+}
+
+/// PAY-TEMPLATE: шаблон платёжных реквизитов.
+///
+/// ── Зачем отдельная таблица, а не поля в SiteConfig ────────────────────
+///
+/// В SiteConfig лежит ОДИН набор реквизитов проекта. Пока счёт выставляет один
+/// человек от одного юрлица, этого хватает. Как только администраторов больше
+/// одного, набор перестаёт быть один: у каждого своё ИП, свой СБП-телефон и свой
+/// терминал эквайринга, а часть работ идёт через общее юрлицо. Один набор в этой
+/// ситуации приводит к тому, что реквизиты каждый раз дописывают в счёт руками —
+/// и рано или поздно клиент платит не туда.
+///
+/// Поэтому шаблон — это запись: у неё есть имя, владелец и признак «по умолчанию».
+/// `ownerId = null` — общий шаблон проекта, виден всем администраторам.
+/// `ownerId = <администратор>` — личный: чужие личные шаблоны другим не видны и
+/// не редактируются, это чужие банковские данные, а не общий справочник.
+model PaymentRequisite {
+  id                String   @id @default(cuid())
+
+  name              String   @db.VarChar(120)
+
+  /// BUSINESS — счета делового чата, PREMIUM — подписка Premium. Строкой, как и
+  /// остальные перечисления проекта: значения будут расти.
+  scope             String   @default("BUSINESS") @db.VarChar(16)
+
+  /// Владелец личного шаблона; null — общий шаблон проекта.
+  ownerId           String?
+  owner             User?    @relation("PaymentRequisiteOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  /// Подставляется в форму счёта без выбора. Личный шаблон по умолчанию
+  /// главнее общего: человек выставляет счёт от себя чаще, чем от проекта.
+  isDefault         Boolean  @default(false)
+
+  orgName           String   @default("") @db.VarChar(200)
+  inn               String   @default("") @db.VarChar(20)
+  kpp               String   @default("") @db.VarChar(20)
+  bank              String   @default("") @db.VarChar(200)
+  bik               String   @default("") @db.VarChar(20)
+  account           String   @default("") @db.VarChar(34)
+  corrAccount       String   @default("") @db.VarChar(34)
+  purpose           String   @default("") @db.VarChar(300)
+
+  sbpEnabled        Boolean  @default(false)
+  sbpPhone          String   @default("") @db.VarChar(32)
+  sbpBank           String   @default("") @db.VarChar(120)
+  sbpRecipient      String   @default("") @db.VarChar(200)
+
+  acquiringEnabled  Boolean  @default(false)
+  acquiringProvider String   @default("") @db.VarChar(120)
+  acquiringLink     String   @default("") @db.VarChar(500)
+  acquiringMerchant String   @default("") @db.VarChar(120)
+
+  comment           String?  @db.Text
+
+  /// Готовый текст реквизитов целиком. Если заполнен — в счёт идёт он, а не
+  /// собранный из полей: бывают формулировки, которые нельзя ужать в поля
+  /// (агентский договор, НДС, ссылка на приложение).
+  bodyOverride      String?  @db.Text
+
+  /// Значения по умолчанию для формы счёта.
+  mode              String   @default("ONE_TIME") @db.VarChar(16)
+  period            String?  @db.VarChar(16)
+
+  /// Кем создан — для общих шаблонов важно понимать, с кого спросить.
+  createdById       String?
+  createdByName     String   @default("") @db.VarChar(120)
+
+  /// Сколько счетов выставлено по шаблону и когда в последний раз.
+  usedCount         Int      @default(0)
+  lastUsedAt        DateTime?
+
+  payments          BusinessPayment[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([scope, ownerId])
+  @@index([ownerId, isDefault])
 }
 
 /// BUSINESS-PAY: подписанный договор по оплаченному счёту.
