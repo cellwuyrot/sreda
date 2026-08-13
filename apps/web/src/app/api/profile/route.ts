@@ -6,6 +6,8 @@ import bcrypt from "bcryptjs";
 import { USERNAME_COOLDOWN_DAYS, formatCooldownLeft, usernameCooldownLeftMs, validateUsername } from "@/lib/username";
 import { hasPremium, premiumSource } from "@/lib/premium";
 import { premiumDaysLeft } from "@/lib/premiumExpiry";
+/* VPN-PLAN: вторая подписка — только тумблер VPN, без премиум-возможностей. */
+import { hasActiveVpnPlan, vpnDaysLeft } from "@/lib/vpnPlan";
 import { checkBan } from "@/lib/banCheck";
 
 export async function GET() {
@@ -19,6 +21,7 @@ export async function GET() {
       avatar: true, role: true, emailVerified: true,
       bio: true, socialLinks: true, customStatus: true, statusEmoji: true,
       isPremium: true, showOnline: true,
+      vpnAccess: true, vpnAccessUntil: true, // VPN-PLAN
       privacyOnline: true, privacyFriends: true, privacyEmail: true,
       notifySound: true, notifyPush: true,
       createdAt: true, lastSeen: true,
@@ -73,6 +76,19 @@ export async function GET() {
       daysLeft,
       /** Подписку оформил администратор, а не сам пользователь. */
       granted: !!subscription?.grantedById,
+    },
+    /* VPN-PLAN: подписка «только VPN». Отдельный блок, а не поле внутри
+       `premium`: раздел настроек показывает две независимые подписки, и их
+       смешивание в одном объекте рано или поздно привело бы к тому, что VPN-
+       подписчику показали бы метку Premium. */
+    vpn: {
+      /** Действует ли отдельная подписка на VPN прямо сейчас. */
+      active: hasActiveVpnPlan(user),
+      /** null — бессрочно. */
+      expiresAt: user.vpnAccessUntil ?? null,
+      daysLeft: vpnDaysLeft(user.vpnAccessUntil),
+      /** Доступ есть и без отдельной подписки — его даёт Premium. */
+      viaPremium: hasPremium(user) && !overdue,
     },
   });
 }

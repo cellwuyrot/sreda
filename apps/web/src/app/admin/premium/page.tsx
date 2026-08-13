@@ -1,12 +1,12 @@
 "use client";
-
+​
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { hasPremium } from "@/lib/premium";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import Spinner from "@/components/ui/Spinner";
 import Link from "next/link";
-
+​
 import { useAdminBackHref, useAdminBackLabel } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
 interface PremiumUser {
   id: string;
@@ -17,7 +17,7 @@ interface PremiumUser {
   isPremium: boolean;
   banned: boolean;
 }
-
+​
 interface Subscription {
   id: string;
   plan: string;
@@ -32,7 +32,7 @@ interface Subscription {
   createdAt: string;
   grantedBy?: { username: string; name: string } | null;
 }
-
+​
 const PLAN_LABELS: Record<string, string> = {
   month: "1 месяц",
   quarter: "3 месяца",
@@ -44,12 +44,12 @@ const METHOD_LABELS: Record<string, string> = {
   acquiring: "Эквайринг",
   manual: "Вручную / офлайн",
 };
-
+​
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
-
+​
 /* ── Модалка: подключить подписку к платежу для конкретного клиента (ADMIN) ── */
 function ConnectSubscriptionModal({
   user,
@@ -72,20 +72,20 @@ function ConnectSubscriptionModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<Subscription[]>([]);
-
+​
   const methodOptions = useMemo(() => {
     const base = ["sbp", "acquiring", "manual"];
     // Включённые способы — вперёд, но всегда показываем «Вручную».
     return base.sort((a, b) => Number(enabledMethods.includes(b)) - Number(enabledMethods.includes(a)));
   }, [enabledMethods]);
-
+​
   useEffect(() => {
     fetch(`/api/admin/premium/subscriptions?userId=${user.id}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => Array.isArray(data) && setHistory(data))
       .catch(() => {});
   }, [user.id]);
-
+​
   const submit = async () => {
     setSaving(true);
     setError("");
@@ -115,7 +115,7 @@ function ConnectSubscriptionModal({
       setSaving(false);
     }
   };
-
+​
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -131,7 +131,7 @@ function ConnectSubscriptionModal({
         <p className="text-sm text-gray-400 mt-1">
           Клиент: <span className="text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
         </p>
-
+​
         <div className="mt-5 space-y-4">
           <div>
             <label className="text-sm text-gray-400 mb-2 block">Тариф</label>
@@ -147,7 +147,7 @@ function ConnectSubscriptionModal({
               ))}
             </div>
           </div>
-
+​
           <div>
             <label className="text-sm text-gray-400 mb-2 block">Способ оплаты</label>
             <div className="grid grid-cols-3 gap-2">
@@ -167,7 +167,7 @@ function ConnectSubscriptionModal({
               })}
             </div>
           </div>
-
+​
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm text-gray-400 mb-1 block">Сумма, ₽</label>
@@ -178,14 +178,14 @@ function ConnectSubscriptionModal({
               <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
             </div>
           </div>
-
+​
           <div>
             <label className="text-sm text-gray-400 mb-1 block">Комментарий</label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 resize-none" />
           </div>
-
+​
           {error && <p className="text-xs text-red-400">{error}</p>}
-
+​
           {history.length > 0 && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <p className="text-xs font-medium text-gray-300 mb-2">История подписок</p>
@@ -202,7 +202,7 @@ function ConnectSubscriptionModal({
               </div>
             </div>
           )}
-
+​
           <div className="flex gap-3 pt-1">
             <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-violet-500/20 text-violet-300 rounded-lg hover:bg-violet-500/40 transition-all text-sm font-medium disabled:opacity-50">
               {saving ? "Подключение..." : "Подключить и выдать Premium"}
@@ -216,7 +216,219 @@ function ConnectSubscriptionModal({
     </motion.div>
   );
 }
-
+​
+/* ── Модалка: подписка «только VPN» (ADMIN) ────────────────────────────────
+​
+   VPN-PLAN: отдельная модалка, а не переключатель внутри Premium-модалки:
+   одна кнопка выдаёт все возможности, другая — только туннель. Путать их
+   дорого: лишний Premium придётся снимать руками, а человек уже увидит
+   возможности, за которые не платил. */
+function ConnectVpnModal({
+  user,
+  enabledMethods,
+  onClose,
+}: {
+  user: PremiumUser;
+  enabledMethods: string[];
+  onClose: () => void;
+}) {
+  const [plan, setPlan] = useState<"month" | "quarter" | "year" | "lifetime">("month");
+  const [method, setMethod] = useState<string>(enabledMethods[0] ?? "manual");
+  const [amount, setAmount] = useState<string>("");
+  const [reference, setReference] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [history, setHistory] = useState<Subscription[]>([]);
+  const [access, setAccess] = useState<{ vpnAccess: boolean; vpnAccessUntil: string | null }>({
+    vpnAccess: false,
+    vpnAccessUntil: null,
+  });
+​
+  const load = useCallback(() => {
+    fetch(`/api/admin/vpn/subscriptions?userId=${user.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        if (Array.isArray(data.subscriptions)) setHistory(data.subscriptions);
+        setAccess({ vpnAccess: !!data.vpnAccess, vpnAccessUntil: data.vpnAccessUntil ?? null });
+      })
+      .catch(() => {});
+  }, [user.id]);
+​
+  useEffect(load, [load]);
+​
+  const submit = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/vpn/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          plan,
+          paymentMethod: method,
+          amount: Number(amount) || 0,
+          reference: reference.trim() || null,
+          note: note.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Не удалось подключить подписку");
+        setSaving(false);
+        return;
+      }
+      onClose();
+    } catch {
+      setError("Ошибка сети. Попробуйте позже.");
+      setSaving(false);
+    }
+  };
+​
+  const cancelSub = async (subscriptionId: string) => {
+    setError("");
+    try {
+      const res = await fetch("/api/admin/vpn/subscriptions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId, status: "canceled" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Не удалось отменить подписку");
+        return;
+      }
+      load();
+    } catch {
+      setError("Ошибка сети. Попробуйте позже.");
+    }
+  };
+​
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+        className="glass-card p-6 max-w-lg w-full max-h-[88vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-bold text-white">Подписка «только VPN»</h3>
+        <p className="text-sm text-gray-400 mt-1">
+          Клиент: <span className="text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
+        </p>
+        <p className="mt-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-[11px] leading-relaxed text-cyan-200">
+          Даёт только включение и выключение VPN. Флаг Premium не выдаётся и не снимается.
+        </p>
+        <p className="mt-2 text-xs text-gray-400">
+          Сейчас: {access.vpnAccess ? (access.vpnAccessUntil ? `доступ до ${fmtDate(access.vpnAccessUntil)}` : "бессрочный доступ") : "отдельной подписки нет"}
+        </p>
+​
+        <div className="mt-5 space-y-4">
+          <div>
+            <label className="text-sm text-gray-400 mb-2 block">Тариф</label>
+            <div className="grid grid-cols-4 gap-2">
+              {(["month", "quarter", "year", "lifetime"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPlan(p)}
+                  className={`px-2 py-1.5 rounded-lg text-xs transition-all ${plan === p ? "bg-cyan-500/25 text-cyan-200 border border-cyan-400/40" : "bg-dark-700 text-gray-400 border border-white/5 hover:border-white/20"}`}
+                >
+                  {PLAN_LABELS[p]}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-gray-500">
+              Если доступ ещё действует, срок считается от его конца — оплаченные дни не теряются.
+            </p>
+          </div>
+​
+          <div>
+            <label className="text-sm text-gray-400 mb-2 block">Способ оплаты</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["sbp", "acquiring", "manual"] as const).map((m) => {
+                const on = method === m;
+                /* «Вручную» доступно всегда: это офлайн-оплата, настраивать её нечего. */
+                const enabled = m === "manual" || enabledMethods.includes(m);
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setMethod(m)}
+                    className={`px-2 py-1.5 rounded-lg text-xs transition-all ${on ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40" : "bg-dark-700 text-gray-400 border border-white/5 hover:border-white/20"}`}
+                  >
+                    {METHOD_LABELS[m]}
+                    {/* Повторное сравнение m !== "manual" убрано. Здесь список способов —
+                        литеральный союз (as const), и TypeScript сам сужает тип: в ветке
+                        `!enabled` значения "manual" уже не может быть. Сборка падала
+                        именно на этом невозможном сравнении. В Premium-модалке выше
+                        проверка остаётся: там список — обычные строки. */}
+                    {!enabled && <span className="block text-[9px] text-gray-500">не настроен</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+​
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm text-gray-400 mb-1 block">Сумма, ₽</label>
+              <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="149" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
+            </div>
+            <div>
+              <label className="text-sm text-gray-400 mb-1 block">Номер платежа / чек</label>
+              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
+            </div>
+          </div>
+​
+          <div>
+            <label className="text-sm text-gray-400 mb-1 block">Комментарий</label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 resize-none" />
+          </div>
+​
+          {error && <p className="text-xs text-red-400">{error}</p>}
+​
+          {history.length > 0 && (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <p className="text-xs font-medium text-gray-300 mb-2">История VPN-подписок</p>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {history.map((h) => (
+                  <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                    <span>
+                      <span className={h.status === "active" ? "text-cyan-400" : "text-gray-500"}>●</span>{" "}
+                      {PLAN_LABELS[h.plan] ?? h.plan} · {METHOD_LABELS[h.paymentMethod] ?? h.paymentMethod} · {h.amount}₽
+                    </span>
+                    <span className="flex items-center gap-2 text-gray-500">
+                      {fmtDate(h.createdAt)} → {fmtDate(h.expiresAt)}
+                      {h.status === "active" && (
+                        <button onClick={() => cancelSub(h.id)} className="rounded-lg px-2 py-0.5 bg-red-500/15 text-red-300 hover:bg-red-500/25">
+                          Отменить
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+​
+          <div className="flex gap-3 pt-1">
+            <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/40 transition-all text-sm font-medium disabled:opacity-50">
+              {saving ? "Подключение..." : "Подключить доступ к VPN"}
+            </button>
+            <button onClick={onClose} className="flex-1 px-4 py-2 bg-dark-700 text-gray-400 rounded-lg hover:bg-dark-600 transition-all text-sm">
+              Закрыть
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+​
 export default function AdminPremiumPage() {
   // FIX-EDR2: редактору «Назад» ведёт в «Редакторскую», админу — в админку
   const backHref = useAdminBackHref();
@@ -227,11 +439,13 @@ export default function AdminPremiumPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [connectUser, setConnectUser] = useState<PremiumUser | null>(null);
+  // VPN-PLAN: вторая подписка — только туннель, без флага Premium.
+  const [vpnUser, setVpnUser] = useState<PremiumUser | null>(null);
   const [priceMonth, setPriceMonth] = useState("");
   const [enabledMethods, setEnabledMethods] = useState<string[]>([]);
-
+​
   const isAdmin = session?.user?.role === "ADMIN";
-
+​
   const loadUsers = async () => {
     setLoading(true);
     try {
@@ -242,11 +456,11 @@ export default function AdminPremiumPage() {
       setLoading(false);
     }
   };
-
+​
   useEffect(() => {
     if (session?.user?.role === "ADMIN" || session?.user?.role === "EDITOR") loadUsers();
   }, [session]);
-
+​
   useEffect(() => {
     // Цена и включённые способы оплаты — для предзаполнения модалки подписки.
     if (session?.user?.role === "ADMIN") {
@@ -260,7 +474,7 @@ export default function AdminPremiumPage() {
         .catch(() => {});
     }
   }, [session]);
-
+​
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return users;
@@ -270,7 +484,7 @@ export default function AdminPremiumPage() {
       user.email.toLowerCase().includes(q)
     );
   }, [users, query]);
-
+​
   const togglePremium = async (user: PremiumUser) => {
     setSavingId(user.id);
     try {
@@ -287,17 +501,17 @@ export default function AdminPremiumPage() {
       setSavingId(null);
     }
   };
-
+​
   const markPremium = useCallback((userId: string) => {
     setUsers((prev) => prev.map((item) => item.id === userId ? { ...item, isPremium: true } : item));
   }, []);
-
+​
   if (status === "loading" || loading) {
     return <div className="min-h-screen flex items-center justify-center"><Spinner /></div>;
   }
-
+​
   if (session?.user?.role !== "ADMIN" && session?.user?.role !== "EDITOR") return null;
-
+​
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-dark-900 py-8 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -311,7 +525,7 @@ export default function AdminPremiumPage() {
             Администраторы получают premium автоматически
           </div>
         </div>
-
+​
         {isAdmin && (
           <div className="glass-card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -323,7 +537,7 @@ export default function AdminPremiumPage() {
             </Link>
           </div>
         )}
-
+​
         <div className="glass-card p-5 space-y-4">
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
             <div>
@@ -337,7 +551,7 @@ export default function AdminPremiumPage() {
               className="w-full sm:w-80 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder:text-gray-500 outline-none"
             />
           </div>
-
+​
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -379,6 +593,16 @@ export default function AdminPremiumPage() {
                               Подписка + оплата
                             </button>
                           )}
+                          {/* VPN-PLAN: подписка «только VPN». Администратору она не нужна:
+                              ему туннель доступен по роли. */}
+                          {isAdmin && user.role !== "ADMIN" && (
+                            <button
+                              onClick={() => setVpnUser(user)}
+                              className="rounded-xl px-3 py-2 text-xs font-medium bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25"
+                            >
+                              Только VPN
+                            </button>
+                          )}
                           <button
                             onClick={() => togglePremium(user)}
                             disabled={savingId === user.id || user.role === "ADMIN"}
@@ -396,7 +620,7 @@ export default function AdminPremiumPage() {
           </div>
         </div>
       </div>
-
+​
       <AnimatePresence>
         {connectUser && (
           <ConnectSubscriptionModal
@@ -408,6 +632,17 @@ export default function AdminPremiumPage() {
           />
         )}
       </AnimatePresence>
+​
+      <AnimatePresence>
+        {vpnUser && (
+          <ConnectVpnModal
+            user={vpnUser}
+            enabledMethods={enabledMethods}
+            onClose={() => setVpnUser(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+​
