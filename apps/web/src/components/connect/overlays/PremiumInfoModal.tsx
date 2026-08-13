@@ -258,9 +258,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
 
           {state && !state.entitled && (
             <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Нужна подписка Premium</strong>
+              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Нужна подписка</strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                VPN входит в Premium и выдаётся автоматически, как только подписка активна.
+                Подходит любая из двух: «Только VPN» или Premium. Доступ выдаётся сам, как только подписка активна.
               </span>
             </>
           )}
@@ -418,12 +418,33 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
 }
 
 export default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }: { isPremium: boolean; onClose: () => void; onOpenSettings?: () => void }) {
+  /* VPN-PLAN: раньше панель с тумблером открывалась только при isPremium,
+     и подписчик «только VPN» видел витрину Premium — включить VPN было негде.
+
+     Право на туннель считает сервер (Premium или подписка VPN, lib/vpn.ts)
+     и возвращает его в поле entitled. Сессия о подписке VPN не знает ничего,
+     поэтому спрашиваем сервер напрямую. При Premium запрос не нужен. */
+  const [vpnEntitled, setVpnEntitled] = useState<boolean | null>(isPremium ? true : null);
+
+  useEffect(() => {
+    if (isPremium) return;
+    let alive = true;
+    fetch("/api/vpn/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (alive) setVpnEntitled(data?.entitled === true); })
+      .catch(() => { if (alive) setVpnEntitled(false); });
+    return () => { alive = false; };
+  }, [isPremium]);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative z-10 w-full max-w-md max-h-[88vh] overflow-y-auto rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]" onClick={(e) => e.stopPropagation()}>
-        {isPremium ? (
+        {vpnEntitled === null ? (
+          /* Короткая пауза вместо мигания витриной: показать подписчику
+              «купите Premium» и тут же заменить на тумблер хуже, чем подождать мгновение. */
+          <div className="grid h-56 place-items-center text-sm text-neutral-400 dark:text-white/40">Проверяем доступ…</div>
+        ) : vpnEntitled ? (
           <VpnPanel onClose={onClose} />
         ) : (
         <div className="p-6">

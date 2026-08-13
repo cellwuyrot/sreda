@@ -23,7 +23,7 @@ import DesktopCachePanel from "@/components/settings/DesktopCachePanel";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import { cacheNotifyPrefs } from "@/lib/notifyPrefs";
 import { hasPremium } from "@/lib/premium";
-import { PREMIUM_COMPARISON, PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
+import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import {
   eventToBrowserKeys,
@@ -1883,334 +1883,133 @@ export default function SettingsPage() {
         );
 
       case "premium": {
-        /* Раздел собран по одному принципу: сначала «что у меня сейчас», потом
-           «что это даёт», потом «чем отличается от обычного», и только затем
-           «как оплатить». Раньше первым экраном шла таблица сравнения — она
-           отвечает на вопрос, который у подписчика уже не стоит. */
+        /* VPN-PLAN: раздел — ровно два блока: «Только VPN» и «Premium».
+
+           Прежняя верстка была витриной: преимущество, список возможностей,
+           таблица сравнения с обычным профилем и два блока оплаты. В настройках
+           человек решает другую задачу: понять, что у него есть и до какого числа.
+           Поэтому остались две карточки со статусом, а реквизиты спрятаны под
+           строку «Как оплатить» — они нужны один раз в месяц, а не каждый вход. */
         const premiumInfo = profile.premium;
         const expiresAt = premiumInfo?.expiresAt ? new Date(premiumInfo.expiresAt) : null;
         /* Счётчик считает сервер: у него одна дата на всех, а браузер может стоять
-           с любым временем. Локальный расчёт остаётся запасным путём, если ответ
-           профиля пришёл от старой сборки. */
+           с любым временем. Локальный расчёт — запасной путь для старых сборок. */
         const daysLeft = premiumInfo?.daysLeft ?? (expiresAt ? Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000) : null);
         const byRole = premiumInfo?.source === "role";
-        /* Срок вышел, а флаг в базе ещё не снят: задача проверяет раз в шесть
-           часов. В этом окне человек не должен видеть «подписка без срока» —
-           показываем правду, счётчик для этого и нужен. */
+        /* Срок вышел, а флаг в базе ещё не снят: задача проверяет раз в шесть часов.
+           В этом окне показываем правду, а не «подписка без срока». */
         const overdue = daysLeft != null && daysLeft < 0;
         const premiumActive = effectivePremium && !overdue;
         const dateLabel = expiresAt?.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-        /* Заголовок блока.
+        const premiumLine = !premiumActive
+          ? overdue
+            ? `Срок вышел ${dateLabel} — обычные ограничения вернулись.`
+            : "Сейчас обычный профиль."
+          : byRole
+            ? "Доступ по роли — оплата не требуется."
+            : daysLeft == null
+              ? premiumInfo?.granted ? "Бессрочно, оформлена администратором." : "Бессрочно."
+              : `Осталось ${daysLeft} ${pluralDays(daysLeft)} — до ${dateLabel}.`;
 
-           Надписи «Premium подключён» и «Выдан по роли администратора — оплата не
-           требуется» убраны: первая ничего не добавляла к значку справа, вторая
-           объясняла человеку то, что его не касается. Вместо них у обычного
-           аккаунта стоит счётчик — главное, что нужно знать о подписке. */
-        const statusTitle = overdue
-          ? "Срок подписки истёк"
-          : !premiumActive
-            ? "Обычный профиль"
-            : byRole
-              ? "Premium"
-              : daysLeft == null
-                ? "Подписка без срока"
-                : daysLeft === 0
-                  ? "Подписка заканчивается сегодня"
-                  : `Осталось ${daysLeft} ${pluralDays(daysLeft)}`;
-        const statusNote = overdue
-          ? `Оплачено было до ${dateLabel}. Обычные ограничения уже вернулись — подписку можно продлить.`
-          : !premiumActive
-            ? "Сейчас у вас обычный профиль. Ограничения снимает подписка."
-            : byRole
-              ? ""
-              : dateLabel
-                ? `Оплачено до ${dateLabel}. Если не продлить, премиум снимется автоматически.`
-                : premiumInfo?.granted
-                  ? "Бессрочная подписка, оформлена администратором."
-                  : "Бессрочная подписка.";
-        /* Срок близок к концу — это единственное, о чём стоит предупредить. */
-        const expiringSoon = daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
-
-        /* VPN-PLAN: раздел «Подписки» состоит из двух независимых частей.
-
-           Premium и «только VPN» — разные продукты, а не тарифы одного: вторая
-           подписка даёт РОВНО одно право (включать и выключать VPN) и не даёт ни
-           тем, ни лимитов сообществ, ни повышенных пределов сообщений. Поэтому у
-           частей раздельные состояния, сроки и блоки оплаты: человек должен
-           видеть, за что именно у него оплачено и что закончится. */
+        /* Подписка «только VPN»: даёт РОВНО одно право — включать туннель. */
         const vpnInfo = profile.vpn;
         const vpnExpires = vpnInfo?.expiresAt ? new Date(vpnInfo.expiresAt) : null;
         const vpnDays = vpnInfo?.daysLeft ?? (vpnExpires ? Math.ceil((vpnExpires.getTime() - Date.now()) / 86_400_000) : null);
         const vpnOverdue = vpnDays != null && vpnDays < 0;
-        /** Отдельная подписка на VPN. */
         const vpnPlanActive = !!vpnInfo?.active && !vpnOverdue;
-        /** Доступ к VPN есть и без отдельной подписки — его даёт Premium. */
         const vpnViaPremium = !!vpnInfo?.viaPremium || (premiumActive && !vpnInfo);
         const vpnDateLabel = vpnExpires?.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-        const vpnStatusTitle = vpnPlanActive
+        const vpnLine = vpnPlanActive
           ? vpnDays == null
-            ? "Подписка без срока"
-            : vpnDays === 0
-              ? "Подписка заканчивается сегодня"
-              : `Осталось ${vpnDays} ${pluralDays(vpnDays)}`
+            ? "Бессрочно."
+            : `Осталось ${vpnDays} ${pluralDays(vpnDays)} — до ${vpnDateLabel}.`
           : vpnOverdue
-            ? "Срок подписки истёк"
+            ? `Срок вышел ${vpnDateLabel} — туннель отключён.`
             : vpnViaPremium
-              ? "VPN уже доступен по Premium"
-              : "VPN не подключён";
-        const vpnStatusNote = vpnPlanActive
-          ? vpnDateLabel
-            ? `Оплачено до ${vpnDateLabel}. Если не продлить, туннель отключится автоматически.`
-            : "Бессрочная подписка только на VPN."
-          : vpnOverdue
-            ? `Оплачено было до ${vpnDateLabel}. Туннель уже отключён — подписку можно продлить.`
-            : vpnViaPremium
-              ? "Отдельная подписка не нужна: право на туннель входит в Premium. Она пригодится, если Premium закончится, а VPN нужен."
-              : "Подписка даёт только включение и выключение VPN. Остальные возможности Premium в неё не входят.";
-        /** Тумблер VPN живёт в TZ.Connect — здесь только состояние подписки. */
-        const vpnEntitled = vpnPlanActive || vpnViaPremium;
+              ? "Отдельная подписка не нужна: VPN входит в Premium."
+              : "Только включение и выключение VPN, без остальных возможностей Premium.";
+
+        /* Реквизиты у обеих подписок одни и те же, различается только комментарий
+           к платежу — именно по нему администратор поймёт, что подключать. */
+        const payDetails = (hint: string) => (
+          <details className="mt-3 rounded-xl border border-neutral-200 dark:border-white/10">
+            <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-neutral-600 dark:text-gray-300">Как оплатить</summary>
+            <div className="space-y-2 px-3 pb-3">
+              {paymentMethods && paymentMethods.methods.length > 0 ? (
+                <>
+                  {paymentMethods.methods.map((m) => (
+                    <div key={m.id} className="rounded-lg bg-neutral-50 dark:bg-white/5 p-2.5">
+                      <p className="text-xs font-semibold text-neutral-900 dark:text-white">{m.label}</p>
+                      {m.fields.map((f) => (
+                        <div key={f.label} className="mt-1 flex items-center justify-between gap-3 text-[11px]">
+                          <span className="text-neutral-400">{f.label}</span>
+                          <span className="font-medium text-neutral-700 dark:text-gray-200 text-right break-all">{f.value}</span>
+                        </div>
+                      ))}
+                      {m.link && (
+                        <a href={m.link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-[11px] font-medium text-violet-600 dark:text-cyan-400 hover:underline">
+                          Перейти к оплате →
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-neutral-400">{hint}</p>
+                </>
+              ) : (
+                <p className="text-xs text-neutral-500 dark:text-gray-400">Способы оплаты пока не настроены — напишите администратору.</p>
+              )}
+            </div>
+          </details>
+        );
 
         return (
           <>
-            {/* Часть 1. Premium — подписка со всеми возможностями. */}
-            <div className="mb-2 flex items-center gap-3">
-              <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400">Premium</span>
-              <span className="text-xs text-neutral-400">Все возможности, включая VPN</span>
-              <span className="h-px flex-1 bg-neutral-200 dark:bg-white/10" />
-            </div>
-
-            <Section title="Ваша подписка">
-              <div className={`rounded-2xl border p-4 ${premiumActive ? "border-amber-500/25 bg-amber-500/5" : "border-neutral-200 dark:border-white/10"}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-neutral-900 dark:text-white">{statusTitle}</p>
-                    {statusNote && <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">{statusNote}</p>}
-                  </div>
-                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${premiumActive ? "bg-amber-500/15 text-amber-500" : "bg-neutral-200 dark:bg-white/10 text-neutral-500 dark:text-gray-400"}`}>
-                    {premiumActive ? "Premium" : "Обычный"}
-                  </span>
-                </div>
-
-                {expiringSoon && (
-                  <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                    Подписка заканчивается меньше чем через неделю. После окончания вернутся обычные ограничения — например, предел длины сообщения станет вдвое меньше.
-                  </p>
-                )}
-
-                {/* Оплата нужна не только новым: продлевают тоже отсюда. Раньше
-                    блок с реквизитами скрывался от подписчиков совсем, и продлить
-                    подписку было негде. */}
-                {premiumInfo?.source !== "role" && (
-                  <a
-                    href="#premium-payment"
-                    className="mt-3 inline-flex rounded-xl bg-amber-500/15 px-4 py-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/25 dark:text-amber-400"
-                  >
-                    {premiumActive || overdue ? "Продлить подписку" : "Оформить Premium"}
-                  </a>
-                )}
-              </div>
-
-              {/* Флагманская возможность — то, ради чего подписку берут чаще всего. */}
-              <div className="rounded-2xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-500">{PREMIUM_MAIN_ADVANTAGE.badge}</p>
-                <p className="mt-1 text-base font-semibold text-neutral-900 dark:text-white">{PREMIUM_MAIN_ADVANTAGE.title}</p>
-                <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-gray-400">{PREMIUM_MAIN_ADVANTAGE.description}</p>
-              </div>
-            </Section>
-
-            {/* Что даёт подписка. В настройках этого списка не было вовсе — он
-                жил только во всплывающем окне для тех, у кого премиума нет. */}
-            <Section title="Что входит" subtitle={effectivePremium ? "Всё перечисленное уже работает на вашем аккаунте." : undefined}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {PREMIUM_KEY_FEATURES.map((f) => (
-                  <div key={f.id} className="flex gap-3 rounded-2xl border border-neutral-200 p-3 dark:border-white/10">
-                    {/* Контурная иконка проекта вместо эмодзи: тот же штрих, что и
-                        у остальных иконок, и корректный цвет в любой теме. */}
-                    <span className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-500">
-                      <PremiumFeatureIcon id={f.id} size={18} />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-neutral-900 dark:text-white">{f.title}</p>
-                      <p className="mt-0.5 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">{f.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Section>
-
-            {/* Табличное сравнение: обычный профиль ↔ Premium-профиль */}
-            <Section title="Обычный профиль и Premium" subtitle="Отмечен тариф, который действует у вас сейчас.">
-              <div className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-white/10">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-neutral-50 dark:bg-white/5 text-left">
-                      <th className="py-2.5 px-4 font-medium text-neutral-500 dark:text-gray-400">Возможность</th>
-                      <th className={`py-2.5 px-3 text-center font-medium ${effectivePremium ? "text-neutral-500 dark:text-gray-400" : "text-neutral-900 dark:text-white"}`}>
-                        Обычный{!effectivePremium && <span className="ml-1 text-[10px] font-normal text-neutral-400">ваш</span>}
-                      </th>
-                      <th className="py-2.5 px-3 text-center font-semibold text-amber-500">
-                        Premium{effectivePremium && <span className="ml-1 text-[10px] font-normal text-amber-500/70">ваш</span>}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PREMIUM_COMPARISON.map((row, i) => (
-                      <tr key={row.feature} className={i % 2 ? "bg-neutral-50/50 dark:bg-white/[0.02]" : ""}>
-                        <td className="py-2.5 px-4 text-neutral-700 dark:text-gray-300">{row.feature}</td>
-                        <td className={`py-2.5 px-3 text-center tabular-nums ${row.free === "—" ? "text-neutral-300 dark:text-gray-600" : "text-neutral-600 dark:text-gray-400"}`}>{row.free}</td>
-                        <td className={`py-2.5 px-3 text-center font-medium tabular-nums ${row.premium === "✓" ? "text-emerald-500" : "text-neutral-900 dark:text-white"}`}>{row.premium}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Section>
-
-            {/* Оплата: показывается всем — новым для оформления, подписчикам для
-                продления. Реквизиты задаёт администратор. */}
-            {premiumInfo?.source !== "role" && (
-              <div id="premium-payment">
-                <Section
-                  title={effectivePremium ? "Как продлить Premium" : "Как оформить Premium"}
-                  subtitle={paymentMethods?.priceMonth ? `Стоимость: ${paymentMethods.priceMonth} ${paymentMethods.currency}/мес.` : undefined}
-                >
-                {paymentMethods && paymentMethods.methods.length > 0 ? (
-                  <div className="space-y-3">
-                    {paymentMethods.methods.map((m) => (
-                      <div key={m.id} className="rounded-2xl border border-neutral-200 dark:border-white/10 p-4">
-                        <p className="text-sm font-semibold text-neutral-900 dark:text-white">{m.label}</p>
-                        {m.fields.length > 0 && (
-                          <dl className="mt-2 space-y-1">
-                            {m.fields.map((f) => (
-                              <div key={f.label} className="flex items-center justify-between gap-3 text-xs">
-                                <dt className="text-neutral-400">{f.label}</dt>
-                                <dd className="font-medium text-neutral-700 dark:text-gray-200 text-right break-all">{f.value}</dd>
-                              </div>
-                            ))}
-                          </dl>
-                        )}
-                        {m.link && (
-                          <a href={m.link} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex rounded-xl bg-violet-500/10 px-4 py-2 text-xs font-medium text-violet-600 dark:text-cyan-400 hover:bg-violet-500/20 transition-colors">
-                            Перейти к оплате →
-                          </a>
-                        )}
-                        {m.comment && <p className="mt-2 text-[11px] text-neutral-400">{m.comment}</p>}
-                      </div>
-                    ))}
-                    <p className="text-[11px] text-neutral-400">После оплаты Premium подключит администратор. Укажите ваш username при переводе.</p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-neutral-500 dark:text-gray-400">
-                    Способы оплаты пока не настроены. Обратитесь к администратору, чтобы оформить Premium.
-                  </p>
-                )}
-                </Section>
-              </div>
-            )}
-
-            {/* ── Часть 2. Только VPN ──────────────────────────────────────────
-
-                Отдельный продукт для тех, кому нужен один тумблер и больше
-                ничего. Право на туннель на сервере проверяется как «Premium ИЛИ
-                эта подписка» (lib/vpn.ts, VPN-PLAN), поэтому подписчику Premium
-                платить второй раз не нужно — об этом здесь сказано прямо. */}
-            <div className="mt-8 mb-2 flex items-center gap-3">
-              <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-600 dark:text-cyan-400">Только VPN</span>
-              <span className="text-xs text-neutral-400">Включение и выключение VPN</span>
-              <span className="h-px flex-1 bg-neutral-200 dark:bg-white/10" />
-            </div>
-
-            <Section title="Подписка на VPN">
+            {/* ── Блок 1. Только VPN ───────────────────────────────────── */}
+            <Section dense title="Только VPN">
               <div className={`rounded-2xl border p-4 ${vpnPlanActive ? "border-cyan-500/25 bg-cyan-500/5" : "border-neutral-200 dark:border-white/10"}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-neutral-900 dark:text-white">{vpnStatusTitle}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">{vpnStatusNote}</p>
-                  </div>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm leading-relaxed text-neutral-600 dark:text-gray-300">{vpnLine}</p>
                   <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${vpnPlanActive ? "bg-cyan-500/15 text-cyan-500" : vpnViaPremium ? "bg-amber-500/15 text-amber-500" : "bg-neutral-200 dark:bg-white/10 text-neutral-500 dark:text-gray-400"}`}>
-                    {vpnPlanActive ? "VPN" : vpnViaPremium ? "По Premium" : "Нет"}
+                    {vpnPlanActive ? "Активна" : vpnViaPremium ? "По Premium" : "Нет"}
+                  </span>
+                </div>
+                {(vpnPlanActive || vpnViaPremium) && (
+                  <a href="/connect" className="mt-3 inline-flex rounded-xl bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-600 hover:bg-cyan-500/25 dark:text-cyan-400">
+                    Включить в TZ.Connect →
+                  </a>
+                )}
+                {!vpnPlanActive && !vpnViaPremium && payDetails("В комментарии укажите username и слово «VPN».")}
+                {vpnPlanActive && payDetails("Для продления укажите username и слово «VPN».")}
+              </div>
+            </Section>
+
+            {/* ── Блок 2. Premium ─────────────────────────────────────── */}
+            <Section dense title="Premium">
+              <div className={`rounded-2xl border p-4 ${premiumActive ? "border-amber-500/25 bg-amber-500/5" : "border-neutral-200 dark:border-white/10"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm leading-relaxed text-neutral-600 dark:text-gray-300">{premiumLine}</p>
+                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${premiumActive ? "bg-amber-500/15 text-amber-500" : "bg-neutral-200 dark:bg-white/10 text-neutral-500 dark:text-gray-400"}`}>
+                    {premiumActive ? "Активен" : "Нет"}
                   </span>
                 </div>
 
-                {vpnPlanActive && vpnDays != null && vpnDays >= 0 && vpnDays <= 7 && (
-                  <p className="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-600 dark:text-cyan-400">
-                    Подписка заканчивается меньше чем через неделю. После окончания туннель отключится, а настройки соединения сохранятся — при продлении включать заново ничего не придётся.
-                  </p>
-                )}
+                {/* Список возможностей — только заголовки без описаний: описания
+                    нужны в витрине (окно TZ в /connect), а не в настройках. */}
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  <li className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                    {PREMIUM_MAIN_ADVANTAGE.title}
+                  </li>
+                  {PREMIUM_KEY_FEATURES.map((f) => (
+                    <li key={f.id} className="flex items-center gap-1.5 rounded-full bg-neutral-100 dark:bg-white/5 px-2.5 py-1 text-[11px] text-neutral-600 dark:text-gray-300">
+                      <PremiumFeatureIcon id={f.id} size={12} />
+                      {f.title}
+                    </li>
+                  ))}
+                </ul>
 
-                {vpnEntitled && (
-                  <a
-                    href="/connect"
-                    className="mt-3 inline-flex rounded-xl bg-cyan-500/15 px-4 py-2 text-xs font-medium text-cyan-600 transition-colors hover:bg-cyan-500/25 dark:text-cyan-400"
-                  >
-                    Тумблер VPN — в TZ.Connect →
-                  </a>
-                )}
+                {!byRole && payDetails(premiumActive ? "Для продления укажите ваш username." : "Укажите ваш username — Premium подключит администратор.")}
               </div>
             </Section>
-
-            <Section title="Что входит" subtitle="Подписка «Только VPN» ограничена одним правом — это её смысл, а не недоработка.">
-              <div className="space-y-2">
-                <div className="flex items-start gap-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-                  <span className="mt-0.5 text-cyan-500">✓</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-neutral-900 dark:text-white">Включение и выключение VPN «TZ Secure»</p>
-                    <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">
-                      Один тумблер: трафик идёт через закрытый канал TZ. Выбор маршрутизации (весь трафик или только сервисы TZ) сохраняется.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-neutral-200 dark:border-white/10 p-4">
-                  <span className="mt-0.5 text-neutral-400">—</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-neutral-700 dark:text-gray-200">Остальные возможности Premium не входят</p>
-                    <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">
-                      Оформление профиля, повышенные пределы сообщений и вложений, лимиты сообществ, закрепления и очередь отложенных остаются как у обычного профиля. Нужны они — это Premium выше.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </Section>
-
-            {/* Оплата: те же реквизиты, что и у Premium. Отдельный блок нужен из-за
-                одной строки — в комментарии к платежу должно стоять «VPN», иначе
-                администратор не поймёт, какую из двух подписок подключать. */}
-            <div id="vpn-payment">
-              <Section title={vpnPlanActive ? "Как продлить VPN" : "Как оформить VPN"}>
-                {paymentMethods && paymentMethods.methods.length > 0 ? (
-                  <div className="space-y-3">
-                    {paymentMethods.methods.map((m) => (
-                      <div key={`vpn-${m.id}`} className="rounded-2xl border border-neutral-200 dark:border-white/10 p-4">
-                        <p className="text-sm font-semibold text-neutral-900 dark:text-white">{m.label}</p>
-                        {m.fields.length > 0 && (
-                          <dl className="mt-2 space-y-1">
-                            {m.fields.map((f) => (
-                              <div key={f.label} className="flex items-center justify-between gap-3 text-xs">
-                                <dt className="text-neutral-400">{f.label}</dt>
-                                <dd className="font-medium text-neutral-700 dark:text-gray-200 text-right break-all">{f.value}</dd>
-                              </div>
-                            ))}
-                          </dl>
-                        )}
-                        {m.link && (
-                          <a href={m.link} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex rounded-xl bg-cyan-500/10 px-4 py-2 text-xs font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 transition-colors">
-                            Перейти к оплате →
-                          </a>
-                        )}
-                        {m.comment && <p className="mt-2 text-[11px] text-neutral-400">{m.comment}</p>}
-                      </div>
-                    ))}
-                    <p className="text-[11px] text-neutral-400">
-                      В комментарии к платежу укажите ваш username и слово «VPN» — иначе подключат Premium. Подписку активирует администратор.
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-neutral-500 dark:text-gray-400">
-                    Способы оплаты пока не настроены. Обратитесь к администратору, чтобы оформить подписку на VPN.
-                  </p>
-                )}
-              </Section>
-            </div>
           </>
         );
       }
