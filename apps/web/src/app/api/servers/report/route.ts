@@ -126,7 +126,17 @@ export async function POST(req: Request) {
               publicKey: true,
               address: true,
               exitIp: true,
-              user: { select: { banned: true, bannedUntil: true, isPremium: true, role: true } },
+              /* VPN-PLAN: право даёт либо Premium, либо подписка только на VPN. */
+              user: {
+                select: {
+                  banned: true,
+                  bannedUntil: true,
+                  isPremium: true,
+                  role: true,
+                  vpnAccess: true,
+                  vpnAccessUntil: true,
+                },
+              },
             },
             orderBy: { address: "asc" },
           })

@@ -1,5 +1,7 @@
 import prisma from "@/lib/prisma";
 import { hasPremium } from "@/lib/premium";
+/* VPN-PLAN: отдельная подписка, которая даёт только туннель. */
+import { hasActiveVpnPlan } from "@/lib/vpnPlan";
 
 /**
  * VPN-WG: серверная часть выдачи доступа к WireGuard.
@@ -26,10 +28,12 @@ import { hasPremium } from "@/lib/premium";
 export async function hasVpnEntitlement(userId: string): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { isPremium: true, role: true },
+    select: { isPremium: true, role: true, vpnAccess: true, vpnAccessUntil: true },
   });
   if (!user) return false;
-  return hasPremium(user);
+  /* VPN-PLAN: два равноправных основания. Второе нужно именно здесь,
+     а не в `hasPremium`: подписка на VPN не делает аккаунт премиальным. */
+  return hasPremium(user) || hasActiveVpnPlan(user);
 }
 
 /**
@@ -158,13 +162,25 @@ export async function chooseAddress(
  * вернулась подписка — доступ вернулся с тем же адресом, без перевыпуска ключа.
  */
 export function isPeerEntitled(
-  user: { banned: boolean; bannedUntil: Date | null; isPremium: boolean; role: string },
+  user: {
+    banned: boolean;
+    bannedUntil: Date | null;
+    isPremium: boolean;
+    role: string;
+    /* VPN-PLAN: поля необязательные только для того, чтобы старые вызовы
+       продолжали компилироваться; в отчёте узла они выбираются всегда. */
+    vpnAccess?: boolean | null;
+    vpnAccessUntil?: Date | string | null;
+  },
   now: Date = new Date(),
 ): boolean {
   /* Бан со сроком, который уже вышел, ограничением не считается — так же, как в
      lib/banCheck: иначе истёкший бан молча запрещал бы VPN навсегда. */
   if (user.banned && (!user.bannedUntil || user.bannedUntil > now)) return false;
-  return hasPremium(user);
+  /* Срок VPN-подписки проверяется по дате: именно через эту функцию узлу
+     уходит список пиров, и закончившаяся подписка должна снимать туннель в
+     течение минуты, а не ждать задачи просрочки. */
+  return hasPremium(user) || hasActiveVpnPlan(user, now);
 }
 
 /**
