@@ -6,7 +6,8 @@ import { createNotificationsBulk } from "@/lib/createNotification";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user || session.user.role !== "ADMIN" && session.user.role !== "EDITOR") {
+  // ROLE-STRUCT: рассылка всем пользователям — только администратор.
+  if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

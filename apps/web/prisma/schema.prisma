@@ -123,6 +123,7 @@ model User {
   usernameChangedAt      DateTime?
   partnerProjects        PartnerProject[]            @relation("UserPartnerProjects") // FIX-CABINET
   projectMessages        PartnerProjectMessage[]     @relation("UserProjectMessages") // FIX-CABINET
+  responsibleProjects    PartnerProject[]            @relation("StaffResponsibleProjects") // BUSINESS-CABINET
   premiumSubscriptions   PremiumSubscription[]       @relation("UserPremiumSubs") // PREMIUM-PAY
   premiumSubsGranted     PremiumSubscription[]       @relation("PremiumSubGranter") // PREMIUM-PAY
   createdAt              DateTime                    @default(now())
@@ -1511,6 +1512,17 @@ model PartnerProject {
   appeal    Appeal?                 @relation(fields: [appealId], references: [id], onDelete: SetNull)
   owner     User                    @relation("UserPartnerProjects", fields: [ownerId], references: [id], onDelete: Cascade)
   messages  PartnerProjectMessage[]
+  /// BUSINESS-CABINET: срок сдачи и ответственный сотрудник.
+  ///
+  /// Раньше и срок, и «кто ведёт» существовали только словами в деловом чате:
+  /// партнёр видел их только в переписке, а кабинет не знал о них ничего.
+  dueDate       DateTime?
+  responsibleId String?
+  responsible   User?     @relation("StaffResponsibleProjects", fields: [responsibleId], references: [id], onDelete: SetNull)
+  /// BUSINESS-CABINET: счета, документы и история событий по проекту.
+  invoices      ProjectInvoice[]
+  documents     ProjectDocument[]
+  events        ProjectEvent[]
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
 
@@ -1518,6 +1530,7 @@ model PartnerProject {
   @@index([status])
   @@index([serviceId])
   @@index([appealId])
+  @@index([responsibleId])
 }
 
 // FIX-CABINET: мини-чат по проекту между клиентом и админом/редактором.
@@ -1537,6 +1550,79 @@ model PartnerProjectMessage {
   createdAt DateTime       @default(now())
 
   @@index([projectId])
+}
+
+// BUSINESS-CABINET: счёт по проекту личного кабинета.
+//
+// До этого счета жили только в деловом чате (BusinessPayment на разговор),
+// поэтому к проекту они никак не привязывались: чтобы узнать, что оплачено,
+// нужно было читать переписку. Сумма — в копейках/минимальных единицах (Int),
+// чтобы не ловить ошибки округления Float.
+model ProjectInvoice {
+  id            String         @id @default(cuid())
+  projectId     String
+  project       PartnerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Номер счёта внутри проекта (1, 2, 3 …), уникален на проект.
+  number        Int            @default(1)
+  title         String         @db.VarChar(200)
+  amount        Int            @default(0)
+  currency      String         @default("RUB") @db.VarChar(8)
+  /// UNPAID | PAID | CANCELLED — см. lib/projectBusiness.ts.
+  status        String         @default("UNPAID") @db.VarChar(16)
+  method        String?        @db.VarChar(32)
+  reference     String?        @db.VarChar(300)
+  note          String?        @db.Text
+  dueDate       DateTime?
+  paidAt        DateTime?
+  createdById   String?
+  /// Имя сотрудника сохраняется строкой, а не связью: финансовая
+  /// история должна переживать удаление учётной записи.
+  createdByName String         @default("")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+}
+
+// BUSINESS-CABINET: документ или договор по проекту.
+// Файл лежит в закрытой папке /uploads/projects/ (PRIVATE_UPLOAD_DIRS),
+// доступ к ней проверяется на сервере, а не «по знанию ссылки».
+model ProjectDocument {
+  id             String         @id @default(cuid())
+  projectId      String
+  project        PartnerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// CONTRACT | ACT | APPENDIX | OTHER
+  kind           String         @default("CONTRACT") @db.VarChar(16)
+  name           String         @db.VarChar(200)
+  url            String         @db.VarChar(500)
+  size           Int            @default(0)
+  mime           String?        @db.VarChar(120)
+  uploadedById   String?
+  uploadedByName String         @default("")
+  createdAt      DateTime       @default(now())
+
+  @@index([projectId, kind])
+}
+
+// BUSINESS-CABINET: событие истории проекта (этапы, сроки, счета, документы).
+// Автор записан строкой по тем же причинам: история не должна исчезать
+// вместе с учётной записью сотрудника или клиента.
+model ProjectEvent {
+  id        String         @id @default(cuid())
+  projectId String
+  project   PartnerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// См. EVENT_KINDS в lib/projectBusiness.ts.
+  kind      String         @db.VarChar(24)
+  title     String         @db.VarChar(200)
+  details   String?        @db.Text
+  actorId   String?
+  actorName String         @default("")
+  /// STAFF | CLIENT — чей это шаг.
+  actorSide String         @default("STAFF") @db.VarChar(8)
+  createdAt DateTime       @default(now())
+
+  @@index([projectId, createdAt])
 }
 
 // FIX-DM: персональные настройки личных сообщений: owner настраивает
