@@ -49,6 +49,8 @@ interface PaymentRow {
   serviceTitle: string | null;
   description: string | null;
   requisites: string | null;
+  /* PAY-TEMPLATE: из какого шаблона взяли реквизиты (текст в счёте — снимок). */
+  requisiteId: string | null;
   documents: ServiceDocument[];
   signedAt: string | null;
   signedName: string | null;
@@ -74,6 +76,22 @@ interface ServiceRow {
   documentCount: number;
 }
 
+/**
+ * PAY-TEMPLATE: шаблон реквизитов, доступный этому администратору.
+ *
+ * Готовый текст (`preview`) считает сервер: в счёт должно уйти ровно то,
+ * что видно в форме, а не вторая сборка того же текста в браузере.
+ */
+interface RequisiteOption {
+  id: string;
+  name: string;
+  shared: boolean;
+  isDefault: boolean;
+  mode: PaymentMode;
+  period: BillingPeriod | null;
+  preview: string;
+}
+
 function StatusPill({ status }: { status: PaymentStatus }) {
   const paid = isPaid(status);
   const awaiting = status === "AWAITING";
@@ -95,6 +113,7 @@ function StatusPill({ status }: { status: PaymentStatus }) {
 export default function AdminBusiness() {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [services, setServices] = useState<ServiceRow[]>([]);
+  const [requisites, setRequisites] = useState<RequisiteOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -115,6 +134,7 @@ export default function AdminBusiness() {
       if (!res.ok) throw new Error(data?.error || "Не удалось загрузить данные");
       setConversations(data.conversations ?? []);
       setServices(data.services ?? []);
+      setRequisites(data.requisites ?? []);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка");
@@ -276,6 +296,7 @@ export default function AdminBusiness() {
           <PaymentFormModal
             conversation={editing}
             services={services}
+            requisites={requisites}
             onClose={() => setEditing(null)}
             onSaved={() => {
               setEditing(null);
@@ -293,11 +314,13 @@ export default function AdminBusiness() {
 function PaymentFormModal({
   conversation,
   services,
+  requisites: requisiteOptions,
   onClose,
   onSaved,
 }: {
   conversation: ConversationRow;
   services: ServiceRow[];
+  requisites: RequisiteOption[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -313,13 +336,52 @@ function PaymentFormModal({
   const [cycles, setCycles] = useState(p?.cycles ? String(p.cycles) : "");
   /* В поле — рубли, в базе — копейки. */
   const [amount, setAmount] = useState(p ? String(p.amount / 100) : "");
+  /* PAY-TEMPLATE: выбранный шаблон реквизитов и желание сохранить текущие как шаблон. */
+  const [requisiteId, setRequisiteId] = useState(p?.requisiteId ?? "");
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateShared, setTemplateShared] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const selectedService = useMemo(
     () => services.find((s) => s.id === serviceId) ?? null,
     [services, serviceId],
   );
+
+  const selectedRequisite = useMemo(
+    () => requisiteOptions.find((r) => r.id === requisiteId) ?? null,
+    [requisiteOptions, requisiteId],
+  );
+
+  /* PAY-TEMPLATE: подпись клиента сбрасывается только при смене условий,
+     а не на любое сохранение. Та же проверка есть на сервере — здесь она
+     только чтобы честно предупредить до нажатия кнопки. */
+  const termsChanged = useMemo(() => {
+    if (!p) return true;
+    const rub = Number(amount.replace(",", "."));
+    const nextAmount = Number.isFinite(rub) ? Math.round(rub * 100) : p.amount;
+    const nextCycles = mode === "SUBSCRIPTION" && cycles.trim() ? Number(cycles) : null;
+    return (
+      nextAmount !== p.amount ||
+      mode !== p.mode ||
+      (mode === "SUBSCRIPTION" ? period : null) !== (p.period ?? null) ||
+      nextCycles !== (p.cycles ?? null) ||
+      (serviceId || null) !== (p.serviceId ?? null)
+    );
+  }, [p, amount, mode, period, cycles, serviceId]);
+
+  /* Кнопка «Подставить» пишет в поле текст, посчитанный сервером. */
+  function applyRequisite() {
+    if (!selectedRequisite) return;
+    setRequisites(selectedRequisite.preview);
+    if (selectedRequisite.mode === "SUBSCRIPTION") {
+      setMode("SUBSCRIPTION");
+      if (selectedRequisite.period) setPeriod(selectedRequisite.period);
+    }
+    setNotice(`Подставлены реквизиты «${selectedRequisite.name}»`);
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -355,6 +417,11 @@ function PaymentFormModal({
           mode,
           period: mode === "SUBSCRIPTION" ? period : null,
           cycles: mode === "SUBSCRIPTION" && cycles.trim() ? Number(cycles) : null,
+          /* PAY-TEMPLATE */
+          requisiteId: requisiteId || null,
+          saveAsTemplate,
+          templateName: templateName.trim() || null,
+          templateShared,
         }),
       });
       const data = await res.json();
@@ -399,11 +466,21 @@ function PaymentFormModal({
           </button>
         </div>
 
+        {/* PAY-TEMPLATE: раньше предупреждение висело всегда и было правдой:
+            любое сохранение сбрасывало подпись. Теперь сброс только при смене
+            существенных условий, поэтому и текст разный. */}
         {p && (
-          <p className="text-[11px] text-amber-400">
-            Счёт уже выставлен. Сохранение изменит условия и сбросит подпись клиента —
-            ему придётся ознакомиться с документами заново.
-          </p>
+          termsChanged ? (
+            <p className="text-[11px] text-amber-400">
+              Изменены условия (сумма, способ, период, число периодов или услуга) —
+              подпись клиента и отметка об оплате будут сброшены, ему придётся
+              ознакомиться с документами заново.
+            </p>
+          ) : (
+            <p className="text-[11px] text-gray-500">
+              Правка названия, описания или реквизитов подпись клиента не сбрасывает.
+            </p>
+          )
         )}
 
         <label className="block">
@@ -501,16 +578,104 @@ function PaymentFormModal({
           />
         </label>
 
-        <label className="block">
-          <span className="text-xs text-gray-400">Реквизиты для оплаты</span>
-          <textarea
-            value={requisites}
-            onChange={(e) => setRequisites(e.target.value)}
-            rows={3}
-            placeholder="Счёт, НДС, назначение платежа…"
-            className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none resize-none"
-          />
-        </label>
+        {/* PAY-TEMPLATE: реквизиты выбираются из шаблонов, а не набираются заново. */}
+        <div className="rounded-xl border border-white/10 p-3 space-y-2">
+          <div className="flex items-end gap-2">
+            <label className="block flex-1 min-w-0">
+              <span className="text-xs text-gray-400">Шаблон реквизитов</span>
+              <select
+                value={requisiteId}
+                onChange={(e) => setRequisiteId(e.target.value)}
+                className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
+              >
+                <option value="">Шаблон по умолчанию</option>
+                {requisiteOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                    {r.shared ? " · общий" : " · мой"}
+                    {r.isDefault ? " · основной" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={applyRequisite}
+              disabled={!selectedRequisite}
+              className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 disabled:opacity-40"
+            >
+              Подставить
+            </button>
+          </div>
+
+          {requisiteOptions.length === 0 && (
+            <p className="text-[11px] text-gray-500">
+              Шаблонов пока нет. Заполните реквизиты ниже и отметьте «Сохранить как
+              шаблон» — в следующий раз вводить их снова не придётся.
+            </p>
+          )}
+
+          <label className="block">
+            <span className="text-xs text-gray-400">Реквизиты для оплаты</span>
+            <textarea
+              value={requisites}
+              onChange={(e) => setRequisites(e.target.value)}
+              rows={4}
+              placeholder="Пусто — подставится выбранный шаблон или реквизиты проекта"
+              className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none resize-none"
+            />
+          </label>
+
+          {/* Сохранение шаблона прямо из боя: именно здесь реквизиты чаще всего
+              набирают впервые. */}
+          <button
+            type="button"
+            onClick={() => setSaveAsTemplate((v) => !v)}
+            className="flex items-center gap-2 text-left"
+          >
+            <span
+              className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                saveAsTemplate
+                  ? "bg-cyan-500 border-cyan-500 text-black"
+                  : "border-white/20 text-transparent"
+              }`}
+            >
+              ✓
+            </span>
+            <span className="text-xs text-gray-300">Сохранить эти реквизиты как шаблон</span>
+          </button>
+
+          {saveAsTemplate && (
+            <div className="space-y-2">
+              <input
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Название шаблона (пусто — название счёта)"
+                className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setTemplateShared((v) => !v)}
+                className="flex items-center gap-2 text-left"
+              >
+                <span
+                  className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                    templateShared
+                      ? "bg-cyan-500 border-cyan-500 text-black"
+                      : "border-white/20 text-transparent"
+                  }`}
+                >
+                  ✓
+                </span>
+                <span className="text-xs text-gray-300">
+                  Общий для всех администраторов (иначе — только ваш)
+                </span>
+              </button>
+            </div>
+          )}
+
+          {notice && <p className="text-[11px] text-cyan-300/80">{notice}</p>}
+        </div>
 
         {p && p.documents.length > 0 && (
           <div className="text-[11px] text-gray-500">

@@ -18,7 +18,15 @@ import {
   type PaymentFlowState,
   type PaymentMode,
 } from "@/lib/businessPaymentFlow";
-import { readBusinessRequisitesText } from "@/lib/paymentSettings";
+/* PAY-TEMPLATE: реквизиты берутся из шаблона, а не набиваются руками каждый раз. */
+import {
+  MAX_REQUISITES_PER_OWNER,
+  bumpRequisiteUsage,
+  clearDefaults,
+  listRequisitesFor,
+  requisiteText,
+  resolveRequisites,
+} from "@/lib/paymentRequisites";
 
 /**
  * BUSINESS-PAY: подраздел «Бизнес» в /admin/users.
@@ -55,6 +63,7 @@ async function adminOnly() {
 export async function GET(req: NextRequest) {
   const guard = await adminOnly();
   if (guard.error) return guard.error;
+  const session = guard.session!;
 
   const search = (new URL(req.url).searchParams.get("q") ?? "").trim();
 
@@ -92,6 +101,7 @@ export async function GET(req: NextRequest) {
           serviceId: true,
           description: true,
           requisites: true,
+          requisiteId: true,
           documents: true,
           signedAt: true,
           signedName: true,
@@ -114,6 +124,10 @@ export async function GET(req: NextRequest) {
 
   /* Список услуг отдаётся вместе с разговорами: форма выставления начинается с
      выбора услуги, и второй запрос ради десятка строк — лишний круг. */
+  /* PAY-TEMPLATE: шаблоны реквизитов этого администратора и общие проекта —
+     форма счёта должна предлагать выбор, а не требовать ручного ввода. */
+  const requisites = await listRequisitesFor(session.user.id, "BUSINESS");
+
   const services = await prisma.service.findMany({
     where: { active: true },
     select: { id: true, title: true, documents: true },
@@ -142,6 +156,16 @@ export async function GET(req: NextRequest) {
       title: s.title,
       documentCount: parseDocuments(s.documents).length,
     })),
+    /* Текст считает сервер: в счёт попадёт ровно то, что видно в форме. */
+    requisites: requisites.map((r) => ({
+      id: r.id,
+      name: r.name,
+      shared: r.ownerId === null,
+      isDefault: r.isDefault,
+      mode: r.mode,
+      period: r.period,
+      preview: requisiteText(r),
+    })),
   });
 }
 
@@ -161,6 +185,12 @@ export async function POST(req: NextRequest) {
     mode?: unknown;
     period?: unknown;
     cycles?: unknown;
+    /* PAY-TEMPLATE */
+    requisiteId?: unknown;
+    saveAsTemplate?: unknown;
+    templateName?: unknown;
+    templateShared?: unknown;
+    templateDefault?: unknown;
   } | null;
 
   const conversationId = typeof body?.conversationId === "string" ? body.conversationId : "";
@@ -222,10 +252,29 @@ export async function POST(req: NextRequest) {
     if (rounded > 0) cycles = Math.min(rounded, 120);
   }
 
-  /* Если администратор не ввёл реквизиты руками — подставляем общие бизнес-реквизиты
-     из раздела «Платежи». Счёт без реквизитов — самая частая причина того, почему
-     клиент «собирался, но не заплатил». */
-  const requisitesFinal = requisites || (await readBusinessRequisitesText()) || "";
+  /* PAY-TEMPLATE: откуда берётся текст реквизитов.
+
+     Порядок: ручной ввод → выбранный шаблон → шаблон по умолчанию (сначала личный
+     администратора, затем общий) → общие реквизиты проекта из «Платежей».
+     Счёт без реквизитов — самая частая причина того, почему клиент «собирался,
+     но не заплатил», поэтому цепочка заканчивается настройками, а не пустотой. */
+  const requisiteIdRaw =
+    typeof body?.requisiteId === "string" && body.requisiteId ? body.requisiteId : null;
+  let resolved;
+  try {
+    resolved = await resolveRequisites({
+      manual: requisites,
+      requisiteId: requisiteIdRaw,
+      userId: session.user.id,
+      scope: "BUSINESS",
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Не удалось подставить реквизиты" },
+      { status: 400 },
+    );
+  }
+  const requisitesFinal = resolved.text;
 
   const shared = {
     serviceId,
@@ -234,11 +283,56 @@ export async function POST(req: NextRequest) {
     amount: amountRaw,
     currency,
     requisites: requisitesFinal || null,
+    /* Ссылка на шаблон — только след происхождения. Условия счёта живут в снимке выше. */
+    requisiteId: resolved.requisiteId,
     mode,
     period,
     cycles,
     documents: documents.length ? (documents as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
+
+  /* PAY-TEMPLATE: что именно меняется.
+
+     Раньше ЛЮБОЕ сохранение формы сбрасывало подпись клиента и возвращало счёт в
+     UNPAID — даже если поправили опечатку в описании. Из-за этого править счёт
+     было нельзя: цена ошибки — потерянная подпись и повторное ознакомление
+     с документами. Теперь сброс происходит только при изменении СУЩЕСТВЕННЫХ
+     условий: суммы, валюты, способа выставления, периода, числа списаний или
+     услуги (а значит и комплекта документов). Название, описание и реквизиты
+     правятся свободно: они не меняют то, под чем клиент подписался. */
+  const existing = await prisma.businessPayment.findUnique({
+    where: { conversationId },
+    select: {
+      amount: true,
+      currency: true,
+      mode: true,
+      period: true,
+      cycles: true,
+      serviceId: true,
+      status: true,
+      signedAt: true,
+    },
+  });
+
+  const termsChanged =
+    !existing ||
+    existing.amount !== amountRaw ||
+    existing.currency !== currency ||
+    existing.mode !== mode ||
+    (existing.period ?? null) !== period ||
+    (existing.cycles ?? null) !== cycles ||
+    (existing.serviceId ?? null) !== serviceId;
+
+  const resetBlock = {
+    nextDueAt: initialNextDueAt(mode, new Date()),
+    paidCycles: 0,
+    status: "UNPAID",
+    signedAt: null,
+    signedName: null,
+    declaredAt: null,
+    declaredNote: null,
+    paidAt: null,
+  } as const;
 
   const payment = await prisma.businessPayment.upsert({
     where: { conversationId },
@@ -250,26 +344,16 @@ export async function POST(req: NextRequest) {
          а не с месяца бесплатной работы. */
       nextDueAt: initialNextDueAt(mode, new Date()),
     },
-    update: {
-      ...shared,
-      nextDueAt: initialNextDueAt(mode, new Date()),
-      paidCycles: 0,
-      /* Перевыставление — это новые условия. Подпись и заявление об оплате
-         сбрасываются: они относились к прежней сумме и прежним бумагам. */
-      status: "UNPAID",
-      signedAt: null,
-      signedName: null,
-      declaredAt: null,
-      declaredNote: null,
-      paidAt: null,
-    },
+    update: termsChanged ? { ...shared, ...resetBlock } : { ...shared },
     select: { id: true, status: true },
   });
 
   await createNotification({
     userId: conversation.user1Id,
     type: "business",
-    title: "Счёт к оплате",
+    /* Правка описания не должна выглядеть как новый счёт: клиент перестанет
+       верить уведомлениям быстрее, чем заплатит. */
+    title: termsChanged ? "Счёт к оплате" : "Счёт обновлён",
     body: title,
     link: `/connect?section=business&dm=${conversationId}`,
     actorId: session.user.id,
@@ -281,10 +365,73 @@ export async function POST(req: NextRequest) {
     action: "business.payment.issue",
     target: title,
     targetId: payment.id,
-    details: `${(amountRaw / 100).toFixed(2)} ${currency}${service ? ` · ${service.title}` : ""}`,
+    details:
+      `${(amountRaw / 100).toFixed(2)} ${currency}${service ? ` · ${service.title}` : ""}` +
+      ` · реквизиты: ${resolved.source}` +
+      `${termsChanged ? "" : " · правка без смены условий"}`,
   });
 
-  return NextResponse.json({ ok: true, paymentId: payment.id, status: payment.status });
+  await bumpRequisiteUsage(resolved.requisiteId);
+
+  /* PAY-TEMPLATE: «Сохранить как шаблон» прямо из формы счёта.
+
+     Реквизиты чаще всего первый раз набирают именно здесь, в бою. Заставлять
+     после этого идти в настройки и повторять ввод — верный способ того, что
+     шаблонов так и не появится. Сохраняем готовым текстом (bodyOverride):
+     разбирать свободный текст на КПП и БИК угадыванием мы не станем. */
+  let templateId: string | null = null;
+  if (body?.saveAsTemplate === true && requisitesFinal) {
+    const templateName = sanitizeText(
+      typeof body?.templateName === "string" && body.templateName ? body.templateName : title,
+    )
+      .trim()
+      .slice(0, 120);
+    const templateOwnerId = body?.templateShared === true ? null : session.user.id;
+    const count = await prisma.paymentRequisite.count({ where: { ownerId: templateOwnerId } });
+    if (templateName && count < MAX_REQUISITES_PER_OWNER) {
+      if (body?.templateDefault === true) await clearDefaults("BUSINESS", templateOwnerId);
+      const template = await prisma.paymentRequisite.create({
+        data: {
+          name: templateName,
+          scope: "BUSINESS",
+          ownerId: templateOwnerId,
+          isDefault: body?.templateDefault === true,
+          bodyOverride: requisitesFinal.slice(0, 4000),
+          mode,
+          period,
+          createdById: session.user.id,
+          createdByName: (session.user.name ?? "").slice(0, 120),
+        },
+        select: { id: true, name: true },
+      });
+      templateId = template.id;
+      /* Связываем счёт со свежим шаблоном: видно, откуда взялись реквизиты. */
+      await prisma.businessPayment.update({
+        where: { id: payment.id },
+        data: { requisiteId: template.id },
+      });
+      await logAction({
+        userId: session.user.id,
+        username: session.user.name ?? "",
+        action: "payments.requisite.create",
+        target: template.name,
+        targetId: template.id,
+        details: `из формы счёта, ${templateOwnerId ? "личный" : "общий"}`,
+      });
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    paymentId: payment.id,
+    status: payment.status,
+    /* Форма покажет честный итог: сброшена ли подпись и каков шаблон. */
+    termsChanged,
+    signatureReset: termsChanged && Boolean(existing?.signedAt),
+    requisiteSource: resolved.source,
+    requisiteId: resolved.requisiteId ?? templateId,
+    templateId,
+  });
 }
 
 export async function PATCH(req: NextRequest) {
