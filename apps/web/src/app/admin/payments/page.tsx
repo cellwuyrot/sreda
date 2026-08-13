@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+/* PAY-TEMPLATE: именованные шаблоны реквизитов — отдельная вкладка. */
+import PaymentRequisiteManager from "@/components/admin/PaymentRequisiteManager";
 
 /**
  * PREMIUM-PAY / BUSINESS-SUB: платёжные реквизиты проекта.
@@ -133,7 +135,7 @@ export default function AdminPaymentsPage() {
   /* BUSINESS-SUB: две группы реквизитов на одном полотне читались бы как одна
      длинная анкета, и ошибка «ввёл телефон бизнеса в поле Premium» была бы
      вопросом времени. Закладки делают разделение видимым. */
-  const [tab, setTab] = useState<"premium" | "business">("premium");
+  const [tab, setTab] = useState<"premium" | "business" | "templates">("premium");
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/admin");
@@ -194,6 +196,8 @@ export default function AdminPaymentsPage() {
   const tabs = [
     { id: "premium" as const, label: "Premium" },
     { id: "business" as const, label: "Бизнес" },
+    /* PAY-TEMPLATE: третья вкладка — справочник шаблонов, а не ещё одна форма. */
+    { id: "templates" as const, label: "Шаблоны счетов" },
   ];
 
   return (
@@ -237,7 +241,9 @@ export default function AdminPaymentsPage() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          {tab === "premium" ? (
+          {tab === "templates" ? (
+            <PaymentRequisiteManager />
+          ) : tab === "premium" ? (
             <>
               {/* Цена */}
               <div className={cardClass}>
@@ -490,9 +496,12 @@ export default function AdminPaymentsPage() {
             </>
           )}
 
-          <Button onClick={() => save()} disabled={saving} size="lg" fullWidth>
-            {saving ? "Сохранение..." : saved ? "Сохранено ✓" : "Сохранить реквизиты"}
-          </Button>
+          {/* Шаблоны сохраняются каждый своей кнопкой — общее «Сохранить» там лишнее. */}
+          {tab !== "templates" && (
+            <Button onClick={() => save()} disabled={saving} size="lg" fullWidth>
+              {saving ? "Сохранение..." : saved ? "Сохранено ✓" : "Сохранить реквизиты"}
+            </Button>
+          )}
         </motion.div>
       </div>
     </div>
