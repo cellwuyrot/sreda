@@ -960,6 +960,23 @@ html.tz-desktop .tz-navbar-right { margin-left: 0 !important; margin-right: auto
   html { scrollbar-gutter: stable; }
 }
 
+/* UI-SCROLL: страница настроек скрывает системную полосу прокрутки.
+
+   Скрыт только индикатор. Прокрутка колесом, клавишами, тачпадом и
+   перетаскиванием остаётся: `overflow` не меняется, меняется лишь оформление
+   полосы. Резерв места (`scrollbar-gutter: stable` выше) здесь отключается —
+   иначе справа осталась бы пустая полоска шириной 6px вместо полосы.
+
+   Класс ставит и снимает сама страница настроек (useEffect, UI-SCROLL):
+   правило намеренно не общее, на остальных экранах полоса нужна как
+   указатель положения в длинных списках. */
+html.tz-hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+@media (min-width: 768px) {
+  html.tz-hide-scrollbar { scrollbar-gutter: auto; }
+}
+html.tz-hide-scrollbar::-webkit-scrollbar,
+html.tz-hide-scrollbar body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 /* FIX-B12: видимый фокус для клавиатурной навигации */
 .cn-nav-btn:focus-visible,
 .cn-channel-btn:focus-visible,

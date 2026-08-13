@@ -1338,6 +1338,24 @@ app.prepare().then(() => {
   setInterval(runPremiumExpiry, PREMIUM_EXPIRY_INTERVAL);
   setTimeout(runPremiumExpiry, 60_000);
 
+  /* VPN-PLAN: то же самое для подписки «только VPN». Отдельная задача, а не
+     ветка внутри предыдущей: у подписок свои таблицы и своё событие для
+     клиента, и падение одной проверки не должно срывать другую. */
+  const runVpnExpiry = async () => {
+    if (!(await acquireTaskLock("trioz:lock:vpn-expiry", 5 * 60_000))) return;
+    try {
+      const { expireOverdueVpn } = await import("./src/lib/vpnExpiry");
+      const result = await expireOverdueVpn();
+      if (result.subscriptionsExpired > 0 || result.usersRevoked > 0) {
+        console.log("[VPN] Срок вышел:", result);
+      }
+    } catch (err) {
+      console.error("[VPN] Ошибка проверки срока подписок:", err);
+    }
+  };
+  setInterval(runVpnExpiry, PREMIUM_EXPIRY_INTERVAL);
+  setTimeout(runVpnExpiry, 90_000);
+
   /**
    * REMIND: напоминания на карточках рабочей среды — раз в полминуты.
    *
