@@ -117,6 +117,19 @@ model User {
   profileBanner          String?                     @db.Text
   e2eePublicKey          String?                     @db.Text
   isPremium              Boolean                     @default(false)
+  /// VPN-PLAN: отдельная подписка только на VPN.
+  ///
+  /// Зачем отдельный признак, а не `isPremium`: VPN берут ради самого VPN,
+  /// и выдавать вместе с ним темы, битрейт голоса и лимиты сообществ было бы
+  /// обманом в две стороны: человек платит не за то, что получает, а Premium
+  /// теряет смысл. Поэтому право на туннель = Premium ИЛИ эта подписка.
+  ///
+  /// Срок хранится рядом с флагом намеренно: проверка права идёт на каждом
+  /// отчёте VPN-узла (раз в минуту), и тянуть для этого таблицу подписок на
+  /// каждого пира значило бы платить за чистоту модели каждой минутой работы.
+  /// `vpnAccessUntil = null` при включённом флаге — бессрочно.
+  vpnAccess              Boolean                     @default(false) // VPN-PLAN
+  vpnAccessUntil         DateTime? // VPN-PLAN
   showOnline             Boolean                     @default(true)
   tosAccepted            Boolean                     @default(false)
   lastSeen               DateTime?
@@ -125,6 +138,8 @@ model User {
   projectMessages        PartnerProjectMessage[]     @relation("UserProjectMessages") // FIX-CABINET
   responsibleProjects    PartnerProject[]            @relation("StaffResponsibleProjects") // BUSINESS-CABINET
   paymentRequisites      PaymentRequisite[]          @relation("PaymentRequisiteOwner") // PAY-TEMPLATE
+  vpnSubscriptions       VpnSubscription[]           @relation("UserVpnSubs") // VPN-PLAN
+  vpnSubsGranted         VpnSubscription[]           @relation("VpnSubGranter") // VPN-PLAN
   premiumSubscriptions   PremiumSubscription[]       @relation("UserPremiumSubs") // PREMIUM-PAY
   premiumSubsGranted     PremiumSubscription[]       @relation("PremiumSubGranter") // PREMIUM-PAY
   createdAt              DateTime                    @default(now())
@@ -865,6 +880,35 @@ model PremiumSubscription {
   expiresAt     DateTime? // null = бессрочно
   grantedById   String?
   grantedBy     User?     @relation("PremiumSubGranter", fields: [grantedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+/// VPN-PLAN: подписка «только VPN».
+///
+/// Повторяет строение PremiumSubscription и намеренно НЕ объединена с ней
+/// полем-видом. Причина практическая: всюду, где читается история Premium
+/// (профиль, панель, задача просрочки), запросы идут без фильтра по виду —
+/// общая таблица тихо примешала бы VPN-платежи в Premium-выручку и в сроки
+/// премиума. Раздельные таблицы делают такую ошибку невозможной.
+model VpnSubscription {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation("UserVpnSubs", fields: [userId], references: [id], onDelete: Cascade)
+  plan          String    @default("month") // month | quarter | year | lifetime
+  paymentMethod String    @default("manual") // sbp | acquiring | manual
+  amount        Int       @default(0)
+  currency      String    @default("RUB")
+  reference     String?   @db.VarChar(200)
+  note          String?   @db.Text
+  status        String    @default("active") // active | canceled | expired
+  startedAt     DateTime  @default(now())
+  expiresAt     DateTime? // null = бессрочно
+  grantedById   String?
+  grantedBy     User?     @relation("VpnSubGranter", fields: [grantedById], references: [id], onDelete: SetNull)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

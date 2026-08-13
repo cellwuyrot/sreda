@@ -77,6 +77,16 @@ interface ProfileData {
     daysLeft?: number | null;
     granted: boolean;
   };
+  /** VPN-PLAN: отдельная подписка «только VPN» — считает сервер (GET /api/profile). */
+  vpn?: {
+    /** Действует ли отдельная подписка на VPN прямо сейчас. */
+    active: boolean;
+    /** null — бессрочно. */
+    expiresAt: string | null;
+    daysLeft?: number | null;
+    /** Доступ к VPN есть и без отдельной подписки — его даёт Premium. */
+    viaPremium: boolean;
+  };
 }
 
 interface PaymentMethodPublic {
@@ -144,7 +154,7 @@ const CATEGORIES: { group: string; items: { id: CategoryId; label: string; icon:
       { id: "connect",       label: "TZ.Connect",     icon: <Icon path={<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />} /> },
       { id: "notifications", label: "Уведомления",    icon: <Icon path={<path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 0 0-4-5.7V5a2 2 0 1 0-4 0v.3C7.7 6.2 6 8.4 6 11v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 1 1-6 0v-1" />} /> },
       { id: "appearance",    label: "Внешний вид",    icon: <Icon path={<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19" /></>} /> },
-      { id: "premium",       label: "Premium",        icon: <Icon path={<path d="M12 3l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.4 1.1-6.5L2.6 9.8l6.5-.9L12 3z" />} /> },
+      { id: "premium",       label: "Подписки",       icon: <Icon path={<path d="M12 3l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.4 1.1-6.5L2.6 9.8l6.5-.9L12 3z" />} /> },
     ],
   },
 ];
@@ -710,12 +720,32 @@ export default function SettingsPage() {
   // Глубокая ссылка вида /settings?cat=premium — открыть нужный раздел сразу.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const cat = new URLSearchParams(window.location.search).get("cat");
+    const raw = new URLSearchParams(window.location.search).get("cat");
+    /* VPN-PLAN: раздел переименован в «Подписки», но старые ссылки (?cat=premium)
+       уже разосланы в письмах и стоят в других разделах — обе формы ведут сюда.
+       Идентификатор категории намеренно оставлен прежним: переименование внутри
+       кода сломало бы эти ссылки без всякой пользы для человека. */
+    const cat = raw === "subscriptions" ? "premium" : raw;
     const valid: CategoryId[] = ["account", "profile", "privacy", "voice", "notifications", "appearance", "premium", "connect"];
     if (cat && (valid as string[]).includes(cat)) {
       setActiveCat(cat as CategoryId);
       setMobileContentOpen(true);
     }
+  }, []);
+
+  /* UI-SCROLL: на странице настроек системная полоса прокрутки справа скрыта.
+
+     Прокрутка при этом остаётся полностью рабочей — колесом, клавишами, жестом
+     на тачпаде: скрыт только сам индикатор (`scrollbar-width: none` и
+     `::-webkit-scrollbar`), а не переполнение. Именно поэтому здесь класс на
+     <html>, а не `overflow: hidden` на контейнере: второе убрало бы и прокрутку.
+
+     Класс снимается при уходе со страницы — на остальных экранах полоса нужна:
+     в переписке и на холсте она показывает, где ты находишься в длинном списке. */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("tz-hide-scrollbar");
+    return () => root.classList.remove("tz-hide-scrollbar");
   }, []);
 
   const showToast = (message: string, type: "success" | "error") => {
@@ -1901,8 +1931,54 @@ export default function SettingsPage() {
         /* Срок близок к концу — это единственное, о чём стоит предупредить. */
         const expiringSoon = daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
 
+        /* VPN-PLAN: раздел «Подписки» состоит из двух независимых частей.
+
+           Premium и «только VPN» — разные продукты, а не тарифы одного: вторая
+           подписка даёт РОВНО одно право (включать и выключать VPN) и не даёт ни
+           тем, ни лимитов сообществ, ни повышенных пределов сообщений. Поэтому у
+           частей раздельные состояния, сроки и блоки оплаты: человек должен
+           видеть, за что именно у него оплачено и что закончится. */
+        const vpnInfo = profile.vpn;
+        const vpnExpires = vpnInfo?.expiresAt ? new Date(vpnInfo.expiresAt) : null;
+        const vpnDays = vpnInfo?.daysLeft ?? (vpnExpires ? Math.ceil((vpnExpires.getTime() - Date.now()) / 86_400_000) : null);
+        const vpnOverdue = vpnDays != null && vpnDays < 0;
+        /** Отдельная подписка на VPN. */
+        const vpnPlanActive = !!vpnInfo?.active && !vpnOverdue;
+        /** Доступ к VPN есть и без отдельной подписки — его даёт Premium. */
+        const vpnViaPremium = !!vpnInfo?.viaPremium || (premiumActive && !vpnInfo);
+        const vpnDateLabel = vpnExpires?.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+        const vpnStatusTitle = vpnPlanActive
+          ? vpnDays == null
+            ? "Подписка без срока"
+            : vpnDays === 0
+              ? "Подписка заканчивается сегодня"
+              : `Осталось ${vpnDays} ${pluralDays(vpnDays)}`
+          : vpnOverdue
+            ? "Срок подписки истёк"
+            : vpnViaPremium
+              ? "VPN уже доступен по Premium"
+              : "VPN не подключён";
+        const vpnStatusNote = vpnPlanActive
+          ? vpnDateLabel
+            ? `Оплачено до ${vpnDateLabel}. Если не продлить, туннель отключится автоматически.`
+            : "Бессрочная подписка только на VPN."
+          : vpnOverdue
+            ? `Оплачено было до ${vpnDateLabel}. Туннель уже отключён — подписку можно продлить.`
+            : vpnViaPremium
+              ? "Отдельная подписка не нужна: право на туннель входит в Premium. Она пригодится, если Premium закончится, а VPN нужен."
+              : "Подписка даёт только включение и выключение VPN. Остальные возможности Premium в неё не входят.";
+        /** Тумблер VPN живёт в TZ.Connect — здесь только состояние подписки. */
+        const vpnEntitled = vpnPlanActive || vpnViaPremium;
+
         return (
           <>
+            {/* Часть 1. Premium — подписка со всеми возможностями. */}
+            <div className="mb-2 flex items-center gap-3">
+              <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400">Premium</span>
+              <span className="text-xs text-neutral-400">Все возможности, включая VPN</span>
+              <span className="h-px flex-1 bg-neutral-200 dark:bg-white/10" />
+            </div>
+
             <Section title="Ваша подписка">
               <div className={`rounded-2xl border p-4 ${premiumActive ? "border-amber-500/25 bg-amber-500/5" : "border-neutral-200 dark:border-white/10"}`}>
                 <div className="flex items-start justify-between gap-4">
@@ -2031,6 +2107,110 @@ export default function SettingsPage() {
                 </Section>
               </div>
             )}
+
+            {/* ── Часть 2. Только VPN ──────────────────────────────────────────
+
+                Отдельный продукт для тех, кому нужен один тумблер и больше
+                ничего. Право на туннель на сервере проверяется как «Premium ИЛИ
+                эта подписка» (lib/vpn.ts, VPN-PLAN), поэтому подписчику Premium
+                платить второй раз не нужно — об этом здесь сказано прямо. */}
+            <div className="mt-8 mb-2 flex items-center gap-3">
+              <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-600 dark:text-cyan-400">Только VPN</span>
+              <span className="text-xs text-neutral-400">Включение и выключение VPN</span>
+              <span className="h-px flex-1 bg-neutral-200 dark:bg-white/10" />
+            </div>
+
+            <Section title="Подписка на VPN">
+              <div className={`rounded-2xl border p-4 ${vpnPlanActive ? "border-cyan-500/25 bg-cyan-500/5" : "border-neutral-200 dark:border-white/10"}`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-white">{vpnStatusTitle}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">{vpnStatusNote}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${vpnPlanActive ? "bg-cyan-500/15 text-cyan-500" : vpnViaPremium ? "bg-amber-500/15 text-amber-500" : "bg-neutral-200 dark:bg-white/10 text-neutral-500 dark:text-gray-400"}`}>
+                    {vpnPlanActive ? "VPN" : vpnViaPremium ? "По Premium" : "Нет"}
+                  </span>
+                </div>
+
+                {vpnPlanActive && vpnDays != null && vpnDays >= 0 && vpnDays <= 7 && (
+                  <p className="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-600 dark:text-cyan-400">
+                    Подписка заканчивается меньше чем через неделю. После окончания туннель отключится, а настройки соединения сохранятся — при продлении включать заново ничего не придётся.
+                  </p>
+                )}
+
+                {vpnEntitled && (
+                  <a
+                    href="/connect"
+                    className="mt-3 inline-flex rounded-xl bg-cyan-500/15 px-4 py-2 text-xs font-medium text-cyan-600 transition-colors hover:bg-cyan-500/25 dark:text-cyan-400"
+                  >
+                    Тумблер VPN — в TZ.Connect →
+                  </a>
+                )}
+              </div>
+            </Section>
+
+            <Section title="Что входит" subtitle="Подписка «Только VPN» ограничена одним правом — это её смысл, а не недоработка.">
+              <div className="space-y-2">
+                <div className="flex items-start gap-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <span className="mt-0.5 text-cyan-500">✓</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-white">Включение и выключение VPN «TZ Secure»</p>
+                    <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">
+                      Один тумблер: трафик идёт через закрытый канал TZ. Выбор маршрутизации (весь трафик или только сервисы TZ) сохраняется.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 rounded-2xl border border-neutral-200 dark:border-white/10 p-4">
+                  <span className="mt-0.5 text-neutral-400">—</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-neutral-700 dark:text-gray-200">Остальные возможности Premium не входят</p>
+                    <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">
+                      Оформление профиля, повышенные пределы сообщений и вложений, лимиты сообществ, закрепления и очередь отложенных остаются как у обычного профиля. Нужны они — это Premium выше.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </Section>
+
+            {/* Оплата: те же реквизиты, что и у Premium. Отдельный блок нужен из-за
+                одной строки — в комментарии к платежу должно стоять «VPN», иначе
+                администратор не поймёт, какую из двух подписок подключать. */}
+            <div id="vpn-payment">
+              <Section title={vpnPlanActive ? "Как продлить VPN" : "Как оформить VPN"}>
+                {paymentMethods && paymentMethods.methods.length > 0 ? (
+                  <div className="space-y-3">
+                    {paymentMethods.methods.map((m) => (
+                      <div key={`vpn-${m.id}`} className="rounded-2xl border border-neutral-200 dark:border-white/10 p-4">
+                        <p className="text-sm font-semibold text-neutral-900 dark:text-white">{m.label}</p>
+                        {m.fields.length > 0 && (
+                          <dl className="mt-2 space-y-1">
+                            {m.fields.map((f) => (
+                              <div key={f.label} className="flex items-center justify-between gap-3 text-xs">
+                                <dt className="text-neutral-400">{f.label}</dt>
+                                <dd className="font-medium text-neutral-700 dark:text-gray-200 text-right break-all">{f.value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+                        {m.link && (
+                          <a href={m.link} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex rounded-xl bg-cyan-500/10 px-4 py-2 text-xs font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 transition-colors">
+                            Перейти к оплате →
+                          </a>
+                        )}
+                        {m.comment && <p className="mt-2 text-[11px] text-neutral-400">{m.comment}</p>}
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-neutral-400">
+                      В комментарии к платежу укажите ваш username и слово «VPN» — иначе подключат Premium. Подписку активирует администратор.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-neutral-500 dark:text-gray-400">
+                    Способы оплаты пока не настроены. Обратитесь к администратору, чтобы оформить подписку на VPN.
+                  </p>
+                )}
+              </Section>
+            </div>
           </>
         );
       }

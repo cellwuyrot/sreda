@@ -135,9 +135,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Сервис VPN отключён администратором" }, { status: 503 });
   }
 
-  // VPN-AUTOPREMIUM: единственное условие выдачи.
+  // VPN-AUTOPREMIUM / VPN-PLAN: условие выдачи — Premium или подписка только на VPN.
   if (!(await hasVpnEntitlement(session.user.id))) {
-    return NextResponse.json({ error: "VPN доступен с подпиской Premium" }, { status: 403 });
+    return NextResponse.json(
+      { error: "VPN доступен по подписке «VPN» или по Premium" },
+      { status: 403 },
+    );
   }
 
   const body = (await req.json().catch(() => null)) as
