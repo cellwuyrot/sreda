@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { APPEAL_ENTITY, notifyAppealStatus } from "@/lib/appealNotify";
 import { markSubjectNotificationsRead } from "@/lib/createNotification";
+import { logAction } from "@/lib/audit"; // ROLE-STRUCT
+import { isStaffRole } from "@/lib/roles"; // ROLE-CORE
 
 // GET /api/appeals/[id] - full appeal + message thread (author or admin)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -99,4 +101,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   return NextResponse.json({ appeal });
+}
+
+// ROLE-STRUCT: безвозвратное удаление обращения (ADMIN и EDITOR).
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isStaffRole(session.user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { id } = await params;
+
+  const appeal = await prisma.appeal.findUnique({
+    where: { id },
+    select: { id: true, subject: true, authorId: true },
+  });
+  if (!appeal) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  /* Деловой чат ссылается на обращение (DirectConversation.appealId, unique) и
+     без отвязки внешний ключ не даст удалить строку. Сам разговор удалять
+     нельзя: в нём переписка и связанные оплаты, поэтому только снимаем связь.
+     Всё в одной транзакции: иначе при сбое обращение осталось бы без чата. */
+  await prisma.$transaction([
+    prisma.directConversation.updateMany({ where: { appealId: id }, data: { appealId: null } }),
+    prisma.appeal.delete({ where: { id } }),
+  ]);
+
+  await logAction({
+    userId: session.user.id,
+    username: session.user.username || session.user.name || "staff",
+    action: "delete",
+    target: "Appeal",
+    targetId: id,
+    details: `Безвозвратное удаление обращения «${appeal.subject}»`,
+  });
+
+  return NextResponse.json({ success: true });
 }

@@ -34,6 +34,10 @@ import {
   type ProjectFileItem,
   type ProjectItem,
 } from "@/components/cabinet/ProjectWidgets";
+/* BUSINESS-CABINET: счета, документы, сроки, ответственный, история и сводка:
+   раньше всё это партнёр мог увидеть только в переписке делового чата. */
+import ProjectBusinessPanel from "@/components/cabinet/ProjectBusinessPanel";
+import CabinetSummary from "@/components/cabinet/CabinetSummary";
 
 // FIX-CABINET: «Партнёрская» переименована в «Личный кабинет». Добавлен раздел
 // «Мои проекты»: список проектов с полоской прогресса, всплывающее окно
@@ -346,6 +350,9 @@ export default function PartnerPage() {
                 ))}
               </div>
 
+              {/* BUSINESS-CABINET: сводка по проектам — сроки, ответственные, деньги. */}
+              <CabinetSummary />
+
               <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-white/10 dark:bg-neutral-900">
                 <div className="flex items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4 dark:border-white/10">
                   <div>
@@ -420,6 +427,8 @@ export default function PartnerPage() {
                                 <StepList stages={stages} done={done} />
                               </div>
                               <ProjectChatLink projectId={p.id} />
+                              {/* BUSINESS-CABINET: деловая часть проекта. */}
+                              <ProjectBusinessPanel projectId={p.id} isStaff={false} />
                             </div>
                           )}
                         </div>

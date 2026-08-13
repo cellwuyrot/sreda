@@ -10,7 +10,8 @@ const ENCRYPTED_KEYS = ["ai_api_key"];
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session?.user || session.user.role !== "ADMIN" && session.user.role !== "EDITOR") {
+  // ROLE-STRUCT: настройки ИИ (API-ключ, модель, промт) — уровень проекта.
+  if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -37,7 +38,8 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user || session.user.role !== "ADMIN" && session.user.role !== "EDITOR") {
+  // ROLE-STRUCT: настройки ИИ (API-ключ, модель, промт) — уровень проекта.
+  if (!session?.user || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
