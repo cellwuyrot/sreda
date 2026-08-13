@@ -1,12 +1,12 @@
 "use client";
-
+​
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { hasPremium } from "@/lib/premium";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import Spinner from "@/components/ui/Spinner";
 import Link from "next/link";
-
+​
 import { useAdminBackHref, useAdminBackLabel } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
 interface PremiumUser {
   id: string;
@@ -17,7 +17,7 @@ interface PremiumUser {
   isPremium: boolean;
   banned: boolean;
 }
-
+​
 interface Subscription {
   id: string;
   plan: string;
@@ -32,7 +32,7 @@ interface Subscription {
   createdAt: string;
   grantedBy?: { username: string; name: string } | null;
 }
-
+​
 const PLAN_LABELS: Record<string, string> = {
   month: "1 месяц",
   quarter: "3 месяца",
@@ -44,12 +44,12 @@ const METHOD_LABELS: Record<string, string> = {
   acquiring: "Эквайринг",
   manual: "Вручную / офлайн",
 };
-
+​
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
-
+​
 /* ── Модалка: подключить подписку к платежу для конкретного клиента (ADMIN) ── */
 function ConnectSubscriptionModal({
   user,
@@ -72,20 +72,20 @@ function ConnectSubscriptionModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<Subscription[]>([]);
-
+​
   const methodOptions = useMemo(() => {
     const base = ["sbp", "acquiring", "manual"];
     // Включённые способы — вперёд, но всегда показываем «Вручную».
     return base.sort((a, b) => Number(enabledMethods.includes(b)) - Number(enabledMethods.includes(a)));
   }, [enabledMethods]);
-
+​
   useEffect(() => {
     fetch(`/api/admin/premium/subscriptions?userId=${user.id}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => Array.isArray(data) && setHistory(data))
       .catch(() => {});
   }, [user.id]);
-
+​
   const submit = async () => {
     setSaving(true);
     setError("");
@@ -115,7 +115,7 @@ function ConnectSubscriptionModal({
       setSaving(false);
     }
   };
-
+​
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -131,7 +131,7 @@ function ConnectSubscriptionModal({
         <p className="text-sm text-gray-400 mt-1">
           Клиент: <span className="text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
         </p>
-
+​
         <div className="mt-5 space-y-4">
           <div>
             <label className="text-sm text-gray-400 mb-2 block">Тариф</label>
@@ -147,7 +147,7 @@ function ConnectSubscriptionModal({
               ))}
             </div>
           </div>
-
+​
           <div>
             <label className="text-sm text-gray-400 mb-2 block">Способ оплаты</label>
             <div className="grid grid-cols-3 gap-2">
@@ -167,7 +167,7 @@ function ConnectSubscriptionModal({
               })}
             </div>
           </div>
-
+​
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm text-gray-400 mb-1 block">Сумма, ₽</label>
@@ -178,14 +178,14 @@ function ConnectSubscriptionModal({
               <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
             </div>
           </div>
-
+​
           <div>
             <label className="text-sm text-gray-400 mb-1 block">Комментарий</label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 resize-none" />
           </div>
-
+​
           {error && <p className="text-xs text-red-400">{error}</p>}
-
+​
           {history.length > 0 && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <p className="text-xs font-medium text-gray-300 mb-2">История подписок</p>
@@ -202,7 +202,7 @@ function ConnectSubscriptionModal({
               </div>
             </div>
           )}
-
+​
           <div className="flex gap-3 pt-1">
             <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-violet-500/20 text-violet-300 rounded-lg hover:bg-violet-500/40 transition-all text-sm font-medium disabled:opacity-50">
               {saving ? "Подключение..." : "Подключить и выдать Premium"}
@@ -216,9 +216,9 @@ function ConnectSubscriptionModal({
     </motion.div>
   );
 }
-
+​
 /* ── Модалка: подписка «только VPN» (ADMIN) ────────────────────────────────
-
+​
    VPN-PLAN: отдельная модалка, а не переключатель внутри Premium-модалки:
    одна кнопка выдаёт все возможности, другая — только туннель. Путать их
    дорого: лишний Premium придётся снимать руками, а человек уже увидит
@@ -244,7 +244,7 @@ function ConnectVpnModal({
     vpnAccess: false,
     vpnAccessUntil: null,
   });
-
+​
   const load = useCallback(() => {
     fetch(`/api/admin/vpn/subscriptions?userId=${user.id}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -255,9 +255,9 @@ function ConnectVpnModal({
       })
       .catch(() => {});
   }, [user.id]);
-
+​
   useEffect(load, [load]);
-
+​
   const submit = async () => {
     setSaving(true);
     setError("");
@@ -286,7 +286,7 @@ function ConnectVpnModal({
       setSaving(false);
     }
   };
-
+​
   const cancelSub = async (subscriptionId: string) => {
     setError("");
     try {
@@ -305,7 +305,7 @@ function ConnectVpnModal({
       setError("Ошибка сети. Попробуйте позже.");
     }
   };
-
+​
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -327,7 +327,7 @@ function ConnectVpnModal({
         <p className="mt-2 text-xs text-gray-400">
           Сейчас: {access.vpnAccess ? (access.vpnAccessUntil ? `доступ до ${fmtDate(access.vpnAccessUntil)}` : "бессрочный доступ") : "отдельной подписки нет"}
         </p>
-
+​
         <div className="mt-5 space-y-4">
           <div>
             <label className="text-sm text-gray-400 mb-2 block">Тариф</label>
@@ -346,13 +346,14 @@ function ConnectVpnModal({
               Если доступ ещё действует, срок считается от его конца — оплаченные дни не теряются.
             </p>
           </div>
-
+​
           <div>
             <label className="text-sm text-gray-400 mb-2 block">Способ оплаты</label>
             <div className="grid grid-cols-3 gap-2">
               {(["sbp", "acquiring", "manual"] as const).map((m) => {
                 const on = method === m;
-                const enabled = enabledMethods.includes(m) || m === "manual";
+                /* «Вручную» доступно всегда: это офлайн-оплата, настраивать её нечего. */
+                const enabled = m === "manual" || enabledMethods.includes(m);
                 return (
                   <button
                     key={m}
@@ -360,13 +361,18 @@ function ConnectVpnModal({
                     className={`px-2 py-1.5 rounded-lg text-xs transition-all ${on ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40" : "bg-dark-700 text-gray-400 border border-white/5 hover:border-white/20"}`}
                   >
                     {METHOD_LABELS[m]}
-                    {!enabled && m !== "manual" && <span className="block text-[9px] text-gray-500">не настроен</span>}
+                    {/* Повторное сравнение m !== "manual" убрано. Здесь список способов —
+                        литеральный союз (as const), и TypeScript сам сужает тип: в ветке
+                        `!enabled` значения "manual" уже не может быть. Сборка падала
+                        именно на этом невозможном сравнении. В Premium-модалке выше
+                        проверка остаётся: там список — обычные строки. */}
+                    {!enabled && <span className="block text-[9px] text-gray-500">не настроен</span>}
                   </button>
                 );
               })}
             </div>
           </div>
-
+​
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm text-gray-400 mb-1 block">Сумма, ₽</label>
@@ -377,14 +383,14 @@ function ConnectVpnModal({
               <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
             </div>
           </div>
-
+​
           <div>
             <label className="text-sm text-gray-400 mb-1 block">Комментарий</label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 resize-none" />
           </div>
-
+​
           {error && <p className="text-xs text-red-400">{error}</p>}
-
+​
           {history.length > 0 && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <p className="text-xs font-medium text-gray-300 mb-2">История VPN-подписок</p>
@@ -408,7 +414,7 @@ function ConnectVpnModal({
               </div>
             </div>
           )}
-
+​
           <div className="flex gap-3 pt-1">
             <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/40 transition-all text-sm font-medium disabled:opacity-50">
               {saving ? "Подключение..." : "Подключить доступ к VPN"}
@@ -422,7 +428,7 @@ function ConnectVpnModal({
     </motion.div>
   );
 }
-
+​
 export default function AdminPremiumPage() {
   // FIX-EDR2: редактору «Назад» ведёт в «Редакторскую», админу — в админку
   const backHref = useAdminBackHref();
@@ -437,9 +443,9 @@ export default function AdminPremiumPage() {
   const [vpnUser, setVpnUser] = useState<PremiumUser | null>(null);
   const [priceMonth, setPriceMonth] = useState("");
   const [enabledMethods, setEnabledMethods] = useState<string[]>([]);
-
+​
   const isAdmin = session?.user?.role === "ADMIN";
-
+​
   const loadUsers = async () => {
     setLoading(true);
     try {
@@ -450,11 +456,11 @@ export default function AdminPremiumPage() {
       setLoading(false);
     }
   };
-
+​
   useEffect(() => {
     if (session?.user?.role === "ADMIN" || session?.user?.role === "EDITOR") loadUsers();
   }, [session]);
-
+​
   useEffect(() => {
     // Цена и включённые способы оплаты — для предзаполнения модалки подписки.
     if (session?.user?.role === "ADMIN") {
@@ -468,7 +474,7 @@ export default function AdminPremiumPage() {
         .catch(() => {});
     }
   }, [session]);
-
+​
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return users;
@@ -478,7 +484,7 @@ export default function AdminPremiumPage() {
       user.email.toLowerCase().includes(q)
     );
   }, [users, query]);
-
+​
   const togglePremium = async (user: PremiumUser) => {
     setSavingId(user.id);
     try {
@@ -495,17 +501,17 @@ export default function AdminPremiumPage() {
       setSavingId(null);
     }
   };
-
+​
   const markPremium = useCallback((userId: string) => {
     setUsers((prev) => prev.map((item) => item.id === userId ? { ...item, isPremium: true } : item));
   }, []);
-
+​
   if (status === "loading" || loading) {
     return <div className="min-h-screen flex items-center justify-center"><Spinner /></div>;
   }
-
+​
   if (session?.user?.role !== "ADMIN" && session?.user?.role !== "EDITOR") return null;
-
+​
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-dark-900 py-8 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -519,7 +525,7 @@ export default function AdminPremiumPage() {
             Администраторы получают premium автоматически
           </div>
         </div>
-
+​
         {isAdmin && (
           <div className="glass-card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -531,7 +537,7 @@ export default function AdminPremiumPage() {
             </Link>
           </div>
         )}
-
+​
         <div className="glass-card p-5 space-y-4">
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
             <div>
@@ -545,7 +551,7 @@ export default function AdminPremiumPage() {
               className="w-full sm:w-80 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder:text-gray-500 outline-none"
             />
           </div>
-
+​
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -614,7 +620,7 @@ export default function AdminPremiumPage() {
           </div>
         </div>
       </div>
-
+​
       <AnimatePresence>
         {connectUser && (
           <ConnectSubscriptionModal
@@ -626,7 +632,7 @@ export default function AdminPremiumPage() {
           />
         )}
       </AnimatePresence>
-
+​
       <AnimatePresence>
         {vpnUser && (
           <ConnectVpnModal
@@ -639,3 +645,4 @@ export default function AdminPremiumPage() {
     </div>
   );
 }
+​
