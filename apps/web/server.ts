@@ -16,9 +16,13 @@ import { fetchRemote, remoteLocationFor } from "./src/lib/uploadOffload";
 import { LRUCache } from "lru-cache";
 import { createNotificationsBulk } from "./src/lib/createNotification";
 
-/* Строгий режим выдачи файлов: закрывать те, которых нет в указателе. Включать
-   после разбора истории — см. docs/server-actions.md. */
-const UPLOADS_STRICT = process.env.UPLOADS_STRICT === "1";
+/* Строгий режим выдачи файлов: закрывать те, которых нет в указателе.
+
+   FIX-SEC: теперь включён ПО УМОЛЧАНИЮ. Раньше требовался UPLOADS_STRICT=1, и без
+   него вся защита вложений сводилась к «любой вошедший с прямой ссылкой
+   получает файл»: настройка по умолчанию и есть то, что работает в жизни.
+   Для разбора старой истории режим отключается явно: UPLOADS_STRICT=0. */
+const UPLOADS_STRICT = process.env.UPLOADS_STRICT !== "0";
 /* Чтобы один неразобранный файл не залил журнал: пишем о нём однажды. */
 const warnedUnknownUploads = new LRUCache<string, boolean>({ max: 5_000 });
 /* То же для двух других поводов: файл не переехал из public/uploads и файла нет
@@ -162,7 +166,12 @@ async function getChannelGroupId(channelId: string): Promise<string | null> {
 // пользователь×группа и пользователь×диалог. LRU ограничивает число записей;
 // собственная проверка expires ниже по-прежнему обеспечивает TTL актуальности.
 const membershipCache = new LRUCache<string, { ok: boolean; expires: number }>({ max: 50_000 });
-const MEMBERSHIP_TTL_MS = 60_000;
+/* FIX-SEC: было 60 секунд. Столько же времени исключённый из группы или
+   заблокированный продолжал читать переписку по сокету. 15 секунд — разумный
+   размен: нагрузка на базу по-прежнему сбита кешем, а окно доступа короче
+   вчетверо. Права после исключения сбрасывать точечно здесь нечем: кеш живёт
+   в памяти процесса сокет-сервера, а исключение происходит в процессе Next. */
+const MEMBERSHIP_TTL_MS = 15_000;
 
 async function isGroupMember(userId: string, groupId: string): Promise<boolean> {
   const key = `g:${userId}:${groupId}`;
@@ -409,7 +418,7 @@ async function serveUploadedFile(
          стереть историю вложений, поэтому по умолчанию пускаем вошедшего и
          пишем в журнал — по этим записям видно, что осталось разобрать
          (scripts/backfill-upload-index.mjs). После разбора включается
-         UPLOADS_STRICT=1, и неизвестные файлы закрываются. */
+         UPLOADS_STRICT (включён по умолчанию; отключается UPLOADS_STRICT=0), и неизвестные файлы закрываются. */
       if (UPLOADS_STRICT) {
         res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
         res.end("Forbidden");

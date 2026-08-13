@@ -38,6 +38,18 @@ class MainActivity : AppCompatActivity() {
     /** Set true once the first real page finished loading (dismisses the splash). */
     private var contentReady = false
 
+    /**
+     * FIX-SEC: на каком адресе сейчас страница — на нашем или на чужом.
+     *
+     * JavaScript-мост уведомлений виден ЛЮБОЙ странице в этом WebView — включая
+     * стороннюю, куда могла увести цепочка переадресаций или встроенный фрейм.
+     * Такая страница могла показывать системные уведомления от имени мессенджера
+     * и читать токен доставки через pushToken(). Флаг обновляется в потоке UI, а
+     * читается из потока JavaScript-моста — отсюда @Volatile.
+     */
+    @Volatile
+    private var webOriginTrusted = false
+
     // ── File uploads (message attachments) ──────────────────────────────
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher =
@@ -159,14 +171,20 @@ class MainActivity : AppCompatActivity() {
     private fun configureWebView() {
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
-            setAcceptThirdPartyCookies(webView, true)
+            /* FIX-SEC: было true. Оболочка работает с одним своим адресом, чужие
+               cookie ей не нужны, а их приём — это слежка и лишняя поверхность
+               для CSRF во встроенных фреймах. */
+            setAcceptThirdPartyCookies(webView, false)
         }
 
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
-            javaScriptCanOpenWindowsAutomatically = true
+            /* FIX-SEC: было true при setSupportMultipleWindows(false) — сочетание
+               бессмысленное: окна всё равно не открываются, а window.open() из
+               любого скрипта обходит проверку «по жесту пользователя». */
+            javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
             // Voice channels autoplay remote audio without a tap.
             mediaPlaybackRequiresUserGesture = false
@@ -205,7 +223,11 @@ class MainActivity : AppCompatActivity() {
            Notifications API, поэтому веб-часть (lib/appNotify.ts) зовёт этот
            интерфейс — и сообщения видны в шторке и на экране блокировки. */
         webView.addJavascriptInterface(
-            NotificationBridge(this) { requestNotificationPermission() },
+            NotificationBridge(
+                activity = this,
+                /* FIX-SEC: мост работает только на нашем адресе. */
+                originOk = { webOriginTrusted },
+            ) { requestNotificationPermission() },
             NotificationBridge.JS_NAME,
         )
     }
@@ -238,6 +260,7 @@ class MainActivity : AppCompatActivity() {
          */
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             super.doUpdateVisitedHistory(view, url, isReload)
+            webOriginTrusted = url != null && url.startsWith(Config.appUrl)
             if (isReload || url == null || !Config.isBlockedInApp(url)) return
 
             /* Возвращаемся мягко. Раньше здесь стоял loadUrl(startUrl): он
@@ -253,6 +276,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
+            webOriginTrusted = url != null && url.startsWith(Config.appUrl)
             contentReady = true
         }
     }

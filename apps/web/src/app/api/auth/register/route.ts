@@ -22,6 +22,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Заполните все поля" }, { status: 400 });
     }
 
+    /* FIX-SEC: типы пришли из JSON, и проверка `!email` пропускала объекты
+       и массивы — они уходили прямо в запрос к базе. */
+    if (typeof email !== "string" || typeof name !== "string" || typeof username !== "string") {
+      return NextResponse.json({ error: "Некорректные данные" }, { status: 400 });
+    }
+
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      return NextResponse.json({ error: "Некорректный адрес почты" }, { status: 400 });
+    }
+
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2 || trimmedName.length > 60) {
+      return NextResponse.json({ error: "Имя: от 2 до 60 символов" }, { status: 400 });
+    }
+
     if (!/^[a-zA-Z0-9_]{6,20}$/.test(username)) {
       return NextResponse.json({ error: "Юзернейм: 6-20 символов, латиница, цифры и _" }, { status: 400 });
     }
@@ -38,7 +53,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Пароль слишком длинный (максимум 128 символов)" }, { status: 400 });
     }
 
-    if (verificationCode) {
+    /* FIX-SEC: код подтверждения теперь ОБЯЗАТЕЛЬНЫй.
+
+       Проверка стояла под `if (verificationCode)`: запрос без кода создавал
+       аккаунт на ЛЮБОЙ чужой адрес (просто с emailVerified: false) и заодно
+       работал как проверка «есть ли здесь аккаунт на эту почту» (ответ
+       «Email уже зарегистрирован»). С обязательным кодом до этого ответа
+       доберётся только тот, кто и так читает почту этого адреса. */
+    if (!verificationCode || typeof verificationCode !== "string") {
+      return NextResponse.json({ error: "Подтвердите адрес почты: код обязателен" }, { status: 400 });
+    }
+
+    {
       const record = await prisma.verificationCode.findFirst({
         where: {
           email,
@@ -71,10 +97,11 @@ export async function POST(req: NextRequest) {
       user = await prisma.user.create({
         data: {
           email,
-          name,
+          name: trimmedName,
           username,
           password: hashed,
-          emailVerified: !!verificationCode,
+          // Без подтверждённого кода до этого места уже не дойти.
+          emailVerified: true,
         },
       });
     } catch (e: unknown) {

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { checkBan } from "@/lib/banCheck";
 import { rateLimit } from "@/lib/rateLimit";
-import { validateImageMagicBytes } from "@/lib/fileValidation";
+import { mediaSignatureError, validateImageMagicBytes } from "@/lib/fileValidation";
 import { hasPremium } from "@/lib/premium";
 import { FREE_UPLOAD_MB, PREMIUM_UPLOAD_MB, uploadLimitBytes } from "@/lib/premiumLimits";
 import { canAccessConversation, getChannelPermissions } from "@/lib/connectPermissions";
@@ -90,6 +90,12 @@ export async function POST(req: NextRequest) {
       await new Promise((r) => setTimeout(r, Math.min(20_000, Math.ceil((file.size / (8 * 1024 * 1024)) * 3000))));
     }
     if (isImage && !validateImageMagicBytes(buffer, mime)) return NextResponse.json({ error: "Содержимое изображения не соответствует его типу" }, { status: 400 });
+    /* FIX-SEC: звук и видео раньше принимались НА СЛОВО: любой фаи́л с именем
+       .mp4 ложился в хранилище и получал ссылку с домена сервиса. */
+    if (isVideo || isAudio) {
+      const mediaError = mediaSignatureError(mime, buffer);
+      if (mediaError) return NextResponse.json({ error: mediaError }, { status: 400 });
+    }
     /* Проверка содержимого — единственное, чему здесь вообще можно верить.
        Вместе с rar добавилась его сигнатура: раньше архив либо не доходил сюда
        вовсе, либо отклонялся проверкой zip — у rar другие первые байты. */

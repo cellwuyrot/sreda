@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
+import { invalidateUserAuthCache } from "@/lib/auth";
 
 /**
  * FIX-RESET: строгая связка «логин ↔ почта». Логин (в т.ч. с ведущим @)
@@ -56,9 +57,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Неверный или просроченный код" }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { email: targetEmail } });
+    const user = await prisma.user.findUnique({ where: { email: targetEmail }, select: { id: true } });
     if (!user) {
-      return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
+      /* FIX-SEC: было «Пользователь не найден» и 404 — разные ответы позволяли
+         перебирать адреса и узнавать, где есть аккаунт. Ответ теперь такой же,
+         как на неверный код. */
+      return NextResponse.json({ error: "Неверный или просроченный код" }, { status: 400 });
     }
 
     const hashed = await bcrypt.hash(newPassword, 12);
@@ -70,9 +74,14 @@ export async function POST(req: NextRequest) {
       }),
       prisma.user.update({
         where: { id: user.id },
-        data: { password: hashed },
+        /* FIX-SEC: отметка завершает все ранее выданные сессии. Без неё тот, кто
+           увёл токен, оставался в аккаунте и ПОСЛЕ смены пароля. */
+        data: { password: hashed, passwordChangedAt: new Date() },
       }),
     ]);
+
+    /* Кеш проверки сессий — сразу, а не через полминуты TTL. */
+    invalidateUserAuthCache(user.id);
 
     return NextResponse.json({ ok: true, message: "Пароль успешно изменён" });
   } catch (err) {

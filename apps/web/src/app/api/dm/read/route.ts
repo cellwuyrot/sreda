@@ -37,11 +37,14 @@ export async function POST(req: Request) {
      собеседник видел «прочитано», а «прочитано кем-то из администрации» никакого
      смысла для клиента не имеет. */
   if (participant) {
-    const col = conv.user1Id === userId ? "user1ReadAt" : "user2ReadAt";
-    await prisma.$executeRawUnsafe(
-      `UPDATE "DirectConversation" SET "${col}" = $1 WHERE "id" = $2`,
-      now, conversationId
-    );
+    /* FIX-SEC: был сырой запрос с подстановкой имени колонки в текст SQL.
+       Здесь имя бралось из двух литералов и было безопасным, но сам приём
+       живёт в коде и копируется дальше — уже с данными из запроса. Обычное
+       обновление делает то же самое и проверяется типами. */
+    await prisma.directConversation.update({
+      where: { id: conversationId },
+      data: conv.user1Id === userId ? { user1ReadAt: now } : { user2ReadAt: now },
+    });
   }
 
   const peerId = conv.user1Id === userId ? conv.user2Id : conv.user1Id;
