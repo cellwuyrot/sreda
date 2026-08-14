@@ -1222,7 +1222,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     audio.muted = isDeafenedRef.current; // deafen silences shared sound too
     audio.volume = 1;
 
-    // FIX-REPLAY: звук трансляции — в бу��ер повтора (в обход deafen-заглушки элемента).
+    // FIX-REPLAY: звук трансляции — в буфер повтора (в обход deafen-заглушки элемента).
     if (replayDestRef.current && playbackCtxRef.current) {
       try {
         replayScreenSrcRef.current.get(socketId)?.disconnect();

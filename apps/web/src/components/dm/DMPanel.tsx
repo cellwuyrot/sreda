@@ -966,7 +966,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [selectedConvId, messages, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, showToast],
   );
 
-  // ── Voice recording ────────────────────────────────────────�����─────────────────
+  // ── Voice recording ──────────────────────────────────────────────────────────────
   /**
    * Отправка записанной заметки — голосовой или квадратного видеосообщения.
    *
@@ -1475,7 +1475,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     }
   }, [currentUserId, loadConversations, showToast]);
 
-  // ── Text formatting ───────────────────────────────���──────────────────────────
+  // ── Text formatting ────────────────────────────────────────────────────────────
   const insertFormat = useCallback((prefix: string, suffix: string) => {
     const ta = textareaRef.current;
     if (!ta) {
@@ -1815,7 +1815,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onRemoveAttachment={(i) => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
               onVoiceRecorded={handleVoiceRecorded}
               /* Видеосообщение — только в личной переписке. В деловом чате
-                 собеседник — администрация по з��явке, и квадрат с камеры там не
+                 собеседник — администрация по заявке, и квадрат с камеры там не
                  к месту; голосовое остаётся. */
               allowVideoNote={!isBusiness}
               replyTo={replyTo}

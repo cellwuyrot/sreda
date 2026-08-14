@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
     await writeFile(path.join(uploadsDir, fileName), finalBuffer, { flag: "wx" });
 
     /* Запоминаем, чему принадлежит файл: по этой строке выдача потом проверит
-       право на канал или бес��ду, а не просто «человек вошёл». */
+       право на канал или беседу, а не просто «человек вошёл». */
     await recordUpload({
       path: `${subDir}/${fileName}`,
       uploaderId: session.user.id,
