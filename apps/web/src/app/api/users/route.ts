@@ -42,6 +42,12 @@ export async function GET(req: Request) {
     avatar: true,
     role: true,
     isPremium: true,
+    /* VPN-PLAN: подписка «только VPN» — отдельное право, не часть Premium.
+       Разделу «Подписки пользователей» нужны оба статуса сразу, иначе
+       проверка «есть ли VPN» превращается в запрос на каждого человека.
+       Это не PII: наличие подписки видно так же, как и флаг Premium. */
+    vpnAccess: true,
+    vpnAccessUntil: true,
     banned: true,
     lastSeen: true,
     createdAt: true,

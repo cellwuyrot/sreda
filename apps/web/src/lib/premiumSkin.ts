@@ -287,7 +287,7 @@ export function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
- * Сл��й background-image для области.
+ * Слой background-image для области.
  *
  * Затемнение идёт первым слоем того же свойства, а не отдельным элементом:
  * в CSS первый слой рисуется поверх остальных, так что полупрозрачный

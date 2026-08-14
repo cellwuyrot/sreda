@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { hasPremium } from "@/lib/premium";
+/* VPN-PLAN: только чистые правила — этот модуль без prisma и безопасен для клиента. */
+import { hasActiveVpnPlan, vpnDaysLeft } from "@/lib/vpnPlan";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import Spinner from "@/components/ui/Spinner";
@@ -15,6 +17,10 @@ interface PremiumUser {
   email: string;
   role: string;
   isPremium: boolean;
+  /* VPN-PLAN: состояние подписки «только VPN». Необязательные поля: старый
+     кэш ответа или другой вызов списка может их не содержать. */
+  vpnAccess?: boolean | null;
+  vpnAccessUntil?: string | null;
   banned: boolean;
 }
 
@@ -518,8 +524,8 @@ export default function AdminPremiumPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <Link href={backHref} className="text-sm text-accent hover:opacity-80">{backLabel}</Link>
-            <h1 className="text-3xl font-bold text-white mt-2">Премиум</h1>
-            <p className="text-gray-400 mt-1">Отдельный раздел для управления премиум-статусами, подписками и платежами.</p>
+            <h1 className="text-3xl font-bold text-white mt-2">Подписки пользователей</h1>
+            <p className="text-gray-400 mt-1">Две независимые подписки: Premium и «только VPN». Сроки и платежи у каждой свои.</p>
           </div>
           <div className="px-4 py-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-300 text-sm">
             Администраторы получают premium автоматически
@@ -541,8 +547,8 @@ export default function AdminPremiumPage() {
         <div className="glass-card p-5 space-y-4">
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Выдача премиума</h2>
-              <p className="text-sm text-gray-400">Премиум управляется отдельно от ролей пользователей.</p>
+              <h2 className="text-lg font-semibold text-white">Выдача подписок</h2>
+              <p className="text-sm text-gray-400">Подписки управляются отдельно от ролей. Подписка «только VPN» не выдаёт возможности Premium.</p>
             </div>
             <input
               value={query}
@@ -558,14 +564,23 @@ export default function AdminPremiumPage() {
                 <tr className="text-left text-gray-400 border-b border-white/10">
                   <th className="py-3 pr-4">Пользователь</th>
                   <th className="py-3 pr-4">Email</th>
-                  <th className="py-3 pr-4">Статус</th>
-                  <th className="py-3 pr-4">Доступ</th>
+                  <th className="py-3 pr-4">Premium</th>
+                  <th className="py-3 pr-4">VPN</th>
+                  <th className="py-3 pr-4">Основание</th>
                   <th className="py-3">Действие</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.map((user) => {
                   const effectivePremium = hasPremium(user);
+                  /* VPN-PLAN: туннель даёт любое из двух оснований — так же считает
+                     сервер в lib/vpn.ts. Показывать только флаг подписки было бы ложью:
+                     администратор видел бы «Нет» у человека, у которого VPN работает. */
+                  const vpnPlan = hasActiveVpnPlan(user);
+                  const vpnDays = vpnDaysLeft(user.vpnAccessUntil);
+                  const vpnLabel = vpnPlan
+                    ? vpnDays == null ? "Подписка — бессрочно" : `Подписка — ${vpnDays} дн.`
+                    : effectivePremium ? "По Premium" : "Нет";
                   return (
                     <tr key={user.id} className="border-b border-white/5 text-gray-200">
                       <td className="py-3 pr-4">
@@ -577,11 +592,23 @@ export default function AdminPremiumPage() {
                       <td className="py-3 pr-4 text-gray-400">{user.email}</td>
                       <td className="py-3 pr-4">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${effectivePremium ? "bg-amber-400/15 text-amber-300" : "bg-white/5 text-gray-400"}`}>
-                          {effectivePremium ? "Premium" : "Обычный"}
+                          {effectivePremium ? "Есть" : "Нет"}
                         </span>
                       </td>
+                      <td className="py-3 pr-4">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${vpnPlan ? "bg-cyan-400/15 text-cyan-300" : effectivePremium ? "bg-amber-400/10 text-amber-200/80" : "bg-white/5 text-gray-400"}`}>
+                          {vpnLabel}
+                        </span>
+                        {/* Срок рядом со статусом: без даты «Есть» не говорит, надо ли продлевать. */}
+                        {vpnPlan && user.vpnAccessUntil && (
+                          <div className="mt-1 text-[11px] text-gray-500">до {fmtDate(user.vpnAccessUntil)}</div>
+                        )}
+                        {!vpnPlan && vpnDays != null && vpnDays < 0 && (
+                          <div className="mt-1 text-[11px] text-orange-300/80">срок вышел {fmtDate(user.vpnAccessUntil ?? null)}</div>
+                        )}
+                      </td>
                       <td className="py-3 pr-4 text-xs text-gray-400">
-                        {user.role === "ADMIN" ? "Авто-premium по роли" : user.isPremium ? "Выдан вручную" : "Без премиума"}
+                        {user.role === "ADMIN" ? "Авто-premium по роли" : user.isPremium ? "Premium выдан вручную" : vpnPlan ? "Только подписка VPN" : "Без подписок"}
                       </td>
                       <td className="py-3">
                         <div className="flex flex-wrap items-center gap-2">
@@ -638,7 +665,7 @@ export default function AdminPremiumPage() {
           <ConnectVpnModal
             user={vpnUser}
             enabledMethods={enabledMethods}
-            onClose={() => setVpnUser(null)}
+            onClose={() => { setVpnUser(null); loadUsers(); }}
           />
         )}
       </AnimatePresence>
