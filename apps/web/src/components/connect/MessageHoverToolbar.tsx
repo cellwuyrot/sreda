@@ -133,6 +133,8 @@ export default function MessageHoverToolbar({
   threadCount = 0,
   onReact,
   boardContext,
+  onHoverStart,
+  onHoverEnd,
   children,
 }: {
   message: ToolbarMessage;
@@ -151,6 +153,10 @@ export default function MessageHoverToolbar({
   onReact?: (emoji: string) => void;
   /** Контекст для «Отправить на доску»; если не задан — кнопка скрыта */
   boardContext?: { authorName?: string; channelName?: string; channelId?: string } | null;
+  /** HOVER-GRACE: курсор зашёл на сам бар — список замораживает таймер скрытия. */
+  onHoverStart?: () => void;
+  /** Курсор ушёл с бара — таймер скрытия запускается заново. */
+  onHoverEnd?: () => void;
   /** Доп. кнопки (например, быстрые реакции) */
   children?: ReactNode;
 }) {
@@ -195,6 +201,9 @@ export default function MessageHoverToolbar({
     setReactionOpen((open) => {
       const next = !open;
       if (next) {
+        /* Открытый пикер — тоже причина держать бар: курсор уходит в сетку
+           эмодзи, а она выше строки сообщения. */
+        onHoverStart?.();
         const rect = reactionWrapRef.current?.getBoundingClientRect();
         if (rect) {
           const spaceBelow = window.innerHeight - rect.bottom;
@@ -242,7 +251,14 @@ export default function MessageHoverToolbar({
   };
 
   return (
-    <div ref={rootRef} className="tz-msg-toolbar" role="toolbar" aria-label="Действия с сообщением">
+    <div
+      ref={rootRef}
+      className="tz-msg-toolbar"
+      role="toolbar"
+      aria-label="Действия с сообщением"
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
+    >
       {feedback && <span className="tz-toolbar-feedback">{feedback}</span>}
       {onReply && (
         <button type="button" onClick={onReply} title="Ответить" aria-label="Ответить">
