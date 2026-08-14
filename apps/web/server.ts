@@ -804,7 +804,7 @@ app.prepare().then(() => {
     }
     userSockets.get(authData.userId)!.add(socket.id);
 
-    // ── DM room ──────────────────�����────────────────────────────────────
+    // ── DM room ───────────────────────────────────────────────────────────
     socket.join(`dm-${authData.userId}`);
 
     // DM typing indicators — relay to the other participant via their dm room

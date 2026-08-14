@@ -275,7 +275,7 @@ const MessageRow = memo(function MessageRow({
   msg, prefs, firstUnread, showDateDivider, isGrouped, animate, flashed, editing, editContent, currentUserId, isPrivilegedRole, canPin, channelId, channelName, channelMembers, roleTags, groupEmoji, groupEmojiList, ignoredIds, revealedIgnored, displayName, openUserCard, cancelUserCardHover, setReplyTo, onJumpToMessage, setEditContent, setRevealedIgnored, setLightboxSrc, openThread, toggleReaction, startEdit, saveEdit, cancelEdit, deleteMessage, pinMessage,
 }: MessageRowProps) {
   const msgDate = new Date(msg.createdAt);
-  /* FIX-EDITBLINK: ����ообщение скрыто игнором — вместо содержимого заглушка.
+  /* FIX-EDITBLINK: Сообщение скрыто игнором — вместо содержимого заглушка.
      Признак нужен в двух местах, поэтому считается один раз. */
   const hiddenByIgnore =
     ignoredIds.has(msg.user.id) && !revealedIgnored.has(msg.id) && msg.user.id !== currentUserId;
@@ -487,7 +487,7 @@ const MessageRow = memo(function MessageRow({
                         <AttachmentImage key={i} src={att.url} alt={att.name} onZoom={setLightboxSrc} />
                       ) : (
                         (() => {
-                          // FIX-SEC-XSS: ссылка-����лож��ние только при безопасной схеме URL;
+                          // FIX-SEC-XSS: ссылка-вложение только при безопасной схеме URL;
                           // иначе показываем имя файла как обычный текст (без href).
                           const safe = safeAttachmentUrl(att.url);
                           const inner = (<>
@@ -713,7 +713,7 @@ export default function MessageArea({
   }, [isDragOver]);
   const [errorToast, setErrorToast] = useState<string | null>(null);
   /* CENSOR: карточка о рамках приличия. Показывается только отправителю и только
-     на несколько секунд — ��т�� напоминание, а не наказание. Запрет отправки идёт
+     на несколько секунд — это напоминание, а не наказание. Запрет отправки идёт
      обычным отказом (красный тост), здесь же сообщение ушло. */
   const [censorNotice, setCensorNotice] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -850,7 +850,7 @@ export default function MessageArea({
   const [chatPrefs, setChatPrefs] = useState<ChatAppearance>(CHAT_APPEARANCE_DEFAULT);
   /* Тот же объект в ref: эффект автопрокрутки читает настройку, но не должен
      перезапускаться из-за неё — у него свой список зависимостей, и лишний
-     прогон означал бы рывок ленты в момент пр��вки настроек. */
+     прогон означал бы рывок ленты в момент правки настроек. */
   const chatPrefsRef = useRef<ChatAppearance>(CHAT_APPEARANCE_DEFAULT);
   useEffect(() => {
     const store = (next: ChatAppearance) => { chatPrefsRef.current = next; setChatPrefs(next); };
@@ -1015,7 +1015,7 @@ export default function MessageArea({
   }, [onOpenDm]);
 
   /* FIX-TAGMENTION: карта тегов сообщества для подсветки «#тег» в сообщениях.
-     Пересобирается только при смене списка ролей — ссылка с��аби��ьна, поэтому
+     Пересобирается только при смене списка ролей — ссылка стабильна, поэтому
      мемоизация строк MessageRow сохраняется. */
   const roleTagMap = useMemo(() => {
     const map = new Map<string, RoleTag>();
@@ -1053,7 +1053,7 @@ export default function MessageArea({
 
   /* FIX-TAGMENTION: автодополнение тегов по «#». Отдельная машинка состояний —
      список кандидатов другой, вставляется «#имя ». Носителей тега уведомляет
-     сервер, разбирая текс�� сообщения. */
+     сервер, разбирая текст сообщения. */
   const composerTags = useRoleTagMentions({
     roles: groupMeta?.roles ?? [],
     onApply: (next, caretAfter) => {
@@ -1187,7 +1187,7 @@ export default function MessageArea({
   /* Оконный рендер: в DOM живёт полоса вокруг видимой области, остальное —
      распорки. Без него дерево росло вместе с историей, и каждая догруженная
      страница делала прокрутку тяжелее (см. hooks/useMessageWindow). */
-  /* Разбираем по частям намеренно: сам объект пе��есоздаётся на каждый рендер, и
+  /* Разбираем по частям намеренно: сам объект пересоздаётся на каждый рендер, и
      попади он в зависимости эффекта — эффект перезапускался бы бесконечно.
      Колбэки стабильны, значения меняются вместе с окном. */
   const {
@@ -1380,7 +1380,7 @@ export default function MessageArea({
   // Fetch channel members for tools (polls/tasks assignment) + mute state.
   // Полный список участников здесь нужен честно: по нему работает
   // автодополнение упоминаний, а меню по правому клику должно найти запись
-  // участника ��ля любого автора сообщения, а не только для первой страницы.
+  // участника для любого автора сообщения, а не только для первой страницы.
   // Поэтому список догружается страницами (без тяжёлых полей), а из снимка
   // сообщества берутся только роли-теги.
   useEffect(() => {
@@ -1494,7 +1494,7 @@ export default function MessageArea({
         // Багфикс: в десктопном приложении нативные тосты показывает сама
         // оболочка (notification bridge) — браузерный Notification здесь давал
         // ВТОРОЙ, дублирующий тост поверх системного.
-        /* ANDROID-NOTIFY: через фасад — в Android-оболочке это на��т��ящее
+        /* ANDROID-NOTIFY: через фасад — в Android-оболочке это настоящее
            системное уведомление, в браузере прежний Web Notification. */
         if (!getDesktopApi() && document.hidden) {
           /* Текст уведомления можно скрыть: всплывающий тост читают все, кто
@@ -1589,7 +1589,7 @@ export default function MessageArea({
   /* Возврат позиции после подстановки старых сообщений сверху. Именно
      useLayoutEffect: обычный эффект выполняется после отрисовки, и человек
      успевает увидеть рывок. Считаем от низа — высота выросшей ленты нам заранее
-     не изв��стна, а расстояние до низа не изменилось. */
+     не известна, а расстояние до низа не изменилось. */
   useLayoutEffect(() => {
     const el = scrollContainerRef.current;
     const anchor = prependAnchorRef.current;
@@ -1618,7 +1618,7 @@ export default function MessageArea({
          приходилось искать прокруткой вверх — при десятке новых это значит
          «листать вслепую, пока не найдёшь знакомое».
 
-         П��рво�� непрочитанное считаем ровно так же, как это делает пометка
+         Первое непрочитанное считаем ровно так же, как это делает пометка
          прочтения ниже: чужое сообщение без моей отметки в `reads`. Эффект
          прокрутки объявлен ВЫШЕ эффекта пометки, поэтому на первом проходе он
          ещё видит исходные отметки; иначе всё оказалось бы прочитанным ровно
@@ -1779,7 +1779,7 @@ export default function MessageArea({
         body: JSON.stringify({ content, channelId, threadId: activeThread.id }),
       });
       const msg = await res.json();
-      if (!res.ok) throw new Error(msg.error || "Не удалось отправить ��твет");
+      if (!res.ok) throw new Error(msg.error || "Не удалось отправить ответ");
       if (!threadReplyIdsRef.current.has(msg.id)) {
         threadReplyIdsRef.current.add(msg.id);
         setThreadMessages((prev) => [...prev, msg]);
@@ -2338,7 +2338,7 @@ export default function MessageArea({
               в остальных модульных разделах она есть. Показываем её тем, кто
               может настраивать канал (владелец, администратор, модератор). */}
           {isNewsChannel && canPin && <ModuleSettingsButton channelId={channelId} />}
-          {/* FIX-NEWS-MUTE: ��аглушка раздела новостей. Моделей ради неё не заводим:
+          {/* FIX-NEWS-MUTE: Заглушка раздела новостей. Моделей ради неё не заводим:
               ChannelMute уже есть и уже учитывается и при рассылке анонсов
               (lib/newsPost.ts), и теперь при подсчёте непрочитанных. Не хватало
               ровно этого переключателя. Состояние меняем сразу, а при ошибке
@@ -2514,7 +2514,7 @@ export default function MessageArea({
             <div className="flex items-center justify-center h-full text-neutral-400">
               <div className="text-center">
                 <span className="block mb-4 flex justify-center opacity-80"><ChatIcon size={56} tone="inactive" /></span>
-                <p className="text-base font-semibold text-neutral-600 dark:text-neutral-300">Зде��ь пока пусто</p>
+                <p className="text-base font-semibold text-neutral-600 dark:text-neutral-300">Здесь пока пусто</p>
                 <p className="text-sm mt-1 text-neutral-400">Будьте первым — напишите сообщение, чтобы начать обсуждение.</p>
               </div>
             </div>
@@ -2756,7 +2756,7 @@ export default function MessageArea({
                       ))}
                     </div>
                   )}
-                  {/* relative — под панель записи за��етки: на время записи
+                  {/* relative — под панель записи заметки: на время записи
                       мини-редактор раскрывается во всю ширину строки поверх поля
                       ввода (см. MediaNoteRecorder). */}
                   <div className="relative flex w-full items-end gap-2">

@@ -185,7 +185,7 @@ export default function PremiumAppearanceSettings({ isPremium }: { isPremium: bo
    * ссылок на DOM и попутно работает с клавиатуры и со скринридерами.
    *
    * Поля с адресом картинки здесь нет намеренно: путь вроде
-   * /uploads/documents/… — внутренняя кухня хранилища, и показывать его ��
+   * /uploads/documents/… — внутренняя кухня хранилища, и показывать его в
    * настройках незачем. Картинка выбирается кнопкой.
    */
   function renderChatBackgroundForm() {
