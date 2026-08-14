@@ -875,6 +875,7 @@ html.light.mono-lite body {
 }
 .tz-msg-row:hover .tz-msg-toolbar,
 .tz-msg-row:focus-within .tz-msg-toolbar,
+.tz-msg-row.tz-msg-hot .tz-msg-toolbar,
 .tz-msg-toolbar:focus-within { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .tz-msg-toolbar button {
   display: flex; align-items: center; justify-content: center;
@@ -1043,8 +1044,26 @@ html.tz-hide-scrollbar body::-webkit-scrollbar { width: 0; height: 0; display: n
 }
 .tz-dm-msg-row:hover .tz-msg-toolbar,
 .tz-dm-msg-row:focus-within .tz-msg-toolbar,
+.tz-dm-msg-row.tz-msg-hot .tz-msg-toolbar,
 .tz-dm-msg-row .tz-msg-toolbar:focus-within {
   transform: translate(0, calc(-100% - 2px));
+}
+
+/* HOVER-GRACE: бар не ускальзывает из-под курсора.
+
+   Проблема была геометрической, а не в скорости анимации: между пузырём и
+   баром есть зазор 2px, и на этом зазоре курсор не над строкой и не над баром.
+   Поэтому две меры: пауза перед скрытием (класс tz-msg-hot из useHoverToolbar) и
+   невидимый мостик под баром, который стыкует его со строкой по области курсора.
+   Мостик без фона и не меняет раскладку: он абсолютный и живёт внутри бара,
+   а значит ловит мышь только когда бар видим (pointer-events наследуются). */
+.tz-dm-msg-row .tz-msg-toolbar::after {
+  content: "";
+  position: absolute;
+  left: -10px;
+  right: -10px;
+  top: 100%;
+  height: 12px;
 }
 /* По горизонтали — над своим же пузырём: своё сообщение справа, чужое слева.
    Сброс translateX обязателен: базовое правило центрует бар через left:50% и
