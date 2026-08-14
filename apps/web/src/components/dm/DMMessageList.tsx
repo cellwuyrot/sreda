@@ -10,6 +10,8 @@ import VideoPlayer from "@/components/ui/VideoPlayer";
 import VideoNotePlayer from "@/components/ui/VideoNotePlayer";
 import MessageBody from "@/components/connect/MessageBody";
 import MessageHoverToolbar from "@/components/connect/MessageHoverToolbar";
+/* HOVER-GRACE: запас времени на перевод мыши с текста на кнопки бара. */
+import { useHoverToolbar } from "@/components/connect/useHoverToolbar";
 /* FIX-IMGMENU: правый клик и долгое нажатие на картинке — тот же компонент, что и в каналах. */
 import ImageContextMenu, { useImageContextMenu } from "@/components/ui/ImageContextMenu";
 import { TriozEmoji } from "@/components/ui/TriozEmoji";
@@ -108,6 +110,9 @@ export default function DMMessageList(props: DMMessageListProps) {
   /* Меню одно на весь список: открыта всегда ровно одна копия, и не нужно плодить
      по подписке на mousedown/keydown для каждого вложения в длинной переписке. */
   const imageMenu = useImageContextMenu();
+  /* HOVER-GRACE: бар висит над пузырём, через зазор — чистый CSS `:hover` гасил его
+     ровно в момент, когда курсор шёл к кнопкам. Подробно — в useHoverToolbar. */
+  const hoverBar = useHoverToolbar();
   const {
     messages,
     currentUserId,
@@ -226,7 +231,13 @@ export default function DMMessageList(props: DMMessageListProps) {
                выпадающего меню. Меню больше нет, а свой пикер реакций hover-бар
                снимает сам (см. MessageHoverToolbar) — значит и дёргать раскладку
                строки при открытии меню больше нечем. */
-            const dmRowClassName = `tz-msg-row tz-dm-msg-row ${msg.userId === currentUserId ? "tz-dm-own flex-row-reverse" : "tz-dm-peer"} group/dm flex items-end gap-2 py-1 ${msg.pinned ? "bg-amber-50/50 dark:bg-amber-400/5 px-2 rounded-xl" : ""}`;
+            /* HOVER-GRACE: класс tz-msg-hot держит бар видимым дольше самого наведения.
+               Активный id один на список, поэтому при переходе на другое сообщение
+               предыдущий бар гаснет сам, без отдельного сброса. */
+            const barHot = hoverBar.activeId === msg.id;
+            const holdBar = () => hoverBar.hold(msg.id);
+            const releaseBar = () => hoverBar.release(msg.id);
+            const dmRowClassName = `tz-msg-row tz-dm-msg-row ${barHot ? "tz-msg-hot " : ""}${msg.userId === currentUserId ? "tz-dm-own flex-row-reverse" : "tz-dm-peer"} group/dm flex items-end gap-2 py-1 ${msg.pinned ? "bg-amber-50/50 dark:bg-amber-400/5 px-2 rounded-xl" : ""}`;
             const dmRowBody = (
               <>
                   {!msg.deleted && (
@@ -247,6 +258,9 @@ export default function DMMessageList(props: DMMessageListProps) {
                       onThread={() => onOpenThread(msg)}
                       onReact={(emoji) => onToggleReaction(msg.id, emoji)}
                       boardContext={isBusiness ? undefined : { authorName: msg.user?.name }}
+                      /* Наведение на сам бар замораживает таймер скрытия. */
+                      onHoverStart={holdBar}
+                      onHoverEnd={releaseBar}
                     >
                       {/* FIX-DM-DOTS: раньше здесь были «три точки», открывавшие
                           выпадающее меню поверх переписки. Теперь это просто ещё
@@ -439,11 +453,18 @@ export default function DMMessageList(props: DMMessageListProps) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ type: "spring", stiffness: 380, damping: 28 }}
                     className={dmRowClassName}
+                    onMouseEnter={holdBar}
+                    onMouseLeave={releaseBar}
                   >
                     {dmRowBody}
                   </motion.div>
                 ) : (
-                  <div id={`dm-msg-${msg.id}`} className={dmRowClassName}>
+                  <div
+                    id={`dm-msg-${msg.id}`}
+                    className={dmRowClassName}
+                    onMouseEnter={holdBar}
+                    onMouseLeave={releaseBar}
+                  >
                     {dmRowBody}
                   </div>
                 )}
