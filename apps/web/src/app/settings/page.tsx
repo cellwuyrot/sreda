@@ -321,7 +321,7 @@ function CameraDeviceSelect() {
         className="w-full text-sm rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800 px-3 py-2 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:focus:ring-cyan-500/40"
         aria-label="Выбор камеры"
       >
-        <option value="">Камера по умолч��нию</option>
+        <option value="">Камера по умолчанию</option>
         {cameraDevices.map(d => (
           <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
         ))}
@@ -646,7 +646,13 @@ export default function SettingsPage() {
 
   // Form states
   const [nameForm, setNameForm] = useState({ name: "", username: "" });
-  const [emailForm, setEmailForm] = useState({ email: "" });
+  /* EMAIL-CHANGE: почта меняется только с текущим паролем, а новый адрес
+     подтверждается кодом из письма — иначе опечатка в адресе тихо отрезала бы
+     восстановление доступа. */
+  const [emailForm, setEmailForm] = useState({ email: "", password: "" });
+  const [emailCode, setEmailCode] = useState("");
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [resendingCode, setResendingCode] = useState(false);
   const [passForm, setPassForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [bioForm, setBioForm] = useState("");
   const [statusForm, setStatusForm] = useState({ customStatus: "", statusEmoji: "" });
@@ -685,7 +691,7 @@ export default function SettingsPage() {
         .then((data) => {
           setProfile(data);
           setNameForm({ name: data.name, username: data.username });
-          setEmailForm({ email: data.email });
+          setEmailForm({ email: data.email, password: "" });
           setBioForm(data.bio || "");
           setStatusForm({ customStatus: data.customStatus || "", statusEmoji: data.statusEmoji || "" });
           const links = data.socialLinks ? JSON.parse(data.socialLinks) : {};
@@ -798,15 +804,72 @@ export default function SettingsPage() {
   // Email
   const handleSaveEmail = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextEmail = emailForm.email.trim().toLowerCase();
+    const changed = nextEmail !== (profile?.email || "").toLowerCase();
+    if (changed && !emailForm.password) {
+      showToast("Введите текущий пароль, чтобы сменить почту", "error");
+      return;
+    }
     setSavingEmail(true);
     try {
-      await patchProfile({ email: emailForm.email });
-      setProfile((p) => p ? { ...p, email: emailForm.email, emailVerified: false } : p);
-      showToast("Email обновлён! Потребуется повторная верификация.", "success");
+      const res = await patchProfile(
+        changed ? { email: nextEmail, currentPassword: emailForm.password } : { email: nextEmail },
+      );
+      setEmailForm({ email: nextEmail, password: "" });
+      if (res?.emailVerificationSent) {
+        setProfile((p) => p ? { ...p, email: nextEmail, emailVerified: false } : p);
+        setEmailCode("");
+        showToast("Код отправлен на новый адрес. Введите его ниже, чтобы подтвердить почту.", "success");
+      } else {
+        showToast("Адрес не изменился", "success");
+      }
     } catch (err) {
       showToast((err as Error).message, "error");
     } finally {
       setSavingEmail(false);
+    }
+  };
+
+  /* Подтверждение нового адреса: тот же маршрут, что и у входа по коду,
+     только он выставляет emailVerified. */
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.email || emailCode.trim().length === 0) return;
+    setVerifyingEmail(true);
+    try {
+      const res = await fetch("/api/auth/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: profile.email, code: emailCode.trim(), type: "login" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Неверный или просроченный код");
+      setProfile((p) => p ? { ...p, emailVerified: true } : p);
+      setEmailCode("");
+      showToast("Email подтверждён", "success");
+    } catch (err) {
+      showToast((err as Error).message, "error");
+    } finally {
+      setVerifyingEmail(false);
+    }
+  };
+
+  const handleResendEmailCode = async () => {
+    if (!profile?.email) return;
+    setResendingCode(true);
+    try {
+      const res = await fetch("/api/auth/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: profile.email, type: "login" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Не удалось отправить код");
+      showToast("Код отправлен повторно", "success");
+    } catch (err) {
+      showToast((err as Error).message, "error");
+    } finally {
+      setResendingCode(false);
     }
   };
 
@@ -1098,15 +1161,29 @@ export default function SettingsPage() {
 
               <Section title="Email" dense>
                 <form onSubmit={handleSaveEmail} className="space-y-4">
-                  <Field label="Адрес электронной почты" info="При смене email потребуется повторная верификация.">
+                  <Field label="Адрес электронной почты" info="На новый адрес придёт код подтверждения. Смена почты требует текущего пароля: по почте восстанавливается доступ к аккаунту.">
                     <Input
                       type="email"
                       value={emailForm.email}
-                      onChange={(e) => setEmailForm({ email: e.target.value })}
+                      onChange={(e) => setEmailForm((f) => ({ ...f, email: e.target.value }))}
                       placeholder="you@example.com"
                       required
                     />
                   </Field>
+                  {/* Поле пароля появляется только при реальной смене адреса. */}
+                  {emailForm.email.trim().toLowerCase() !== (profile.email || "").toLowerCase() && (
+                    <Field label="Текущий пароль">
+                      <Input
+                        type="password"
+                        value={emailForm.password}
+                        onChange={(e) => setEmailForm((f) => ({ ...f, password: e.target.value }))
+                        }
+                        placeholder="••••••••"
+                        autoComplete="current-password"
+                        required
+                      />
+                    </Field>
+                  )}
                   {/* FIX-UI-ACC: статус верификации логично живёт в блоке Email
                       (раньше терялся в мете «Аккаунта»). */}
                   <p className={`text-xs ${profile.emailVerified ? "text-green-500" : "text-yellow-500"}`}>
@@ -1114,6 +1191,40 @@ export default function SettingsPage() {
                   </p>
                   <SaveButton loading={savingEmail} />
                 </form>
+
+                {/* Отдельная форма: пока почта не подтверждена, её можно подтвердить
+                    кодом — раньше статус «не подтверждён» был тупиком без выхода. */}
+                {!profile.emailVerified && (
+                  <form onSubmit={handleVerifyEmail} className="mt-4 space-y-3 rounded-2xl border border-yellow-500/25 bg-yellow-500/5 p-3">
+                    <Field label="Код из письма">
+                      <Input
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                        placeholder="000000"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                      />
+                    </Field>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="submit"
+                        disabled={verifyingEmail || emailCode.length === 0}
+                        className="rounded-xl bg-yellow-500 px-3 py-1.5 text-xs font-medium text-black disabled:opacity-50"
+                      >
+                        {verifyingEmail ? "Проверяем…" : "Подтвердить почту"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleResendEmailCode}
+                        disabled={resendingCode}
+                        className="rounded-xl border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 disabled:opacity-50 dark:border-white/15 dark:text-gray-300"
+                      >
+                        {resendingCode ? "Отправляем…" : "Отправить код заново"}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 dark:text-gray-400">Код действует 15 минут и приходит на {profile.email}.</p>
+                  </form>
+                )}
               </Section>
             </div>
 
@@ -1386,7 +1497,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                   <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                     Пресет
-                    <InfoTooltip text="«Тепло» — поднимает низ и мягко убирает верх. «Радио» — срезает низ и выводит вперёд середину. «Чёткость» — добавляет 3.5 кГц, от этого разборчивее согласные. «Глубина» — усиливает 80 Гц. Стоит подвинуть любой полз��нок, и пресет станет «Свои настройки»." />
+                    <InfoTooltip text="«Тепло» — поднимает низ и мягко убирает верх. «Радио» — срезает низ и выводит вперёд середину. «Чёткость» — добавляет 3.5 кГц, от этого разборчивее согласные. «Глубина» — усиливает 80 Гц. Стоит подвинуть любой ползунок, и пресет станет «Свои настройки»." />
                   </p>
                   <div className="flex flex-wrap justify-end gap-0.5 rounded-lg bg-neutral-200/70 dark:bg-white/10 p-0.5">
                     {EQ_PRESET_ORDER.map((id) => (
@@ -1962,52 +2073,107 @@ export default function SettingsPage() {
           </details>
         );
 
+        /* Цена берётся из платёжных настроек. Если администратор её не задал,
+           строки с ценой просто не будет: выдумывать сумму в интерфейсе нельзя. */
+        const priceLine = paymentMethods?.priceMonth
+          ? `${paymentMethods.priceMonth} ${paymentMethods.currency || "₽"} в месяц`
+          : null;
+
         return (
           <>
             {/* ── Блок 1. Только VPN ───────────────────────────────────── */}
-            <Section dense title="Только VPN">
+            <Section dense title="Только VPN" subtitle="Одно право: включать и выключать туннель">
               <div className={`rounded-2xl border p-4 ${vpnPlanActive ? "border-cyan-500/25 bg-cyan-500/5" : "border-neutral-200 dark:border-white/10"}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm leading-relaxed text-neutral-600 dark:text-gray-300">{vpnLine}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                      {vpnPlanActive ? "Подписка действует" : vpnViaPremium ? "Доступ есть по Premium" : "Подписки нет"}
+                    </p>
+                    <p className="mt-0.5 text-sm text-neutral-500 dark:text-gray-400">{vpnLine}</p>
+                  </div>
                   <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${vpnPlanActive ? "bg-cyan-500/15 text-cyan-500" : vpnViaPremium ? "bg-amber-500/15 text-amber-500" : "bg-neutral-200 dark:bg-white/10 text-neutral-500 dark:text-gray-400"}`}>
                     {vpnPlanActive ? "Активна" : vpnViaPremium ? "По Premium" : "Нет"}
                   </span>
                 </div>
+
+                {/* Главное о подписке — четыре строки вместо абзацев. Строка «не входит»
+                    здесь не мелкий шрифт, а самое важное: именно из-за неё не будет
+                    обращений вроде «оплатил VPN, а темы не появились». */}
+                <ul className="mt-3 space-y-1.5 text-xs">
+                  <li className="flex gap-2 text-neutral-600 dark:text-gray-300">
+                    <span className="text-cyan-500">✓</span>
+                    <span>Тумблер VPN в TZ.Connect — включение и выключение в любой момент</span>
+                  </li>
+                  <li className="flex gap-2 text-neutral-600 dark:text-gray-300">
+                    <span className="text-cyan-500">✓</span>
+                    <span>Выбор, что идёт через туннель: всё соединение или только сервис</span>
+                  </li>
+                  <li className="flex gap-2 text-neutral-600 dark:text-gray-300">
+                    <span className="text-cyan-500">✓</span>
+                    <span>Конфигурация WireGuard для телефона и компьютера</span>
+                  </li>
+                  <li className="flex gap-2 text-neutral-500 dark:text-gray-400">
+                    <span className="text-neutral-400">—</span>
+                    <span>Не входит ничего из Premium: ни оформление, ни лимиты сообществ, ни качество голоса</span>
+                  </li>
+                </ul>
+
+                {priceLine && !vpnViaPremium && (
+                  <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">Стоимость: {priceLine}. Подключает администратор после поступления оплаты.</p>
+                )}
+
                 {(vpnPlanActive || vpnViaPremium) && (
                   <a href="/connect" className="mt-3 inline-flex rounded-xl bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-600 hover:bg-cyan-500/25 dark:text-cyan-400">
                     Включить в TZ.Connect →
                   </a>
                 )}
-                {!vpnPlanActive && !vpnViaPremium && payDetails("В комментарии укажите username и слово «VPN».")}
-                {vpnPlanActive && payDetails("Для продления укажите username и слово «VPN».")}
+                {!vpnViaPremium && payDetails(vpnPlanActive
+                  ? "Для продления укажите в комментарии к платежу username и слово «VPN»."
+                  : "В комментарии к платежу укажите username и слово «VPN» — иначе платёж примут за Premium.")}
               </div>
             </Section>
 
             {/* ── Блок 2. Premium ─────────────────────────────────────── */}
-            <Section dense title="Premium">
+            <Section dense title="Premium" subtitle="Все возможности сервиса, включая VPN">
               <div className={`rounded-2xl border p-4 ${premiumActive ? "border-amber-500/25 bg-amber-500/5" : "border-neutral-200 dark:border-white/10"}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm leading-relaxed text-neutral-600 dark:text-gray-300">{premiumLine}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                      {premiumActive ? (byRole ? "Доступ по роли" : "Подписка действует") : "Подписки нет"}
+                    </p>
+                    <p className="mt-0.5 text-sm text-neutral-500 dark:text-gray-400">{premiumLine}</p>
+                  </div>
                   <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${premiumActive ? "bg-amber-500/15 text-amber-500" : "bg-neutral-200 dark:bg-white/10 text-neutral-500 dark:text-gray-400"}`}>
                     {premiumActive ? "Активен" : "Нет"}
                   </span>
                 </div>
 
-                {/* Список возможностей — только заголовки без описаний: описания
-                    нужны в витрине (окно TZ в /connect), а не в настройках. */}
-                <ul className="mt-3 flex flex-wrap gap-2">
-                  <li className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                    {PREMIUM_MAIN_ADVANTAGE.title}
-                  </li>
+                {/* Главное преимущество — одной строкой, остальное — перечислением. */}
+                <p className="mt-3 text-xs font-medium text-amber-600 dark:text-amber-400">{PREMIUM_MAIN_ADVANTAGE.title}</p>
+                <ul className="mt-2 space-y-1.5 text-xs">
                   {PREMIUM_KEY_FEATURES.map((f) => (
-                    <li key={f.id} className="flex items-center gap-1.5 rounded-full bg-neutral-100 dark:bg-white/5 px-2.5 py-1 text-[11px] text-neutral-600 dark:text-gray-300">
-                      <PremiumFeatureIcon id={f.id} size={12} />
-                      {f.title}
+                    <li key={f.id} className="flex items-start gap-2 text-neutral-600 dark:text-gray-300">
+                      <span className="mt-0.5 text-amber-500"><PremiumFeatureIcon id={f.id} size={13} /></span>
+                      <span>{f.title}</span>
                     </li>
                   ))}
+                  <li className="flex items-start gap-2 text-neutral-600 dark:text-gray-300">
+                    <span className="text-amber-500">✓</span>
+                    <span>VPN входит сюда же — отдельная подписка на VPN не нужна</span>
+                  </li>
                 </ul>
 
-                {!byRole && payDetails(premiumActive ? "Для продления укажите ваш username." : "Укажите ваш username — Premium подключит администратор.")}
+                {priceLine && !byRole && (
+                  <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">Стоимость: {priceLine}.</p>
+                )}
+
+                {byRole ? (
+                  <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">Подписка дана ролью в команде: платить ничего не нужно, срока у неё нет.</p>
+                ) : (
+                  payDetails(premiumActive
+                    ? "Для продления укажите в комментарии к платежу ваш username."
+                    : "В комментарии к платежу укажите ваш username — по нему администратор найдёт аккаунт.")
+                )}
               </div>
             </Section>
           </>

@@ -106,7 +106,7 @@ function jumpToDMMessage(id: string) {
 
 export default function DMMessageList(props: DMMessageListProps) {
   /* Меню одно на весь список: открыта всегда ровно одна копия, и не нужно плодить
-     по ��одписке на mousedown/keydown для каждого вложения в длинной переписке. */
+     по подписке на mousedown/keydown для каждого вложения в длинной переписке. */
   const imageMenu = useImageContextMenu();
   const {
     messages,
@@ -471,7 +471,7 @@ export default function DMMessageList(props: DMMessageListProps) {
       )}
 
       {/* FIX-IMGMENU: само меню рисуется через портал, поэтому место в разметке ему
-          безразлично — важно лишь, чтобы ��но было в дереве раз и не попадало в
+          безразлично — важно лишь, чтобы оно было в дереве раз и не попадало в
           обрезающий контейнер сообщения. */}
       {imageMenu.menu && (
         <ImageContextMenu

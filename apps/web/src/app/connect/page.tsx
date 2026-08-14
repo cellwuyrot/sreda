@@ -164,7 +164,7 @@ function ConnectPageInner() {
   const [mobileView, setMobileView] = useState<MobileView>("groups");
   const [showVoicePanel, setShowVoicePanel] = useState(false);
   /* На что смотрит колонка контента: на переписку или на голосовой канал с его
-     показом экрана. Раньше окно демонстрации накрывало колонку и не ��ависело ни
+     показом экрана. Раньше окно демонстрации накрывало колонку и не зависело ни
      от чего: открыть текстовый канал во время показа было невозможно — чат
      оставался под трансляцией, и уйти из неё можно было только выйдя из голоса.
      Само окно умеет сворачиваться в плашку (проп onVoiceChannel), но значение
@@ -533,7 +533,7 @@ function ConnectPageInner() {
     const task = params.get("task");
     const section = params.get("section");
     const dm = params.get("dm");
-    /* CHAT: ?section=business&conv=… — переход из карточки п��оекта в кабинете.
+    /* CHAT: ?section=business&conv=… — переход из карточки проекта в кабинете.
        Разговор адресуется по id, а не по собеседнику: у делового чата вторая
        сторона у всех заявок одна и та же — «Администрация». */
     const conv = params.get("conv");
@@ -671,7 +671,7 @@ function ConnectPageInner() {
     setUserVolume: voice.setUserVolume,
   };
 
-  /* Начался показ экрана — колонка конте��та показывает его. Без этого первый
+  /* Начался показ экрана — колонка контента показывает его. Без этого первый
      показ открылся бы плашкой, если до него человек читал переписку. */
   const anyScreenShare = voice.screenShares.length > 0;
   useEffect(() => {
@@ -1075,7 +1075,7 @@ function ConnectPageInner() {
           )}
         </div>
 
-        {/* MOBILE-UI: нижняя ��авигац��я — Сообщества/Друзья/Сообщения.
+        {/* MOBILE-UI: нижняя навигация — Сообщества/Друзья/Сообщения.
             Видна только на верхнем уровне стека (список сообществ / друзья / диалоги),
             внутри каналов и чата не занимает место. Высота учитывает системную
             полосу жестов (safe-area-inset-bottom). */}
@@ -1087,7 +1087,7 @@ function ConnectPageInner() {
               { key: "friends" as NavSection, label: "Друзья", icon: <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="3" /><path d="M12 13c-3.31 0-6 1.79-6 4v1h12v-1c0-2.21-2.69-4-6-4z" /><circle cx="4.5" cy="9" r="2" /><path d="M4.5 13C2.57 13 1 14.34 1 16v1h4" /><circle cx="19.5" cy="9" r="2" /><path d="M19.5 13c1.93 0 3.5 1.34 3.5 3v1h-4" /></svg> },
               { key: "dm" as NavSection, label: "Сообщения", icon: <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> },
               /* MOBILE-UI: раздел деловых разговоров на телефоне был недоступен —
-                 панель для него рисовалась, а переключиться на не�� было нечем:
+                 панель для него рисовалась, а переключиться на неё было нечем:
                  в нижней навигации кнопки не было, а боковая полоса на телефоне
                  скрыта. Клиент, подавший заявку с телефона, свой чат не находил.
                  Значок тот же, что в боковой полосе (щит), вписан разметкой, чтобы

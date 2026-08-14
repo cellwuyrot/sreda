@@ -567,7 +567,7 @@ export default function ConnectProfileSettings({
               if (!f) return;
               const text = await f.text();
               const ok = await importKeysFromJSON(text);
-              if (ok) { setError(null); setSuccessToast("��лючи восстановлены!"); setTimeout(() => setSuccessToast(null), 3500); }
+              if (ok) { setError(null); setSuccessToast("Ключи восстановлены!"); setTimeout(() => setSuccessToast(null), 3500); }
               else setError("Неверный формат файла ключей");
               e.target.value = "";
             }} />
