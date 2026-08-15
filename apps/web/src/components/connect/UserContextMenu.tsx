@@ -255,7 +255,7 @@ export default function UserContextMenu({
   }, []);
 
   const openProfile = () => {
-    if (user.username) router.push(`/user/${encodeURIComponent(user.username)}`);
+    if (user.username) router.push(`/profile/${encodeURIComponent(user.username)}`); // PROFILE-WALL2
     onClose();
   };
 
@@ -523,7 +523,7 @@ export default function UserContextMenu({
       </div>
       <div className="px-1.5 pb-1.5 flex-1 min-h-0 overflow-y-auto overscroll-contain">
       <Divider />
-      {user.username && <button data-shell-hide="true" className={ITEM} onClick={openProfile}>Профиль</button>}
+      {user.username && <button className={ITEM} onClick={openProfile}>Профиль</button>}
       {!isSelf && <button className={ITEM} onClick={onMention}>Упомянуть</button>}
       {!isSelf && <button className={ITEM} onClick={() => onOpenDm(user.id)}>Написать сообщение</button>}
       {nickDraft === null ? (

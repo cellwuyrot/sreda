@@ -8,13 +8,11 @@ import WallPager from "@/components/profile/WallPager";
 import {
   BookOpenIcon,
   ClockIcon,
-  CrownIcon,
   FriendsIcon,
   InfoIcon,
   MessagesIcon,
   NewsIcon,
   PinIcon,
-  ShieldIcon,
   StarIcon,
   UserPlusIcon,
   UsersIcon,
@@ -83,11 +81,12 @@ interface FollowUser extends WallAuthor {
 
 type Tab = "wall" | "followers" | "following";
 
-const ROLE_LABEL: Record<string, string> = {
-  ADMIN: "Администратор",
-  EDITOR: "Редактор",
-  CONSULTANT: "Партнёр",
-};
+/* PROFILE-WALL2: на личной странице роли не показываются вообще.
+
+   Личная страница — про человека, а не про его место в штатном расписании.
+   Служебное положение (администратор, редактор, партнёр) видно там, где оно
+   имеет силу: в сообществе и в рабочих разделах. Права при этом не меняются:
+   скрыта только подпись, проверки остались на сервере. */
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("ru-RU", {
@@ -275,8 +274,6 @@ export default function ProfilePage({ username }: { username?: string }) {
     return <div className="max-w-3xl mx-auto p-6 text-neutral-400">Загрузка…</div>;
   }
 
-  const roleLabel = ROLE_LABEL[head.role];
-
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
       {/* Шапка */}
@@ -295,13 +292,6 @@ export default function ProfilePage({ username }: { username?: string }) {
             <div className="flex-1 min-w-0 pb-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-semibold text-neutral-900 dark:text-white truncate">{head.name}</h1>
-                {head.role === "ADMIN" && <CrownIcon size={18} />}
-                {head.role === "EDITOR" && <ShieldIcon size={18} />}
-                {roleLabel && (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-gray-300">
-                    {roleLabel}
-                  </span>
-                )}
               </div>
               <div className="text-sm text-neutral-500 dark:text-gray-400">@{head.username}</div>
             </div>

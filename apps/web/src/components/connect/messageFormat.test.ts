@@ -177,7 +177,7 @@ describe("прежняя разметка после добавления нов
   });
 
   it("ИНВАРИАНТ: упоминания участника и @everyone на месте", () => {
-    expect(markup("@ivan").querySelector("a")?.getAttribute("href")).toBe("/user/ivan");
+    expect(markup("@ivan").querySelector("a")?.getAttribute("href")).toBe("/profile/ivan");
     expect(markup("@everyone").textContent).toBe("@everyone");
   });
 
