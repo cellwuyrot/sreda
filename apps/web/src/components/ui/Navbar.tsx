@@ -11,7 +11,7 @@ import { notifyExternal } from "@/lib/appNotify"; // ANDROID-NOTIFY
 import { loadNotifyPrefs } from "@/lib/notifyPrefs";
 import { useInlineEdit } from "@/components/InlineEditContext";
 import { Sun, Moon, SquarePen, ChevronDown, LogOut, Menu, X } from "lucide-react";
-import { BellIcon, GearIcon, BellOffIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS: + BellOffIcon (SVG вместо PNG)
+import { BellIcon, GearIcon, BellOffIcon, UsersIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS, PROFILE-WALL: + UsersIcon: + BellOffIcon (SVG вместо PNG)
 import { io, type Socket } from "socket.io-client";
 import { isDesktop } from "@/lib/desktop";
 import { playDMNotification } from "@/lib/dmSound";
@@ -311,15 +311,34 @@ export default function Navbar() {
 
                 {/* User menu with hover dropdown */}
                 <div className="relative group hidden sm:block">
-                  <button className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors">
+                  {/* PROFILE-WALL: имя — ссылка на СВОЮ страницу, а не на уведомления.
+
+                      Имя человека — это он сам, и нажатие на него должно вести к нему, а не
+                      в список событий. Колокольчик рядом остался на своём месте — уведомления
+                      никуда не делись, у них просто отобрали чужое название.
+
+                      Выпадающее меню открывается по наведению на group, поэтому замена button на
+                      Link его не ломает: наведение показывает пункты, нажатие уводит в профиль. */}
+                  <Link
+                    href="/profile"
+                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
+                  >
                     <span className="text-sm text-neutral-500 dark:text-gray-400">{session.user?.name}</span>
                     <ChevronDown className="w-3 h-3 text-neutral-400" strokeWidth={2} />
-                  </button>
+                  </Link>
 
                   {/* Dropdown — FIX-B4: pt-1 вместо mt-1, чтобы курсор не «проваливался»
                       в зазор между кнопкой и меню; group-focus-within открывает меню с клавиатуры */}
                   <div className="absolute right-0 top-full pt-1 w-44 opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all duration-150 z-50">
                   <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-xl shadow-lg overflow-hidden">
+                    {/* PROFILE-WALL: первым пунктом — своя страница. */}
+                    <Link
+                      href="/profile"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-neutral-700 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <UsersIcon size={18} style={{ color: "inherit" }} />
+                      Мой профиль
+                    </Link>
                     <Link
                       href="/settings/notifications"
                       className="flex items-center gap-2 px-4 py-2.5 text-sm text-neutral-700 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"

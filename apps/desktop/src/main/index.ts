@@ -9,7 +9,7 @@ import { refreshNotificationBridge, stopNotificationBridge } from "./notificatio
 import { initAutoUpdate } from "./updater";
 import { applyAutoLaunch } from "./autoLaunch";
 import { registerIpc } from "./ipc";
-import { invalidateCacheOnVersionChange } from "./recovery"; // FIX-BLANK
+import { invalidateCacheOnVersionChange, stopCacheMaintenance } from "./recovery"; // FIX-BLANK
 import { registerMediaCacheScheme, installMediaCache } from "./mediaCache"; // FIX-CLIENTMEDIA
 import { syncOverlay, destroyOverlay } from "./overlay"; // FIX-OVL
 import { startActivityWatcher, stopActivityWatcher, resendActivity } from "./activity"; // FIX-ACT
@@ -166,6 +166,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   setQuitting(true);
+  stopCacheMaintenance(); // FIX-BLANK2
   destroyOverlay(); // FIX-OVL
   unregisterShortcuts();
   stopBadgePolling();
