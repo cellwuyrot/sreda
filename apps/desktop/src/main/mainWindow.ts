@@ -10,7 +10,14 @@ import {
   isSameOriginDocument,
   safeInAppPath,
 } from "../shared/navigation";
-import { watchStaleAssets, watchBlankRender, markRenderHealthy, voiceCallActive } from "./recovery"; // FIX-BLANK
+import {
+  watchStaleAssets,
+  watchBlankRender,
+  markRenderHealthy,
+  voiceCallActive,
+  preventDocumentCaching, // FIX-BLANK2
+  startCacheMaintenance, // FIX-BLANK2
+} from "./recovery"; // FIX-BLANK
 
 interface WindowState {
   width: number;
@@ -289,6 +296,13 @@ export function createMainWindow(): BrowserWindow {
   // поэтому пользователь остаётся в аккаунте.
   watchStaleAssets(mainWindow, appOrigin);
   watchBlankRender(mainWindow, appOrigin);
+
+  /* FIX-BLANK2: главное лекарство — не кешировать сам HTML: именно в нём список
+     чанков конкретной сборки. Статика продолжает кешироваться как раньше.
+     Плюс тихая чистка раз в 15 минут как подстраховка на случай, если что-то
+     всё же осядет в кеше мимо этого правила. */
+  preventDocumentCaching(appOrigin);
+  startCacheMaintenance(mainWindow);
 
   // Paint a local splash immediately, then load the real /connect page. Electron
   // keeps the splash on screen until the remote page is ready to render, so the
