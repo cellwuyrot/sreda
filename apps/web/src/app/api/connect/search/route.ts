@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
       select: { id: true, groupId: true, user: { select: { id: true, name: true, username: true } } },
       take: 20,
     });
-    for (const member of members) results.push({ id: member.id, type: "members", title: member.user.name, subtitle: `@${member.user.username} · ${groupNames.get(member.groupId) ?? "Сообщество"}`, groupId: member.groupId, url: `/user/${member.user.username}` });
+    for (const member of members) results.push({ id: member.id, type: "members", title: member.user.name, subtitle: `@${member.user.username} · ${groupNames.get(member.groupId) ?? "Сообщество"}`, groupId: member.groupId, url: `/profile/${member.user.username}` });
   }
 
   if (include("tasks") && channelIds.length > 0) {

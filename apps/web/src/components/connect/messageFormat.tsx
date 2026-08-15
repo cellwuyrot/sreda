@@ -187,7 +187,7 @@ function renderInline(text: string, options?: RenderOptions): ReactNode {
           parts.push(
             <a
               key={key++}
-              href={`/user/${match[10]}`}
+              href={`/profile/${match[10]}`}
               onClick={(e) => e.stopPropagation()}
               title={`Открыть профиль @${match[10]}`}
               className="bg-violet-500/20 dark:bg-cyan-400/20 text-violet-600 dark:text-cyan-300 px-1 rounded font-medium hover:underline cursor-pointer"

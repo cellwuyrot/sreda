@@ -361,7 +361,7 @@ export default function FriendsPanel({ onMessageFriend }: FriendsPanelProps) {
               {/* Actions */}
               <div className="px-4 pb-4 pt-2 space-y-1.5">
                 <a
-                  href={`/user/${selectedFriend.username}`}
+                  href={`/profile/${selectedFriend.username}`}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-violet-500/10 dark:bg-cyan-500/10 text-accent hover:bg-violet-500/20 dark:hover:bg-cyan-500/20 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
