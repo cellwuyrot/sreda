@@ -63,6 +63,7 @@ import { useDeviceIdentity } from "@/components/connect/hooks/useDeviceIdentity"
 import { useHadSession } from "@/components/connect/hooks/useHadSession";
 import { useUnreadBadges } from "@/components/connect/hooks/useUnreadBadges";
 import { useMobileHistoryStack, useHistoryLayer } from "@/components/connect/hooks/useMobileHistoryStack";
+import { useSwipeNav } from "@/components/connect/hooks/useSwipeNav"; // MOBILE-SWIPE
 import { requestNotifyPermission } from "@/lib/appNotify"; // ANDROID-NOTIFY
 import ConnectionLostShield from "@/components/connect/overlays/ConnectionLostShield";
 import PremiumInfoModal from "@/components/connect/overlays/PremiumInfoModal";
@@ -208,24 +209,69 @@ function ConnectPageInner() {
     () => setShowChannelsDrawer(false),
     "channels-drawer",
   );
-  const groupTouchRef = useRef<{ x: number; y: number } | null>(null);
-  const handleGroupTouchStart = useCallback((e: React.TouchEvent) => {
-    const t = e.touches[0];
-    groupTouchRef.current = { x: t.clientX, y: t.clientY };
-  }, []);
-  const handleGroupTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      const start = groupTouchRef.current;
-      groupTouchRef.current = null;
-      if (!start) return;
-      const dx = e.changedTouches[0].clientX - start.x;
-      const dy = Math.abs(e.changedTouches[0].clientY - start.y);
-      if (dy > Math.abs(dx) * 0.7) return; // вертикальный скролл — не свайп
-      if (!showChannelsDrawer && start.x < 32 && dx > 56) setShowChannelsDrawer(true);
-      else if (showChannelsDrawer && dx < -56) setShowChannelsDrawer(false);
+  /* MOBILE-SWIPE: управление жестами устроено как движение по уровням влево:
+
+       список сообществ   ←   панель каналов   ←   чат
+
+     свайп вправо — на шаг назад (чат → каналы → сообщества),
+     свайп влево  — на шаг вперёд (закрыть панель каналов, вернуться к чату).
+
+     Старый жест требовал начинать строго от левого края, а там у Android свой
+     системный жест «назад» — в приложении он практически не срабатывал.
+     Подъём с экрана чата идёт через mobileBack(), то есть через ту же историю,
+     что и системная кнопка «назад»: два способа не расходятся между собой. */
+  const chatSwipe = useSwipeNav({
+    enabled: isDesktopViewport === false,
+    onSwipeRight: () => {
+      /* Панель уже открыта — значит, человек уже на уровне каналов и следующий
+         шаг влево — выйти из сообщества. Два шага назад делаются именно через
+         историю, а не прямыми setState: панель и экран чата — две записи в
+         истории, и смешивать два способа подъёма значит разъехаться с системной
+         кнопкой «назад». Второй шаг — следующим кадром, чтобы popstate первого
+         успел обработаться. */
+      if (showChannelsDrawer) {
+        mobileBack();
+        window.setTimeout(mobileBack, 80);
+      } else {
+        setShowChannelsDrawer(true);
+      }
     },
-    [showChannelsDrawer],
+    onSwipeLeft: () => {
+      if (showChannelsDrawer) setShowChannelsDrawer(false);
+    },
+  });
+
+  /* MOBILE-SWIPE: на верхнем уровне свайп листает разделы нижней навигации
+     в том же порядке, в каком они стоят в полосе: сообщества → друзья →
+     сообщения → бизнес. Порядок задан здесь и используется самой полосой,
+     чтобы жест и кнопки не разошлись при следующей правке. */
+  const mobileSections = useMemo<NavSection[]>(
+    () => ["communities", "friends", "dm", ...(showBusiness ? (["business"] as NavSection[]) : [])],
+    [showBusiness],
   );
+  const selectSection = useCallback(
+    (key: NavSection) => {
+      setActiveSection(key);
+      if (key !== "dm") setDmFriendId(null);
+      if (key !== "communities") { setSelectedChannel(null); }
+      if (key === "communities") { setSelectedGroup(null); setMobileView("groups"); }
+    },
+    [],
+  );
+  const shiftSection = useCallback(
+    (step: number) => {
+      const at = mobileSections.indexOf(activeSection);
+      if (at < 0) return;
+      const next = mobileSections[at + step];
+      if (next) selectSection(next);
+    },
+    [mobileSections, activeSection, selectSection],
+  );
+  const sectionSwipe = useSwipeNav({
+    enabled: isDesktopViewport === false && mobileView === "groups",
+    onSwipeLeft: () => shiftSection(1),
+    onSwipeRight: () => shiftSection(-1),
+  });
 
   /* MOBILE-DRAWER: автовыбор канала при входе в группу — чат по центру сразу.
      Берём общий текстовый канал (без родителя), иначе первый текстовый; если
@@ -873,7 +919,10 @@ function ConnectPageInner() {
       {isDesktopViewport !== true && (
       <div className="md:hidden flex-1 flex flex-col h-full overflow-hidden">
         {/* Mobile content area */}
-        <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-200 ${groupSwitching ? "opacity-40 pointer-events-none" : "opacity-100"}`}>
+        <div
+          className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-200 ${groupSwitching ? "opacity-40 pointer-events-none" : "opacity-100"}`}
+          {...sectionSwipe} /* MOBILE-SWIPE: листание разделов на верхнем уровне */
+        >
           {activeSection === "communities" && (
             <>
               {mobileView === "groups" && (
@@ -907,8 +956,7 @@ function ConnectPageInner() {
               {mobileView === "chat" && selectedGroup && groupReady && groupDetail && (
                 <div
                   className="relative flex-1 flex flex-col h-full overflow-hidden"
-                  onTouchStart={handleGroupTouchStart}
-                  onTouchEnd={handleGroupTouchEnd}
+                  {...chatSwipe} /* MOBILE-SWIPE */
                 >
                   {selectedChannel && selectedChannelData ? (
                     selectedChannelData.type === "QA" ? (
@@ -1098,12 +1146,7 @@ function ConnectPageInner() {
             ]).map(({ key, label, icon }) => (
               <button
                 key={key}
-                onClick={() => {
-                  setActiveSection(key);
-                  if (key !== "dm") setDmFriendId(null);
-                  if (key !== "communities") { setSelectedChannel(null); }
-                  if (key === "communities") { setSelectedGroup(null); setMobileView("groups"); }
-                }}
+                onClick={() => selectSection(key)} /* MOBILE-SWIPE */
                 className={`relative flex-1 flex flex-col items-center justify-center gap-1 transition-colors active:scale-95
                   ${activeSection === key ? "text-accent" : "text-neutral-400 dark:text-neutral-500"}`}
                 aria-current={activeSection === key ? "page" : undefined}
