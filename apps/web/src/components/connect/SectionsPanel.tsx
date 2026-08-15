@@ -206,7 +206,12 @@ export default function SectionsPanel({
 
       {/* Плитки блоков видны только в режиме разделов. */}
       {view === "sections" && (
-      <div className={isMobile ? "grid grid-cols-2 gap-2.5" : "flex-1 overflow-y-auto p-2 space-y-1.5"}>
+      {/* MOBILE-TILES: в двухколоночной сетке колонка уже длинных названий
+          («ИИ-Автоматизация», «Баг репорт -обслуживание сайта»). Минимальная
+          ширина грид-ячейки по умолчанию равна auto, а не нулю, поэтому ячейка
+          растягивалась под самое длинное слово и текст выходил за рамку карточки
+          и за край экрана. */}
+      <div className={isMobile ? "grid [grid-template-columns:repeat(2,minmax(0,1fr))] gap-2.5" : "flex-1 overflow-y-auto p-2 space-y-1.5"}>
         {blocks.length === 0 && (
           <div className="col-span-2 text-center text-sm py-6" style={{ color: "var(--cn-muted)" }}>
             {canManage ? "Пока нет разделов. Создайте первый блок." : "Разделов пока нет."}
@@ -221,7 +226,7 @@ export default function SectionsPanel({
           return (
             <div
               key={block.id}
-              className="rounded-xl border transition-colors group/block"
+              className="rounded-xl border transition-colors group/block min-w-0 overflow-hidden" /* MOBILE-TILES */
               style={{
                 borderColor: active ? "var(--cn-accent)" : "var(--cn-border)",
                 background: "linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0))",
@@ -245,7 +250,9 @@ export default function SectionsPanel({
                     {renderBlockIcon(block, access)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-sm leading-snug" style={{ color: "var(--cn-text)" }}>{block.name}</div>
+                    {/* MOBILE-TILES: длинное слово переносится в любом месте, иначе
+                        оно пробивает границу карточки на узком экране. */}
+                    <div className="font-semibold text-sm leading-snug break-words [overflow-wrap:anywhere] hyphens-auto" lang="ru" style={{ color: "var(--cn-text)" }}>{block.name}</div>
                   </div>
                   {unread > 0 && (
                     <span className="ml-auto flex-none bg-accent text-[11px] font-extrabold rounded-full px-2 py-0.5" style={{ color: "#04121a" }}>
@@ -283,7 +290,7 @@ export default function SectionsPanel({
                       <button
                         key={kid.id}
                         onClick={() => onSelectChannel(kid)}
-                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors"
+                        className="w-full min-w-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors" /* MOBILE-TILES */
                         style={{
                           color: kActive ? "var(--cn-text)" : "var(--cn-muted)",
                           background: kActive ? "var(--cn-accent-dim)" : undefined,
