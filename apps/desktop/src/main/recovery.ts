@@ -188,6 +188,129 @@ export function watchStaleAssets(win: BrowserWindow, appOrigin: string): void {
  * проверяем, смонтировалось ли приложение. Пустой `<body>` (нет ни одного
  * элемента с текстом) означает, что рендер не состоялся.
  */
+/* ═══════════════════════════════════════════════════════════════════
+   FIX-BLANK2: почему трёх уровней выше оказалось мало
+
+   Все три сторожа — лечение ПОСЛЕ того, как человек увидел чёрное окно, и каждый
+   из них промахивается в своём случае:
+
+   • уровень 1 срабатывает только при смене версии КЛИЕНТА. Но сервер выкатывается
+     гораздо чаще, чем обновляется десктоп: версия та же, сборка другая;
+   • уровень 2 ждёт 404 на /_next/static/*. Если старый HTML и старые чанки лежат в
+     кеше вместе (а они там и лежат вместе: `immutable`, год хранения), сетевого
+     запроса не будет вовсе — и 404 не придёт никогда. Старый код бодро запускается
+     и умирает уже на общении с новым сервером (другие payload build id,
+     несовпадение RSC-потока) — белый экран без единого 404;
+   • уровень 3 считал страницу живой при ЛЮБОМ `svg`/`img` в DOM. А упавшее дерево
+     React обычно оставляет в разметке каркас с одной-двумя иконками — проверка
+     отвечала «всё хорошо» на том самом чёрном экране, который должна была поймать.
+
+   Отсюда три добавления ниже: запрет кешировать сам HTML (лечит причину),
+   честная проверка «интерфейс есть» и тихое обслуживание кеша раз в 15 минут.
+   ══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Уровень 0 — лечение причины, а не последствий.
+ *
+ * Сам HTML-документ — единственный файл, который в этой схеме нельзя брать из
+ * кеша: именно он содержит список чанков конкретной сборки. Статика с хешем в
+ * имени может и должна кешироваться годами — её не трогаем, иначе каждый запуск
+ * тянул бы весь код заново.
+ *
+ * Стоит это одного условного запроса на открытие окна: документ всё равно
+ * отдаётся Next.js без тяжёлой работы, а цена ошибки — нерабочее приложение до
+ * ручной чистки кеша.
+ */
+export function preventDocumentCaching(appOrigin: string): void {
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: [`${appOrigin}/*`] },
+    (details, callback) => {
+      if (details.resourceType === "mainFrame") {
+        details.requestHeaders["Cache-Control"] = "no-cache";
+        details.requestHeaders["Pragma"] = "no-cache";
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    },
+  );
+}
+
+/**
+ * Отрисован ли интерфейс на самом деле.
+ *
+ * Проверяем не «есть хоть что-то в DOM», а признаки живого приложения: видимый
+ * текст или сколько-нибудь развесистое дерево с элементами управления. Одинокая
+ * иконка на пустом фоне — это и есть тот самый чёрный экран.
+ */
+async function rendererLooksAlive(win: BrowserWindow): Promise<boolean> {
+  if (win.isDestroyed()) return true;
+  try {
+    return (await win.webContents.executeJavaScript(
+      `(() => {
+         const b = document.body;
+         if (!b) return false;
+         const text = (b.innerText || "").replace(/\s+/g, "").length;
+         const controls = b.querySelectorAll("button, a[href], input, textarea, canvas").length;
+         return text > 20 || controls >= 3;
+       })()`,
+      true,
+    )) as boolean;
+  } catch {
+    /* Окно закрылось или JS не выполнить — лучше не лечить, чем перезагрузить вслепую. */
+    return true;
+  }
+}
+
+/**
+ * Тихое обслуживание кеша раз в 15 минут.
+ *
+ * Делает ровно то, что человек делает руками, но без него и без перезагрузки:
+ * выкидывает из кеша всё, что успело там осесть. Открытая страница от этого не
+ * страдает: её код уже в памяти, а картинки и аватары живут в отдельном
+ * локальном кеше (mediaCache), который здесь не трогается.
+ *
+ * Заодно — осмотр окна: если интерфейса нет, человек сейчас смотрит на чёрный
+ * прямоугольник — такое лечится перезагрузкой сразу.
+ *
+ * Чего здесь сознательно НЕТ: периодической перезагрузки «на всякий случай». Она
+ * сносит дерево React вместе с VoiceProvider, то есть выбрасывает из разговора и теряет
+ * недописанное сообщение — цена выше пользы.
+ */
+const CACHE_MAINTENANCE_MS = 15 * 60 * 1000;
+let maintenanceTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startCacheMaintenance(win: BrowserWindow): void {
+  stopCacheMaintenance();
+  maintenanceTimer = setInterval(() => {
+    void runCacheMaintenance(win);
+  }, CACHE_MAINTENANCE_MS);
+}
+
+export function stopCacheMaintenance(): void {
+  if (maintenanceTimer) {
+    clearInterval(maintenanceTimer);
+    maintenanceTimer = null;
+  }
+}
+
+async function runCacheMaintenance(win: BrowserWindow): Promise<void> {
+  if (win.isDestroyed()) {
+    stopCacheMaintenance();
+    return;
+  }
+  try {
+    await session.defaultSession.clearCache();
+    await session.defaultSession.clearCodeCaches({ urls: [] });
+  } catch (err) {
+    console.warn("[recovery] плановая чистка кеша не удалась:", err);
+  }
+  /* Перезагружаем только то, что и так уже не работает. */
+  if (await rendererLooksAlive(win)) {
+    markRenderHealthy();
+    return;
+  }
+  await clearCacheAndReload(win, "плановая проверка: интерфейс не отрисован");
+}
+
 export function watchBlankRender(win: BrowserWindow, appOrigin: string): void {
   let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -209,19 +332,10 @@ export function watchBlankRender(win: BrowserWindow, appOrigin: string): void {
     timer = setTimeout(() => {
       timer = null;
       if (win.isDestroyed()) return;
-      win.webContents
-        .executeJavaScript(
-          // Приложение считается отрисованным, если в DOM есть непустой текст
-          // или хотя бы canvas/svg (голосовой оверлей, splash самой веб-части).
-          `(() => {
-             const b = document.body;
-             if (!b) return false;
-             const hasText = (b.innerText || "").trim().length > 0;
-             const hasVisual = !!b.querySelector("canvas, svg, img");
-             return hasText || hasVisual;
-           })()`,
-          true,
-        )
+      /* FIX-BLANK2: раньше считалось, что хватит любого svg/img. Но упавшее дерево
+         React оставляет в разметке каркас с парой иконок — и сторож отвечал
+         «отрисовано» на том самом чёрном экране. */
+      rendererLooksAlive(win)
         .then((rendered: boolean) => {
           if (rendered) {
             markRenderHealthy();

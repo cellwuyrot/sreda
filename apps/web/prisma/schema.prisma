@@ -142,6 +142,12 @@ model User {
   vpnSubsGranted         VpnSubscription[]           @relation("VpnSubGranter") // VPN-PLAN
   premiumSubscriptions   PremiumSubscription[]       @relation("UserPremiumSubs") // PREMIUM-PAY
   premiumSubsGranted     PremiumSubscription[]       @relation("PremiumSubGranter") // PREMIUM-PAY
+  /// PROFILE-WALL: личная страница — свои записи, комментарии, просмотры и подписки.
+  wallPosts              WallPost[]                  @relation("WallAuthor") // PROFILE-WALL
+  wallComments           WallComment[]               @relation("WallCommentAuthor") // PROFILE-WALL
+  wallViews              WallPostView[]              @relation("WallViewer") // PROFILE-WALL
+  following              Follow[]                    @relation("FollowFollower") // PROFILE-WALL
+  followers              Follow[]                    @relation("FollowTarget") // PROFILE-WALL
   createdAt              DateTime                    @default(now())
   updatedAt              DateTime                    @updatedAt
 
@@ -2210,4 +2216,89 @@ model BusinessContract {
   createdAt    DateTime        @default(now())
 
   @@index([paymentId, createdAt])
+}
+
+
+/// PROFILE-WALL: подписка одного человека на другого.
+///
+/// Почему не переиспользована Friendship: дружба двусторонняя и требует согласия
+/// (PENDING → ACCEPTED), а подписка односторонняя и мгновенная. Смешать их в одной
+/// таблице значило бы, что отказ от дружбы тихо отписывает от ленты, а отписка —
+/// расторгает дружбу.
+///
+/// Пара уникальна на уровне базы: два быстрых нажатия «Подписаться» иначе дали бы две
+/// строки и счётчик подписчиков «2» от одного человека.
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  follower    User     @relation("FollowFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowTarget", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  // Список «на кого подписан я» и «кто подписан на меня» — два разных обхода,
+  // оба с сортировкой по дате и постраничной выдачей по 15.
+  @@index([followerId, createdAt])
+  @@index([followingId, createdAt])
+}
+
+/// PROFILE-WALL: запись на личной странице.
+///
+/// Почему не Message, как у новостей: пост новостей живёт в канале и все его права
+/// считаются от членства в группе. У стены канала нет, и единственный владелец —
+/// человек. Попытка уложить стену в Message потребовала бы либо фиктивного канала на
+/// каждого человека, либо необязательного channelId — и тогда КАЖДЫЙ запрос к
+/// сообщениям и каждая проверка прав в проекте должны были бы учитывать строки без
+/// канала. Цена ошибки там — утечка переписки, поэтому стена — своя таблица.
+model WallPost {
+  id             String         @id @default(cuid())
+  authorId       String
+  author         User           @relation("WallAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  /// Заголовок необязателен — как и в новостях.
+  title          String?        @db.VarChar(200)
+  content        String         @db.Text
+  /// Обложка и вложения — только пути внутри хранилища (/uploads/...): чужой
+  /// адрес сделал бы стену способом собирать адреса читателей чужим сервером.
+  cover          String?        @db.VarChar(400)
+  attachments    String?        @db.Text
+  pinned         Boolean        @default(false)
+  views          Int            @default(0)
+  commentsClosed Boolean        @default(false)
+  deleted        Boolean        @default(false)
+  editedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  comments       WallComment[]
+  postViews      WallPostView[]
+
+  // Стена: закреплённое сверху, дальше по убыванию даты, по 15 на страницу.
+  @@index([authorId, createdAt])
+  @@index([authorId, pinned, createdAt])
+}
+
+/// PROFILE-WALL: комментарий к записи на стене.
+model WallComment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      WallPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation("WallCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  deleted   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+}
+
+/// PROFILE-WALL: кто уже видел запись. Без этих строк счётчик накручивался бы
+/// обновлением страницы — так же, как решено в новостях (PostView).
+model WallPostView {
+  id        String   @id @default(cuid())
+  postId    String
+  post      WallPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("WallViewer", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
 }
