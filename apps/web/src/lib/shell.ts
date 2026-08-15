@@ -39,6 +39,7 @@ export const SHELL_ALLOWED_PREFIXES = [
   "/uploads",   // загруженные файлы (вложения)
   "/api",       // redirect-цепочки NextAuth и загрузки
   "/settings",  // свой профиль и центр уведомлений (/settings/notifications)
+  "/profile",   // PROFILE-WALL2: личная страница со стеной и подписками
   "/workspace", // своя рабочая среда
   "/partner",   // личный кабинет партнёра (роль CONSULTANT)
   "/editor",    // редакторская (роль EDITOR)

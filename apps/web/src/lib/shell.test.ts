@@ -46,6 +46,11 @@ describe("isAllowedShellPath", () => {
    */
   it("ИНВАРИАНТ: свои разделы человека разрешены", () => {
     expect(isAllowedShellPath("/settings")).toBe(true);
+    /* PROFILE-WALL2: личная страница — тоже свой раздел: в чате с телефона
+       кнопка «Профиль» иначе ведёт в запрещённый путь и оболочка возвращает
+       человека в мессенджер. */
+    expect(isAllowedShellPath("/profile")).toBe(true);
+    expect(isAllowedShellPath("/profile/andrey")).toBe(true);
     expect(isAllowedShellPath("/settings/notifications")).toBe(true);
     expect(isAllowedShellPath("/workspace")).toBe(true);
     expect(isAllowedShellPath("/partner")).toBe(true);
