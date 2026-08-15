@@ -54,7 +54,7 @@ object Config {
      */
     private val allowedPrefixes = listOf(
         "/connect", "/auth", "/invite", "/uploads", "/api",
-        "/settings", "/workspace", "/partner", "/editor", "/admin",
+        "/settings", "/profile", "/workspace", "/partner", "/editor", "/admin",
     )
 
     /** Разрешён ли этот путь внутри оболочки. */

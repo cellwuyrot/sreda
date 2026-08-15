@@ -171,7 +171,7 @@ export default function MiniProfile({ user, children, onMessageClick, side = "ri
                 {user.username && (
                   <button
                     onClick={() => {
-                      router.push(`/user/${encodeURIComponent(user.username!)}`);
+                      router.push(`/profile/${encodeURIComponent(user.username!)}`); // PROFILE-WALL2
                       setVisible(false);
                     }}
                     className="w-full py-1.5 rounded-lg text-xs font-medium transition-all border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/[0.07]"
