@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
   const settings = await getVpnSettings();
   if (!settings.enabled) {
-    return NextResponse.json({ error: "Сервис VPN отключён — включите его выше" }, { status: 503 });
+    return NextResponse.json({ error: "Сервис отключён — включите его выше" }, { status: 503 });
   }
 
   const body = (await req.json().catch(() => null)) as
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
   const picked = await pickVpnNode(settings.maxPeersPerNode);
   if (!picked) {
     return NextResponse.json(
-      { error: "Нет свободного VPN-узла: добавьте узел с назначением VPN или поднимите потолок пиров" },
+      { error: "Нет свободного сервера: добавьте узел соединения или поднимите потолок устройств" },
       { status: 503 },
     );
   }

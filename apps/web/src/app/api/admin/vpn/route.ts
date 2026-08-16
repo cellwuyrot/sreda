@@ -4,6 +4,16 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { VPN_SERVICE_ALLOWED_IPS, getVpnSettings, nodeTunnel } from "@/lib/vpn";
 import { nodeStatus } from "@/lib/serverMesh";
+import {
+  MAX_THROTTLE_KBPS,
+  MAX_TRAFFIC_LIMIT_GB,
+  MAX_USAGE_PERIOD_DAYS,
+  MIN_THROTTLE_KBPS,
+  MIN_USAGE_PERIOD_DAYS,
+  isOverLimitAction,
+  periodExpired,
+  usageView,
+} from "@/lib/connectionUsage";
 
 // VPN-PANEL: управление сервисом VPN. Только ADMIN — редактор сюда не
 // допускается: речь об инфраструктуре и доступах, а не о контенте.
@@ -39,6 +49,38 @@ export async function GET() {
     },
   });
 
+  /* NETLINK: расход трафика берётся из самих пиров, а не из отчёта узла:
+     отчёт обнуляется при перезапуске интерфейса, а учёт по подписчикам живёт
+     расчётными периодами. Цифра в панели обязана совпадать с тем, что видит
+     человек у себя, иначе спор о расходе неразрешим. */
+  const peers = await prisma.vpnPeer.findMany({
+    select: {
+      nodeId: true,
+      enabled: true,
+      rxBytes: true,
+      txBytes: true,
+      usageResetAt: true,
+      lastHandshakeAt: true,
+    },
+  });
+
+  const trafficByNode = new Map<string, number>();
+  let usedTotal = 0;
+  let overLimitCount = 0;
+  let activeCount = 0;
+  for (const peer of peers) {
+    const view = usageView(peer, settings);
+    usedTotal += view.usedBytes;
+    if (view.overLimit) overLimitCount += 1;
+    /* «Активен» — было рукопожатие за последние пять минут. Считать активным
+       каждый выданный доступ было бы самообманом: большая часть туннелей
+       стоит выключенной большую часть суток. */
+    if (peer.lastHandshakeAt && Date.now() - peer.lastHandshakeAt.getTime() <= 5 * 60 * 1000) {
+      activeCount += 1;
+    }
+    trafficByNode.set(peer.nodeId, (trafficByNode.get(peer.nodeId) ?? 0) + view.usedBytes);
+  }
+
   return NextResponse.json({
     settings: {
       enabled: settings.enabled,
@@ -46,6 +88,24 @@ export async function GET() {
       allowedIps: settings.allowedIps,
       serviceAllowedIps: settings.serviceAllowedIps,
       maxPeersPerNode: settings.maxPeersPerNode,
+      // NETLINK: условия тарифа — одни и те же для Premium и отдельной подписки.
+      trafficLimitGb: settings.trafficLimitGb,
+      usagePeriodDays: settings.usagePeriodDays,
+      overLimitAction: settings.overLimitAction,
+      throttleKbps: settings.throttleKbps,
+    },
+    /* NETLINK: сводка по расходу. Считается здесь же, где считается лимит:
+       две реализации одной арифметики расходятся в первый же месяц. */
+    summary: {
+      subscribers: peers.length,
+      enabledPeers: peers.filter((peer) => peer.enabled).length,
+      activePeers: activeCount,
+      usedBytes: usedTotal,
+      overLimitPeers: overLimitCount,
+      /* Сколько всего полагается по всем выданным доступам — потолок трафика,
+         который сервис обязан выдержать в худшем случае. */
+      committedGb: settings.trafficLimitGb * peers.length,
+      periodResets: peers.filter((peer) => periodExpired(peer.usageResetAt, settings.usagePeriodDays)).length,
     },
     /* VPN-PANEL2: состояние узла считается здесь, а не в панели. Сервер и так
        знает и отчёт, и точку подключения, и потолок; собирать это заново на
@@ -76,6 +136,14 @@ export async function GET() {
         obfuscationMissing: node.transport === "OBFUSCATED" && !wg.obfuscation,
         peers,
         capacity: settings.maxPeersPerNode,
+        /* NETLINK: загруженность узла двумя цифрами: сколько устройств от потолка
+           и сколько трафика он прокачал за текущие периоды своих подписчиков.
+           Одно без другого вводит в заблуждение: десять устройств могут грузить
+           сервер сильнее, чем сотня спящих. */
+        load: settings.maxPeersPerNode > 0
+          ? Math.min(100, Math.round((peers / settings.maxPeersPerNode) * 100))
+          : 0,
+        trafficBytes: trafficByNode.get(node.id) ?? 0,
         lastSeenAt: node.lastSeenAt,
         state,
       };
@@ -93,6 +161,10 @@ export async function PATCH(req: Request) {
         allowedIps?: unknown;
         serviceAllowedIps?: unknown;
         maxPeersPerNode?: unknown;
+        trafficLimitGb?: unknown;
+        usagePeriodDays?: unknown;
+        overLimitAction?: unknown;
+        throttleKbps?: unknown;
       }
     | null;
 
@@ -123,6 +195,44 @@ export async function PATCH(req: Request) {
     }
     data.serviceAllowedIps = service || VPN_SERVICE_ALLOWED_IPS;
   }
+  /* NETLINK: лимит трафика на подписчика. 0 — без ограничения: это осмысленный
+     вариант, а не ошибка ввода, поэтому он разрешён явно. */
+  if (body?.trafficLimitGb !== undefined) {
+    const value = Math.trunc(Number(body.trafficLimitGb));
+    if (!Number.isFinite(value) || value < 0 || value > MAX_TRAFFIC_LIMIT_GB) {
+      return NextResponse.json(
+        { error: `Лимит трафика: от 0 до ${MAX_TRAFFIC_LIMIT_GB} ГБ (0 — без ограничения)` },
+        { status: 400 },
+      );
+    }
+    data.trafficLimitGb = value;
+  }
+  if (body?.usagePeriodDays !== undefined) {
+    const value = Math.trunc(Number(body.usagePeriodDays));
+    if (!Number.isFinite(value) || value < MIN_USAGE_PERIOD_DAYS || value > MAX_USAGE_PERIOD_DAYS) {
+      return NextResponse.json(
+        { error: `Расчётный период: от ${MIN_USAGE_PERIOD_DAYS} до ${MAX_USAGE_PERIOD_DAYS} дней` },
+        { status: 400 },
+      );
+    }
+    data.usagePeriodDays = value;
+  }
+  if (body?.overLimitAction !== undefined) {
+    if (!isOverLimitAction(body.overLimitAction)) {
+      return NextResponse.json({ error: "Неизвестное правило при исчерпании лимита" }, { status: 400 });
+    }
+    data.overLimitAction = body.overLimitAction;
+  }
+  if (body?.throttleKbps !== undefined) {
+    const value = Math.trunc(Number(body.throttleKbps));
+    if (!Number.isFinite(value) || value < MIN_THROTTLE_KBPS || value > MAX_THROTTLE_KBPS) {
+      return NextResponse.json(
+        { error: `Скорость после лимита: от ${MIN_THROTTLE_KBPS} до ${MAX_THROTTLE_KBPS} Кбит/с` },
+        { status: 400 },
+      );
+    }
+    data.throttleKbps = value;
+  }
   if (body?.maxPeersPerNode !== undefined) {
     const value = Math.trunc(Number(body.maxPeersPerNode));
     if (!Number.isFinite(value) || value < MIN_PEERS || value > MAX_PEERS) {
@@ -144,6 +254,10 @@ export async function PATCH(req: Request) {
       allowedIps: settings.allowedIps,
       serviceAllowedIps: settings.serviceAllowedIps,
       maxPeersPerNode: settings.maxPeersPerNode,
+      trafficLimitGb: settings.trafficLimitGb,
+      usagePeriodDays: settings.usagePeriodDays,
+      overLimitAction: settings.overLimitAction,
+      throttleKbps: settings.throttleKbps,
     },
   });
 }

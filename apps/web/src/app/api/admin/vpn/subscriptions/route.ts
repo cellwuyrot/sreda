@@ -113,7 +113,7 @@ export async function POST(req: Request) {
     action: "update",
     target: "VpnSubscription",
     targetId: userId,
-    details: `Подписка VPN «${plan}» для "${targetUser.username}" · оплата: ${paymentMethod} · ${amount}₽${reference ? ` · ${reference}` : ""}`,
+    details: `Подписка «Ускоренный интернет» «${plan}» для "${targetUser.username}" · оплата: ${paymentMethod} · ${amount}₽${reference ? ` · ${reference}` : ""}`,
   });
 
   return NextResponse.json({ subscription, vpnAccess: true, vpnAccessUntil: expiresAt });
@@ -170,7 +170,7 @@ export async function PATCH(req: Request) {
     action: "update",
     target: "VpnSubscription",
     targetId: sub.userId,
-    details: `Отмена VPN-подписки ${subscriptionId} (осталось активных: ${remaining.length})`,
+    details: `Отмена подписки на соединение ${subscriptionId} (осталось активных: ${remaining.length})`,
   });
 
   return NextResponse.json({
