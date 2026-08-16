@@ -15,7 +15,8 @@ plugins {
 //
 // Как получить файл — см. apps/android/README.md, раздел про уведомления.
 val pushConfigFile = rootProject.file("app/google-services.json")
-if (pushConfigFile.exists()) {
+val hasPushConfig = pushConfigFile.exists()
+if (hasPushConfig) {
     apply(plugin = "com.google.gms.google-services")
 } else {
     logger.lifecycle(
@@ -78,6 +79,19 @@ android {
     compileSdk = 34
 
     sourceSets["main"].res.srcDir(generatedIconRes)
+
+    /* FIX-BOOT: служба доставки — отдельный набор исходников app/src/push.
+
+       Почему так: библиотека доставки инициализируется сама при старте процесса,
+       до первого экрана, и без файла доступов роняла приложение на запуске.
+       Сборка без google-services.json — нормальный случай (файла нет в git),
+       поэтому вся доставка целиком включается только вместе с ним: и код, и
+       служба в манифесте, и сама библиотека. Остальное приложение о доставке
+       не знает ничего: адрес устройства читается через PushTokens. */
+    if (hasPushConfig) {
+        sourceSets["main"].java.srcDir("src/push/java")
+        sourceSets["main"].manifest.srcFile("src/push/AndroidManifest.xml")
+    }
 
     if (hasReleaseKeystore) {
         signingConfigs {
@@ -146,11 +160,16 @@ android {
 tasks.named("preBuild") { dependsOn(syncLauncherIcon) }
 
 dependencies {
-    /* PUSH: доставка уведомлений в закрытое приложение. Зависимость добавлена
-       всегда — она безвредна без файла доступов: служба просто не получает адрес
-       устройства, и уведомления работают как прежде, пока приложение открыто. */
-    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-    implementation("com.google.firebase:firebase-messaging")
+    /* PUSH: доставка уведомлений в закрытое приложение.
+
+       FIX-BOOT: раньше зависимость стояла всегда с пометкой «безвредна без файла
+       доступов». Это было неверно: библиотека поднимает себя сама при старте
+       процесса, и без своей конфигурации валит приложение ещё до первого
+       экрана. Теперь она подключается только вместе с app/google-services.json. */
+    if (hasPushConfig) {
+        implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+        implementation("com.google.firebase:firebase-messaging")
+    }
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")

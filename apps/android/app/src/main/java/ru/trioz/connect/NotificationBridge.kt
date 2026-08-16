@@ -151,5 +151,5 @@ class NotificationBridge(
      * устройстве недоступна (служба не настроена в сборке или ещё не выдала адрес).
      */
     @JavascriptInterface
-    fun pushToken(): String = if (originOk()) PushService.storedToken(activity) else ""
+    fun pushToken(): String = if (originOk()) PushTokens.stored(activity) else ""
 }
