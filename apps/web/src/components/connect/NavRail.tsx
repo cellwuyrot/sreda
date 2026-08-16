@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import PremiumMark from "@/components/connect/PremiumMark";
+import ConnectionMenu from "@/components/connect/overlays/ConnectionMenu";
 import type { GlowAvatarUser } from "@/components/ui/GlowAvatar";
 import { CommunitiesIcon, FriendsIcon, MessagesIcon, MicIcon, GearIcon, ShieldIcon } from "@/components/ui/ConnectIcons";
 
@@ -74,11 +74,13 @@ function NavRail({
       style={{ width: 68, paddingTop: 12, paddingBottom: 12 }}
       aria-label="Основная навигация"
     >
-      {/* ── Значок «TZ» ──
-          Вход в окно Premium и VPN. Раскраска вынесена в PremiumMark: тот же
-          значок стоит в шапке на телефоне, где этой панели нет вовсе. */}
+      {/* ── Кнопка «TZ» ──
+          NETLINK: теперь это полноценное управление соединением, а не только
+          вход в окно: состояние, тариф, остаток трафика, срок и выбор сервера.
+          Раскраска значка по-прежнему живёт в PremiumMark — тот же значок стоит
+          в шапке на телефоне, где этой панели нет вовсе. */}
       <div className="mb-2">
-        <PremiumMark isPremium={!!isPremium} onClick={onOpenPremiumInfo} />
+        <ConnectionMenu isPremium={!!isPremium} onOpenPremiumInfo={onOpenPremiumInfo} />
       </div>
 
       {/* ── Divider ── */}

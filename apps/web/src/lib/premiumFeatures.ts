@@ -41,7 +41,7 @@ export const FREE_COMMUNITY_LIMIT = 5;
 /** Основное преимущество подписки — выделяется отдельно в настройках и модалке. */
 export const PREMIUM_MAIN_ADVANTAGE = {
   badge: "Флагман Premium",
-  title: "VPN «TZ Secure»",
+  title: "Надёжное соединение",
   description:
     "Приватное защищённое соединение для сервисов TZ: один тумблер — и весь трафик идёт через закрытый канал TZ Secure.",
 } as const;
@@ -88,7 +88,7 @@ export interface PremiumFeature {
 export const PREMIUM_FEATURES: PremiumFeature[] = [
   {
     id: "vpn",
-    title: "VPN «TZ Secure»",
+    title: "Надёжное соединение",
     description: "Приватное защищённое соединение для сервисов TZ.",
     free: "—",
     premium: "✓",

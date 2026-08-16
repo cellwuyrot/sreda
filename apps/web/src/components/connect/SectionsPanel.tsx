@@ -1,5 +1,5 @@
 "use client";
-​
+
 import { useState, type ReactNode } from "react";
 import Button from "@/components/ui/Button";
 import ModalBackdrop from "./ModalBackdrop";
@@ -9,33 +9,33 @@ import BlockIcon, { BLOCK_ICON_POOL, blockIconKeyForName, isBlockIconKey } from 
 import { MembersList, type MemberListEntry } from "./GroupDialogs";
 import { COLLAPSED_WIDTH, CollapsedStrip, PanelChevron, VIEW_TITLE, usePanelView } from "./panelCollapse";
 import InfoTooltip from "@/components/ui/InfoTooltip";
-​
+
 /* FIX-PANELVIEW3: три состояния по кругу — участники → разделы → скрыто.
    Механика лежит в `panelCollapse.tsx` и общая с `ModulesPanel`, поэтому во всех
    группах панель ведёт себя одинаково; раньше в каждом файле была своя копия, и
    они разъезжались.
-​
+
    Список участников — общий `MembersList`, а не свой: у него уже есть аватары с
    подсветкой, роли и живой индикатор присутствия. Прежняя кнопка «Участники»
    внизу списка каналов убрана, поэтому вход в участников теперь один. */
-​
+
 /* ── Access helpers (single source of truth for block write-permission) ── */
-​
+
 export type Access = "ALL" | "MOD" | "ADMIN";
-​
+
 export function effectiveAccess(c: Channel): Access {
   // Legacy NEWS channels behave like MOD (admin + moderators)
   if (c.type === "NEWS" && (!c.postAccess || c.postAccess === "ALL")) return "MOD";
   const a = c.postAccess;
   return a === "ADMIN" || a === "MOD" ? a : "ALL";
 }
-​
+
 function defaultIcon(a: Access): ReactNode {
   if (a === "ADMIN") return <InfoIcon size={20} tone="inactive" />;
   if (a === "MOD") return <QuestionIcon size={20} tone="inactive" />;
   return <ChatIcon size={20} tone="inactive" />;
 }
-​
+
 /* ── Block icon rendering (монохромные векторные иконки, см. BlockIcons.tsx) ──
  * Приоритет: явно выбранная в настройках иконка-ключ → пользовательский эмодзи
  * (старые данные) → автоопределение по названию раздела → дефолт по доступу. */
@@ -53,22 +53,22 @@ function renderBlockIcon(block: Channel, access: Access, size = 22): ReactNode {
   if (nameKey) return <BlockIcon name={nameKey} size={size} />;
   return defaultIcon(access);
 }
-​
+
 const ACCESS_LABEL: Record<Access, string> = {
   ADMIN: "Только чтение",
   MOD: "Вопросы-ответы",
   ALL: "Открытый",
 };
-​
+
 // Семантические цвета бейджей доступа
 const ACCESS_BADGE: Record<Access, { color: string; bg: string }> = {
   ADMIN: { color: "#9ca3af", bg: "rgba(156,163,175,0.16)" },
   MOD: { color: "#22d3ee", bg: "rgba(34,211,238,0.16)" },
   ALL: { color: "#34d399", bg: "rgba(52,211,153,0.16)" },
 };
-​
+
 /* ── Props ── */
-​
+
 interface SectionsPanelProps {
   channels: Channel[];
   generalChannelId: string | null;
@@ -88,20 +88,20 @@ interface SectionsPanelProps {
   onDeleteChannel?: (channelId: string) => void;
   onToggleHideChannel?: (channelId: string, hidden: boolean) => void;
 }
-​
+
 export default function SectionsPanel({
   channels, generalChannelId, selectedChannel, unreadCounts, canManage, groupId,
   members, membersTotal, canSeeMembers = true,
   variant = "desktop", onSelectChannel, onRefresh, onDeleteChannel, onToggleHideChannel,
 }: SectionsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-​
+
   const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers);
-​
+
   const [createParent, setCreateParent] = useState<string | null | undefined>(undefined);
   const [settingsBlock, setSettingsBlock] = useState<Channel | null>(null);
   // undefined = closed, null = new top-level block, string = new list item under block id
-​
+
   // Top-level "разделы" = non-voice channels that aren't the general chat and have no parent.
   // Order by sortOrder first (мэйн-сообщество наследует порядок услуг из админки),
   // then fall back to alphabetical for groups that never set an explicit order.
@@ -112,17 +112,17 @@ export default function SectionsPanel({
       if (so !== 0) return so;
       return a.name.localeCompare(b.name, "ru");
     });
-​
+
   const childrenOf = (blockId: string) =>
     channels.filter((c) => c.parentId === blockId && c.type !== "VOICE");
-​
+
   // Auto-group channels by shared name prefix before " — "
   // e.g. "ИИ-Автоматизация", "ИИ-Автоматизация — Вопросы", "ИИ-Автоматизация — Обсуждение"
   // → one block with two children, no DB change needed
   type AutoGroup = { block: Channel; kids: Channel[] };
   const groups: AutoGroup[] = [];
   const assigned = new Set<string>();
-​
+
   for (const block of rawBlocks) {
     if (assigned.has(block.id)) continue;
     const prefix = block.name.split(" — ")[0].trim();
@@ -133,27 +133,27 @@ export default function SectionsPanel({
     assigned.add(block.id);
     groups.push({ block, kids });
   }
-​
+
   const blocks = groups.map((g) => g.block);
-​
+
   const autoKidsOf = (blockId: string): Channel[] => {
     const g = groups.find((gr) => gr.block.id === blockId);
     return [...childrenOf(blockId), ...(g?.kids ?? [])];
   };
-​
+
   const unreadFor = (c: Channel) => {
     let n = unreadCounts[c.id] ?? 0;
     for (const ch of autoKidsOf(c.id)) n += unreadCounts[ch.id] ?? 0;
     return n;
   };
-​
+
   const isMobile = variant === "mobile";
-​
+
   /* Свёрнутый вид — полоса 60px, которая сама себе кнопка разворота. На
      мобильном ширина не применяется: там панель встроена в список каналов, и
      «свёрнуто» означает просто скрытое содержимое при видимом заголовке. */
   const stripOnly = collapsed && !isMobile;
-​
+
   return (
     <div
       className={isMobile ? "" : "flex-shrink-0 flex flex-col h-full transition-[width] duration-200"}
@@ -164,7 +164,7 @@ export default function SectionsPanel({
       }}
     >
       {stripOnly && <CollapsedStrip onClick={cycle} hint={hint} />}
-​
+
       {/* Header */}
       {!stripOnly && (
       <div className={isMobile ? "flex items-center justify-between mb-2" : "flex items-center justify-between px-4 py-3.5"}
@@ -193,7 +193,7 @@ export default function SectionsPanel({
         )}
       </div>
       )}
-​
+
       {/* Участники — общий список, тот же что был в отдельной колонке; остальные
           страницы он догружает сам по groupId. */}
       {view === "members" && (
@@ -203,7 +203,7 @@ export default function SectionsPanel({
             : <MembersList members={members} groupId={groupId} total={membersTotal} />}
         </div>
       )}
-​
+
       {/* Плитки блоков видны только в режиме разделов. */}
       {view === "sections" && (
       /* MOBILE-TILES: в двухколоночной сетке колонка уже длинных названий
@@ -211,7 +211,7 @@ export default function SectionsPanel({
          ширина грид-ячейки по умолчанию равна auto, а не нулю, поэтому ячейка
          растягивалась под самое длинное слово и текст выходил за рамку карточки
          и за край экрана.
-​
+
          Комментарий здесь ОБЯЗАН быть обычным блок-комментарием, а не фигурным
          вида JSX: это позиция выражения внутри скобок, а не дети разметки. */
       <div className={isMobile ? "grid [grid-template-columns:repeat(2,minmax(0,1fr))] gap-2.5" : "flex-1 overflow-y-auto p-2 space-y-1.5"}>
@@ -281,7 +281,7 @@ export default function SectionsPanel({
                   )}
                 </div>
               </button>
-​
+
               {/* Child "list" items */}
               {(isMobile || isOpen) && kids.length > 0 && (
                 <div className="px-3 pb-2.5 space-y-1">
@@ -317,7 +317,7 @@ export default function SectionsPanel({
                   )}
                 </div>
               )}
-​
+
               {/* Admin: add list item even when block has no children yet */}
               {canManage && kids.length === 0 && (isMobile || isOpen || active) && (
                 <div className="px-3 pb-2.5">
@@ -334,7 +334,7 @@ export default function SectionsPanel({
         })}
       </div>
       )}
-​
+
       {settingsBlock && (
         <BlockSettingsModal
           block={settingsBlock}
@@ -343,7 +343,7 @@ export default function SectionsPanel({
           onRefresh={onRefresh}
         />
       )}
-​
+
       {createParent !== undefined && (
         <BlockModal
           groupId={groupId}
@@ -356,16 +356,16 @@ export default function SectionsPanel({
     </div>
   );
 }
-​
+
 /* ── Create block / list modal (admin only) ── */
-​
+
 const FORM_TYPES: { v: string; label: string }[] = [
   { v: "TEXT", label: "Открытый чат" },
   { v: "NEWS", label: "Новости" },
   { v: "QA", label: "Вопрос-ответ" },
   { v: "WIKI", label: "База знаний" },
 ];
-​
+
 function BlockModal({
   groupId, parentId, parentName, onClose, onCreated,
 }: {
@@ -382,7 +382,7 @@ function BlockModal({
   const [formType, setFormType] = useState<string>("TEXT");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-​
+
   const create = async () => {
     if (!name.trim()) return;
     setLoading(true);
@@ -418,13 +418,13 @@ function BlockModal({
     setLoading(false);
     onCreated();
   };
-​
+
   const ACCESS_OPTIONS: { value: Access; label: string; hint: string }[] = [
     { value: "ADMIN", label: "Только чтение", hint: "пишет администратор" },
     { value: "MOD", label: "Админ + модераторы", hint: "вопросы-ответы" },
     { value: "ALL", label: "Для всех", hint: "пишут все участники" },
   ];
-​
+
   return (
     <ModalBackdrop onClose={onClose}>
       <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-1">
@@ -493,7 +493,7 @@ function BlockModal({
     </ModalBackdrop>
   );
 }
-​
+
 /* ── Block settings modal (admin): rename, pick icon from pool, toggle & retype sub-items ── */
 function BlockSettingsModal({
   block, kids, onClose, onRefresh,
@@ -518,7 +518,7 @@ function BlockSettingsModal({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-​
+
   const patch = async (id: string, body: Record<string, unknown>) => {
     const res = await fetch(`/api/channels/${id}`, {
       method: "PUT",
@@ -527,7 +527,7 @@ function BlockSettingsModal({
     });
     return res.ok;
   };
-​
+
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const save = async () => {
     if (!name.trim()) return;
@@ -553,11 +553,11 @@ function BlockSettingsModal({
       setSaving(false);
     }
   };
-​
+
   return (
     <ModalBackdrop onClose={onClose}>
       <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-3">Настройки блока</h3>
-​
+
       <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Название</label>
       <input
         type="text"
@@ -565,7 +565,7 @@ function BlockSettingsModal({
         onChange={(e) => setName(e.target.value)}
         className="w-full bg-neutral-50 dark:bg-neutral-700 border border-neutral-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm mb-4"
       />
-​
+
       <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Иконка блока</label>
       <div className="flex flex-wrap gap-2 mb-4">
         <button
@@ -589,7 +589,7 @@ function BlockSettingsModal({
           </button>
         ))}
       </div>
-​
+
       {items.length > 0 && (
         <>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
@@ -640,9 +640,9 @@ function BlockSettingsModal({
           </div>
         </>
       )}
-​
+
       {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
-​
+
       <div className="flex gap-2 justify-end">
         <button
           onClick={onClose}
@@ -661,4 +661,3 @@ function BlockSettingsModal({
     </ModalBackdrop>
   );
 }
-​

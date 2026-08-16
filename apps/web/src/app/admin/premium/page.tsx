@@ -323,12 +323,12 @@ function ConnectVpnModal({
         className="glass-card p-6 max-w-lg w-full max-h-[88vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold text-white">Подписка «только VPN»</h3>
+        <h3 className="text-lg font-bold text-white">Подписка «Ускоренный интернет»</h3>
         <p className="text-sm text-gray-400 mt-1">
           Клиент: <span className="text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
         </p>
         <p className="mt-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-[11px] leading-relaxed text-cyan-200">
-          Даёт только включение и выключение VPN. Флаг Premium не выдаётся и не снимается.
+          Даёт только надёжное соединение. Флаг Premium не выдаётся и не снимается.
         </p>
         <p className="mt-2 text-xs text-gray-400">
           Сейчас: {access.vpnAccess ? (access.vpnAccessUntil ? `доступ до ${fmtDate(access.vpnAccessUntil)}` : "бессрочный доступ") : "отдельной подписки нет"}
@@ -399,7 +399,7 @@ function ConnectVpnModal({
 
           {history.length > 0 && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <p className="text-xs font-medium text-gray-300 mb-2">История VPN-подписок</p>
+              <p className="text-xs font-medium text-gray-300 mb-2">История подписок на соединение</p>
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {history.map((h) => (
                   <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] text-gray-400">
@@ -423,7 +423,7 @@ function ConnectVpnModal({
 
           <div className="flex gap-3 pt-1">
             <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/40 transition-all text-sm font-medium disabled:opacity-50">
-              {saving ? "Подключение..." : "Подключить доступ к VPN"}
+              {saving ? "Подключение..." : "Подключить соединение"}
             </button>
             <button onClick={onClose} className="flex-1 px-4 py-2 bg-dark-700 text-gray-400 rounded-lg hover:bg-dark-600 transition-all text-sm">
               Закрыть
@@ -525,7 +525,7 @@ export default function AdminPremiumPage() {
           <div>
             <Link href={backHref} className="text-sm text-accent hover:opacity-80">{backLabel}</Link>
             <h1 className="text-3xl font-bold text-white mt-2">Подписки пользователей</h1>
-            <p className="text-gray-400 mt-1">Две независимые подписки: Premium и «только VPN». Сроки и платежи у каждой свои.</p>
+            <p className="text-gray-400 mt-1">Две независимые подписки: Premium и «Ускоренный интернет». Сроки и платежи у каждой свои.</p>
           </div>
           <div className="px-4 py-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-300 text-sm">
             Администраторы получают premium автоматически
@@ -548,7 +548,7 @@ export default function AdminPremiumPage() {
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">Выдача подписок</h2>
-              <p className="text-sm text-gray-400">Подписки управляются отдельно от ролей. Подписка «только VPN» не выдаёт возможности Premium.</p>
+              <p className="text-sm text-gray-400">Подписки управляются отдельно от ролей. Подписка «Ускоренный интернет» не выдаёт возможности Premium.</p>
             </div>
             <input
               value={query}
@@ -565,7 +565,7 @@ export default function AdminPremiumPage() {
                   <th className="py-3 pr-4">Пользователь</th>
                   <th className="py-3 pr-4">Email</th>
                   <th className="py-3 pr-4">Premium</th>
-                  <th className="py-3 pr-4">VPN</th>
+                  <th className="py-3 pr-4">Соединение</th>
                   <th className="py-3 pr-4">Основание</th>
                   <th className="py-3">Действие</th>
                 </tr>
@@ -608,7 +608,7 @@ export default function AdminPremiumPage() {
                         )}
                       </td>
                       <td className="py-3 pr-4 text-xs text-gray-400">
-                        {user.role === "ADMIN" ? "Авто-premium по роли" : user.isPremium ? "Premium выдан вручную" : vpnPlan ? "Только подписка VPN" : "Без подписок"}
+                        {user.role === "ADMIN" ? "Авто-premium по роли" : user.isPremium ? "Premium выдан вручную" : vpnPlan ? "Ускоренный интернет" : "Без подписок"}
                       </td>
                       <td className="py-3">
                         <div className="flex flex-wrap items-center gap-2">
@@ -627,7 +627,7 @@ export default function AdminPremiumPage() {
                               onClick={() => setVpnUser(user)}
                               className="rounded-xl px-3 py-2 text-xs font-medium bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25"
                             >
-                              Только VPN
+                              Ускоренный интернет
                             </button>
                           )}
                           <button

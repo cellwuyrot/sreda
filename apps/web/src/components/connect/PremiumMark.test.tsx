@@ -28,7 +28,7 @@ describe("PremiumMark", () => {
     expect(button.textContent).toBe("TZ");
   });
 
-  it("ИНВАРИАНТ: нажатие открывает окно — иначе входа в VPN снова не будет", () => {
+  it("ИНВАРИАНТ: нажатие открывает окно — иначе входа в соединение снова не будет", () => {
     const onClick = vi.fn();
     render(<PremiumMark isPremium onClick={onClick} />);
     fireEvent.click(screen.getByRole("button", { name: /premium/i }));

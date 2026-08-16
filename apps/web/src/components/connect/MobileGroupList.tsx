@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ChatIcon } from "@/components/ui/ConnectIcons";
-import PremiumMark from "@/components/connect/PremiumMark";
+import ConnectionMenu from "@/components/connect/overlays/ConnectionMenu";
 import MobileNotificationBell from "@/components/mobile/MobileNotificationBell";
 import MobileProfileSheet from "@/components/mobile/MobileProfileSheet";
 import { useState } from "react";
@@ -46,7 +46,11 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
             целиком, поэтому вход в Premium и VPN пропадал вместе с ней: в
             Android-оболочке это читалось как «функции VPN в приложении нет». */}
         <div className="flex items-center gap-2.5 min-w-0">
-          {onOpenPremiumInfo && <PremiumMark isPremium={!!isPremium} onClick={onOpenPremiumInfo} size={36} />}
+          {/* NETLINK: та же кнопка, что и на большом экране: в Android-оболочке
+              левой панели нет, и без этого управление соединением было бы недоступно. */}
+          {onOpenPremiumInfo && (
+            <ConnectionMenu isPremium={!!isPremium} onOpenPremiumInfo={onOpenPremiumInfo} size={36} />
+          )}
           <h1 className="text-xl font-bold text-neutral-900 dark:text-white truncate">TZ.Connect</h1>
         </div>
         <div className="flex items-center">
