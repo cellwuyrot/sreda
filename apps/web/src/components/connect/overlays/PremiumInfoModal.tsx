@@ -60,8 +60,8 @@ interface VpnState {
    настройкой в панели. Какие именно подсети входят в каждый вариант, задаёт
    администратор; здесь только смысл. */
 const ROUTING_OPTIONS: { value: VpnRouting; title: string; note: string }[] = [
-  { value: "ALL", title: "Весь трафик", note: "Через VPN идёт всё. Внешний адрес меняется." },
-  { value: "SERVICES", title: "Только сервисы TZ", note: "Через VPN идёт только TZ. Остальное — напрямую." },
+  { value: "ALL", title: "Весь трафик", note: "Через сервер идёт всё. Внешний адрес меняется." },
+  { value: "SERVICES", title: "Только сервисы TZ", note: "Через сервер идёт только TZ. Остальное — напрямую." },
 ];
 
 function RoutingChoice({
@@ -75,7 +75,7 @@ function RoutingChoice({
 }) {
   return (
     <div className="mt-5">
-      <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Что идёт через VPN</p>
+      <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Что идёт через сервер</p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {ROUTING_OPTIONS.map((option) => (
           <button
@@ -228,7 +228,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       <div className="relative">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-neutral-400 dark:text-white/40">TZ Premium · VPN</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-neutral-400 dark:text-white/40">TZ Premium · Надёжное соединение</p>
             <h3 className="mt-1 text-xl font-semibold">Защищённое соединение</h3>
             <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">Входит в Premium — выдаётся автоматически</p>
           </div>
@@ -260,7 +260,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <>
               <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Нужна подписка</strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Подходит любая из двух: «Только VPN» или Premium. Доступ выдаётся сам, как только подписка активна.
+                Подходит любая из двух: «Ускоренный интернет» или Premium. Доступ выдаётся сам, как только подписка активна.
               </span>
             </>
           )}
@@ -269,7 +269,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <>
               <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Сервис отключён</strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                VPN выключен администратором. Подключение недоступно, пока его не включат.
+                Сервис выключен администратором. Подключение недоступно, пока его не включат.
               </span>
             </>
           )}
@@ -278,7 +278,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <>
               <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Узлы ещё не готовы</strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Ни один VPN-узел не вышел на связь. Доступ выдастся сам, как только узел появится.
+                Ни один сервер не вышел на связь. Доступ выдастся сам, как только узел появится.
               </span>
             </>
           )}
@@ -299,7 +299,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           {state?.peer && (
             <>
               <strong className={`mt-4 text-sm ${active ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-600 dark:text-white/65"}`}>
-                {active ? "VPN подключён" : "Доступ выдан"}
+                {active ? "Соединение активно" : "Доступ выдан"}
               </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
                 {handshakeLabel(state.peer.lastHandshakeAt)}
@@ -365,7 +365,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               onClick={() => void enroll(routing)}
               className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
             >
-              {busy ? "Включаем…" : "Включить VPN"}
+              {busy ? "Включаем…" : "Включить соединение"}
             </button>
           </>
         )}

@@ -60,7 +60,7 @@ const GROUPS: NavGroup[] = [
     label: "Пользователи и сообщество",
     items: [
       { title: "Пользователи", description: "Управление, баны, роли", href: "/admin/users", icon: <Icon path={<><circle cx="9" cy="8" r="3.5" /><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" /><path d="M16 5.5a3 3 0 0 1 0 5.7M18 20c0-2.4-.9-4.2-2.3-5.3" /></>} />, countKey: "users" },
-      { title: "Подписки пользователей", description: "Premium и подписка только на VPN", href: "/admin/premium", icon: <Icon path={<path d="M12 3l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.4 1.1-6.5L2.6 9.8l6.5-.9L12 3z" />} /> },
+      { title: "Подписки пользователей", description: "Premium и подписка «Ускоренный интернет»", href: "/admin/premium", icon: <Icon path={<path d="M12 3l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.4 1.1-6.5L2.6 9.8l6.5-.9L12 3z" />} /> },
       { title: "Значки", description: "Награды и достижения", href: "/admin/badges", icon: <Icon path={<><circle cx="12" cy="9" r="5" /><path d="M9 13.5 8 21l4-2 4 2-1-7.5" /></>} /> },
       { title: "Обращения", description: "История обращений, обратная связь", href: "/admin/appeals", icon: <Icon path={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>} /> },
       { title: "Проекты", description: "Заявки личных кабинетов, прогресс работ", href: "/admin/projects", icon: <Icon path={<><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /><path d="m9 13 2 2 4-4" /></>} /> }, // FIX-CABINET
@@ -84,7 +84,7 @@ const GROUPS: NavGroup[] = [
          ниоткуда, потому что посмотреть эти записи было негде. */
       { title: "Услуги", description: "Записи раздела услуг: создание, публикация, порядок", href: "/admin/services", icon: <Icon path={<><rect x="3" y="4" width="18" height="6" rx="1" /><rect x="3" y="14" width="18" height="6" rx="1" /></>} />, countKey: "services" },
       /* VPN-PANEL: управление сервисом VPN. */
-      { title: "VPN", description: "Общий выключатель, параметры туннеля, выданные доступы", href: "/admin/vpn", icon: <Icon path={<><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" /><path d="M9.5 12l1.8 1.8 3.2-3.6" /></>} /> },
+      { title: "Надёжное соединение", description: "Лимит трафика, серверы и загруженность, общий выключатель", href: "/admin/vpn", icon: <Icon path={<><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" /><path d="M9.5 12l1.8 1.8 3.2-3.6" /></>} /> },
       /* GAMES-CATALOG: каталог раздела /games — свои и партнёрские игры. */
       { title: "Игры", description: "Свои и партнёрские игры: интеграция по API, активация", href: "/admin/games", icon: <Icon path={<><rect x="2" y="7" width="20" height="10" rx="4" /><path d="M7 12h3M8.5 10.5v3" /><circle cx="15.5" cy="11" r="1" /><circle cx="17.5" cy="13.5" r="1" /></>} />, countKey: "games" },
       /* BUILDS: сборка клиентских приложений на сервере. Раньше APK и

@@ -2037,8 +2037,8 @@ export default function SettingsPage() {
           : vpnOverdue
             ? `Срок вышел ${vpnDateLabel} — туннель отключён.`
             : vpnViaPremium
-              ? "Отдельная подписка не нужна: VPN входит в Premium."
-              : "Только включение и выключение VPN, без остальных возможностей Premium.";
+              ? "Отдельная подписка не нужна: надёжное соединение входит в Premium."
+              : "Только надёжное соединение до 250 ГБ в месяц, без остальных возможностей Premium.";
 
         /* Реквизиты у обеих подписок одни и те же, различается только комментарий
            к платежу — именно по нему администратор поймёт, что подключать. */
@@ -2082,7 +2082,7 @@ export default function SettingsPage() {
         return (
           <>
             {/* ── Блок 1. Только VPN ───────────────────────────────────── */}
-            <Section dense title="Только VPN" subtitle="Одно право: включать и выключать туннель">
+            <Section dense title="Ускоренный интернет" subtitle="Надёжное соединение до 250 ГБ в месяц">
               <div className={`rounded-2xl border p-4 ${vpnPlanActive ? "border-cyan-500/25 bg-cyan-500/5" : "border-neutral-200 dark:border-white/10"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -2102,7 +2102,7 @@ export default function SettingsPage() {
                 <ul className="mt-3 space-y-1.5 text-xs">
                   <li className="flex gap-2 text-neutral-600 dark:text-gray-300">
                     <span className="text-cyan-500">✓</span>
-                    <span>Тумблер VPN в TZ.Connect — включение и выключение в любой момент</span>
+                    <span>Кнопка «TZ» в TZ.Connect — выбор сервера, остаток трафика и срок подписки</span>
                   </li>
                   <li className="flex gap-2 text-neutral-600 dark:text-gray-300">
                     <span className="text-cyan-500">✓</span>
@@ -2128,13 +2128,13 @@ export default function SettingsPage() {
                   </a>
                 )}
                 {!vpnViaPremium && payDetails(vpnPlanActive
-                  ? "Для продления укажите в комментарии к платежу username и слово «VPN»."
-                  : "В комментарии к платежу укажите username и слово «VPN» — иначе платёж примут за Premium.")}
+                  ? "Для продления укажите в комментарии к платежу username и «Интернет»."
+                  : "В комментарии к платежу укажите username и «Интернет» — иначе платёж примут за Premium.")}
               </div>
             </Section>
 
             {/* ── Блок 2. Premium ─────────────────────────────────────── */}
-            <Section dense title="Premium" subtitle="Все возможности сервиса, включая VPN">
+            <Section dense title="Premium" subtitle="Все возможности сервиса, включая надёжное соединение">
               <div className={`rounded-2xl border p-4 ${premiumActive ? "border-amber-500/25 bg-amber-500/5" : "border-neutral-200 dark:border-white/10"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -2159,7 +2159,7 @@ export default function SettingsPage() {
                   ))}
                   <li className="flex items-start gap-2 text-neutral-600 dark:text-gray-300">
                     <span className="text-amber-500">✓</span>
-                    <span>VPN входит сюда же — отдельная подписка на VPN не нужна</span>
+                    <span>Надёжное соединение до 250 ГБ входит сюда же — «Ускоренный интернет» отдельно не нужен</span>
                   </li>
                 </ul>
 
