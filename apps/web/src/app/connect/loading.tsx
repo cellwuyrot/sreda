@@ -1,4 +1,4 @@
-import Spinner from "@/components/ui/Spinner";
+import BrandLoader from "@/components/ui/BrandLoader";
 
 export default function ConnectLoading() {
   return (
@@ -22,7 +22,8 @@ export default function ConnectLoading() {
       </div>
       {/* Main area skeleton */}
       <div className="flex-1 flex items-center justify-center">
-        <Spinner />
+        {/* BRAND-LOADER: было кольцо 32 px — внешний размер сохранён. */}
+        <BrandLoader size={22} gap={5} />
       </div>
     </div>
   );

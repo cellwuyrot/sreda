@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import BrandLoader from "@/components/ui/BrandLoader";
 
 /**
  * ConnectSplash — shown for ~1.5s on first load of /connect.
@@ -29,32 +30,17 @@ export default function ConnectSplash({ onDone }: { onDone: () => void }) {
           className="fixed inset-0 z-[90] flex flex-col items-center justify-center"
           style={{ background: "var(--cn-main, #12121c)" }}
         >
-          {/* Logo ring */}
+          {/* BRAND-LOADER: живая эмблема внутри кольца загрузки.
+              Размеры повторяют прежнюю статичную иконку: круг 56 px, кольцо 96 px
+              (56 + 20 + 20). Форма стала кругом вместо скруглённого квадрата: внутри
+              кольца квадрат видно углами. */}
           <div className="relative flex items-center justify-center mb-6">
-            {/* Spinning ring */}
             <motion.div
-              className="absolute w-24 h-24 rounded-full border-2 border-transparent"
-              style={{ borderTopColor: "var(--cn-accent, #00d4ff)", borderRightColor: "var(--cn-accent, #00d4ff)" }}
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-            />
-            {/* Static outer ring */}
-            <div className="w-24 h-24 rounded-full border border-white/[0.06]" />
-
-            {/* Logo / icon */}
-            <motion.div
-              className="absolute flex items-center justify-center"
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.15, type: "spring", damping: 16, stiffness: 240 }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.png"
-                alt="TZ.Connect"
-                className="w-14 h-14 rounded-2xl object-cover select-none"
-                draggable={false}
-              />
+              <BrandLoader size={56} gap={20} />
             </motion.div>
           </div>
 

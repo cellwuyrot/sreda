@@ -9,9 +9,11 @@ import WallPager from "@/components/profile/WallPager";
 import {
   BookOpenIcon,
   ClockIcon,
+  FilmIcon,
   FriendsIcon,
   InfoIcon,
   MessagesIcon,
+  MicIcon,
   NewsIcon,
   PinIcon,
   StarIcon,
@@ -19,6 +21,7 @@ import {
   UsersIcon,
 } from "@/components/ui/ConnectIcons";
 import { TrashIcon } from "@/components/ui/ConnectIconsExtra";
+import { useCall } from "@/components/call/CallProvider"; // CALL
 
 /**
  * PROFILE-WALL: личная страница — шапка, стена, подписчики, подписки.
@@ -117,6 +120,61 @@ function BackButton() {
       </svg>
       Назад
     </button>
+  );
+}
+
+/**
+ * CALL: «Позвонить» и «Видео» на странице другого человека.
+ *
+ * Кнопки появляются только в apk: только там второй человек увидит вызов на
+ * закрытом телефоне. Показывать их в браузере было бы обманом: звонок ушёл бы
+ * в пустоту, если вкладка адресата закрыта.
+ *
+ * Ошибка показывается здесь же, рядом с кнопкой: «Звонить можно только друзьям»
+ * или «Абонент занят» — без этого нажатие выглядело бы как сломанное.
+ */
+function CallButtons({ head }: { head: ProfileHead }) {
+  const { callSupported, startCall, state } = useCall();
+  const [error, setError] = useState<string | null>(null);
+  const busy = state.phase !== "idle";
+
+  if (!callSupported) return null;
+
+  const dial = async (video: boolean) => {
+    setError(null);
+    const result = await startCall(
+      { userId: head.id, userName: head.name, avatar: head.avatar },
+      video,
+    );
+    if (!result.ok) setError(result.error ?? "Звонок недоступен");
+  };
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void dial(false)}
+          disabled={busy}
+          className="flex min-h-[44px] items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+          aria-label={`Позвонить ${head.name}`}
+        >
+          <MicIcon size={16} style={{ color: "inherit" }} />
+          Позвонить
+        </button>
+        <button
+          type="button"
+          onClick={() => void dial(true)}
+          disabled={busy}
+          className="flex min-h-[44px] items-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+          aria-label={`Видеовызов ${head.name}`}
+        >
+          <FilmIcon size={16} style={{ color: "inherit" }} />
+          Видео
+        </button>
+      </div>
+      {error && <div className="text-[11px] text-red-500">{error}</div>}
+    </div>
   );
 }
 
@@ -339,6 +397,9 @@ export default function ProfilePage({ username }: { username?: string }) {
               </div>
               <div className="text-sm text-neutral-500 dark:text-gray-400">@{head.username}</div>
             </div>
+
+            {/* CALL: звонок другу — только на чужой странице и только в приложении для телефона */}
+            {!head.isSelf && <CallButtons head={head} />}
 
             {!head.isSelf && (
               <button
