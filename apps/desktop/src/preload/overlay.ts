@@ -22,4 +22,16 @@ contextBridge.exposeInMainWorld("triozOverlay", {
   resize(height: number): void {
     ipcRenderer.send(IPC.OVERLAY_RESIZE, height);
   },
+  /* FIX-OVL-DRAG2: три шага перетаскивания. Координаты — экранные (screenX/screenY),
+     а не оконные: окно едет вслед за курсором, и оконные считались бы от
+     убегающей точки отсчёта — окно бы дёргалось и убегало. */
+  moveStart(x: number, y: number): void {
+    ipcRenderer.send(IPC.OVERLAY_MOVE_START, { x, y });
+  },
+  moveTo(x: number, y: number): void {
+    ipcRenderer.send(IPC.OVERLAY_MOVE, { x, y });
+  },
+  moveEnd(): void {
+    ipcRenderer.send(IPC.OVERLAY_MOVE_END);
+  },
 });
