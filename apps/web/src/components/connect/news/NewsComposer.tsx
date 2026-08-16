@@ -87,6 +87,10 @@ const FORMAT_BUTTONS: { id: PostFormat; label: string; title: string; className:
   { id: "quote", label: "»", title: "Цитата", className: "" },
   { id: "list", label: "•", title: "Список", className: "" },
   { id: "code", label: "</>", title: "Код", className: "font-mono" },
+  /* POSTTABLE: таблица стоит последней — её вставляют реже остального, а занимает
+     кнопка больше места. Подсказка говорит главное: выделенный текст станет
+     таблицей сам, без ручной расстановки вертикальных черт. */
+  { id: "table", label: "▦", title: "Таблица — или выделите строки с табуляцией или точкой с запятой", className: "" },
 ];
 
 /**

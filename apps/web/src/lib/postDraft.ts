@@ -372,7 +372,7 @@ export function publishAtToInputs(value: number | null | undefined): { date: str
 
 /* ── Вставка разметки ─────────────────────────────────────────────────────── */
 
-export type PostFormat = "bold" | "italic" | "heading" | "quote" | "list" | "code" | "link";
+export type PostFormat = "bold" | "italic" | "heading" | "quote" | "list" | "code" | "link" | "table";
 
 /** Новый текст поля и куда после вставки поставить курсор или выделение. */
 export interface FormatResult {
@@ -467,6 +467,84 @@ function codeFence(text: string, start: number, end: number): FormatResult {
   };
 }
 
+/* POSTTABLE: заготовка таблицы в том же виде, в каком её понимает лента:
+   строка заголовков, строка-разделитель, строки данных. */
+const TABLE_STUB = [
+  "| Столбец | Столбец |",
+  "| --- | --- |",
+  "|  |  |",
+].join("\n");
+
+/** Разделитель под шапку из n столбцов. */
+function divider(columns: number): string {
+  return "| " + Array.from({ length: columns }, () => "---").join(" | ") + " |";
+}
+
+/**
+ * Вставка таблицы.
+ *
+ * Выделения нет — кладём заготовку и выделяем имя первого столбца: первое, что
+ * всё равно придётся перепечатывать.
+ *
+ * Есть выделение — собираем таблицу из него. На столбцы строка режется по табуляции
+ * или по точке с запятой — именно в таком виде текст приезжает из таблиц и выгрузок,
+ * а ручная расстановка палок по двадцати строкам — то, из-за чего таблицами вообще
+ * перестают пользоваться. Запятая в разделители не взята намеренно: в русском
+ * тексте она часть фразы, и каждое придаточное стало бы столбцом.
+ *
+ * Вертикальная черта в содержимом экранируется: без этого одна такая черта в
+ * данных разваливает строку на лишние ячейки.
+ */
+function insertTable(text: string, start: number, end: number): FormatResult {
+  const before = text.slice(0, start);
+  /* Таблица — блок: её первая строка не должна прилипать к предыдущему абзацу,
+     иначе шапка уйдёт в тело текста и таблица не распознается. */
+  const lead = before === "" || before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
+  const selected = text.slice(start, end).trim();
+
+  if (selected === "") {
+    const head = `${before}${lead}`;
+    /* Выделяем первое «Столбец» — первое, что надо заменить своим именем. */
+    const caret = head.length + 2;
+    return {
+      text: `${head}${TABLE_STUB}\n${text.slice(end)}`,
+      selectionStart: caret,
+      selectionEnd: caret + "Столбец".length,
+    };
+  }
+
+  const rows = selected
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .map((line) =>
+      line
+        .split(/\t|;/)
+        .map((cell) => cell.trim().replace(/\|/g, "\\|"))
+        /* Строка без разделителей — одна ячейка, а не повод ничего не вставлять. */
+        .filter((cell, index, all) => all.length === 1 || cell !== "" || index < all.length - 1),
+    );
+
+  const columns = Math.max(...rows.map((cells) => cells.length), 1);
+  const line = (cells: string[]) => {
+    const padded = [...cells];
+    while (padded.length < columns) padded.push("");
+    return "| " + padded.join(" | ") + " |";
+  };
+
+  /* Первая строка выделения становится шапкой: в выгрузках и скопированных
+     таблицах имена столбцов идут сверху. Если строка всего одна, шапка есть,
+     а тело пустое — его допишут руками. */
+  const body = rows.slice(1);
+  const table = [line(rows[0]), divider(columns), ...(body.length > 0 ? body.map(line) : [line([])])].join("\n");
+  const head = `${before}${lead}`;
+  return {
+    text: `${head}${table}\n${text.slice(end)}`,
+    selectionStart: head.length,
+    selectionEnd: head.length + table.length,
+  };
+}
+
 function insertLink(text: string, start: number, end: number): FormatResult {
   const selected = text.slice(start, end).trim();
   /* Выделили готовый адрес — трогать нечего: он и так станет ссылкой. Вставка
@@ -520,5 +598,7 @@ export function applyFormat(text: string, selectionStart: number, selectionEnd: 
       return linePrefix(text, start, end, LINE_MARK[format], false);
     case "link":
       return insertLink(text, start, end);
+    case "table":
+      return insertTable(text, start, end);
   }
 }

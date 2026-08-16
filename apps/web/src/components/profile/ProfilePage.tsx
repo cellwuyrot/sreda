@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import WallPager from "@/components/profile/WallPager";
@@ -77,6 +78,46 @@ interface ProfileHead {
 interface FollowUser extends WallAuthor {
   isFollowing: boolean;
   isSelf: boolean;
+}
+
+/**
+ * PROFILE-BACK: шаг назад из профиля — своего или чужого.
+ *
+ * Профиль — отдельная страница, а не слой поверх мессенджера, и его шапка не
+ * относится к навигации самого TZ Connect. Зайти сюда можно из переписки, из
+ * списка участников, из ленты, из подписчиков другого человека — перечислить все
+ * входы ссылкой «куда вернуться» невозможно, поэтому шаг делается по истории.
+ *
+ * Запасной вариант обязателен: страницу открывают и прямой ссылкой — из почты, из
+ * соседнего чата, из закладки. В этом случае в истории ничего нет, и `back()` либо
+ * ничего не сделает, либо выбросит из приложения совсем — тогда ведём в мессенджер.
+ */
+function BackButton() {
+  const router = useRouter();
+
+  const goBack = () => {
+    /* history.length равен единице только на первой записи вкладки. */
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/connect");
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={goBack}
+      /* max-md:min-h-[44px] — на телефоне цель под палец, а не под курсор. */
+      className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 max-md:min-h-[44px] text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white"
+      aria-label="Вернуться назад"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M15 18l-6-6 6-6" />
+      </svg>
+      Назад
+    </button>
+  );
 }
 
 type Tab = "wall" | "followers" | "following";
@@ -276,6 +317,9 @@ export default function ProfilePage({ username }: { username?: string }) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+      {/* PROFILE-BACK: возврат туда, откуда открыли профиль. */}
+      <BackButton />
+
       {/* Шапка */}
       <div className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900/60">
         <div
