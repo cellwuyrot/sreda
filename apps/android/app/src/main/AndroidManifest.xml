@@ -28,14 +28,13 @@
 
       WAKE_LOCK — разбудить экран на время вызова.
 
-      FOREGROUND_SERVICE* — разговор не должен обрываться, когда человек свернул
-      приложение, чтобы посмотреть адрес или заметку.
+      FIX-BOOT: разрешений FOREGROUND_SERVICE* здесь больше нет. Они были взяты
+      «на будущее», но фоновой службы разговора в приложении нет: разговор
+      идёт в веб-части. Объявленные, но неиспользуемые разрешения на Android 14
+      только мешают: система требует под каждое обоснование и тип службы.
     -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <!-- Nothing here is mandatory, so the app installs on all devices. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -106,32 +105,16 @@
             android:theme="@style/Theme.Connect" />
 
         <!--
-          PUSH: доставка уведомлений в ЗАКРЫТОЕ приложение.
+          PUSH: служба доставки описана В ОТДЕЛЬНОМ манифесте app/src/push.
 
-          Раньше уведомления показывались только пока приложение открыто: они
-          приходили живым соединением, и выгруженный системой процесс молчал.
-          Служба доставки живёт в самой ОС и будит приложение ровно на время
-          показа уведомления — без вечной плашки «приложение работает» и без
-          расхода батареи на удержание соединения.
-
-          exported=false: службу вызывает только система доставки, снаружи к ней
-          обратиться нельзя.
+          FIX-BOOT: раньше служба и библиотека доставки попадали в ЛЮБУЮ сборку,
+          включая сборку без файла доступов app/google-services.json (в репозитории
+          его нет и быть не должно). Библиотека доставки поднимается при старте
+          процесса сама, до первого экрана, и без своего файла доступов роняла
+          приложение ещё на запуске — вместо мессенджера человек видел «произошёл
+          сбой». Теперь вся доставка подключается только вместе с файлом доступов:
+          без него приложение собирается и работает, просто без уведомлений в
+          закрытом состоянии. См. apps/android/app/build.gradle.kts.
         -->
-        <service
-            android:name=".PushService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
-
-        <!-- Канал по умолчанию — тот же, что у уведомлений от живого соединения:
-             человеку не нужны две одинаковые категории в настройках приложения. -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="tz_connect_messages" />
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_notification" />
     </application>
 </manifest>
