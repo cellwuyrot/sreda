@@ -44,7 +44,7 @@ const CODE_FENCE = /```([A-Za-z0-9+#._-]{0,20})?[ \t]*\r?\n?([\s\S]*?)```/g;
  * длинные строки переносились по словам, звёздочки в коде превращались в курсив.
  */
 export function renderContent(text: string, options?: RenderOptions): ReactNode {
-  if (!text.includes("```")) return renderInline(text, options);
+  if (!text.includes("```")) return renderBlocks(text, options);
 
   CODE_FENCE.lastIndex = 0;
   const blocks: ReactNode[] = [];
@@ -54,7 +54,7 @@ export function renderContent(text: string, options?: RenderOptions): ReactNode 
 
   while ((fence = CODE_FENCE.exec(text)) !== null) {
     if (fence.index > cursor) {
-      blocks.push(<span key={`t${blockKey++}`}>{renderInline(text.slice(cursor, fence.index), options)}</span>);
+      blocks.push(<span key={`t${blockKey++}`}>{renderBlocks(text.slice(cursor, fence.index), options)}</span>);
     }
     /* Последний перевод строки перед закрывающими кавычками — часть разметки, а
        не кода: иначе в конце блока висит пустая строка. */
@@ -65,11 +65,166 @@ export function renderContent(text: string, options?: RenderOptions): ReactNode 
   }
 
   // Тройные кавычки были, но ни один блок не закрыт — разбираем как обычный текст.
-  if (cursor === 0) return renderInline(text, options);
+  if (cursor === 0) return renderBlocks(text, options);
   if (cursor < text.length) {
-    blocks.push(<span key={`t${blockKey++}`}>{renderInline(text.slice(cursor), options)}</span>);
+    blocks.push(<span key={`t${blockKey++}`}>{renderBlocks(text.slice(cursor), options)}</span>);
   }
   return blocks;
+}
+
+/* POSTTABLE: таблицы в формате Markdown.
+ *
+ * Статьи в новостях часто сводятся к сравнительным таблицам — тарифы, сроки,
+ * ответственные. Без разбора такие строки выводились частоколом палок и читались
+ * хуже обычного списка.
+ *
+ * Разбор блочный и стоит НАД строчным: внутри ячеек остаётся вся обычная
+ * разметка (жирный, ссылки, упоминания, свои эмодзи), потому что содержимое
+ * ячейки уходит в renderInline. Обратный порядок невозможен: строчный разбор работает
+ * одной регуляркой без понятия о соседних строках, а таблица — именно связка строк.
+ *
+ * Таблицей считается только то, что имеет строку-разделитель под шапкой. Без этого
+ * условия любая строка с вертикальной чертой — а так пишут пути, регулярки и
+ * альтернативы в переписке — превращалась бы в одноклеточную таблицу.
+ */
+const TABLE_DIVIDER = /^\s*\|?(?:\s*:?-{2,}:?\s*\|)+\s*:?-{2,}:?\s*\|?\s*$/;
+
+/** Выровненность столбца из строки-разделителя: `:---`, `---:`, `:---:`. */
+function columnAlign(cell: string): "left" | "center" | "right" {
+  const value = cell.trim();
+  const left = value.startsWith(":");
+  const right = value.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  return "left";
+}
+
+/* Экранированная черта `\|` — часть содержимого, а не граница ячейки. На время
+   резки подменяем её символом из частной области Unicode: в тексте его не бывает. */
+const PIPE_HOLDER = "\uE000";
+
+function splitRow(line: string): string[] {
+  const guarded = line.replace(/\\\|/g, PIPE_HOLDER);
+  const trimmed = guarded.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.replace(new RegExp(PIPE_HOLDER, "g"), "|").trim());
+}
+
+function isTableRow(line: string): boolean {
+  return line.replace(/\\\|/g, "").includes("|");
+}
+
+/** Стили таблицы берут переменные темы мессенджера — один вид в светлой и тёмной. */
+function TableBlock({
+  head,
+  rows,
+  align,
+  options,
+}: {
+  head: string[];
+  rows: string[][];
+  align: Array<"left" | "center" | "right">;
+  options?: RenderOptions;
+}) {
+  const columns = Math.max(head.length, ...rows.map((row) => row.length));
+  const cells = (row: string[]) => {
+    const padded = [...row];
+    while (padded.length < columns) padded.push("");
+    return padded;
+  };
+
+  return (
+    /* На телефоне широкая таблица прокручивается внутри себя, а не растягивает
+       всю ленту: иначе один пост с таблицей добавляет горизонтальную прокрутку
+       всему экрану. */
+    <div className="my-2 max-w-full overflow-x-auto rounded-xl border" style={{ borderColor: "var(--cn-border)" }}>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr>
+            {cells(head).map((cell, i) => (
+              <th
+                key={i}
+                className="px-3 py-2 text-left font-semibold"
+                style={{
+                  textAlign: align[i] ?? "left",
+                  background: "var(--cn-hover, rgba(127,127,127,0.08))",
+                  borderBottom: "1px solid var(--cn-border)",
+                  color: "var(--cn-text)",
+                }}
+              >
+                {renderInline(cell, options)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r}>
+              {cells(row).map((cell, i) => (
+                <td
+                  key={i}
+                  className="px-3 py-2 align-top"
+                  style={{
+                    textAlign: align[i] ?? "left",
+                    borderTop: r === 0 ? undefined : "1px solid var(--cn-border)",
+                    color: "var(--cn-text)",
+                  }}
+                >
+                  {renderInline(cell, options)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Разбор отрезка текста на таблицы и всё остальное.
+ *
+ * Быстрый выход по отсутствию черты обязателен: через эту функцию проходит КАЖДОЕ
+ * сообщение в ленте, а таблицы в переписке — редкость.
+ */
+function renderBlocks(text: string, options?: RenderOptions): ReactNode {
+  if (!text.includes("|")) return renderInline(text, options);
+
+  const lines = text.split("\n");
+  const out: ReactNode[] = [];
+  let plain: string[] = [];
+  let key = 0;
+
+  const flushPlain = () => {
+    if (plain.length === 0) return;
+    out.push(<span key={`p${key++}`}>{renderInline(plain.join("\n"), options)}</span>);
+    plain = [];
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const head = lines[i];
+    const divider = lines[i + 1];
+    if (isTableRow(head) && divider !== undefined && TABLE_DIVIDER.test(divider)) {
+      const align = splitRow(divider).map(columnAlign);
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length && isTableRow(lines[j]) && lines[j].trim() !== "") {
+        rows.push(splitRow(lines[j]));
+        j += 1;
+      }
+      flushPlain();
+      out.push(
+        <TableBlock key={`tb${key++}`} head={splitRow(head)} rows={rows} align={align} options={options} />,
+      );
+      /* Строка после таблицы обрабатывается со следующего шага цикла. */
+      i = j - 1;
+      continue;
+    }
+    plain.push(head);
+  }
+
+  flushPlain();
+  /* Одна часть — отдаём её как есть: лишняя обёртка в переписке ни к чему. */
+  return out.length === 1 ? out[0] : out;
 }
 
 // Render formatted content: links, **bold**, *italic*, `code`, - lists,
