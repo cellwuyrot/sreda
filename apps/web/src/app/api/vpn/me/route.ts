@@ -16,7 +16,13 @@ import {
   nodeTunnel,
   pickVpnNode,
   routingAllowedIps,
+  allocateAddress,
 } from "@/lib/vpn";
+import { NODE_ONLINE_WINDOW_MS } from "@/lib/serverMesh";
+import { hasPremium } from "@/lib/premium";
+import { hasActiveVpnPlan } from "@/lib/vpnPlan";
+import { usageView } from "@/lib/connectionUsage";
+import { LINK_NAME_LOWER, LINK_PLAN_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 
 /**
  * VPN-WG: собственный доступ пользователя.
@@ -83,12 +89,125 @@ function peerView(
   };
 }
 
+/**
+ * NETLINK: по какому основанию человеку дано соединение и до какого числа.
+ *
+ * Оснований два — Premium и отдельная подписка, — а условия у них одинаковые.
+ * Клиенту нужно не право как флаг, а строка на экран: иначе ему пришлось бы
+ * самому складывать название тарифа из двух признаков и двух дат.
+ */
+function planView(
+  user: {
+    isPremium: boolean;
+    role: string;
+    vpnAccess: boolean | null;
+    vpnAccessUntil: Date | null;
+  },
+  /* Срок Premium хранится не на пользователе, а в подписке: на пользователе
+     только флаг. `null` — бессрочно или Premium по роли. */
+  premiumUntil: Date | null,
+) {
+  if (hasPremium(user)) {
+    return {
+      kind: "premium" as const,
+      label: "Premium",
+      note: `Соединение входит в Premium — подписка ${LINK_PLAN_QUOTED} отдельно не нужна.`,
+      until: premiumUntil ? premiumUntil.toISOString() : null,
+    };
+  }
+  if (hasActiveVpnPlan(user)) {
+    return {
+      kind: "link" as const,
+      label: LINK_PLAN_NAME,
+      note: "Условия по соединению те же, что и в Premium.",
+      until: user.vpnAccessUntil ? user.vpnAccessUntil.toISOString() : null,
+    };
+  }
+  return {
+    kind: "none" as const,
+    label: "Нет подписки",
+    note: `Доступ к ${LINK_NAME_LOWER} даёт Premium или подписка ${LINK_PLAN_QUOTED}.`,
+    until: null,
+  };
+}
+
+/**
+ * NETLINK: серверы, куда человек действительно может сесть.
+ *
+ * Заполненные узлы остаются в списке с пометкой `full`, а не исчезают: исчезнувший
+ * вариант выглядит как ошибка, а видимый и погашенный — как ответ. Свой текущий
+ * узел показывается всегда, даже если он уже не принимает новых, — иначе человек не
+ * видел бы, где находится.
+ */
+async function serverChoices(maxPeersPerNode: number, currentNodeId: string | null) {
+  const limit = maxPeersPerNode > 0 ? maxPeersPerNode : 1;
+  const nodes = await prisma.serverNode.findMany({
+    where: { kind: "VPN", enabled: true },
+    select: {
+      id: true,
+      name: true,
+      region: true,
+      lastReport: true,
+      lastSeenAt: true,
+      endpointHost: true,
+      transport: true,
+      obfuscation: true,
+      _count: { select: { vpnPeers: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const now = Date.now();
+  return nodes
+    .map((node) => {
+      const wg = nodeTunnel(node);
+      const online = !!node.lastSeenAt && now - node.lastSeenAt.getTime() < NODE_ONLINE_WINDOW_MS;
+      const peers = node._count.vpnPeers;
+      const current = node.id === currentNodeId;
+      return {
+        id: node.id,
+        name: node.name,
+        region: node.region ?? "",
+        /* Загруженность — доля от потолка устройств, то же число, что видит администратор. */
+        load: Math.min(100, Math.round((peers / limit) * 100)),
+        full: peers >= limit,
+        ready: online && !!wg.publicKey && !!wg.endpoint,
+        current,
+      };
+    })
+    .filter((node) => node.ready || node.current);
+}
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const settings = await getVpnSettings();
   const entitled = await hasVpnEntitlement(session.user.id);
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { isPremium: true, role: true, vpnAccess: true, vpnAccessUntil: true },
+  });
+
+  /* Срок Premium — по действующей подписке с самой поздней датой окончания.
+     Бессрочная запись (`expiresAt = null`) должна побеждать любую срочную, поэтому
+     сначала смотрим, есть ли она вообще, и только потом берём максимум даты:
+     иначе у бессрочного Premium кнопка показывала бы старую разовую дату. */
+  let premiumUntil: Date | null = null;
+  if (user?.isPremium) {
+    const lifetime = await prisma.premiumSubscription.findFirst({
+      where: { userId: session.user.id, status: "active", expiresAt: null },
+      select: { id: true },
+    });
+    if (!lifetime) {
+      const latest = await prisma.premiumSubscription.findFirst({
+        where: { userId: session.user.id, status: "active" },
+        orderBy: { expiresAt: "desc" },
+        select: { expiresAt: true },
+      });
+      premiumUntil = latest?.expiresAt ?? null;
+    }
+  }
   const peer = await prisma.vpnPeer.findUnique({
     where: { userId: session.user.id },
     include: {
@@ -103,15 +222,44 @@ export async function GET() {
   // сказать это до нажатия кнопки, а не после.
   const nodeReady = settings.enabled ? !!(await pickVpnNode(settings.maxPeersPerNode)) : false;
 
+  /* NETLINK: тариф, расход и серверы отдаются ВСЕГДА, а не только когда есть пир.
+     Кнопка у клиента показывает срок и лимит до первого включения тоже: именно тогда
+     человек и решает, нужна ли ему подписка. Отсутствующие поля вместо нулей заставляют
+     клиент угадывать, а угадывать он не умеет. */
+  const traffic = {
+    ...usageView(peer, settings),
+    limitGb: settings.trafficLimitGb,
+    overLimitAction: settings.overLimitAction,
+    throttleKbps: settings.throttleKbps,
+  };
+
+  const servers = await serverChoices(settings.maxPeersPerNode, peer?.nodeId ?? null);
+
+  const plan = planView(
+    user ?? { isPremium: false, role: "USER", vpnAccess: null, vpnAccessUntil: null },
+    premiumUntil,
+  );
+
   if (!peer) {
-    return NextResponse.json({ peer: null, serviceEnabled: settings.enabled, entitled, nodeReady });
+    return NextResponse.json({
+      peer: null,
+      serviceEnabled: settings.enabled,
+      entitled,
+      nodeReady,
+      plan,
+      traffic,
+      servers,
+    });
   }
 
   return NextResponse.json({
     serviceEnabled: settings.enabled,
     entitled,
     nodeReady,
-    peer: peerView(peer, peer.node, nodeTunnel(peer.node), settings),
+    plan,
+    traffic,
+    servers,
+    peer: { ...peerView(peer, peer.node, nodeTunnel(peer.node), settings), nodeId: peer.nodeId },
   });
 }
 
@@ -132,13 +280,13 @@ export async function POST(req: NextRequest) {
   // Существующие при этом уже отпали: узлам уходит пустой список (см. отчёт).
   const settings = await getVpnSettings();
   if (!settings.enabled) {
-    return NextResponse.json({ error: "Сервис VPN отключён администратором" }, { status: 503 });
+    return NextResponse.json({ error: "Сервис отключён администратором" }, { status: 503 });
   }
 
   // VPN-AUTOPREMIUM / VPN-PLAN: условие выдачи — Premium или подписка только на VPN.
   if (!(await hasVpnEntitlement(session.user.id))) {
     return NextResponse.json(
-      { error: "VPN доступен по подписке «VPN» или по Premium" },
+      { error: `Соединение доступно по подписке ${LINK_PLAN_QUOTED} или по Premium` },
       { status: 403 },
     );
   }
@@ -258,4 +406,106 @@ export async function DELETE() {
   await prisma.vpnPeer.delete({ where: { id: peer.id } });
   // Узел уберёт пира при следующем отчёте: список приходит ему целиком.
   return NextResponse.json({ ok: true });
+}
+
+/**
+ * NETLINK: смена сервера без повторного ввода ключа.
+ *
+ * Ключ остаётся тем же — меняются узел, адрес в его подсети и внешний адрес
+ * выхода. Поэтому старый профиль на устройстве перестаёт работать, и об этом
+ * ответ говорит прямо (`needsReissue`): тишина после переезда читается как поломка
+ * сервиса, а не как собственное действие.
+ *
+ * Лимит на час стоит не против злоупотребления, а против перебора серверов
+ * вслепую: каждая смена требует перевыпуска профиля на устройстве.
+ */
+export async function PATCH(req: NextRequest) {
+  const limited = await rateLimit(req, "vpn-node", { limit: 20, windowMs: 60 * 60 * 1000 });
+  if (limited) return limited;
+
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const banned = await checkBan(session.user.id);
+  if (banned) return banned;
+
+  const settings = await getVpnSettings();
+  if (!settings.enabled) {
+    return NextResponse.json({ error: "Сервис отключён администратором" }, { status: 503 });
+  }
+  if (!(await hasVpnEntitlement(session.user.id))) {
+    return NextResponse.json(
+      { error: `Соединение доступно по подписке ${LINK_PLAN_QUOTED} или по Premium` },
+      { status: 403 },
+    );
+  }
+
+  const body = (await req.json().catch(() => null)) as { nodeId?: unknown } | null;
+  const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
+  if (!nodeId) return NextResponse.json({ error: "Не указан сервер" }, { status: 400 });
+
+  const peer = await prisma.vpnPeer.findUnique({
+    where: { userId: session.user.id },
+    select: { id: true, nodeId: true, address: true },
+  });
+  if (!peer) {
+    return NextResponse.json({ error: "Соединение ещё не настроено" }, { status: 409 });
+  }
+  if (peer.nodeId === nodeId) {
+    return NextResponse.json({ error: "Вы уже на этом сервере" }, { status: 409 });
+  }
+
+  const node = await prisma.serverNode.findFirst({
+    where: { id: nodeId, kind: "VPN", enabled: true },
+    select: {
+      id: true,
+      name: true,
+      region: true,
+      publicIps: true,
+      lastReport: true,
+      endpointHost: true,
+      transport: true,
+      obfuscation: true,
+      _count: { select: { vpnPeers: true } },
+    },
+  });
+  if (!node) return NextResponse.json({ error: "Сервер недоступен" }, { status: 404 });
+
+  const wg = nodeTunnel(node);
+  if (!wg.publicKey || !wg.endpoint) {
+    return NextResponse.json({ error: "Сервер ещё не вышел на связь" }, { status: 409 });
+  }
+  if (node._count.vpnPeers >= settings.maxPeersPerNode) {
+    return NextResponse.json({ error: "Сервер заполнен — выберите другой" }, { status: 409 });
+  }
+
+  /* Адрес берётся из подсети НОВОГО узла: там прежний может быть занят другим. */
+  const address = await allocateAddress(node.id);
+  if (!address) {
+    return NextResponse.json({ error: "На сервере не осталось свободных адресов" }, { status: 409 });
+  }
+  const exitIp = await assignExitIp(node.id, node.publicIps ?? "");
+
+  const updated = await prisma.vpnPeer.update({
+    where: { id: peer.id },
+    data: {
+      nodeId: node.id,
+      address,
+      exitIp,
+      /* Рукопожатие старого узла к новому отношения не имеет: оставленное
+         значение показывало бы «на связи» у только что переехавшего пира. */
+      lastHandshakeAt: null,
+    },
+    include: {
+      node: {
+        select: { name: true, region: true, lastReport: true, endpointHost: true, transport: true, obfuscation: true },
+      },
+    },
+  });
+
+  return NextResponse.json({
+    ok: true,
+    needsReissue: true,
+    peer: { ...peerView(updated, updated.node, nodeTunnel(updated.node), settings), nodeId: updated.nodeId },
+  });
 }
