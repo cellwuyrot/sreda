@@ -10,7 +10,15 @@ import { refreshBadge, setBadgeFromRenderer } from "./badge";
 import { registerShortcuts } from "./shortcuts";
 import { applyAutoLaunch } from "./autoLaunch";
 import { refreshNotificationBridge } from "./notificationBridge";
-import { updateVoiceOverlayState, handleOverlayAction, handleOverlayResize, syncOverlay } from "./overlay"; // FIX-OVL
+import {
+  updateVoiceOverlayState,
+  handleOverlayAction,
+  handleOverlayResize,
+  handleOverlayMoveStart,
+  handleOverlayMove,
+  handleOverlayMoveEnd,
+  syncOverlay,
+} from "./overlay"; // FIX-OVL
 import { currentUpdateState, installDownloadedUpdate } from "./updater"; // UPD-BTN
 import type { VoiceOverlayState } from "../shared/types";
 
@@ -120,6 +128,14 @@ export function registerIpc(): void {
   ipcMain.on(IPC.OVERLAY_ACTION, (_e, action: string) => handleOverlayAction(String(action)));
   // FIX-OVL-SIZE: авто-высота окна оверлея по фактическому контенту.
   ipcMain.on(IPC.OVERLAY_RESIZE, (_e, height: number) => handleOverlayResize(Number(height)));
+  // FIX-OVL-DRAG2: перетаскивание окна оверлея мышью.
+  ipcMain.on(IPC.OVERLAY_MOVE_START, (_e, point: { x?: number; y?: number } | null) =>
+    handleOverlayMoveStart(Number(point?.x), Number(point?.y)),
+  );
+  ipcMain.on(IPC.OVERLAY_MOVE, (_e, point: { x?: number; y?: number } | null) =>
+    handleOverlayMove(Number(point?.x), Number(point?.y)),
+  );
+  ipcMain.on(IPC.OVERLAY_MOVE_END, () => handleOverlayMoveEnd());
 
   // FIX-REPLAY: записать файл мгновенного повтора в настроенную папку.
   // Данные приходят из renderer уже готовым контейнером (WebM); main-процесс
