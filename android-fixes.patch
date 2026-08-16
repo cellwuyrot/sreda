@@ -1,0 +1,395 @@
+diff --git a/apps/android/FIXES-ANDROID.md b/apps/android/FIXES-ANDROID.md
+new file mode 100644
+index 0000000..17e28b7
+--- /dev/null
++++ b/apps/android/FIXES-ANDROID.md
+@@ -0,0 +1,81 @@
++# Исправления сборки Android (apps/android)
++
++Устранены четыре дефекта, из-за которых сборка либо не компилировалась, либо
++давала APK, который невозможно запустить или установить.
++
++## 1. Устаревший дубликат PushService
++
++**Файл:** `app/src/main/java/ru/trioz/connect/PushService.kt` — удалён.
++
++Коммит `6b0d085` перенёс службу в отдельный набор исходников `app/src/push/`, но
++старая копия осталась в `main`. Когда рядом лежал `google-services.json`, в
++сборку попадали оба файла сразу: около 30 ошибок компиляции —
++`Conflicting declarations` для `EXTRA_LINK` и `CALL_CHANNEL_ID`. Без
++`google-services.json` тот же файл не собирался по другой причине: импорты
++Firebase недоступны, так как зависимость подключается только вместе с файлом
++доступов.
++
++Актуальная версия службы — `app/src/push/java/ru/trioz/connect/PushService.kt`,
++она и остаётся единственной.
++
++## 2. Подмена основного манифеста push-манифестом
++
++**Файл:** `app/build.gradle.kts`
++
++Было:
++
++```kotlin
++sourceSets["main"].manifest.srcFile("src/push/AndroidManifest.xml")
++```
++
++У одного набора исходников манифест ровно один, поэтому строка не подмешивала
++push-манифест, а **заменяла** им основной. Как только в проекте появлялся
++`google-services.json`, из APK исчезало всё содержимое основного манифеста:
++`ConnectApp`, `MainActivity`, фильтр `MAIN`/`LAUNCHER` и все разрешения. Сборка
++при этом проходила успешно, APK устанавливался — но без иконки в лаунчере и без
++возможности запуска.
++
++Стало:
++
++```kotlin
++sourceSets["debug"].manifest.srcFile("src/push/AndroidManifest.xml")
++sourceSets["release"].manifest.srcFile("src/push/AndroidManifest.xml")
++```
++
++У наборов `debug` и `release` собственные манифесты по умолчанию не заданы, так
++что подмены не происходит: manifest merger сливает push-манифест с основным —
++ровно то поведение, которое подразумевалось изначально.
++
++## 3. Неверный метод BigTextStyle
++
++**Файлы:** `app/src/main/java/ru/trioz/connect/NotificationBridge.kt:102`,
++`app/src/push/java/ru/trioz/connect/PushService.kt:106`
++
++У `NotificationCompat.BigTextStyle` метод называется `bigText()`; `setBigText()`
++существует только у платформенного `android.app.Notification.BigTextStyle`.
++Оба вызова исправлены на `bigText(...)`.
++
++## 4. Неподписанный релизный APK
++
++**Файл:** `app/build.gradle.kts`
++
++Без `app/keystore.properties` релизная сборка оставалась неподписанной, а
++неподписанный APK Android ставить отказывается — телефон показывает
++«Приложение не установлено» без пояснений.
++
++Теперь при отсутствии ключа релиз подписывается отладочным `signingConfig`
++(он генерируется автоматически на любой машине), а в лог уходит предупреждение
++уровня `warn`: такой APK устанавливается и проверяется, но для публикации не
++годится. При наличии `keystore.properties` поведение прежнее — подпись
++настоящим ключом.
++
++## Проверка
++
++Правки проверены осмотром кода и статически: дубликата больше нет, ссылок на
++удалённый файл в проекте не осталось, `setBigText` не встречается нигде,
++основной манифест сохраняет `application` целиком. Реальные сборки Gradle в этой
++итерации не запускались по договорённости.
++
++Полезно знать при сборке в изолированном окружении: если исходящий трафик идёт
++через прокси с собственным корневым сертификатом, его нужно импортировать в
++`cacerts` JDK — иначе `sdkmanager` и Gradle не смогут ничего скачать.
+diff --git a/apps/android/app/build.gradle.kts b/apps/android/app/build.gradle.kts
+index d0825ad..1c01e25 100644
+--- a/apps/android/app/build.gradle.kts
++++ b/apps/android/app/build.gradle.kts
+@@ -90,7 +90,22 @@ android {
+        не знает ничего: адрес устройства читается через PushTokens. */
+     if (hasPushConfig) {
+         sourceSets["main"].java.srcDir("src/push/java")
+-        sourceSets["main"].manifest.srcFile("src/push/AndroidManifest.xml")
++
++        /* FIX-MANIFEST: манифест доставки подключается к наборам debug и release,
++           а НЕ к main.
++
++           Почему: у одного набора исходников манифест ровно один. Прежняя строка
++           sourceSets["main"].manifest.srcFile("src/push/AndroidManifest.xml")
++           не подмешивала push-манифест, а ЗАМЕНЯЛА им основной. Как только рядом
++           появлялся google-services.json, из APK исчезало всё: ConnectApp,
++           MainActivity, фильтр MAIN/LAUNCHER и все разрешения. Сборка проходила,
++           приложение ставилось пустым — без иконки и без возможности запуска.
++
++           У debug и release манифесты свои и по умолчанию не заданы, поэтому
++           здесь замены не происходит: manifest merger сливает push-манифест с
++           основным, как и задумано. */
++        sourceSets["debug"].manifest.srcFile("src/push/AndroidManifest.xml")
++        sourceSets["release"].manifest.srcFile("src/push/AndroidManifest.xml")
+     }
+ 
+     if (hasReleaseKeystore) {
+@@ -124,13 +139,25 @@ android {
+                 getDefaultProguardFile("proguard-android-optimize.txt"),
+                 "proguard-rules.pro",
+             )
+-            /* Ключа нет — оставляем сборку неподписанной, а не роняем её:
+-               собрать проект должен уметь любой, у кого ключа нет и не будет. */
++            /* FIX-SIGN: ключа нет — подписываем отладочным ключом, а не отдаём
++               неподписанный APK.
++
++               Неподписанный APK Android ставить отказывается: телефон показывает
++               «Приложение не установлено» без каких-либо пояснений, и человек
++               остаётся с бесполезным файлом. Отладочный ключ генерируется сам, он
++               есть на любой машине, поэтому такой APK хотя бы устанавливается и
++               его можно проверить.
++
++               Для публикации он не годится (ключ не ваш и одинаков у всех), об
++               этом в лог уходит явное предупреждение — см. app/keystore.properties
++               в apps/android/README.md. */
+             if (hasReleaseKeystore) {
+                 signingConfig = signingConfigs.getByName("release")
+             } else {
+-                logger.lifecycle(
+-                    "BUILDS: app/keystore.properties не найден — релизный APK будет НЕПОДПИСАННЫМ и не установится",
++                signingConfig = signingConfigs.getByName("debug")
++                logger.warn(
++                    "BUILDS: app/keystore.properties не найден — релизный APK подписан ОТЛАДОЧНЫМ ключом. " +
++                        "Устанавливается, но для публикации НЕ годится: положите keystore.properties и соберите заново.",
+                 )
+             }
+         }
+diff --git a/apps/android/app/src/main/java/ru/trioz/connect/NotificationBridge.kt b/apps/android/app/src/main/java/ru/trioz/connect/NotificationBridge.kt
+index 00ff449..64cd849 100644
+--- a/apps/android/app/src/main/java/ru/trioz/connect/NotificationBridge.kt
++++ b/apps/android/app/src/main/java/ru/trioz/connect/NotificationBridge.kt
+@@ -99,7 +99,7 @@ class NotificationBridge(
+                 .setSmallIcon(R.drawable.ic_notification)
+                 .setContentTitle(safeTitle)
+                 .setContentText(safeBody)
+-                .setStyle(NotificationCompat.BigTextStyle().setBigText(safeBody))
++                .setStyle(NotificationCompat.BigTextStyle().bigText(safeBody))
+                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+                 .setDefaults(NotificationCompat.DEFAULT_ALL)
+                 .setAutoCancel(true)
+diff --git a/apps/android/app/src/main/java/ru/trioz/connect/PushService.kt b/apps/android/app/src/main/java/ru/trioz/connect/PushService.kt
+deleted file mode 100644
+index 97e9f12..0000000
+--- a/apps/android/app/src/main/java/ru/trioz/connect/PushService.kt
++++ /dev/null
+@@ -1,218 +0,0 @@
+-package ru.trioz.connect
+-
+-import android.app.NotificationChannel
+-import android.app.NotificationManager
+-import android.app.PendingIntent
+-import android.content.Context
+-import android.content.Intent
+-import androidx.core.app.NotificationCompat
+-import androidx.core.app.NotificationManagerCompat
+-import com.google.firebase.messaging.FirebaseMessagingService
+-import com.google.firebase.messaging.RemoteMessage
+-import kotlin.math.absoluteValue
+-
+-/**
+- * PUSH: доставка уведомлений в ЗАКРЫТОЕ приложение.
+- *
+- * ── Что было сломано ────────────────────────────────────────────────────────
+- *
+- * Уведомления показывались только пока приложение открыто: сообщение приходило
+- * живым соединением, и его показывал мост из веб-части (см. NotificationBridge).
+- * Свернули приложение, система выгрузила процесс — и мессенджер молчал до
+- * следующего запуска. Для мессенджера это отсутствие главного.
+- *
+- * ── Почему служба доставки, а не свой фоновый процесс ───────────────────────
+- *
+- * Держать соединение в фоне значит вечно висеть в шторке («приложение работает»),
+- * жечь батарею — и всё равно быть выгруженным системой в режиме энергосбережения.
+- * Служба доставки живёт в самой ОС: она получает сообщение и будит приложение
+- * ровно на время показа уведомления.
+- *
+- * ── Почему сообщение приходит БЕЗ готового уведомления ──────────────────────
+- *
+- * Сервер присылает только данные, а показывает уведомление этот класс. Причина в
+- * дублировании: когда приложение открыто, уведомление уже показывает веб-часть по
+- * живому соединению. Если бы сервер присылал готовый блок уведомления, система
+- * рисовала бы его сама, и человек с открытым приложением получал бы всё дважды.
+- * Здесь же видно, на переднем плане приложение или нет (см. ConnectApp), и
+- * лишнее уведомление просто не показывается.
+- *
+- * ── Чего здесь нет ──────────────────────────────────────────────────────────
+- *
+- * Ни переписки, ни вложений, ни чужих идентификаторов: только заголовок, короткая
+- * выжимка и путь, куда открыть. Всё то же, что и так видно в шторке.
+- */
+-class PushService : FirebaseMessagingService() {
+-
+-    companion object {
+-        /** Где лежит адрес устройства: его читает веб-часть и привязывает к аккаунту. */
+-        private const val PREFS = "tz_push"
+-        private const val KEY_TOKEN = "token"
+-
+-        fun storedToken(context: Context): String =
+-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TOKEN, "") ?: ""
+-
+-        fun storeToken(context: Context, token: String) {
+-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+-                .edit()
+-                .putString(KEY_TOKEN, token)
+-                .apply()
+-        }
+-    }
+-
+-    /**
+-     * Адрес устройства выдан или обновлён.
+-     *
+-     * Отправить его на сервер отсюда нельзя: у нативного слоя нет сессии человека,
+-     * а тащить сюда работу с cookie значило бы завести второй способ авторизации.
+-     * Поэтому адрес просто сохраняется, а привязывает его страница при следующем
+-     * открытии приложения (см. apps/web/src/hooks/usePushDevice.ts).
+-     */
+-    override fun onNewToken(token: String) {
+-        storeToken(this, token)
+-    }
+-
+-    override fun onMessageReceived(message: RemoteMessage) {
+-        /* CALL: вызов разбирается ДО проверки переднего плана.
+-
+-           Для сообщения выйти раньше правильно: открытое приложение покажет его
+-           само. Для вызова — нет: событие по живому соединению и доставленное
+-           сообщение идут разными путями и с разной скоростью, а терять вызов
+-           нельзя ни в одном состоянии приложения. Повтор здесь не страшен:
+-           окно вызова одно (launchMode=singleInstance), а уведомление идёт по
+-           постоянному идентификатору. */
+-        if (message.data["type"] == "call") {
+-            showIncomingCall(message.data)
+-            return
+-        }
+-
+-        /* Приложение на переднем плане — уведомление уже показала веб-часть по
+-           живому соединению. Второе уведомление о том же сообщении раздражает
+-           сильнее, чем отсутствие уведомления вообще. */
+-        if (ConnectApp.isForeground) return
+-
+-        val data = message.data
+-        val title = data["title"]?.take(120)?.ifBlank { null } ?: getString(R.string.app_name)
+-        val body = data["body"]?.take(400).orEmpty()
+-        val tag = data["tag"]?.take(80).orEmpty()
+-        val link = data["link"]?.take(400).orEmpty()
+-
+-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+-
+-        /* Канал создаёт MainActivity при запуске, но сюда мы попадаем и при
+-           закрытом приложении — тогда его ещё нет. */
+-        NotificationBridge.ensureChannel(this)
+-
+-        val intent = Intent(this, MainActivity::class.java).apply {
+-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+-            /* Куда открыть. MainActivity может этим воспользоваться; если нет —
+-               человек просто попадёт туда, где остановился. */
+-            if (link.isNotEmpty()) putExtra(EXTRA_LINK, link)
+-        }
+-        val pending = PendingIntent.getActivity(
+-            this,
+-            if (tag.isEmpty()) 0 else tag.hashCode(),
+-            intent,
+-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+-        )
+-
+-        val notification = NotificationCompat.Builder(this, NotificationBridge.CHANNEL_ID)
+-            .setSmallIcon(R.drawable.ic_notification)
+-            .setContentTitle(title)
+-            .setContentText(body)
+-            .setStyle(NotificationCompat.BigTextStyle().setBigText(body))
+-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+-            .setDefaults(NotificationCompat.DEFAULT_ALL)
+-            .setAutoCancel(true)
+-            .setContentIntent(pending)
+-            .build()
+-
+-        /* Одна метка — одно уведомление: сообщения одной беседы обновляют своё,
+-           а не копятся десятком строк в шторке. */
+-        val id = if (tag.isEmpty()) 1 else tag.hashCode().absoluteValue
+-        try {
+-            NotificationManagerCompat.from(this).notify(tag, id, notification)
+-        } catch (_: SecurityException) {
+-            /* разрешение отозвали — показывать нечего */
+-        }
+-    }
+-
+-    /**
+-     * CALL: показать входящий вызов.
+-     *
+-     * Главное здесь — setFullScreenIntent: именно он разворачивает окно вызова
+-     * поверх блокировки, как у телефонного звонка. Уведомление всё равно
+-     * строится полноценным: на активном экране система покажет его вместо
+-     * окна — выдергивать человека из того, что он делает, система отказывается.
+-     */
+-    private fun showIncomingCall(data: Map<String, String>) {
+-        val callId = data["callId"]?.take(64).orEmpty()
+-        if (callId.isEmpty()) return
+-        val caller = data["callerName"]?.take(120)?.ifBlank { null } ?: getString(R.string.app_name)
+-        val video = data["callVideo"] == "1"
+-
+-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+-        ensureCallChannel()
+-
+-        val full = Intent(this, IncomingCallActivity::class.java).apply {
+-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+-            putExtra(IncomingCallActivity.EXTRA_CALL_ID, callId)
+-            putExtra(IncomingCallActivity.EXTRA_CALLER, caller)
+-            putExtra(IncomingCallActivity.EXTRA_VIDEO, video)
+-        }
+-        val pending = PendingIntent.getActivity(
+-            this,
+-            callId.hashCode(),
+-            full,
+-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+-        )
+-
+-        val notification = NotificationCompat.Builder(this, CALL_CHANNEL_ID)
+-            .setSmallIcon(R.drawable.ic_notification)
+-            .setContentTitle(caller)
+-            .setContentText(if (video) "Видеовызов" else "Вам звонят")
+-            .setCategory(NotificationCompat.CATEGORY_CALL)
+-            .setPriority(NotificationCompat.PRIORITY_MAX)
+-            /* setOngoing — вызов нельзя смахнуть случайным жестом. */
+-            .setOngoing(true)
+-            .setAutoCancel(false)
+-            .setContentIntent(pending)
+-            .setFullScreenIntent(pending, true)
+-            .build()
+-
+-        try {
+-            NotificationManagerCompat.from(this)
+-                .notify(IncomingCallActivity.NOTIFICATION_ID, notification)
+-        } catch (_: SecurityException) {
+-            /* разрешение отозвали — показывать нечего */
+-        }
+-    }
+-
+-    /**
+-     * Отдельная категория для звонков.
+-     *
+-     * Почему не общая с сообщениями: человек вправе приглушить переписку и
+-     * оставить звонки — или наоборот. В общей категории выбора не было бы.
+-     */
+-    private fun ensureCallChannel() {
+-        val manager = getSystemService(NotificationManager::class.java) ?: return
+-        if (manager.getNotificationChannel(CALL_CHANNEL_ID) != null) return
+-        val channel = NotificationChannel(
+-            CALL_CHANNEL_ID,
+-            "Звонки",
+-            NotificationManager.IMPORTANCE_HIGH,
+-        ).apply {
+-            description = "Входящие вызовы в приложении"
+-            enableVibration(true)
+-            setBypassDnd(true)
+-            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+-        }
+-        manager.createNotificationChannel(channel)
+-    }
+-}
+-
+-/** Категория уведомлений для входящих вызовов. */
+-const val CALL_CHANNEL_ID = "tz_connect_calls"
+-
+-/** Куда открыть приложение по нажатию на уведомление. */
+-const val EXTRA_LINK = "tz_link"
+diff --git a/apps/android/app/src/push/java/ru/trioz/connect/PushService.kt b/apps/android/app/src/push/java/ru/trioz/connect/PushService.kt
+index b7c6d4a..e9147dc 100644
+--- a/apps/android/app/src/push/java/ru/trioz/connect/PushService.kt
++++ b/apps/android/app/src/push/java/ru/trioz/connect/PushService.kt
+@@ -103,7 +103,7 @@ class PushService : FirebaseMessagingService() {
+             .setSmallIcon(R.drawable.ic_notification)
+             .setContentTitle(title)
+             .setContentText(body)
+-            .setStyle(NotificationCompat.BigTextStyle().setBigText(body))
++            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+             .setPriority(NotificationCompat.PRIORITY_HIGH)
+             .setDefaults(NotificationCompat.DEFAULT_ALL)
+             .setAutoCancel(true)

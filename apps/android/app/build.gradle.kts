@@ -90,7 +90,22 @@ android {
        не знает ничего: адрес устройства читается через PushTokens. */
     if (hasPushConfig) {
         sourceSets["main"].java.srcDir("src/push/java")
-        sourceSets["main"].manifest.srcFile("src/push/AndroidManifest.xml")
+
+        /* FIX-MANIFEST: манифест доставки подключается к наборам debug и release,
+           а НЕ к main.
+
+           Почему: у одного набора исходников манифест ровно один. Прежняя строка
+           sourceSets["main"].manifest.srcFile("src/push/AndroidManifest.xml")
+           не подмешивала push-манифест, а ЗАМЕНЯЛА им основной. Как только рядом
+           появлялся google-services.json, из APK исчезало всё: ConnectApp,
+           MainActivity, фильтр MAIN/LAUNCHER и все разрешения. Сборка проходила,
+           приложение ставилось пустым — без иконки и без возможности запуска.
+
+           У debug и release манифесты свои и по умолчанию не заданы, поэтому
+           здесь замены не происходит: manifest merger сливает push-манифест с
+           основным, как и задумано. */
+        sourceSets["debug"].manifest.srcFile("src/push/AndroidManifest.xml")
+        sourceSets["release"].manifest.srcFile("src/push/AndroidManifest.xml")
     }
 
     if (hasReleaseKeystore) {
@@ -124,13 +139,25 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            /* Ключа нет — оставляем сборку неподписанной, а не роняем её:
-               собрать проект должен уметь любой, у кого ключа нет и не будет. */
+            /* FIX-SIGN: ключа нет — подписываем отладочным ключом, а не отдаём
+               неподписанный APK.
+
+               Неподписанный APK Android ставить отказывается: телефон показывает
+               «Приложение не установлено» без каких-либо пояснений, и человек
+               остаётся с бесполезным файлом. Отладочный ключ генерируется сам, он
+               есть на любой машине, поэтому такой APK хотя бы устанавливается и
+               его можно проверить.
+
+               Для публикации он не годится (ключ не ваш и одинаков у всех), об
+               этом в лог уходит явное предупреждение — см. app/keystore.properties
+               в apps/android/README.md. */
             if (hasReleaseKeystore) {
                 signingConfig = signingConfigs.getByName("release")
             } else {
-                logger.lifecycle(
-                    "BUILDS: app/keystore.properties не найден — релизный APK будет НЕПОДПИСАННЫМ и не установится",
+                signingConfig = signingConfigs.getByName("debug")
+                logger.warn(
+                    "BUILDS: app/keystore.properties не найден — релизный APK подписан ОТЛАДОЧНЫМ ключом. " +
+                        "Устанавливается, но для публикации НЕ годится: положите keystore.properties и соберите заново.",
                 )
             }
         }
