@@ -5,6 +5,8 @@ import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatu
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { buildWireGuardConfig, generateWireGuardKeyPair } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
+import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy"; // NETLINK
+import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
 
 /* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
    Для обычных аккаунтов — витрина подписки.
@@ -47,11 +49,45 @@ interface VpnPeerState {
   };
 }
 
+/* NETLINK-2: то, что раньше показывала отдельная плашка над значком «TZ».
+   Плашка убрана: два экрана об одном и том же расходятся тем быстрее, чем
+   чаще правятся. Все поля необязательные: ответ без них (старый сервер,
+   кэш оболочки) должен просто скрыть блок, а не уронить окно. */
+interface PlanState {
+  kind?: "premium" | "link" | "none";
+  label?: string;
+  note?: string;
+  until?: string | null;
+}
+
+interface TrafficState {
+  usedBytes?: number;
+  remainingBytes?: number | null;
+  share?: number;
+  overLimit?: boolean;
+  periodEnd?: string;
+  limitGb?: number;
+  overLimitAction?: string;
+  throttleKbps?: number;
+}
+
+interface ServerChoice {
+  id: string;
+  name: string;
+  region?: string;
+  load?: number;
+  full?: boolean;
+  current?: boolean;
+}
+
 interface VpnState {
   serviceEnabled: boolean;
   entitled: boolean;
   nodeReady: boolean;
-  peer: VpnPeerState | null;
+  peer: (VpnPeerState & { nodeId?: string }) | null;
+  plan?: PlanState | null;
+  traffic?: TrafficState | null;
+  servers?: ServerChoice[] | null;
 }
 
 /* VPN-ROUTING: два варианта включения. Человек выбирает между «сменить свой адрес
@@ -141,6 +177,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       }
       const peer = data.peer as VpnPeerState;
       setState((prev) => ({
+        ...(prev ?? {}),
         serviceEnabled: prev?.serviceEnabled ?? true,
         entitled: prev?.entitled ?? true,
         nodeReady: prev?.nodeReady ?? true,
@@ -169,30 +206,92 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
+  const refresh = useCallback(async (): Promise<VpnState | null> => {
+    try {
+      const res = await fetch("/api/vpn/me");
+      const data = res.ok ? await res.json().catch(() => null) : null;
+      if (!data || typeof data !== "object") {
+        setFailed(true);
+        return null;
+      }
+      const next: VpnState = {
+        serviceEnabled: data.serviceEnabled === true,
+        entitled: data.entitled === true,
+        nodeReady: data.nodeReady === true,
+        peer: data.peer ?? null,
+        plan: data.plan ?? null,
+        traffic: data.traffic ?? null,
+        servers: Array.isArray(data.servers) ? data.servers : [],
+      };
+      setState(next);
+      setFailed(false);
+      return next;
+    } catch {
+      setFailed(true);
+      return null;
+    }
+  }, []);
+
+  /* Переезд на другой сервер меняет адрес и точку подключения, поэтому прежний
+     профиль на устройстве перестаёт работать. Говорим об этом сразу: тишина после
+     переезда читается как поломка сервиса, а не как собственное действие. */
+  const switchServer = async (nodeId: string) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/vpn/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodeId }),
+      });
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setError(data?.error || "Не удалось сменить сервер");
+        return;
+      }
+      setError("");
+      /* Старый показанный профиль больше не действителен — убираем его с экрана,
+         чтобы его не сохранили уже после переезда. */
+      setConfig(null);
+      await refresh();
+    } catch {
+      setError("Ошибка сети");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/vpn/me", { method: "DELETE" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error || "Не удалось выключить");
+        return;
+      }
+      setError("");
+      setConfig(null);
+      await refresh();
+    } catch {
+      setError("Ошибка сети");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/vpn/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled) return;
-        if (!data) { setFailed(true); return; }
-        const next: VpnState = {
-          serviceEnabled: data.serviceEnabled === true,
-          entitled: data.entitled === true,
-          nodeReady: data.nodeReady === true,
-          peer: data.peer ?? null,
-        };
-        setState(next);
+    void refresh().then((next) => {
+      if (cancelled || !next) return;
         /* VPN-ROUTING: автовыдача убрана намеренно. Раньше доступ выдавался сам
            при открытии окна, и человек не мог сказать, что именно гнать через
            туннель, — а выбрать за него нельзя: «весь трафик» и «только сервисы
            TZ» это два разных решения. Один экран, одна кнопка, выбор виден до
            нажатия. Прежний выбор подставляется, если пир уже есть. */
-        if (next.peer) setRouting(next.peer.routing === "SERVICES" ? "SERVICES" : "ALL");
-      })
-      .catch(() => { if (!cancelled) setFailed(true); });
+      if (next.peer) setRouting(next.peer.routing === "SERVICES" ? "SERVICES" : "ALL");
+    });
     return () => { cancelled = true; };
-  }, []);
+  }, [refresh]);
 
   const copyConfig = async () => {
     if (!config) return;
@@ -221,6 +320,22 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     Date.now() - new Date(state.peer.lastHandshakeAt).getTime() < 3 * 60_000;
   const active = !!state?.serviceEnabled && connected;
   const nodeIncomplete = !!state?.peer && (!state.peer.tunnel.serverPublicKey || !state.peer.tunnel.endpoint);
+
+  /* NETLINK-2: ответ читается только через эти переменные. Прямое обращение к
+     вложенным полям уже один раз уронило весь мессенджер, когда сервер ответил
+     старой формой без traffic. Окно о соединении не вправе ронять клиент. */
+  const plan = state?.plan ?? null;
+  const traffic = state?.traffic ?? null;
+  const servers = Array.isArray(state?.servers) ? state.servers : [];
+  const limitGb = Number(traffic?.limitGb) || 0;
+  const usedBytes = Number(traffic?.usedBytes) || 0;
+  const remainingBytes =
+    traffic?.remainingBytes === null || traffic?.remainingBytes === undefined
+      ? null
+      : Number(traffic.remainingBytes) || 0;
+  const share = Number(traffic?.share) || 0;
+  const overLimit = traffic?.overLimit === true;
+  const throttleMbits = Math.max(1, Math.round((Number(traffic?.throttleKbps) || 0) / 1024));
 
   return (
     <div className="relative p-6 text-neutral-900 dark:text-white">
@@ -320,6 +435,114 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           <p className="mt-4 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
             Узел ещё не сообщил свои параметры — профиль соберётся, как только он выйдет на связь.
           </p>
+        )}
+
+        {/* ── Тариф, расход и сервер ──
+            NETLINK-2: раньше жило в отдельной плашке над значком. Каждое значение
+            читается защитно: ответ без этих полей обязан просто скрыть блок. */}
+        {plan && (
+          <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Тариф</span>
+              <span className="text-[11px] text-neutral-400 dark:text-white/35">
+                {plan.until ? daysLeftLabel(plan.until) : "без срока"}
+              </span>
+            </div>
+            <strong className="mt-1 block text-sm">{plan.label || "Без подписки"}</strong>
+            {plan.note && (
+              <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">{plan.note}</p>
+            )}
+            {plan.kind === "none" && (
+              <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
+                Подходит любая из двух: {LINK_PLAN_QUOTED} или Premium.
+              </p>
+            )}
+          </div>
+        )}
+
+        {traffic && (
+          <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Трафик</span>
+              <span className="text-[11px] text-neutral-400 dark:text-white/35">
+                {limitGb > 0 ? `до ${limitGb} ГБ` : "без ограничения"}
+                {traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-white/10">
+              <div
+                className={`h-full rounded-full transition-all ${overLimit ? "bg-red-500" : share > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
+                style={{ width: `${Math.max(2, Math.min(100, share))}%` }}
+              />
+            </div>
+            <p className="mt-2 text-[11px] text-neutral-500 dark:text-white/45">
+              <strong className="text-neutral-900 dark:text-white">
+                {remainingBytes === null ? "Без ограничения" : `Осталось ${formatTraffic(remainingBytes)}`}
+              </strong>{" "}
+              · израсходовано {formatTraffic(usedBytes)}
+            </p>
+            {overLimit && (
+              <p className="mt-2 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+                {traffic.overLimitAction === "THROTTLE"
+                  ? `Лимит исчерпан — скорость снижена до ${throttleMbits} Мбит/с до конца периода.`
+                  : "Лимит исчерпан — соединение отключено до конца периода."}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Выбор сервера показываем только тому, у кого уже есть доступ: до выдачи
+            ключа менять нечего, а список только запутывает. */}
+        {state?.peer && servers.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Сервер</p>
+            <div className="mt-2 grid gap-2">
+              {servers.map((server) => {
+                const load = Math.max(0, Math.min(100, Number(server.load) || 0));
+                const unavailable = !!server.full && !server.current;
+                return (
+                  <button
+                    key={server.id}
+                    type="button"
+                    disabled={busy || server.current || unavailable}
+                    onClick={() => void switchServer(server.id)}
+                    aria-pressed={!!server.current}
+                    className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-default ${
+                      server.current
+                        ? "border-violet-500 bg-violet-500/[0.06] dark:border-cyan-400 dark:bg-cyan-400/[0.06]"
+                        : unavailable
+                        ? "border-neutral-200 opacity-50 dark:border-white/10"
+                        : "border-neutral-200 hover:bg-neutral-50 dark:border-white/10 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium text-neutral-900 dark:text-white">{server.name}</span>
+                      <span className="text-[11px] text-neutral-400 dark:text-white/35">
+                        {server.current ? "текущий" : unavailable ? "нет мест" : `загружен на ${load}%`}
+                      </span>
+                    </span>
+                    {server.region && (
+                      <span className="mt-0.5 block text-[11px] text-neutral-500 dark:text-white/40">{server.region}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
+              После переезда на другой сервер нужен новый профиль: адрес и точка подключения в нём другие.
+            </p>
+          </div>
+        )}
+
+        {state?.peer && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void disconnect()}
+            className="mt-3 w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/5"
+          >
+            {busy ? "Подождите…" : "Выключить соединение"}
+          </button>
         )}
 
         {/* ── Готовый профиль ── */}
