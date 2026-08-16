@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ChatIcon } from "@/components/ui/ConnectIcons";
-import ConnectionMenu from "@/components/connect/overlays/ConnectionMenu";
+import PremiumMark from "@/components/connect/PremiumMark";
 import MobileNotificationBell from "@/components/mobile/MobileNotificationBell";
 import MobileProfileSheet from "@/components/mobile/MobileProfileSheet";
 import { useState } from "react";
@@ -24,8 +24,9 @@ interface MobileGroupListProps {
   onJoinGroup: () => void;
   /** MOBILE-UI: глобальный поиск — раньше на телефоне был недоступен вовсе. */
   onOpenSearch?: () => void;
-  /* MOBILE-VPN: вход в окно Premium и VPN. На телефоне левой панели нет, и до
-     него было не добраться — в Android это выглядело как «функции VPN нет». */
+  /* MOBILE-VPN: вход в окно Premium и надёжного соединения. На телефоне левой
+     панели нет, и до него было не добраться — в Android это выглядело как
+     «функции соединения в приложении нет». */
   isPremium?: boolean;
   onOpenPremiumInfo?: () => void;
   /** FIX-NTF2: непрочитанные по сообществам: число, упоминания и список чатов. */
@@ -43,13 +44,12 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
       <header className="px-4 py-2.5 border-b border-neutral-200 dark:border-white/5 flex items-center justify-between" style={{ paddingTop: "max(0.625rem, env(safe-area-inset-top, 0px))" }}>
         {/* MOBILE-VPN: тот же значок «TZ», что и первым в левой панели на
             большом экране, — и с тем же действием. Панель на телефоне скрыта
-            целиком, поэтому вход в Premium и VPN пропадал вместе с ней: в
-            Android-оболочке это читалось как «функции VPN в приложении нет». */}
+            целиком, поэтому вход в Premium и соединение пропадал вместе с ней. */}
         <div className="flex items-center gap-2.5 min-w-0">
-          {/* NETLINK: та же кнопка, что и на большом экране: в Android-оболочке
-              левой панели нет, и без этого управление соединением было бы недоступно. */}
+          {/* NETLINK-2: клик сразу открывает большое окно. Промежуточная плашка на
+              телефоне была вдвойне лишней: узкий экран, а шагов до действия два. */}
           {onOpenPremiumInfo && (
-            <ConnectionMenu isPremium={!!isPremium} onOpenPremiumInfo={onOpenPremiumInfo} size={36} />
+            <PremiumMark isPremium={!!isPremium} onClick={onOpenPremiumInfo} size={36} />
           )}
           <h1 className="text-xl font-bold text-neutral-900 dark:text-white truncate">TZ.Connect</h1>
         </div>

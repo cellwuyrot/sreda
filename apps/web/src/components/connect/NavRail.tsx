@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import ConnectionMenu from "@/components/connect/overlays/ConnectionMenu";
+import PremiumMark from "@/components/connect/PremiumMark";
 import type { GlowAvatarUser } from "@/components/ui/GlowAvatar";
 import { CommunitiesIcon, FriendsIcon, MessagesIcon, MicIcon, GearIcon, ShieldIcon } from "@/components/ui/ConnectIcons";
 
@@ -75,12 +75,12 @@ function NavRail({
       aria-label="Основная навигация"
     >
       {/* ── Кнопка «TZ» ──
-          NETLINK: теперь это полноценное управление соединением, а не только
-          вход в окно: состояние, тариф, остаток трафика, срок и выбор сервера.
-          Раскраска значка по-прежнему живёт в PremiumMark — тот же значок стоит
-          в шапке на телефоне, где этой панели нет вовсе. */}
+          NETLINK-2: один клик — одно окно. Промежуточная плашка убрана: она
+          показывала те же сведения, что и большое окно, но в другом виде и на шаг
+          раньше — два разных экрана об одном и том же неизбежно расходятся.
+          Тариф, остаток трафика, срок и выбор сервера теперь внутри окна. */}
       <div className="mb-2">
-        <ConnectionMenu isPremium={!!isPremium} onOpenPremiumInfo={onOpenPremiumInfo} />
+        <PremiumMark isPremium={!!isPremium} onClick={onOpenPremiumInfo} />
       </div>
 
       {/* ── Divider ── */}
