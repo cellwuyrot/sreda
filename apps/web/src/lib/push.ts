@@ -43,6 +43,24 @@ export interface PushMessage {
   link?: string;
   /** Метка, по которой уведомления одной беседы схлопываются в одно. */
   tag?: string;
+  /**
+   * CALL: входящий вызов — особый вид доставки.
+   *
+   * Звонок нельзя показать как обычную строчку в шторке: его ждут сейчас, а не
+   * когда человек заглянет в телефон. Оболочка по этим полям понимает, что надо
+   * разбудить экран и показать окно вызова поверх блокировки (см. PushService).
+   *
+   * Срок жизни такого сообщения — секунды: догнавший через полчаса вызов —
+   * хуже, чем пропущенный вызов.
+   */
+  call?: {
+    callId: string;
+    callerName: string;
+    callerAvatar?: string;
+    video: boolean;
+    /** Сколько секунд вызов ещё актуален. */
+    ttlSeconds: number;
+  };
 }
 
 interface PushConfig {
@@ -141,6 +159,7 @@ async function accessToken(config: PushConfig): Promise<string | null> {
  * оболочка, иначе при открытом приложении человек получит уведомление дважды.
  */
 export function buildPushPayload(token: string, message: PushMessage) {
+  const call = message.call;
   return {
     message: {
       token,
@@ -149,12 +168,22 @@ export function buildPushPayload(token: string, message: PushMessage) {
         body: (message.body ?? "").slice(0, 240),
         link: message.link ?? "",
         tag: message.tag ?? "",
+        /* CALL: все значения — строки: служба доставки других не принимает.
+           Пустой `type` у обычных уведомлений оставлен намеренно: старая
+           версия оболочки просто его не читает и работает как раньше. */
+        type: call ? "call" : "",
+        callId: call?.callId ?? "",
+        callerName: (call?.callerName ?? "").slice(0, 120),
+        callerAvatar: (call?.callerAvatar ?? "").slice(0, 400),
+        callVideo: call?.video ? "1" : "",
       },
       android: {
         /* Высокий приоритет: иначе в режиме энергосбережения сообщение может
            ждать «удобного случая» — для переписки это бессмысленно. */
         priority: "HIGH",
-        ttl: "86400s",
+        /* Срок жизни вызова — ровно пока он звонит. Сутки, как у сообщений,
+           значили бы звонок с ожившего телефона на следующее утро. */
+        ttl: call ? `${Math.max(5, Math.min(120, call.ttlSeconds))}s` : "86400s",
       },
     },
   };

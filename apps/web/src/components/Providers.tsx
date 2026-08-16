@@ -11,6 +11,7 @@ import { AndroidShellGuard } from "./AndroidShellGuard"; // ANDROID-LOCK
 import { VoiceProvider } from "@/contexts/VoiceContext";
 import VoiceOverlayBridge from "@/components/voice/VoiceOverlayBridge"; // FIX-OVL
 import VoiceMiniWidget from "@/components/voice/VoiceMiniWidget";
+import { CallProvider } from "@/components/call/CallProvider"; // CALL
 import WelcomeModal from "@/components/WelcomeModal";
 import { ConfirmDialogHost } from "@/components/ui/ConfirmDialog";
 import { ThemeProvider as ConnectThemeProvider } from "@/contexts/ThemeContext";
@@ -106,10 +107,13 @@ export default function Providers({ children }: { children: ReactNode }) {
           <DesktopNavigationBridge />{/* FIX-NAV1: мягкая навигация из десктоп-оболочки без перезагрузки */}
           <AndroidShellGuard />{/* ANDROID-LOCK: в Android-оболочке глушим переходы вне /connect */}
           <VoiceProvider>
+            {/* CALL: личные звонки — вызов может прийти на любой странице, поэтому провайдер глобальный */}
+            <CallProvider>
             <InlineEditProvider>
               {children}
               <InlineEditOverlay />
             </InlineEditProvider>
+            </CallProvider>
             <VoiceMiniWidget />
             <VoiceOverlayBridge />{/* FIX-OVL */}
             <WelcomeModal />

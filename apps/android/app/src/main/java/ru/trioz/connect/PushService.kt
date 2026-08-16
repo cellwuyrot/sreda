@@ -1,5 +1,7 @@
 package ru.trioz.connect
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -71,6 +73,19 @@ class PushService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        /* CALL: вызов разбирается ДО проверки переднего плана.
+
+           Для сообщения выйти раньше правильно: открытое приложение покажет его
+           само. Для вызова — нет: событие по живому соединению и доставленное
+           сообщение идут разными путями и с разной скоростью, а терять вызов
+           нельзя ни в одном состоянии приложения. Повтор здесь не страшен:
+           окно вызова одно (launchMode=singleInstance), а уведомление идёт по
+           постоянному идентификатору. */
+        if (message.data["type"] == "call") {
+            showIncomingCall(message.data)
+            return
+        }
+
         /* Приложение на переднем плане — уведомление уже показала веб-часть по
            живому соединению. Второе уведомление о том же сообщении раздражает
            сильнее, чем отсутствие уведомления вообще. */
@@ -121,7 +136,83 @@ class PushService : FirebaseMessagingService() {
             /* разрешение отозвали — показывать нечего */
         }
     }
+
+    /**
+     * CALL: показать входящий вызов.
+     *
+     * Главное здесь — setFullScreenIntent: именно он разворачивает окно вызова
+     * поверх блокировки, как у телефонного звонка. Уведомление всё равно
+     * строится полноценным: на активном экране система покажет его вместо
+     * окна — выдергивать человека из того, что он делает, система отказывается.
+     */
+    private fun showIncomingCall(data: Map<String, String>) {
+        val callId = data["callId"]?.take(64).orEmpty()
+        if (callId.isEmpty()) return
+        val caller = data["callerName"]?.take(120)?.ifBlank { null } ?: getString(R.string.app_name)
+        val video = data["callVideo"] == "1"
+
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+        ensureCallChannel()
+
+        val full = Intent(this, IncomingCallActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra(IncomingCallActivity.EXTRA_CALL_ID, callId)
+            putExtra(IncomingCallActivity.EXTRA_CALLER, caller)
+            putExtra(IncomingCallActivity.EXTRA_VIDEO, video)
+        }
+        val pending = PendingIntent.getActivity(
+            this,
+            callId.hashCode(),
+            full,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val notification = NotificationCompat.Builder(this, CALL_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(caller)
+            .setContentText(if (video) "Видеовызов" else "Вам звонят")
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            /* setOngoing — вызов нельзя смахнуть случайным жестом. */
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setContentIntent(pending)
+            .setFullScreenIntent(pending, true)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(this)
+                .notify(IncomingCallActivity.NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+            /* разрешение отозвали — показывать нечего */
+        }
+    }
+
+    /**
+     * Отдельная категория для звонков.
+     *
+     * Почему не общая с сообщениями: человек вправе приглушить переписку и
+     * оставить звонки — или наоборот. В общей категории выбора не было бы.
+     */
+    private fun ensureCallChannel() {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(CALL_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            CALL_CHANNEL_ID,
+            "Звонки",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "Входящие вызовы в приложении"
+            enableVibration(true)
+            setBypassDnd(true)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+        manager.createNotificationChannel(channel)
+    }
 }
+
+/** Категория уведомлений для входящих вызовов. */
+const val CALL_CHANNEL_ID = "tz_connect_calls"
 
 /** Куда открыть приложение по нажатию на уведомление. */
 const val EXTRA_LINK = "tz_link"
