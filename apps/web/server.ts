@@ -14,7 +14,10 @@ import { PRIVATE_UPLOAD_DIRS, publicUploadsRoot, resolveUploadPath, uploadConten
 import { canAccessUpload } from "./src/lib/uploadAccess";
 import { fetchRemote, remoteLocationFor } from "./src/lib/uploadOffload";
 import { LRUCache } from "lru-cache";
-import { createNotificationsBulk } from "./src/lib/createNotification";
+import { createNotification, createNotificationsBulk } from "./src/lib/createNotification";
+import { randomUUID } from "node:crypto";
+import { queuePush } from "./src/lib/push";
+import { CALL_RING_MS, callSignalKinds } from "./src/lib/callProtocol";
 
 /* Строгий режим выдачи файлов: закрывать те, которых нет в указателе.
 
@@ -138,6 +141,92 @@ const VOICE_LEAVE_GRACE_MS = 8000;
 const pendingVoiceLeaves = new Map<string, { timer: ReturnType<typeof setTimeout>; socketId: string }>();
 const authenticatedSockets = new Map<string, AuthenticatedSocket>();
 const userSockets = new Map<string, Set<string>>();
+
+/* CALL: личные звонки один на один.
+
+   ── Почему не голосовые каналы ───────────────────────────────────────
+
+   Голосовой канал — комната, в которую входят сами и в которую может войти
+   любой член сообщества. Звонок — адресованное событие для ДВОИХ, с ожиданием
+   ответа и с правом отказаться. Своё состояние нужно именно из-за этого ожидания:
+   пока трубку не взяли, обмениваться медиа нельзя, а вызов надо где-то держать.
+
+   ── Почему в памяти, а не в базе ───────────────────────────────────
+
+   Вызов живёт десятки секунд и не переживает перезапуск процесса по своей
+   природе: медиа-соединение всё равно рвётся. Запись в базе нужна только для
+   истории «пропущенный вызов» — её делает уведомление, а не эта карта.
+
+   Ключ — номер вызова. Один человек может участвовать только в одном звонке: как
+   и с телефоном, второй звонящий слышит «занято». */
+interface CallSession {
+  callId: string;
+  callerId: string;
+  calleeId: string;
+  callerName: string;
+  /** Сокет звонящего: именно он ведёт обмен медиа. */
+  callerSocketId: string;
+  /** Сокет принявшего. До ответа неизвестен: трубку могут взять на любом из устройств. */
+  calleeSocketId: string | null;
+  video: boolean;
+  /** Когда гудок сорвётся сам. Считается один раз на весь вызов: при повторной
+      отправке события (приложение только что открыли) гудок не начинается заново. */
+  expiresAt: number;
+  state: "ringing" | "active";
+  /** Автоотмена по истечении звонка. */
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const activeCalls = new Map<string, CallSession>();
+/** userId -> callId. Второй индекс нужен, чтобы проверка «занято» не была перебором. */
+const callByUser = new Map<string, string>();
+
+/**
+ * Можно ли звонить этому человеку.
+ *
+ * Звонок — самое навязчивое действие в мессенджере: он будит экран и звенит.
+ * Поэтому право звонить уже, чем право написать: только подтверждённые друзья.
+ * Любой вошедший с правом будить чужой телефон ночью — готовый инструмент
+ * травли, а не удобство.
+ *
+ * Запреты проверяются в ОБЕ стороны: черный список одного из двоих закрывает
+ * звонок целиком — иначе игнор обходится звонком с другой стороны.
+ */
+async function canCall(callerId: string, calleeId: string): Promise<{ ok: boolean; reason?: string }> {
+  if (callerId === calleeId) return { ok: false, reason: "Нельзя позвонить самому себе" };
+
+  const [friendship, ignore, callee] = await Promise.all([
+    prisma.friendship.findFirst({
+      where: {
+        status: "ACCEPTED",
+        OR: [
+          { senderId: callerId, receiverId: calleeId },
+          { senderId: calleeId, receiverId: callerId },
+        ],
+      },
+      select: { id: true },
+    }),
+    prisma.userIgnore.findFirst({
+      where: {
+        OR: [
+          { userId: callerId, ignoredId: calleeId },
+          { userId: calleeId, ignoredId: callerId },
+        ],
+      },
+      select: { id: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: calleeId },
+      select: { id: true, banned: true },
+    }),
+  ]);
+
+  if (!callee) return { ok: false, reason: "Аккаунт не найден" };
+  if (callee.banned) return { ok: false, reason: "Аккаунт заблокирован" };
+  if (ignore) return { ok: false, reason: "Звонок недоступен" };
+  if (!friendship) return { ok: false, reason: "Звонить можно только друзьям" };
+  return { ok: true };
+}
 
 // ── Access control ─────────────────────────────────────────────────
 // channelId -> groupId cache (a channel never moves between groups).
@@ -807,6 +896,26 @@ app.prepare().then(() => {
     // ── DM room ───────────────────────────────────────────────────────────
     socket.join(`dm-${authData.userId}`);
 
+    /* CALL: вызов мог прийти в ЗАКРЫТОЕ приложение — тогда событие call-incoming
+       ушло в пустую комнату, а человек увидел только окно поверх блокировки и
+       нажал «Ответить». Страница открывается с нуля и о вызове не знает ничего,
+       поэтому текущий вызов повторяется сразу после подключения. Без этого
+       трубку на закрытом телефоне взять было бы невозможно в принципе. */
+    const pendingCallId = callByUser.get(authData.userId);
+    const pendingCall = pendingCallId ? activeCalls.get(pendingCallId) : undefined;
+    if (pendingCall && pendingCall.state === "ringing" && pendingCall.calleeId === authData.userId) {
+      socket.emit("call-incoming", {
+        callId: pendingCall.callId,
+        from: {
+          userId: pendingCall.callerId,
+          userName: pendingCall.callerName,
+          avatar: null,
+        },
+        video: pendingCall.video,
+        expiresAt: pendingCall.expiresAt,
+      });
+    }
+
     // DM typing indicators — relay to the other participant via their dm room
     socket.on("dm-typing", ({ convId }: { convId: string }) => {
       if (typeof convId !== "string" || !convId) return;
@@ -1064,6 +1173,200 @@ app.prepare().then(() => {
       io.to(to).emit("ice-candidate", { from: socket.id, candidate });
     });
 
+    // ── CALL: личный звонок один на один ────────────────────────
+    //
+    // Вызов уходит в комнату `dm-<userId>`, а не в один сокет: у человека
+    // может быть телефон и компьютер одновременно, и звонить должны все
+    // устройства, а трубку берёт одно — как у обычного телефона.
+
+    /** Завершить вызов и разослать причину всем устройствам обоих участников. */
+    function finishCall(call: CallSession, reason: string) {
+      clearTimeout(call.timer);
+      activeCalls.delete(call.callId);
+      if (callByUser.get(call.callerId) === call.callId) callByUser.delete(call.callerId);
+      if (callByUser.get(call.calleeId) === call.callId) callByUser.delete(call.calleeId);
+      const payload = { callId: call.callId, reason };
+      io.to(`dm-${call.callerId}`).emit("call-ended", payload);
+      io.to(`dm-${call.calleeId}`).emit("call-ended", payload);
+    }
+
+    socket.on(
+      "call-invite",
+      async (
+        { toUserId, video }: { toUserId: string; video?: boolean },
+        ack?: (result: { ok: boolean; callId?: string; error?: string }) => void,
+      ) => {
+        const reply = (result: { ok: boolean; callId?: string; error?: string }) => {
+          if (typeof ack === "function") ack(result);
+        };
+        /* Звонок будит чужой телефон, поэтому лимит жёстче любого другого
+           события: без этого скрипт из десятка строк превращается в средство травли. */
+        if (socketFlood(socket, "call-invite", 6, 60_000)) {
+          reply({ ok: false, error: "Слишком много вызовов подряд" });
+          return;
+        }
+        if (typeof toUserId !== "string" || !toUserId) {
+          reply({ ok: false, error: "Неизвестный собеседник" });
+          return;
+        }
+
+        const allowed = await canCall(authData.userId, toUserId);
+        if (!allowed.ok) {
+          reply({ ok: false, error: allowed.reason ?? "Звонок недоступен" });
+          return;
+        }
+
+        /* Занято — у любой из сторон. Второй одновременный звонок означал бы два
+           гудка в одних наушниках и два окна поверх блокировки. */
+        if (callByUser.has(authData.userId)) {
+          reply({ ok: false, error: "Вы уже в звонке" });
+          return;
+        }
+        if (callByUser.has(toUserId)) {
+          reply({ ok: false, error: "Абонент занят" });
+          return;
+        }
+
+        const callId = randomUUID();
+        const wantsVideo = video === true;
+        const call: CallSession = {
+          callId,
+          callerId: authData.userId,
+          calleeId: toUserId,
+          callerName: authData.userName,
+          callerSocketId: socket.id,
+          calleeSocketId: null,
+          video: wantsVideo,
+          expiresAt: Date.now() + CALL_RING_MS,
+          state: "ringing",
+          /* Автоотмена. Без неё забытый вызов висит вечно и держит обоих в
+             состоянии «занято» — больше никто им не дозвонится. */
+          timer: setTimeout(() => {
+            const pending = activeCalls.get(callId);
+            if (!pending || pending.state !== "ringing") return;
+            finishCall(pending, "timeout");
+            /* Пропущенный вызов остаётся в колокольчике: иначе о звонке в два ночи
+               человек узнает только от звонившего. */
+            void createNotification({
+              userId: pending.calleeId,
+              type: "CALL_MISSED",
+              title: "Пропущенный вызов",
+              body: pending.callerName,
+              link: "/connect?section=dm",
+              actorId: pending.callerId,
+            }).catch(() => null);
+          }, CALL_RING_MS),
+        };
+
+        activeCalls.set(callId, call);
+        callByUser.set(call.callerId, callId);
+        callByUser.set(call.calleeId, callId);
+
+        io.to(`dm-${toUserId}`).emit("call-incoming", {
+          callId,
+          from: {
+            userId: authData.userId,
+            userName: authData.userName,
+            avatar: authData.avatar ?? null,
+          },
+          video: wantsVideo,
+          expiresAt: call.expiresAt,
+        });
+
+        /* Закрытое приложение сокета не держит — без доставки телефон в кармане
+           просто молчит, и вся затея со звонком теряет смысл. */
+        queuePush([toUserId], {
+          title: authData.userName,
+          body: wantsVideo ? "Видеовызов" : "Вам звонят",
+          link: `/connect?call=${callId}`,
+          tag: `call-${callId}`,
+          call: {
+            callId,
+            callerName: authData.userName,
+            callerAvatar: authData.avatar ?? undefined,
+            video: wantsVideo,
+            ttlSeconds: Math.round(CALL_RING_MS / 1000),
+          },
+        });
+
+        reply({ ok: true, callId });
+        console.log(`[Call] ${authData.userName} → ${toUserId} (${wantsVideo ? "video" : "audio"}) ${callId}`);
+      },
+    );
+
+    socket.on("call-accept", ({ callId }: { callId: string }) => {
+      const call = activeCalls.get(callId);
+      if (!call || call.calleeId !== authData.userId) return;
+      if (call.state === "active") {
+        /* Трубку уже взяли на другом устройстве. */
+        socket.emit("call-taken", { callId });
+        return;
+      }
+      clearTimeout(call.timer);
+      call.state = "active";
+      call.calleeSocketId = socket.id;
+      /* Звонок принят одним устройством — остальные обязаны перестать звенеть. */
+      socket.to(`dm-${call.calleeId}`).emit("call-taken", { callId });
+      io.to(call.callerSocketId).emit("call-accepted", { callId, peerSocketId: socket.id });
+      socket.emit("call-accepted", { callId, peerSocketId: call.callerSocketId });
+    });
+
+    socket.on("call-decline", ({ callId }: { callId: string }) => {
+      const call = activeCalls.get(callId);
+      if (!call || call.calleeId !== authData.userId) return;
+      finishCall(call, "declined");
+    });
+
+    socket.on("call-hangup", ({ callId }: { callId: string }) => {
+      const call = activeCalls.get(callId);
+      if (!call) return;
+      if (call.callerId !== authData.userId && call.calleeId !== authData.userId) return;
+      /* До ответа это отмена вызова, после — обычное завершение разговора.
+         Разница важна только для подписи на экране. */
+      finishCall(call, call.state === "ringing" ? "cancelled" : "hangup");
+    });
+
+    /**
+     * Медиа-договорённость внутри звонка.
+     *
+     * Передаётся ТОЛЬКО между двумя сокетами именно этого звонка. Голосовые
+     * события (voice-offer и т.д.) тут не годятся: они требуют общей голосовой
+     * комнаты, а у звонка комнаты нет. Отсюда же следует главное правило:
+     * без проверки участия в звонке через релей утекает адрес сети человека:
+     * ICE-кандидаты содержат его IP.
+     */
+    socket.on(
+      "call-signal",
+      ({ callId, kind, payload }: { callId: string; kind: string; payload: unknown }) => {
+        if (socketFlood(socket, "call-signal", 500, 10_000)) return;
+        if (!callSignalKinds(kind)) return;
+        const call = activeCalls.get(callId);
+        if (!call) return;
+        const isCaller = call.callerSocketId === socket.id;
+        const isCallee = call.calleeSocketId === socket.id;
+        if (!isCaller && !isCallee) return;
+        const target = isCaller ? call.calleeSocketId : call.callerSocketId;
+        if (!target) return;
+        io.to(target).emit("call-signal", { callId, kind, payload });
+      },
+    );
+
+    /** Состояние микрофона и камеры — чтобы вторая сторона видела подпись, а не чёрный квадрат. */
+    socket.on(
+      "call-media",
+      ({ callId, muted, video }: { callId: string; muted?: boolean; video?: boolean }) => {
+        if (socketFlood(socket, "call-media", 60, 10_000)) return;
+        const call = activeCalls.get(callId);
+        if (!call) return;
+        const isCaller = call.callerSocketId === socket.id;
+        const isCallee = call.calleeSocketId === socket.id;
+        if (!isCaller && !isCallee) return;
+        const target = isCaller ? call.calleeSocketId : call.callerSocketId;
+        if (!target) return;
+        io.to(target).emit("call-media", { callId, muted: muted === true, video: video === true });
+      },
+    );
+
     socket.on("toggle-mute", ({ channelId, muted }: { channelId: string; muted: boolean }) => {
       const room = voiceRooms.get(channelId);
       if (room) {
@@ -1219,6 +1522,26 @@ app.prepare().then(() => {
       }
 
       authenticatedSockets.delete(socket.id);
+
+      /* CALL: у звонка нет grace-окна, как у голосового канала. Пропавшая связь
+         во время разговора — это конец разговора: медиа-соединение всё равно рвётся,
+         и держать после этого второго человека в состоянии «занято» бессмысленно. */
+      if (authData) {
+        const stillOnline = (userSockets.get(authData.userId)?.size ?? 0) > 0;
+        const ownCallId = callByUser.get(authData.userId);
+        const ownCall = ownCallId ? activeCalls.get(ownCallId) : undefined;
+        if (ownCall) {
+          const wasParticipant =
+            ownCall.callerSocketId === socket.id || ownCall.calleeSocketId === socket.id;
+          /* Звонящий закрыл вкладку — вызов снимаем сразу. А вот у того, кому
+             звонят, отвалившееся устройство не обязано гасить вызов: трубку могут
+             взять на втором, где вызов ещё звонит. */
+          if (wasParticipant || !stillOnline) {
+            finishCall(ownCall, ownCall.state === "ringing" ? "unavailable" : "hangup");
+          }
+        }
+      }
+
       const channelsToLeave = Array.from(voiceRooms.entries())
         .filter(([, room]) => room.has(socket.id))
         .map(([channelId]) => channelId);

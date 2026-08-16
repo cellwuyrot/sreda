@@ -18,18 +18,41 @@
     <!-- Android 13+ runtime notification permission (in-app toasts and push). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      CALL: входящий звонок поверх блокировки.
+
+      USE_FULL_SCREEN_INTENT — разрешение разворачивать окно сразу, а не показывать
+      полоску в шторке. Без него вызов на закрытом телефоне выглядит как
+      обычное уведомление, и его просто не заметят. С Android 14 оно выдаётся
+      только приложениям со звонками — это как раз наш случай.
+
+      WAKE_LOCK — разбудить экран на время вызова.
+
+      FOREGROUND_SERVICE* — разговор не должен обрываться, когда человек свернул
+      приложение, чтобы посмотреть адрес или заметку.
+    -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
     <!-- Nothing here is mandatory, so the app installs on all devices. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
 
+    <!-- FIX-SEC: android:allowBackup был "true". При включённой резервной копии
+         данные приложения (cookie сессии в WebView, токен доставки) уезжают в
+         облако и снимаются через adb backup с разблокированного телефона — то
+         есть войти в аккаунт можно без пароля. Мессенджеру резервная копия
+         состояния не нужна: вся переписка и так на сервере.
+
+         Важно: комментарий стоит ПЕРЕД тегом, а не среди его атрибутов:
+         комментарий внутри открывающего тега — невалидный XML, и сборка apk
+         падает на разборе манифеста. -->
     <application
         android:name=".ConnectApp"
-        <!-- FIX-SEC: было "true". При включённой резервной копии данные
-             приложения (cookie сессии в WebView, токен доставки) уезжают в облако
-             и снимаются через adb backup с разблокированного телефона — то есть
-             войти в аккаунт можно без пароля. Мессенджеру резервная копия
-             состояния не нужна: вся переписка и так на сервере. -->
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -56,6 +79,31 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          CALL: окно входящего вызова.
+
+          showWhenLocked + turnScreenOn — то, зачем вся эта отдельная страница и
+          существует: экран загорается сам, и вызов виден без разблокировки,
+          как у телефонного звонка.
+
+          excludeFromRecents — завершённый вызов не должен оставаться в недавних:
+          открытый из недавних снимок показал бы вызов, которого больше нет.
+
+          exported=false: окно открывает только служба доставки внутри приложения.
+          Стороннее приложение иначе могло бы рисовать поддельный вызов поверх
+          блокировки от имени мессенджера.
+        -->
+        <activity
+            android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:theme="@style/Theme.Connect" />
 
         <!--
           PUSH: доставка уведомлений в ЗАКРЫТОЕ приложение.
