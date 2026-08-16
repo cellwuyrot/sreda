@@ -1409,7 +1409,24 @@ function ConnectPageInner() {
         />
       )}
 
-      {!isBanned && !identityBlocked && activeSection === "communities" && !!groupDetail?.isMain && <AppealComposer />}
+      {/*
+        FIX-APPEAL-SCOPE: конверт привязан к главному сообществу, а показывался по
+        одному факту `groupDetail?.isMain`. На телефоне шаг назад из группы меняет
+        только вид (`mobileView`), а снимок сообщества остаётся в памяти намеренно:
+        по нему строится возврат без повторной загрузки. Оттуда и «письмо», висевшее
+        над списком сообществ и над чужими группами.
+
+        Очищать снимок на выходе было бы лечением симптома ценой моргания каналов
+        при возврате, поэтому условие стало точным: группа загружена и она же сейчас
+        на экране (на телефоне — именно вид чата, не список).
+      */}
+      {!isBanned
+        && !identityBlocked
+        && activeSection === "communities"
+        && groupReady
+        && !!groupDetail?.isMain
+        && (isDesktopViewport !== false || mobileView === "chat")
+        && <AppealComposer />}
 
       {/* REFACTOR-A: шилд «Соединение потеряно» — overlays/ConnectionLostShield (перенос 1-в-1) */}
       {connectionLost && <ConnectionLostShield reconnectAttempt={reconnectAttempt} />}

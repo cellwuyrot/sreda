@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { useInlineEdit } from "./InlineEditContext";
+import { isInlineEditablePath } from "@/lib/inlineEdit";
 
 function getElementPath(el: HTMLElement): string {
   const parts: string[] = [];
@@ -57,10 +59,17 @@ function isTextElement(el: HTMLElement): boolean {
 
 export default function InlineEditOverlay() {
   const { editMode, saveContent, contents } = useInlineEdit();
+  /* FIX-BLACK-EDIT: вне витрины режим считается выключенным целиком, вместе с
+     подстановкой сохранённых текстов: трогать узлы живого приложения нельзя ни по
+     нажатию, ни фоновым обходом дерева. */
+  const pathname = usePathname();
+  const allowed = isInlineEditablePath(pathname);
+  const active = editMode && allowed;
   const activeElRef = useRef<HTMLElement | null>(null);
   const originalTextRef = useRef<string>("");
 
   const applyOverrides = useCallback(() => {
+    if (!allowed) return;
     if (!contents || Object.keys(contents).length === 0) return;
 
     const walker = document.createTreeWalker(
@@ -88,14 +97,14 @@ export default function InlineEditOverlay() {
         }
       }
     }
-  }, [contents]);
+  }, [contents, allowed]);
 
   useEffect(() => {
     applyOverrides();
   }, [applyOverrides]);
 
   useEffect(() => {
-    if (!editMode) {
+    if (!active) {
       document.querySelectorAll("[data-inline-editable]").forEach((el) => {
         el.removeAttribute("data-inline-editable");
         (el as HTMLElement).style.removeProperty("cursor");
@@ -209,9 +218,9 @@ export default function InlineEditOverlay() {
       document.removeEventListener("keydown", handleKeyDown, true);
       document.removeEventListener("focusout", handleBlur, true);
     };
-  }, [editMode, saveContent]);
+  }, [active, saveContent]);
 
-  if (!editMode) return null;
+  if (!active) return null;
 
   return (
     <>

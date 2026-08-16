@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
 import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
+import { isInlineEditablePath } from "@/lib/inlineEdit";
 
 interface InlineEditContextType {
   editMode: boolean;
@@ -81,6 +82,10 @@ function ContentApplier({ contents }: { contents: Record<string, string> }) {
 
   useEffect(() => {
     if (!contents || Object.keys(contents).length === 0) return;
+    /* FIX-BLACK-EDIT: тот же запрет, что и у накладки. Обход дерева сам по себе
+       меняет текстовые узлы мимо React — в ленте сообщений это такая же причина
+       падения, даже когда режим редактирования выключен. */
+    if (!isInlineEditablePath(pathname)) return;
 
     const applyOverrides = () => {
       const walker = document.createTreeWalker(
