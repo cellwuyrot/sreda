@@ -85,6 +85,14 @@ export const IPC = {
   OVERLAY_ACTION: "desktop:overlay-action",
   /** FIX-OVL-SIZE: окно оверлея сообщает фактическую высоту контента. */
   OVERLAY_RESIZE: "desktop:overlay-resize",
+  /**
+   * FIX-OVL-DRAG2: перетаскивание окна оверлея мышью. Штатный -webkit-app-region
+   * здесь не годится (см. main/overlay.ts), поэтому окно двигает main-процесс
+   * по экранным координатам курсора.
+   */
+  OVERLAY_MOVE_START: "desktop:overlay-move-start",
+  OVERLAY_MOVE: "desktop:overlay-move",
+  OVERLAY_MOVE_END: "desktop:overlay-move-end",
   // main → renderer (push)
   TOGGLE_MUTE: "desktop:toggle-mute",
   PUSH_TO_TALK: "desktop:push-to-talk",

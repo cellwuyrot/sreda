@@ -40,6 +40,18 @@ let userDismissed = false;
  * пользователем, запоминаем и восстанавливаем при следующих показах.
  */
 let userPosition: { x: number; y: number } | null = null;
+/**
+ * FIX-OVL-DRAG2: штатный `-webkit-app-region: drag` в этом окне неработоспособен,
+ * и починить его нельзя — это следствие того, как окно показывается. Оверлей
+ * всплывает через showInactive() поверх чужого полноэкранного приложения и
+ * остаётся неактивным. Перетаскивание через app-region начинается в системном
+ * обработчике несущего окна и требует, чтобы первый нажатый клик его активировал:
+ * у неактивного always-on-top окна нажатие уходит на активацию, и перетаскивание
+ * просто не начинается — со стороны это выглядит ровно как «веду мышью, а оно
+ * стоит». Поэтому окно двигаем сами: шапка шлёт экранные координаты курсора,
+ * а main ставит позицию. Побочная выгода: фокус у игры не отбирается вовсе.
+ */
+let dragOrigin: { pointerX: number; pointerY: number; winX: number; winY: number } | null = null;
 
 const OVERLAY_WIDTH = 300;
 const OVERLAY_HEIGHT = 380;
@@ -262,10 +274,53 @@ export function handleOverlayResize(rawHeight: number): void {
   const clamped = Math.min(OVERLAY_MAX_HEIGHT, Math.max(OVERLAY_MIN_HEIGHT, next));
   if (clamped === contentHeight) return;
   contentHeight = clamped;
+  /* FIX-OVL-DRAG2: пока окно ведут мышью, чужие setBounds запрещены: перестановка
+     границ в середине жеста выдёргивает окно из-под курсора. Новая высота
+     запомнена и применится по окончании перетаскивания. */
+  if (dragOrigin) return;
   if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
     const [x, y] = overlayWindow.getPosition();
     overlayWindow.setBounds({ x, y, width: OVERLAY_WIDTH, height: currentHeight() });
   }
+}
+
+/**
+ * FIX-OVL-DRAG2: начало жеста. Запоминаем точку захвата и текущий угол окна,
+ * чтобы вести окно по разнице, а не пригвождать его угол к курсору: иначе окно
+ * прыгает в момент нажатия тем сильнее, чем дальше от угла взялись.
+ */
+export function handleOverlayMoveStart(pointerX: number, pointerY: number): void {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  if (!Number.isFinite(pointerX) || !Number.isFinite(pointerY)) return;
+  const [winX, winY] = overlayWindow.getPosition();
+  dragOrigin = { pointerX, pointerY, winX, winY };
+}
+
+/** FIX-OVL-DRAG2: шаг жеста — окно едет за курсором с той же разницей. */
+export function handleOverlayMove(pointerX: number, pointerY: number): void {
+  if (!dragOrigin || !overlayWindow || overlayWindow.isDestroyed()) return;
+  if (!Number.isFinite(pointerX) || !Number.isFinite(pointerY)) return;
+  const height = currentHeight();
+  const nextX = Math.round(dragOrigin.winX + (pointerX - dragOrigin.pointerX));
+  const nextY = Math.round(dragOrigin.winY + (pointerY - dragOrigin.pointerY));
+  /* Не даём увести окно за край рабочей области: оттуда его не вернуть мышью,
+     а шапка — единственное место захвата. Оставляем видимой хотя бы полоску. */
+  const area = screen.getDisplayNearestPoint({ x: pointerX, y: pointerY }).workArea;
+  const x = Math.min(Math.max(nextX, area.x - OVERLAY_WIDTH + 80), area.x + area.width - 80);
+  const y = Math.min(Math.max(nextY, area.y), area.y + area.height - 40);
+  overlayWindow.setBounds({ x, y, width: OVERLAY_WIDTH, height });
+}
+
+/** FIX-OVL-DRAG2: конец жеста. Позицию запишет обработчик `moved`. */
+export function handleOverlayMoveEnd(): void {
+  dragOrigin = null;
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  const [x, y] = overlayWindow.getPosition();
+  userPosition = { x, y };
+  /* Высота, пришедшая пока вели окно, была отложена — применяем её теперь. */
+  const height = currentHeight();
+  const bounds = overlayWindow.getBounds();
+  if (bounds.height !== height) overlayWindow.setBounds({ x, y, width: OVERLAY_WIDTH, height });
 }
 
 export function destroyOverlay(): void {

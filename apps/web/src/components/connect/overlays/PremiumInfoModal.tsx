@@ -5,7 +5,8 @@ import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatu
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { buildWireGuardConfig, generateWireGuardKeyPair } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
-import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy"; // NETLINK
+import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
+import { isDesktop } from "@/lib/desktop"; // APP-ONLY // NETLINK
 import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
 
 /* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
@@ -96,18 +97,30 @@ interface VpnState {
    настройкой в панели. Какие именно подсети входят в каждый вариант, задаёт
    администратор; здесь только смысл. */
 const ROUTING_OPTIONS: { value: VpnRouting; title: string; note: string }[] = [
-  { value: "ALL", title: "Весь трафик", note: "Через сервер идёт всё. Внешний адрес меняется." },
-  { value: "SERVICES", title: "Только сервисы TZ", note: "Через сервер идёт только TZ. Остальное — напрямую." },
+  { value: "ALL", title: "Весь трафик компьютера", note: "Через сервер идёт всё. Внешний адрес меняется." },
+  {
+    value: "SERVICES",
+    title: "Только приложение TZ",
+    note: "В туннеле только TZ. Остальной интернет компьютера идёт напрямую.",
+  },
 ];
 
+/*
+ * APP-ONLY: в десктоп-версии режим «только приложение» — не мелкая настройка, а главный
+ * вопрос доверия: человек должен видеть без чтения документации, что банк-клиент,
+ * рабочая VPN работодателя и весь прочий трафик компьютера остаются вне туннеля.
+ * Поэтому в оболочке показываем явную плашку под выбором режима.
+ */
 function RoutingChoice({
   value,
   onChange,
   disabled,
+  desktop,
 }: {
   value: VpnRouting;
   onChange: (next: VpnRouting) => void;
   disabled?: boolean;
+  desktop?: boolean;
 }) {
   return (
     <div className="mt-5">
@@ -133,6 +146,30 @@ function RoutingChoice({
           </button>
         ))}
       </div>
+      {/* APP-ONLY */}
+      {desktop && (
+        <div
+          className={`mt-2 rounded-xl border px-3 py-2 text-[11px] leading-relaxed ${
+            value === "SERVICES"
+              ? "border-emerald-500/30 bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-300"
+              : "border-amber-400/30 bg-amber-400/[0.08] text-amber-700 dark:text-amber-300"
+          }`}
+        >
+          {value === "SERVICES" ? (
+            <>
+              <span className="font-semibold">Туннелирование только для приложения.</span> Интернет-трафик
+              компьютера не перенаправляется: браузер, банк-клиент, игры и рабочая сеть
+              работают напрямую, через сервер идёт только TZ.
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">Весь трафик компьютера пойдёт через сервер.</span> Это касается
+              всех программ, а не только TZ. Если нужно защитить только общение в TZ —
+              выберите «Только приложение TZ».
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -157,9 +194,23 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      сервере его нет и быть не может. */
   const [config, setConfig] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  /* Выбранный режим до нажатия кнопки. По умолчанию «весь трафик» — этого от VPN
-     и ждут; второй вариант выбирают осознанно. */
+  /* Выбранный режим до нажатия кнопки. В браузере по умолчанию «весь трафик» — этого
+     от соединения и ждут. В десктоп-оболочке — наоборот (см. эффект ниже). */
   const [routing, setRouting] = useState<VpnRouting>("ALL");
+  /*
+   * APP-ONLY: оболочка определяется только в эффекте: window на сервере нет, а
+   * чтение в теле компонента дало бы расхождение разметки при гидратации.
+   */
+  const [desktopShell, setDesktopShell] = useState(false);
+  useEffect(() => {
+    if (!isDesktop()) return;
+    setDesktopShell(true);
+    /* В установленном приложении безопасный по умолчанию выбор — туннель только для
+       самого приложения: перекладывать весь интернет компьютера на чужой шлюз нужно
+       только по явному желанию. Если профиль уже выдан, его режим приедет из
+       refresh() и перекроет этот выбор. */
+    setRouting((prev) => (prev === "ALL" ? "SERVICES" : prev));
+  }, []);
 
   const enroll = useCallback(async (mode: VpnRouting): Promise<boolean> => {
     setBusy(true);
@@ -581,7 +632,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         {/* Включение: выбор режима виден до нажатия, выдача идёт по кнопке. */}
         {state?.entitled && state.serviceEnabled && state.nodeReady && !state.peer && (
           <>
-            <RoutingChoice value={routing} onChange={setRouting} disabled={busy} />
+            <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
             <button
               type="button"
               disabled={busy}
@@ -596,7 +647,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         {/* Перевыпуск нужен, когда профиль потерян, устройство сменилось или
             человек решил сменить режим: `AllowedIPs` живёт в профиле, и поменять
             его задним числом нельзя — только выдать новый. */}
-        {state?.peer && !config && <RoutingChoice value={routing} onChange={setRouting} disabled={busy} />}
+        {state?.peer && !config && (
+          <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
+        )}
         {state?.peer && !config && (
           <button
             type="button"
