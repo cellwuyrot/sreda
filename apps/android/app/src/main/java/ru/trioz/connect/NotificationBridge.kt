@@ -99,7 +99,7 @@ class NotificationBridge(
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(safeTitle)
                 .setContentText(safeBody)
-                .setStyle(NotificationCompat.BigTextStyle().setBigText(safeBody))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(safeBody))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(NotificationCompat.DEFAULT_ALL)
                 .setAutoCancel(true)
