@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { findNodeByToken } from "@/lib/serverMesh";
 import { getVpnSettings, isPeerEntitled, isValidWireGuardKey } from "@/lib/vpn";
+import { isTrafficBlocked, periodExpired, usageView } from "@/lib/connectionUsage";
 
 // SERVER-MESH: точка отчёта дочернего узла.
 //
@@ -18,6 +19,12 @@ const ALLOWED_KEYS = [
   "uptimeSeconds",
   "load",
   "peers",
+  // NETLINK: суммарный трафик интерфейса и мгновенная скорость — сквозная
+  // загруженность узла в панели строится по ним.
+  "rxBytes",
+  "txBytes",
+  "mbitsIn",
+  "mbitsOut",
   "storageUsedMb",
   "diskFreeMb",
   "message",
@@ -98,6 +105,51 @@ export async function POST(req: Request) {
     }
   }
 
+  /* NETLINK: расход трафика по каждому пиру. Узел присылает НАКОПИТЕЛЬНЫЕ
+     счётчики интерфейса (то, что показывает `wg show dump`), а при перезапуске
+     интерфейса они начинаются с нуля. Поэтому в расход идёт прирост, а не само
+     число: иначе одна перезагрузка узла списала бы человеку весь его трафик
+     второй раз, а откат счётчика назад дал бы отрицательный расход. */
+  if (node.kind === "VPN" && Array.isArray((body as { transfers?: unknown })?.transfers)) {
+    const settings = await getVpnSettings();
+    const transfers = (body as { transfers: unknown[] }).transfers.slice(0, 500);
+    for (const item of transfers) {
+      if (!item || typeof item !== "object") continue;
+      const { publicKey, rx, tx } = item as { publicKey?: unknown; rx?: unknown; tx?: unknown };
+      if (!isValidWireGuardKey(publicKey)) continue;
+      const rawRx = typeof rx === "number" && Number.isFinite(rx) && rx >= 0 ? rx : 0;
+      const rawTx = typeof tx === "number" && Number.isFinite(tx) && tx >= 0 ? tx : 0;
+      const peer = await prisma.vpnPeer.findFirst({
+        where: { nodeId: node.id, publicKey },
+        select: { id: true, rxBytes: true, txBytes: true, lastRx: true, lastTx: true, usageResetAt: true },
+      });
+      if (!peer) continue;
+
+      // Счётчик вырос — берём разницу; упал — интерфейс перезапустили,
+      // значит вся текущая величина и есть прирост с момента перезапуска.
+      const deltaRx = rawRx >= peer.lastRx ? rawRx - peer.lastRx : rawRx;
+      const deltaTx = rawTx >= peer.lastTx ? rawTx - peer.lastTx : rawTx;
+
+      /* Ленивый сброс периода — здесь, в единственном месте, где счётчики
+         растут. Отдельная задача по расписанию для этого не нужна и только добавила
+         бы молчаливо ломающуюся деталь. */
+      const expired = periodExpired(peer.usageResetAt, settings.usagePeriodDays);
+      await prisma.vpnPeer
+        .update({
+          where: { id: peer.id },
+          data: expired
+            ? { rxBytes: deltaRx, txBytes: deltaTx, lastRx: rawRx, lastTx: rawTx, usageResetAt: new Date() }
+            : {
+                rxBytes: peer.rxBytes + deltaRx,
+                txBytes: peer.txBytes + deltaTx,
+                lastRx: rawRx,
+                lastTx: rawTx,
+              },
+        })
+        .catch(() => null);
+    }
+  }
+
   const main = await prisma.serverNode.findFirst({
     where: { role: "MAIN" },
     select: { name: true, url: true, region: true },
@@ -113,9 +165,10 @@ export async function POST(req: Request) {
   // руками, забанили — узлу пира по-прежнему присылали, и туннель работал. Теперь
   // любая потеря права снимает туннель в течение минуты, без отдельной задачи по
   // расписанию, а запись пира остаётся: вернулась подписка — вернулся доступ.
-  const vpnEnabled = node.kind === "VPN" ? (await getVpnSettings()).enabled : false;
+  const vpnSettings = node.kind === "VPN" ? await getVpnSettings() : null;
+  const vpnEnabled = vpnSettings?.enabled ?? false;
   const vpnPeers =
-    node.kind !== "VPN"
+    node.kind !== "VPN" || !vpnSettings
       ? null
       : !vpnEnabled
       ? []
@@ -126,6 +179,12 @@ export async function POST(req: Request) {
               publicKey: true,
               address: true,
               exitIp: true,
+              /* NETLINK: расход периода нужен здесь же: лимит — такое же
+                 основание доступа, как и сама подписка, и проверяться он должен в той
+                 же единственной точке, а не задачей по расписанию. */
+              rxBytes: true,
+              txBytes: true,
+              usageResetAt: true,
               /* VPN-PLAN: право даёт либо Premium, либо подписка только на VPN. */
               user: {
                 select: {
@@ -142,11 +201,22 @@ export async function POST(req: Request) {
           })
         )
           .filter((peer) => isPeerEntitled(peer.user))
+          /* NETLINK: исчерпанный лимит при правиле «отключить» снимает соединение
+             тем же способом, что и кончившаяся подписка: пир перестаёт попадать
+             в список узла. Запись остаётся — новый период вернёт доступ сам. */
+          .filter((peer) => !isTrafficBlocked(peer, vpnSettings))
           .map((peer) => ({
             publicKey: peer.publicKey,
             allowedIp: `${peer.address}/32`,
             // VPN-EXIT: пустая строка — общий MASQUERADE узла (прежнее поведение).
             exitIp: peer.exitIp,
+            /* NETLINK: потолок скорости в Кбит/с для тех, кто вышел за лимит при
+               правиле «снизить скорость». 0 — ограничений нет. Формирует трафик сам
+               узел: через главный сервер этот трафик не проходит вообще. */
+            throttleKbps:
+              vpnSettings.overLimitAction === "THROTTLE" && usageView(peer, vpnSettings).overLimit
+                ? vpnSettings.throttleKbps
+                : 0,
           }));
 
   return NextResponse.json({

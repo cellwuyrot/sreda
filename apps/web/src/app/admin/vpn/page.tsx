@@ -8,6 +8,18 @@ import BackButton from "@/components/ui/BackButton"; // BACK-STEP
 import Spinner from "@/components/ui/Spinner";
 import Input from "@/components/ui/Input";
 import InfoTooltip from "@/components/ui/InfoTooltip";
+import {
+  DEFAULT_TRAFFIC_LIMIT_GB,
+  MAX_THROTTLE_KBPS,
+  MAX_TRAFFIC_LIMIT_GB,
+  MAX_USAGE_PERIOD_DAYS,
+  MIN_THROTTLE_KBPS,
+  MIN_USAGE_PERIOD_DAYS,
+  OVER_LIMIT_LABELS,
+  formatTraffic,
+  type OverLimitAction,
+} from "@/lib/connectionUsage";
+import { LINK_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 
 /**
  * VPN-PANEL: управление сервисом VPN.
@@ -35,6 +47,24 @@ interface Settings {
      включении VPN. Что считать «сервисами TZ», знает только администратор. */
   serviceAllowedIps: string;
   maxPeersPerNode: number;
+  /* NETLINK: условия тарифа. Лимит ОДИН для всех: и Premium, и отдельная
+     подписка дают одинаковое соединение, и два разных лимита пришлось бы
+     объяснять каждому подписчику отдельно. */
+  trafficLimitGb: number;
+  usagePeriodDays: number;
+  overLimitAction: OverLimitAction;
+  throttleKbps: number;
+}
+
+/** NETLINK: сводка по расходу — считает сервер, здесь только показывается. */
+interface Summary {
+  subscribers: number;
+  enabledPeers: number;
+  activePeers: number;
+  usedBytes: number;
+  overLimitPeers: number;
+  committedGb: number;
+  periodResets: number;
 }
 
 /** Состояние узла считает сервер — он же знает и отчёт, и точку подключения. */
@@ -49,6 +79,10 @@ interface NodeRow {
   obfuscationMissing: boolean;
   peers: number;
   capacity: number;
+  /* NETLINK: загруженность в процентах и прокачанный трафик за текущие
+     периоды подписчиков узла. */
+  load: number;
+  trafficBytes: number;
   lastSeenAt: string | null;
   state: NodeState;
 }
@@ -135,6 +169,7 @@ export default function AdminVpnPage() {
   const router = useRouter();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [nodes, setNodes] = useState<NodeRow[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -151,12 +186,13 @@ export default function AdminVpnPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/admin/vpn");
-      if (!res.ok) throw new Error("Не удалось загрузить настройки VPN");
+      if (!res.ok) throw new Error("Не удалось загрузить настройки");
       const data = await res.json();
       const loaded: Settings = { ...data.settings, serviceAllowedIps: data.settings?.serviceAllowedIps ?? TZ_ONLY };
       setSettings(loaded);
       setDraft(loaded);
       setNodes(Array.isArray(data.nodes) ? data.nodes : []);
+      setSummary(data.summary ?? null);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
@@ -206,11 +242,23 @@ export default function AdminVpnPage() {
     settings.dns !== draft.dns ||
     settings.allowedIps !== draft.allowedIps ||
     settings.serviceAllowedIps !== draft.serviceAllowedIps ||
-    settings.maxPeersPerNode !== draft.maxPeersPerNode
+    settings.maxPeersPerNode !== draft.maxPeersPerNode ||
+    settings.trafficLimitGb !== draft.trafficLimitGb ||
+    settings.usagePeriodDays !== draft.usagePeriodDays ||
+    settings.overLimitAction !== draft.overLimitAction ||
+    settings.throttleKbps !== draft.throttleKbps
   );
   /* Границы проверяет и сервер, но ловить их кнопкой лучше, чем ошибкой после
      нажатия: администратор набирает «0» и сразу видит, почему нельзя. */
   const peersValid = !!draft && draft.maxPeersPerNode >= MIN_PEERS && draft.maxPeersPerNode <= MAX_PEERS;
+  /* NETLINK: те же границы, что проверяет сервер. 0 ГБ — осознанный выбор
+     «без ограничения», поэтому он допустим, а не ошибка. */
+  const limitValid = !!draft && draft.trafficLimitGb >= 0 && draft.trafficLimitGb <= MAX_TRAFFIC_LIMIT_GB;
+  const periodValid =
+    !!draft && draft.usagePeriodDays >= MIN_USAGE_PERIOD_DAYS && draft.usagePeriodDays <= MAX_USAGE_PERIOD_DAYS;
+  const throttleValid =
+    !!draft && draft.throttleKbps >= MIN_THROTTLE_KBPS && draft.throttleKbps <= MAX_THROTTLE_KBPS;
+  const planValid = limitValid && periodValid && throttleValid;
   /* «Обычное значение» варианта «весь трафик» — против ручного списка подсетей.
      Вариант «только сервисы TZ» задаётся строкой всегда: готового значения для
      чужого проекта не существует, кроме подсети самого туннеля. */
@@ -222,7 +270,7 @@ export default function AdminVpnPage() {
       <div className="mx-auto max-w-3xl space-y-5">
         <div className="flex items-center gap-3">
           <BackButton fallback="/admin" className="text-sm text-neutral-500 hover:text-neutral-800 dark:text-gray-400 dark:hover:text-white">← Назад</BackButton>
-          <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">VPN</h1>
+          <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">{LINK_NAME}</h1>
         </div>
 
         {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</p>}
@@ -236,7 +284,7 @@ export default function AdminVpnPage() {
             <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Сервис VPN</h2>
+                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Сервис «{LINK_NAME}»</h2>
                   <p className="mt-0.5 text-xs text-neutral-500 dark:text-gray-400">
                     {settings.enabled
                       ? ready.length > 0
@@ -272,6 +320,149 @@ export default function AdminVpnPage() {
               </p>
             </section>
 
+            {/* ── NETLINK: что получает подписчик ──
+
+                Главный вопрос администратора к этому разделу — «сколько человеку
+                положено и что будет, когда он это истратит». Поэтому лимит, длина
+                периода и правило при исчерпании стоят выше технических параметров
+                туннеля: первое видят подписчики, второе — никто. */}
+            <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
+                Что входит в подписку{" "}
+                <InfoTooltip
+                  side="bottom"
+                  text={`По части соединения Premium и подписка ${LINK_PLAN_QUOTED} равнозначны: один лимит, одни и те же серверы. Разница только в остальных возможностях Premium.`}
+                />
+              </h2>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-gray-400">
+                Условия одинаковы для Premium и для подписки {LINK_PLAN_QUOTED}.
+              </p>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-white/80">
+                    Сколько трафика на одного подписчика, ГБ{" "}
+                    <InfoTooltip text="Считается весь трафик в обе стороны за расчётный период. 0 — без ограничения." />
+                  </p>
+                  <Input
+                    className="mt-2 w-32"
+                    inputMode="numeric"
+                    value={String(draft.trafficLimitGb)}
+                    onChange={(e) =>
+                      setDraft({ ...draft, trafficLimitGb: Number(e.target.value.replace(/\D/g, "")) || 0 })
+                    }
+                  />
+                  <p className="mt-1 text-[11px] text-neutral-500 dark:text-gray-400">
+                    {!limitValid
+                      ? `Допустимо от 0 до ${MAX_TRAFFIC_LIMIT_GB} ГБ.`
+                      : draft.trafficLimitGb === 0
+                        ? "Без ограничения: расход всё равно считается и виден ниже."
+                        : `Стандартный тариф — ${draft.trafficLimitGb} ГБ за ${draft.usagePeriodDays} дн.${
+                            draft.trafficLimitGb === DEFAULT_TRAFFIC_LIMIT_GB ? "" : ` Обычное значение — ${DEFAULT_TRAFFIC_LIMIT_GB} ГБ.`
+                          }`}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-white/80">
+                    За сколько дней считать лимит{" "}
+                    <InfoTooltip text="Период личный у каждого и отсчитывается от его первого включения, а не от первого числа месяца: иначе те, кто подключился 30-го, получали бы лимит на день." />
+                  </p>
+                  <Input
+                    className="mt-2 w-32"
+                    inputMode="numeric"
+                    value={String(draft.usagePeriodDays)}
+                    onChange={(e) =>
+                      setDraft({ ...draft, usagePeriodDays: Number(e.target.value.replace(/\D/g, "")) || 0 })
+                    }
+                  />
+                  <p className="mt-1 text-[11px] text-neutral-500 dark:text-gray-400">
+                    {periodValid
+                      ? `Счётчик обнуляется каждые ${draft.usagePeriodDays} дн. у каждого свой отсчёт.`
+                      : `Допустимо от ${MIN_USAGE_PERIOD_DAYS} до ${MAX_USAGE_PERIOD_DAYS} дней.`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Правило при исчерпании — два честных варианта, без полутонов. */}
+              <div className="mt-5">
+                <p className="text-xs font-medium text-neutral-700 dark:text-white/80">
+                  Что делать, когда лимит исчерпан{" "}
+                  <InfoTooltip text="Отключение снимает туннель до конца периода тем же способом, что и кончившаяся подписка. Понижение скорости оставляет связь, но с потолком на стороне узла." />
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(["BLOCK", "THROTTLE"] as OverLimitAction[]).map((action) => (
+                    <button
+                      key={action}
+                      type="button"
+                      onClick={() => setDraft({ ...draft, overLimitAction: action })}
+                      className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+                        draft.overLimitAction === action
+                          ? "border-violet-500 bg-violet-500/[0.06] text-neutral-900 dark:border-cyan-400 dark:text-white"
+                          : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      {OVER_LIMIT_LABELS[action]}
+                    </button>
+                  ))}
+                </div>
+                {draft.overLimitAction === "THROTTLE" && (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <Input
+                      className="w-32"
+                      inputMode="numeric"
+                      value={String(draft.throttleKbps)}
+                      onChange={(e) =>
+                        setDraft({ ...draft, throttleKbps: Number(e.target.value.replace(/\D/g, "")) || 0 })
+                      }
+                    />
+                    <p className="text-[11px] text-neutral-500 dark:text-gray-400">
+                      {throttleValid
+                        ? `Кбит/с после исчерпания — примерно ${Math.round((draft.throttleKbps / 1024) * 10) / 10} Мбит/с. Переписка работает, видео — нет.`
+                        : `Допустимо от ${MIN_THROTTLE_KBPS} до ${MAX_THROTTLE_KBPS} Кбит/с.`}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Сводка по расходу: без неё лимит — число без последствий. */}
+              {summary && (
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+                    <p className="text-[11px] text-neutral-500 dark:text-gray-400">Подписчиков с подключением</p>
+                    <p className="mt-0.5 text-sm font-medium text-neutral-900 dark:text-white">
+                      {summary.subscribers}
+                      <span className="ml-1 text-[11px] font-normal text-neutral-500 dark:text-gray-400">
+                        сейчас на связи {summary.activePeers}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+                    <p className="text-[11px] text-neutral-500 dark:text-gray-400">Израсходовано за текущие периоды</p>
+                    <p className="mt-0.5 text-sm font-medium text-neutral-900 dark:text-white">
+                      {formatTraffic(summary.usedBytes)}
+                      {settings.trafficLimitGb > 0 && (
+                        <span className="ml-1 text-[11px] font-normal text-neutral-500 dark:text-gray-400">
+                          из {summary.committedGb} ГБ по всем подпискам
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-neutral-200 p-3 sm:col-span-2 dark:border-white/10">
+                    <p className="text-[11px] text-neutral-500 dark:text-gray-400">Исчерпали лимит</p>
+                    <p className="mt-0.5 text-sm font-medium text-neutral-900 dark:text-white">
+                      {summary.overLimitPeers === 0 ? "Ни одного" : `${summary.overLimitPeers} чел.`}
+                      <span className="ml-1 text-[11px] font-normal text-neutral-500 dark:text-gray-400">
+                        {settings.overLimitAction === "BLOCK"
+                          ? "— соединение снято до конца периода"
+                          : "— соединение работает на пониженной скорости"}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </section>
+
             {/* ── Параметры туннеля ── */}
             <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
@@ -288,8 +479,8 @@ export default function AdminVpnPage() {
                   интернете» и «дотянуться до сервисов TZ» — разные задачи. */}
               <div className="mt-4">
                 <p className="text-xs font-medium text-neutral-700 dark:text-white/80">
-                  Какой трафик идёт через VPN{" "}
-                  <InfoTooltip text="Из этих двух вариантов человек выбирает сам при включении VPN. Здесь задаётся, что каждый вариант означает." />
+                  Какой трафик идёт через сервер{" "}
+                  <InfoTooltip text="Из этих двух вариантов человек выбирает сам при включении. Здесь задаётся, что каждый вариант означает." />
                 </p>
 
                 {/* Вариант 1 — весь трафик */}
@@ -401,7 +592,7 @@ export default function AdminVpnPage() {
               <div className="mt-5 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  disabled={saving || !dirty || !peersValid}
+                  disabled={saving || !dirty || !peersValid || !planValid}
                   onClick={() =>
                     patch(
                       {
@@ -409,8 +600,15 @@ export default function AdminVpnPage() {
                         allowedIps: draft.allowedIps,
                         serviceAllowedIps: draft.serviceAllowedIps,
                         maxPeersPerNode: draft.maxPeersPerNode,
+                        // NETLINK: условия тарифа сохраняются одной кнопкой вместе с
+                        // параметрами туннеля: две кнопки «Сохранить» на одной странице
+                        // заставляют угадывать, какая из них к чему относится.
+                        trafficLimitGb: draft.trafficLimitGb,
+                        usagePeriodDays: draft.usagePeriodDays,
+                        overLimitAction: draft.overLimitAction,
+                        throttleKbps: draft.throttleKbps,
                       },
-                      "Параметры сохранены",
+                      "Настройки сохранены",
                     )
                   }
                   className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
@@ -450,7 +648,7 @@ export default function AdminVpnPage() {
                   <ol className="mt-2 ml-4 list-decimal space-y-1 text-[11px] text-neutral-500 dark:text-gray-400">
                     <li>
                       В <Link href="/admin/servers" className="text-violet-600 hover:underline dark:text-cyan-400">Серверах</Link>{" "}
-                      добавьте узел с назначением «VPN» и укажите его IP — токен агента покажется один раз.
+                      добавьте узел с назначением «Соединение» и укажите его IP — токен агента покажется один раз.
                     </li>
                     <li>Поднимите на машине интерфейс WireGuard и запустите агент с этим токеном.</li>
                     <li>Через минуту узел появится здесь со состоянием «Готов».</li>
@@ -481,6 +679,11 @@ export default function AdminVpnPage() {
                           </p>
                         )}
                         <LoadBar peers={node.peers} capacity={node.capacity} />
+                        {/* NETLINK: загруженность двумя мерами — устройства и трафик. */}
+                        <p className="mt-1 text-[11px] text-neutral-500 dark:text-gray-400">
+                          Загруженность {node.load}% · прокачано {formatTraffic(node.trafficBytes)} за текущие
+                          периоды подписчиков
+                        </p>
                       </div>
                     );
                   })}
