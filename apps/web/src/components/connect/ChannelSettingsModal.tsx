@@ -159,7 +159,8 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
             <div>
               <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1 block">Тип канала</label>
               <div className="flex items-center gap-2 px-3 py-2 bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl text-sm text-neutral-600 dark:text-neutral-300">
-                {type === "TEXT" ? <><ChatIcon size={16} /> Текстовый</> : type === "NEWS" ? <><NewsIcon size={16} /> Новости</> : <><VoiceChannelIcon size={16} /> Голосовой</>}
+                {/* FIX-FEED: улучшенный чат — отдельная подпись, иначе он показывался «голосовым». */}
+                {type === "TEXT" ? <><ChatIcon size={16} /> Текстовый</> : type === "FEED" ? <><NewsIcon size={16} /> Улучшенный чат</> : type === "NEWS" ? <><NewsIcon size={16} /> Новости</> : <><VoiceChannelIcon size={16} /> Голосовой</>}
               </div>
             </div>
 

@@ -12,7 +12,7 @@
  * /api/profile/me and persists them the same way the old modal did.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CITY_NAMES } from "@/lib/cityTimezones";
@@ -23,6 +23,7 @@ import { exportKeysToJSON, importKeysFromJSON } from "@/lib/e2ee";
 import { SparklesIcon, FilmIcon, MoonIcon, KeyIcon, UploadIcon, DownloadIcon } from "@/components/ui/ConnectIcons";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import { SettingsCard, SettingsGroup, SettingsRow } from "@/components/settings/SettingsUI";
+import BackgroundPicker from "@/components/profile/BackgroundPicker"; // FIX-BGCROP
 
 interface ProfileSettings {
   avatarGlowEnabled: boolean;
@@ -91,8 +92,7 @@ export default function ConnectProfileSettings({
   const [customStatus, setCustomStatus] = useState<string>("");
   const [statusLoading, setStatusLoading] = useState(false);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
-  const [bannerUploading, setBannerUploading] = useState(false);
-  const bannerInputRef = useRef<HTMLInputElement>(null);
+  /* FIX-BGCROP: input файла, флаг загрузки и выбор рамки переехали в BackgroundPicker. */
   const [city, setCity] = useState<string>("");
   const [dmSoundOn, setDmSoundOn] = useState(true);
   const [activityEnabled, setActivityEnabled] = useState(false); // FIX-ACT
@@ -298,46 +298,9 @@ export default function ConnectProfileSettings({
               <FilmIcon size={18} tone="active" /> Анимированный профиль
               <InfoTooltip text="Загрузите GIF или изображение — оно станет анимированным фоном вашего профиля." />
             </h3>
-            {bannerUrl && (
-              <div className="relative h-24 rounded-xl overflow-hidden border border-neutral-200 dark:border-white/10">
-                <img src={bannerUrl} alt="Banner" className="w-full h-full object-cover" />
-                <button
-                  onClick={() => setBannerUrl(null)}
-                  className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-            )}
-            <button
-              onClick={() => bannerInputRef.current?.click()}
-              disabled={bannerUploading}
-              className="px-3 py-2 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-xl text-xs font-medium hover:bg-violet-500/20 transition-colors disabled:opacity-50"
-            >
-              {bannerUploading ? "Загрузка..." : bannerUrl ? "Заменить фон" : "Загрузить фон"}
-            </button>
-            <input
-              ref={bannerInputRef}
-              type="file"
-              accept="image/*,.gif"
-              className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                setBannerUploading(true);
-                const fd = new FormData();
-                fd.append("file", file);
-                fd.append("type", "banner");
-                try {
-                  const res = await fetch("/api/profile/avatar", { method: "POST", body: fd });
-                  const data = await res.json();
-                  if (data.url) setBannerUrl(data.url);
-                  else setError("Ошибка загрузки");
-                } catch { setError("Ошибка сети"); }
-                setBannerUploading(false);
-                e.target.value = "";
-              }}
-            />
+            {/* FIX-BGCROP: файл уезжает как есть (анимация GIF цела), а «какую часть
+                показать» человек выбирает рамкой — выбор едет в адресе картинки. */}
+            <BackgroundPicker value={bannerUrl} onChange={setBannerUrl} onError={setError} />
           </div>
         )}
 

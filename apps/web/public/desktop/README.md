@@ -11,7 +11,7 @@ web app serves everything here from two places, and **neither touches GitHub**:
 - `GET /desktop/<file>` — static serving (with HTTP range support) for direct
   links and for the Electron auto-updater / `nsis-web` stub, which fetch
   `latest*.yml`, `*.blockmap` and the `*.7z` app package from here. This matches
-  electron-builder's `publish.url` (`https://connect.trioz.ru/desktop/`).
+  electron-builder's `publish.url` (`https://trioz.ru/desktop/`).
 
 ## How to publish a build
 

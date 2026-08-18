@@ -16,7 +16,7 @@ import {
 //
 // The desktop installers (Windows .exe, macOS .dmg, Linux .AppImage/.deb) are
 // hosted *on this server*, in the same place electron-builder publishes to
-// (`publish.url` / `nsisWeb.appPackageUrl` → https://connect.trioz.ru/desktop/).
+// (`publish.url` / `nsisWeb.appPackageUrl` → https://trioz.ru/desktop/).
 // There is deliberately **no dependency on GitHub**: this route reads the local
 // download store and streams the matching installer straight to the browser,
 // so clicking "Скачать" on /about starts the download immediately — no redirect

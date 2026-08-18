@@ -361,6 +361,7 @@ export default function SectionsPanel({
 
 const FORM_TYPES: { v: string; label: string }[] = [
   { v: "TEXT", label: "Открытый чат" },
+  { v: "FEED", label: "Улучшенный чат" }, // FIX-FEED
   { v: "NEWS", label: "Новости" },
   { v: "QA", label: "Вопрос-ответ" },
   { v: "WIKI", label: "База знаний" },

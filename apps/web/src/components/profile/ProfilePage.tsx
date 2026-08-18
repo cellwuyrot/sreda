@@ -23,6 +23,7 @@ import {
 import { TrashIcon } from "@/components/ui/ConnectIconsExtra";
 import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { useCall } from "@/components/call/CallProvider"; // CALL
+import { bannerBackgroundStyle } from "@/lib/bannerFraming"; // FIX-BGCROP
 
 /**
  * PROFILE-WALL: личная страница — шапка, стена, подписчики, подписки.
@@ -528,11 +529,7 @@ export default function ProfilePage({ username }: { username?: string }) {
       <div className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900/60">
         <div
           className="h-32 bg-gradient-to-r from-indigo-500/30 to-fuchsia-500/30"
-          style={
-            head.profileBanner
-              ? { backgroundImage: `url(${head.profileBanner})`, backgroundSize: "cover", backgroundPosition: "center" }
-              : undefined
-          }
+          style={bannerBackgroundStyle(head.profileBanner)}
         />
         <div className="p-4 pt-0">
           {/* PROFILE-HEAD-FIX: на телефоне (WebView Android) шапка встаёт в

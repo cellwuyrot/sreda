@@ -14,7 +14,7 @@
 Это же хранилище отдаётся статикой по пути `/desktop/` (с поддержкой Range),
 поэтому оттуда же работают автообновление Electron и онлайн-установщик
 `nsis-web` — адрес совпадает с `publish.url` / `nsisWeb.appPackageUrl` в
-`apps/desktop/electron-builder.yml` (`https://connect.trioz.ru/desktop/`).
+`apps/desktop/electron-builder.yml` (`https://trioz.ru/desktop/`).
 
 Как опубликовать сборку с автообновлением (одной командой):
 
