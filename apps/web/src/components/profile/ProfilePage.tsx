@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -44,11 +44,27 @@ interface WallAuthor {
   avatarGlowColors: string | null;
 }
 
+/**
+ * FIX-WALLMEDIA: материал записи на стене.
+ *
+ * Сервер умел хранить вложения записи и до этого (поле attachments в базе и
+ * sanitizeWallAttachments на входе), но в интерфейсе их негде было приложить —
+ * стена оставалась чисто текстовой. Форма совпадает с WallAttachment на сервере.
+ */
+export interface WallMedia {
+  url: string;
+  name: string;
+  size?: number;
+  type?: string;
+}
+
 interface WallPost {
   id: string;
   title: string;
   content: string;
   cover: string | null;
+  /** FIX-WALLMEDIA: фото, видео и документы записи. */
+  attachments?: WallMedia[];
   pinned: boolean;
   views: number;
   commentsClosed: boolean;
@@ -209,6 +225,74 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Фото по типу или по расширению: у старых записей типа может не быть. */
+function isWallImage(m: WallMedia) {
+  return (m.type || "").startsWith("image/") || /\.(png|jpe?g|webp|gif|avif)$/i.test(m.url);
+}
+
+function isWallVideo(m: WallMedia) {
+  return (m.type || "").startsWith("video/") || /\.(mp4|webm|mov|mkv)$/i.test(m.url);
+}
+
+function formatSize(bytes?: number) {
+  if (typeof bytes !== "number" || bytes <= 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+/**
+ * FIX-WALLMEDIA: материал записи выглядит так же, как в новостях: фото сеткой,
+ * видео штатным проигрывателем, документы — строкой с именем и размером.
+ *
+ * Видео без preload: на стене записей много, и автозагрузка каждого ролика
+ * съела бы канал разом при открытии страницы.
+ */
+function WallMediaView({ items }: { items?: WallMedia[] }) {
+  if (!items || items.length === 0) return null;
+  const images = items.filter(isWallImage);
+  const videos = items.filter(isWallVideo);
+  const files = items.filter((m) => !isWallImage(m) && !isWallVideo(m));
+  return (
+    <div className="mt-2 space-y-2">
+      {images.length > 0 && (
+        <div className={images.length === 1 ? "" : "grid grid-cols-2 gap-2"}>
+          {images.map((m) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={m.url}
+              src={m.url}
+              alt={m.name}
+              className="w-full max-h-96 rounded-xl object-cover"
+            />
+          ))}
+        </div>
+      )}
+      {videos.map((m) => (
+        <video
+          key={m.url}
+          src={m.url}
+          controls
+          preload="metadata"
+          className="w-full max-h-96 rounded-xl bg-black"
+        />
+      ))}
+      {files.map((m) => (
+        <a
+          key={m.url}
+          href={m.url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-2 text-sm text-neutral-700 dark:text-gray-200 hover:border-indigo-400 transition-colors"
+        >
+          <BookOpenIcon size={14} />
+          <span className="truncate">{m.name}</span>
+          <span className="ml-auto shrink-0 text-xs text-neutral-400">{formatSize(m.size)}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export default function ProfilePage({ username }: { username?: string }) {
   const { data: session } = useSession();
   const viewerName = session?.user?.username;
@@ -237,6 +321,17 @@ export default function ProfilePage({ username }: { username?: string }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  /* FIX-WALLMEDIA: материал грузится СРАЗУ при выборе, а в запись уходят уже
+     готовые адреса — так же, как вложения в чате. Иначе большое видео
+     уходило бы одним запросом вместе с текстом, и при обрыве терялся бы весь
+     черновик. */
+  const [media, setMedia] = useState<WallMedia[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
+  const docInputRef = useRef<HTMLInputElement | null>(null);
 
   /* Шапка тянется из уже существующего публичного профиля, а не из нового адреса:
      там уже учтены настройки приватности, бейджи и статус активности. Второй
@@ -334,20 +429,63 @@ export default function ProfilePage({ username }: { username?: string }) {
     }
   }
 
+  /**
+   * FIX-WALLMEDIA: загрузка выбранных файлов на стену.
+   *
+   * По одному файлу за запрос: так одна неудача не убивает остальные и
+   * видно, какой именно файл не прошёл.
+   */
+  const uploadWallFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const file of files.slice(0, 10)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/wall/upload", {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        }).catch(() => null);
+        if (!res || !res.ok) {
+          const message = res ? await res.json().catch(() => null) : null;
+          setUploadError(
+            (message && typeof message.error === "string" ? message.error : null) ||
+              `Не удалось загрузить «${file.name}»`,
+          );
+          continue;
+        }
+        const data = (await res.json()) as WallMedia;
+        setMedia((prev) => (prev.length >= 10 ? prev : [...prev, data]));
+      }
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
   async function submitPost() {
     if (!head || sending) return;
     const content = draft.trim();
-    if (!content) return;
+    /* FIX-WALLMEDIA: запись только из материала, без текста, тоже имеет смысл. */
+    if (!content && media.length === 0) return;
     setSending(true);
     try {
       const res = await fetch(`/api/wall/${head.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, title: draftTitle.trim() || undefined }),
+        body: JSON.stringify({
+          content,
+          title: draftTitle.trim() || undefined,
+          /* cover намеренно не заполняем: иначе первое фото показывалось бы дважды. */
+          attachments: media.length > 0 ? media : undefined,
+        }),
       });
       if (!res.ok) return;
       setDraft("");
       setDraftTitle("");
+      setMedia([]);
+      setUploadError(null);
       /* Перечитываем первую страницу, а не вставляем запись в начало списка:
          на странице есть закреплённые, и порядок знает только сервер. */
       await loadWall(head.id, 1);
@@ -536,11 +674,102 @@ export default function ProfilePage({ username }: { username?: string }) {
                 placeholder="Что у вас нового?"
                 className="w-full bg-transparent text-sm text-neutral-800 dark:text-gray-200 placeholder:text-neutral-400 outline-none resize-y"
               />
-              <div className="flex justify-end pt-2">
+              {/* FIX-WALLMEDIA: выбор материала — три отдельные кнопки, чтобы в окне
+                  выбора сразу были нужные файлы, а не всё подряд. */}
+              {media.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {media.map((m) => (
+                    <span
+                      key={m.url}
+                      className="flex items-center gap-1 rounded-lg border border-neutral-200 dark:border-white/10 px-2 py-1 text-xs text-neutral-600 dark:text-gray-300"
+                    >
+                      <span className="max-w-[160px] truncate">{m.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setMedia((prev) => prev.filter((x) => x.url !== m.url))}
+                        className="text-neutral-400 hover:text-red-500"
+                        aria-label="Убрать из записи"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {uploadError && (
+                <div className="mt-2 text-xs text-red-500">{uploadError}</div>
+              )}
+
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  void uploadWallFiles(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,video/x-matroska"
+                multiple
+                hidden
+                onChange={(e) => {
+                  void uploadWallFiles(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+              <input
+                ref={docInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z"
+                multiple
+                hidden
+                onChange={(e) => {
+                  void uploadWallFiles(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploading || media.length >= 10}
+                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                  >
+                    <NewsIcon size={13} style={{ color: "inherit" }} />
+                    Фото
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => videoInputRef.current?.click()}
+                    disabled={uploading || media.length >= 10}
+                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                  >
+                    <FilmIcon size={13} style={{ color: "inherit" }} />
+                    Видео
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => docInputRef.current?.click()}
+                    disabled={uploading || media.length >= 10}
+                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                  >
+                    <BookOpenIcon size={13} />
+                    Документ
+                  </button>
+                  {uploading && <span className="text-xs text-neutral-400">Загрузка…</span>}
+                </div>
                 <button
                   type="button"
                   onClick={submitPost}
-                  disabled={sending || !draft.trim()}
+                  disabled={sending || uploading || (!draft.trim() && media.length === 0)}
                   className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors"
                 >
                   {sending ? "Публикация…" : "Опубликовать"}
@@ -579,6 +808,8 @@ export default function ProfilePage({ username }: { username?: string }) {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={post.cover} alt="" className="mt-2 rounded-xl max-h-96 object-cover w-full" />
                   )}
+                  {/* FIX-WALLMEDIA: фото, видео и документы записи. */}
+                  <WallMediaView items={post.attachments} />
 
                   <div className="mt-2 flex items-center gap-4 text-xs text-neutral-500 dark:text-gray-400">
                     <span className="flex items-center gap-1">

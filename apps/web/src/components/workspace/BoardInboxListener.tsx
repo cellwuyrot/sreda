@@ -16,6 +16,7 @@ import {
   drainBoardInbox,
   subscribeBoardInbox,
   type BoardInboxItem,
+  type BoardScope,
 } from "@/lib/boardBridge";
 
 /** Готовый текст для заметки-карточки на доске. */
@@ -31,9 +32,12 @@ export function boardItemToNoteText(item: BoardInboxItem): string {
 
 export default function BoardInboxListener({
   onItem,
+  scope,
 }: {
   /** Создайте здесь заметку на доске штатным механизмом канваса */
   onItem: (item: BoardInboxItem) => void;
+  /** FIX-BOARDSCOPE: берём только то, что адресовано этому холсту. */
+  scope?: BoardScope;
 }) {
   // Стабильная ссылка, чтобы не переподписываться на каждый рендер.
   const onItemRef = useRef(onItem);
@@ -42,11 +46,11 @@ export default function BoardInboxListener({
   }, [onItem]);
 
   useEffect(() => {
-    // 1) Забрать накопившееся, пока доска была закрыта.
-    drainBoardInbox().forEach((item) => onItemRef.current(item));
+    // 1) Забрать накопившееся своей области, пока доска была закрыта.
+    drainBoardInbox(scope).forEach((item) => onItemRef.current(item));
     // 2) Живая подписка (текущая и соседние вкладки).
-    return subscribeBoardInbox((item) => onItemRef.current(item));
-  }, []);
+    return subscribeBoardInbox((item) => onItemRef.current(item), scope);
+  }, [scope]);
 
   return null;
 }

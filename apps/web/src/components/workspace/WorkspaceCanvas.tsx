@@ -2731,7 +2731,11 @@ export default function WorkspaceCanvas({
         <ShortcutsHelp />
       </div>
 
-      <BoardInboxListener onItem={(item) => addNoteFromInbox(boardItemToNoteText(item))} />
+      {/* FIX-BOARDSCOPE: личная среда берёт только ЛС, общая — только каналы. */}
+      <BoardInboxListener
+        scope={remote ? "group" : "personal"}
+        onItem={(item) => addNoteFromInbox(boardItemToNoteText(item))}
+      />
 
       {importOpen && (
         <ImportTasksPanel

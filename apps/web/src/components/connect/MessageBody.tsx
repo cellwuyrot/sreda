@@ -19,6 +19,7 @@
 
 import { useState } from "react";
 import { renderContent, type RenderOptions } from "./messageFormat";
+import { parseForwarded } from "@/lib/forwardBuffer"; // FIX-FWDBUF
 import { countWords, isLongMessage } from "@/lib/messageLimits";
 
 export default function MessageBody({
@@ -33,6 +34,21 @@ export default function MessageBody({
 
   const safeText = typeof text === "string" ? text : "";
   if (!safeText) return null;
+
+  /* FIX-FWDBUF: пересланное сообщение показывается другим шрифтом — сразу
+     видно, что текст чужой, а не написан здесь. Одно место на все чаты:
+     MessageBody рисует тело сообщения и в каналах, и в ЛС. Разметка здесь
+     намеренно не применяется: пересланный текст пришёл из другого
+     места, и его упоминания/теги здесь ведут в никуда. */
+  const forwarded = parseForwarded(safeText);
+  if (forwarded) {
+    return (
+      <div className="tz-fwd">
+        <div className="tz-fwd-head">Переслано от {forwarded.author}</div>
+        <div className="tz-fwd-body whitespace-pre-wrap break-words">{forwarded.body}</div>
+      </div>
+    );
+  }
 
   if (!isLongMessage(safeText)) return <>{renderContent(safeText, options)}</>;
 
