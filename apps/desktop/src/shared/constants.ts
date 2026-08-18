@@ -10,7 +10,7 @@
 export { SOCKET_PATH, SOCKET_EVENTS } from "@trioz/shared";
 
 /** Default web frontend origin to load when nothing is configured. */
-export const DEFAULT_APP_URL = "https://trioz.ru";
+export const DEFAULT_APP_URL = "https://connect.trioz.ru";
 
 /**
  * The desktop shell is a dedicated TZ.Connect messaging client, so it always

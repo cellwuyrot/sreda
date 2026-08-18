@@ -42,6 +42,7 @@ import { formatForwarded, putForward, type ForwardItem } from "@/lib/forwardBuff
 import MessageHoverToolbar from "./MessageHoverToolbar";
 import ThreadPanel from "./ThreadPanel";
 import { useFileDropPaste } from "@/hooks/useFileDropPaste";
+import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { getDesktopApi } from "@/lib/desktop";
 import { fetchAllGroupMembers } from "@/lib/groupMembersFetch";
 import { uploadWithProgress } from "@/lib/uploadWithProgress"; // FIX-UPLOAD
@@ -2024,7 +2025,8 @@ export default function MessageArea({
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fd = new FormData();
-        fd.append("file", file);
+        // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+        fd.append("file", await downscaleForChat(file));
         fd.append("channelId", channelId);
         setUploadProgress({ name: file.name, percent: 0, index: i + 1, total: files.length });
         try {
@@ -2143,7 +2145,8 @@ export default function MessageArea({
       const uploadedAttachments: ReturnType<typeof parseAttachments> = [];
       for (const file of files) {
         const fd = new FormData();
-        fd.append("file", file);
+        // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+        fd.append("file", await downscaleForChat(file));
         fd.append("channelId", channelId);
         const uploadRes = await fetch("/api/messages/upload", { method: "POST", body: fd });
         if (!uploadRes.ok) {

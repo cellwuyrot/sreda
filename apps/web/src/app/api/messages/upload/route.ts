@@ -9,7 +9,7 @@ import { FREE_UPLOAD_MB, PREMIUM_UPLOAD_MB, uploadLimitBytes } from "@/lib/premi
 import { canAccessConversation, getChannelPermissions } from "@/lib/connectPermissions";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import { resizeToWebp } from "@/lib/imageResize";
+import { imageDimensionError, prepareImage } from "@/lib/imageResize"; // FIX-NOSHARP
 import { v4 as uuid } from "uuid";
 /* Приватные вложения лежат вне public/: см. lib/uploadPaths. */
 import { uploadDirRoot } from "@/lib/uploadPaths";
@@ -19,8 +19,6 @@ import { baseMime, documentSignatureError, resolveAttachment } from "@/lib/attac
 
 /* Предел размера — по подписке (см. lib/premiumLimits): 10 МБ против 100 МБ.
    Раньше он был общий, 25 МБ на всех. */
-const COMPRESS_MAX_WIDTH = 1920;
-const COMPRESS_QUALITY = 80;
 /* Списки типов и проверки сигнатур живут в lib/attachmentTypes.
 
    Раньше они были здесь жёстким белым списком ПО MIME — и именно это ломало
@@ -114,14 +112,16 @@ export async function POST(req: NextRequest) {
        клиенту от «;codecs=vp9» никакой пользы. */
     let responseType = mime;
 
-        if (isImage) {
-      fileName = `${fileId}.webp`;
-      /* FIX-SHARPCOMPAT: автоматически выбирает нативный sharp или WASM. */
-      finalBuffer = await resizeToWebp(buffer, {
-        maxDimension: COMPRESS_MAX_WIDTH,
-        quality: COMPRESS_QUALITY,
-      });
-      responseType = "image/webp";
+    if (isImage) {
+      /* FIX-NOSHARP: картинка сохраняется в присланном формате. Уменьшение
+         делает браузер перед отправкой (lib/clientImageResize), здесь остаётся
+         защита от «картинки-бомбы» — сторон в десятки тысяч пикселей. */
+      const dimensionError = imageDimensionError(buffer);
+      if (dimensionError) return NextResponse.json({ error: dimensionError }, { status: 400 });
+      const stored = prepareImage(buffer, mime);
+      fileName = `${fileId}.${stored.ext}`;
+      finalBuffer = stored.buffer;
+      responseType = stored.mime;
     } else if (isVideo) {
       /* Расширение тоже считалось по полному типу — из-за этого webm-заметка,
          даже пройди она проверку, легла бы на диск как .mp4. */
