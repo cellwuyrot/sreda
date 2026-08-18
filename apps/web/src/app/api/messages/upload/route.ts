@@ -9,9 +9,7 @@ import { FREE_UPLOAD_MB, PREMIUM_UPLOAD_MB, uploadLimitBytes } from "@/lib/premi
 import { canAccessConversation, getChannelPermissions } from "@/lib/connectPermissions";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-/* FIX-JIMP: sharp → Jimp. Фото отправляем в JPEG — прозрачность не нужна,
-   файл меньше чем PNG. Jimp.MIME_JPEG работает без плагинов. */
-import Jimp from "jimp";
+import { resizeToWebp } from "@/lib/imageResize";
 import { v4 as uuid } from "uuid";
 /* Приватные вложения лежат вне public/: см. lib/uploadPaths. */
 import { uploadDirRoot } from "@/lib/uploadPaths";
@@ -116,18 +114,14 @@ export async function POST(req: NextRequest) {
        клиенту от «;codecs=vp9» никакой пользы. */
     let responseType = mime;
 
-    /* FIX-JIMP */
-    if (isImage) {
-      fileName = `${fileId}.jpg`;
-      const img = await Jimp.read(buffer);
-      /* scaleToFit уменьшает до заданных размеров, сохраняя пропорции;
-         withoutEnlargement: маленькие картинки не растягиваются. */
-      if (img.getWidth() > COMPRESS_MAX_WIDTH || img.getHeight() > COMPRESS_MAX_WIDTH) {
-        img.scaleToFit(COMPRESS_MAX_WIDTH, COMPRESS_MAX_WIDTH);
-      }
-      img.quality(COMPRESS_QUALITY);
-      finalBuffer = await img.getBufferAsync(Jimp.MIME_JPEG);
-      responseType = "image/jpeg";
+        if (isImage) {
+      fileName = `${fileId}.webp`;
+      /* FIX-SHARPCOMPAT: автоматически выбирает нативный sharp или WASM. */
+      finalBuffer = await resizeToWebp(buffer, {
+        maxDimension: COMPRESS_MAX_WIDTH,
+        quality: COMPRESS_QUALITY,
+      });
+      responseType = "image/webp";
     } else if (isVideo) {
       /* Расширение тоже считалось по полному типу — из-за этого webm-заметка,
          даже пройди она проверку, легла бы на диск как .mp4. */
