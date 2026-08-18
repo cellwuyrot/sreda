@@ -180,7 +180,8 @@ export default function ChannelSidebar({
     if (!blockMode) return [];
     return textChannels.filter((ch) => {
       const c = ch as unknown as { id: string; type?: string; parentId?: string | null; serviceId?: string | null };
-      return c.id !== generalChannelId && !c.parentId && !c.serviceId && c.type === "TEXT";
+      // FIX-FEED: улучшенный чат стоит в том же списке, что обычный.
+      return c.id !== generalChannelId && !c.parentId && !c.serviceId && (c.type === "TEXT" || c.type === "FEED");
     });
   }, [blockMode, textChannels, generalChannelId]);
 

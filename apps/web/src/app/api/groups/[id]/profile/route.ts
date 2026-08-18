@@ -10,6 +10,30 @@ import prisma from "@/lib/prisma";
 // Поэтому эти три поля живут на GroupMember, а не на User, и правятся этим
 // отдельным маршрутом, а не общим /api/profile.
 
+/* FIX-BGCROP: картинка профиля сообщества — либо data URL (аватар ужимается в
+   браузере, как было), либо путь в наше хранилище /uploads/... Второе появилось
+   ради анимированных фонов: GIF нельзя пережать через canvas, не потеряв
+   анимацию, поэтому файл загружается файлом (POST /api/profile/avatar), а сюда
+   приходит ссылка на него — вместе с параметрами рамки (?fx=&fy=&z=).
+   Чужие адреса не принимаем: иначе карточка профиля станет способом собирать
+   адреса и заголовки всех, кто её открыл. */
+function imageRefError(value: string, label: string): string | null {
+  const v = value.trim();
+  if (v.startsWith("data:image/")) {
+    return v.length > 900_000 ? `Слишком большой ${label}: ожидается до ~650 КБ` : null;
+  }
+  if (
+    v.startsWith("/uploads/") &&
+    !v.startsWith("//") &&
+    !v.includes("..") &&
+    !v.includes("\\") &&
+    v.length <= 400
+  ) {
+    return null;
+  }
+  return `Некорректный ${label}`;
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
@@ -62,24 +86,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // ограничиваем размер строки ~900 Кб (≈650 Кб бинарных данных), null — сброс.
   if (avatar !== undefined) {
     if (avatar !== null) {
-      if (typeof avatar !== "string" || !avatar.startsWith("data:image/") || avatar.length > 900_000) {
-        return NextResponse.json(
-          { error: "Некорректный аватар: ожидается data:image/* размером до ~650 КБ" },
-          { status: 400 },
-        );
+      if (typeof avatar !== "string") {
+        return NextResponse.json({ error: "Некорректный аватар" }, { status: 400 });
       }
+      const err = imageRefError(avatar, "аватар");
+      if (err) return NextResponse.json({ error: err }, { status: 400 });
     }
     data.avatar = avatar;
   }
 
   if (profileBanner !== undefined) {
     if (profileBanner !== null) {
-      if (typeof profileBanner !== "string" || !profileBanner.startsWith("data:image/") || profileBanner.length > 900_000) {
-        return NextResponse.json(
-          { error: "Некорректный фон профиля: ожидается data:image/* размером до ~650 КБ" },
-          { status: 400 },
-        );
+      if (typeof profileBanner !== "string") {
+        return NextResponse.json({ error: "Некорректный фон профиля" }, { status: 400 });
       }
+      const err = imageRefError(profileBanner, "фон профиля");
+      if (err) return NextResponse.json({ error: err }, { status: 400 });
     }
     data.profileBanner = profileBanner;
   }

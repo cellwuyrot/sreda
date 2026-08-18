@@ -54,9 +54,9 @@ NEXTAUTH_SECRET=...        # обязателен
 ENCRYPTION_SECRET=...      # обязателен, ДРУГОЕ значение, не равное NEXTAUTH_SECRET
 TURN_CREDENTIAL=...        # обязателен
 
-NEXTAUTH_URL=https://connect.trioz.ru   # обязательно https, иначе cookie сессии
+NEXTAUTH_URL=https://trioz.ru   # обязательно https, иначе cookie сессии
                                         # уйдут без флага secure
-ALLOWED_ORIGINS=https://connect.trioz.ru
+ALLOWED_ORIGINS=https://trioz.ru
 
 # По желанию: пароль для Redis. Если задать — не забыть REDIS_URL.
 # REDIS_PASSWORD=...

@@ -117,7 +117,10 @@ export async function PATCH(req: Request) {
       // Раньше принимался любой URL → SSRF/утечка (запрос к внешнему ресурсу при
       // рендере <img>/background) и потенциальная CSS-инъекция.
       const b = body.profileBanner.trim();
-      if (b.startsWith("/uploads/") && b.length <= 300 && !b.includes("..")) {
+      // FIX-BGCROP: к пути добавляются параметры рамки (?fx=&fy=&z=), поэтому
+      // предел длины поднят с 300 до 400 знаков — иначе сохранение фона с
+      // выбранной областью отвергалось как «некорректный баннер».
+      if (b.startsWith("/uploads/") && b.length <= 400 && !b.includes("..")) {
         data.profileBanner = b;
       } else {
         return NextResponse.json({ error: "Некорректный баннер" }, { status: 400 });

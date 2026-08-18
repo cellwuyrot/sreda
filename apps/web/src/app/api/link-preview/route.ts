@@ -103,7 +103,7 @@ async function fetchHead(target: URL, depth = 0): Promise<{ html: string; finalU
       signal: controller.signal,
       headers: {
         // Многие сайты отдают og-теги только «настоящему» браузеру.
-        "User-Agent": "Mozilla/5.0 (compatible; TriozBot/1.0; +https://connect.trioz.ru)",
+        "User-Agent": "Mozilla/5.0 (compatible; TriozBot/1.0; +https://trioz.ru)",
         Accept: "text/html,application/xhtml+xml",
       },
     });
