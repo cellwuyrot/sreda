@@ -64,7 +64,7 @@ nsis:
 # Онлайн-установщик берёт пакет приложения (.7z) с этого адреса. Должен
 # совпадать с `publish.url` ниже — туда вы загружаете собранные файлы.
 nsisWeb:
-  appPackageUrl: https://connect.trioz.ru/desktop/
+  appPackageUrl: https://trioz.ru/desktop/
 
 linux:
   icon: build/icon.png
@@ -79,4 +79,4 @@ linux:
 # использовать provider: github.
 publish:
   - provider: generic
-    url: https://connect.trioz.ru/desktop/
+    url: https://trioz.ru/desktop/
