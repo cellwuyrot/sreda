@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { GROUP_MEMBER_SELECT, MEMBERS_PAGE_SIZE, groupMemberOrder } from "@/lib/groupMemberSelect";
+import { GROUP_MEMBER_SELECT, MEMBERS_PAGE_SIZE, groupMemberOrder, withMemberOverrides } from "@/lib/groupMemberSelect";
 
 /** Верхняя граница страницы: экраны с автодогрузкой берут по 200 за запрос. */
 const MAX_TAKE = 200;
@@ -71,7 +71,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   ]);
 
   return NextResponse.json({
-    members,
+    // FIX-SRVSHOW: имя, аватар и фон — уже с учётом настроек для этого сообщества.
+    members: members.map(withMemberOverrides),
     total,
     // При курсорной догрузке клиент своего смещения не знает, поэтому признак
     // «есть ещё» выводим из того, добрала ли страница запрошенный размер.

@@ -24,6 +24,7 @@ import { SparklesIcon, FilmIcon, MoonIcon, KeyIcon, UploadIcon, DownloadIcon } f
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import { SettingsCard, SettingsGroup, SettingsRow } from "@/components/settings/SettingsUI";
 import BackgroundPicker from "@/components/profile/BackgroundPicker"; // FIX-BGCROP
+import { bannerImgStyle } from "@/lib/bannerFraming"; // FIX-BGSAVE
 
 interface ProfileSettings {
   avatarGlowEnabled: boolean;
@@ -138,6 +139,31 @@ export default function ConnectProfileSettings({
     setDmSoundOn(next);
     setDMSoundEnabled(next);
     if (next) playDMNotification();
+  }
+
+  /* FIX-BGSAVE: фон сохраняется сразу после выбора файла или рамки.
+     Раньше адрес лежал только в состоянии страницы и уезжал на сервер лишь
+     по кнопке «Сохранить» в самом низу раздела: человек видел превью, уходил с
+     страницы и фона нигде не было — выглядело как «фон не загружается». */
+  async function saveBanner(next: string | null) {
+    setBannerUrl(next);
+    try {
+      const res = await fetch("/api/profile/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileBanner: next }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({} as { error?: string }));
+        setError(d.error ?? "Не удалось сохранить фон профиля");
+        return;
+      }
+      setError(null);
+      setSuccessToast(next ? "Фон профиля сохранён" : "Фон профиля убран");
+      setTimeout(() => setSuccessToast(null), 2000);
+    } catch {
+      setError("Ошибка сети");
+    }
   }
 
   async function save() {
@@ -300,7 +326,23 @@ export default function ConnectProfileSettings({
             </h3>
             {/* FIX-BGCROP: файл уезжает как есть (анимация GIF цела), а «какую часть
                 показать» человек выбирает рамкой — выбор едет в адресе картинки. */}
-            <BackgroundPicker value={bannerUrl} onChange={setBannerUrl} onError={setError} />
+            {/* FIX-BGSAVE: живое превью мини-профиля — ровно та карточка, что
+                видна в чате по наведению на аватар. */}
+            <div className="w-56 rounded-2xl overflow-hidden border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800">
+              <div className="relative h-14 overflow-hidden bg-gradient-to-br from-violet-500/30 to-indigo-600/20 dark:from-cyan-500/20 dark:to-violet-600/20">
+                {bannerUrl && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" style={bannerImgStyle(bannerUrl)} />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+              </div>
+              <div className="relative z-10 px-3 pb-3 -mt-6">
+                <div className="mb-2"><GlowAvatar user={previewUser} size={40} /></div>
+                <div className="text-sm font-semibold text-neutral-900 dark:text-white truncate">{sessionUser?.name ?? "Вы"}</div>
+                <div className="text-[11px] text-neutral-400">Как вас видят другие</div>
+              </div>
+            </div>
+            <BackgroundPicker value={bannerUrl} onChange={saveBanner} onError={setError} />
           </div>
         )}
 

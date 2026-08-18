@@ -1,5 +1,5 @@
 import Store from "electron-store";
-import { DEFAULT_APP_URL } from "../shared/constants";
+import { DEFAULT_APP_URL, LEGACY_APP_URLS } from "../shared/constants";
 /* Проверка адреса вынесена в общий модуль и покрыта тестами. */
 import { sanitizeAppUrl } from "../shared/navigation";
 import type { DesktopConfig } from "../shared/types";
@@ -25,6 +25,27 @@ const defaults: DesktopConfig = {
 };
 
 const store = new Store<DesktopConfig>({ name: "settings", defaults });
+
+/**
+ * FIX-DOMAIN2: разовый переезд со старого стандартного адреса на новый.
+ *
+ * Уже установленные клиенты держат адрес в settings.json, поэтому новая сборка
+ * без этой замены продолжала бы открывать старый сервер.
+ */
+function migrateLegacyAppUrl(): void {
+  try {
+    const current = store.get("appUrl");
+    if (typeof current !== "string") return;
+    const normalized = current.replace(/\/+$/, "");
+    if ((LEGACY_APP_URLS as readonly string[]).includes(normalized)) {
+      store.set("appUrl", DEFAULT_APP_URL);
+    }
+  } catch {
+    /* Недоступное хранилище не должно мешать запуску: адрес останется прежним. */
+  }
+}
+
+migrateLegacyAppUrl();
 
 /** Read the whole config, applying environment overrides for `appUrl`. */
 export function getConfig(): DesktopConfig {

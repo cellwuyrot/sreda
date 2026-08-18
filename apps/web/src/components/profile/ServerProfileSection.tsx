@@ -214,7 +214,7 @@ export default function ServerProfileSection() {
                 />
               )}
             </div>
-            <div className="px-4 pb-4 -mt-8">
+            <div className="relative z-10 px-4 pb-4 -mt-8">
               <div className="h-16 w-16 rounded-2xl overflow-hidden border-4 border-white dark:border-neutral-900 bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center">
                 {effectiveAvatar ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
