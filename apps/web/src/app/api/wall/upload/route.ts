@@ -7,7 +7,7 @@ import { mediaSignatureError, validateImageMagicBytes } from "@/lib/fileValidati
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { v4 as uuid } from "uuid";
-import { resizeToWebp } from "@/lib/imageResize";
+import { imageDimensionError, prepareImage } from "@/lib/imageResize"; // FIX-NOSHARP
 import { uploadDirRoot } from "@/lib/uploadPaths";
 import { recordUpload } from "@/lib/uploadAccess";
 import { baseMime, documentSignatureError, resolveAttachment } from "@/lib/attachmentTypes";
@@ -25,8 +25,6 @@ import { baseMime, documentSignatureError, resolveAttachment } from "@/lib/attac
  */
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
-const COMPRESS_MAX = 1920;
-const COMPRESS_QUALITY = 82;
 const DIR = "wall";
 
 export async function POST(req: NextRequest) {
@@ -79,9 +77,13 @@ export async function POST(req: NextRequest) {
     let responseType = mime;
 
     if (isImage) {
-      fileName = `${fileId}.webp`;
-      finalBuffer = await resizeToWebp(buffer, { maxDimension: COMPRESS_MAX, quality: COMPRESS_QUALITY });
-      responseType = "image/webp";
+      /* FIX-NOSHARP: формат сохраняется как есть, уменьшает браузер. */
+      const dimensionError = imageDimensionError(buffer);
+      if (dimensionError) return NextResponse.json({ error: dimensionError }, { status: 400 });
+      const stored = prepareImage(buffer, mime);
+      fileName = `${fileId}.${stored.ext}`;
+      finalBuffer = stored.buffer;
+      responseType = stored.mime;
     } else if (isVideo) {
       const ext =
         mime === "video/webm" ? "webm" : mime === "video/quicktime" ? "mov" : mime === "video/x-matroska" ? "mkv" : "mp4";
