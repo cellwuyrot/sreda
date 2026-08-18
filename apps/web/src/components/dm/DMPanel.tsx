@@ -37,6 +37,7 @@ import { noteFileName, type MediaNoteKind } from "@/lib/mediaNote";
 import { messageLengthError } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
 import { useMessageWindow } from "@/hooks/useMessageWindow";
+import ChatErrorBoundary from "@/components/ui/ChatErrorBoundary";
 import { uploadWithProgress } from "@/lib/uploadWithProgress"; // FIX-UPLOAD
 // FIX-ICONS: фирменные SVG-иконки вместо PNG и эмодзи «💬»
 import { PinIcon, ChatIcon } from "@/components/ui/ConnectIcons";
@@ -1717,6 +1718,11 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
 
             {/* Messages */}
+            {/* FIX-DM-COPY: граница ошибок. Ошибка при отрисовке ОДНОГО сообщения
+                разбирала всё дерево переписки — человек видел пустой экран вместо
+                разговора. Причина того вылета устранена отдельно, но цена любой
+                будущей ошибки не должна быть такой. */}
+            <ChatErrorBoundary resetKey={selectedConvId} label="Не удалось показать переписку">
             <DMMessageList
               messages={visibleMessages}
               currentUserId={currentUserId}
@@ -1756,6 +1762,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               showScrollBtn={showScrollBtn}
               onScrollToBottom={scrollToBottom}
             />
+            </ChatErrorBoundary>
 
             {/* BUSINESS-LOCK: клиенту при закрытой отправке ввод заменяется
                 объяснением. Отказ на отправку он увидел бы только после того, как

@@ -1001,9 +1001,11 @@ function ConnectPageInner() {
                       <AppealsPanel channelId={selectedChannel} channelName={selectedChannelData.name} currentUserId={userId} canModerate={!!canManage} onBack={() => setShowChannelsDrawer(true)} />
                     ) : (
                       <>
-                        {/* Активные опросы: на десктопе это отдельная колонка (COL 4),
-                            на мобильном показываем компактным блоком над чатом. */}
-                        {!isBlockMode && <PollsPanel channelId={selectedChannel} currentUserId={userId} />}
+                        {/* FIX-POLLBLOCK: опрос живёт в самой переписке — обычным блоком
+                            шириной как сообщение, а не отдельной правой колонкой во всю ширину
+                            (та колонка — COL 4 — убрана). Показывается и в блочном режиме:
+                            в главной группе опрос создать было можно, а виден он не был. */}
+                        <PollsPanel channelId={selectedChannel} currentUserId={userId} variant="chat" />
                         <MessageArea
                           channelId={selectedChannel}
                           channelName={selectedChannelData.name}
@@ -1345,10 +1347,9 @@ function ConnectPageInner() {
               />
             )}
 
-            {/* COL 4 — active polls (regular groups) */}
-            {!isBlockMode && selectedGroup && selectedChannel && (
-              <PollsPanel channelId={selectedChannel} currentUserId={userId} />
-            )}
+            {/* FIX-POLLBLOCK: здесь была COL 4 — отдельная колонка с опросами справа.
+                Опрос — часть разговора, поэтому он теперь блок в ленте (выше, над
+                MessageArea), а отдельной полосы под него больше нет. */}
 
           </>
         )}
