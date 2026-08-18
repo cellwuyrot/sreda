@@ -455,38 +455,40 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     >
       <motion.section initial={{ opacity: 0, scale: 0.97, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", damping: 28, stiffness: 260 }} className="pointer-events-auto w-full h-full rounded-none border-0 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[#111315] shadow-2xl">
         <header className="h-[52px] min-h-[52px] px-3.5 flex items-center gap-3 border-b border-white/10 bg-[#171a1d]">
-          <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-          <div className="min-w-0">
+          <span className="w-2 h-2 shrink-0 rounded-full bg-red-400 animate-pulse" />
+          {/* FIX-SHAREHEAD: шапка — три блока: точка, текст, кнопки. Средний
+              блок не растягивался, и вторая строка («Зрителей пока нет») уезжала
+              вправо, упираясь в кнопки. */}
+          <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
             <strong className="text-xs text-white block truncate">
               {active.userName} демонстрирует экран
               {active.isLocal && voice.isScreenPrivate && (
                 <span className="ml-1.5 text-[9px] font-medium text-amber-300">приватно</span>
               )}
             </strong>
-            <span className="text-[9px] text-white/40">
-              LIVE · {quality}
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[9px] leading-none text-white/40">
+              <span className="whitespace-nowrap">LIVE · {quality}</span>
               {/* SCREEN-VIEWERS: кто смотрит прямо сейчас. У ведущего это
                   кнопка: управление доступом раньше пряталось за шестерёнкой и
                   правым щелчком, и половина о нём не догадывалась. */}
               {active.isLocal ? (
-                <>
-                  {" · "}
-                  <button
-                    type="button"
-                    onClick={(e) => setPrivacyAt({ x: e.clientX, y: e.clientY })}
-                    className="underline decoration-dotted underline-offset-2 hover:text-white/70"
-                  >
-                    {viewers.length > 0 ? `смотрят ${viewers.length} — кто именно` : "зрителей пока нет"}
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={(e) => setPrivacyAt({ x: e.clientX, y: e.clientY })}
+                  className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-white/10 bg-white/[0.04] px-2 py-[3px] leading-none text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
+                >
+                  {viewers.length > 0 ? `Зрителей: ${viewers.length} · кто именно` : "Зрителей пока нет"}
+                </button>
               ) : (
-                viewers.length > 0
-                  ? ` · смотрят (${viewers.length}): ${viewers.map((v) => v.userName).join(", ")}`
-                  : " · зрителей пока нет"
+                <span className="inline-flex max-w-full items-center truncate rounded-full border border-white/10 bg-white/[0.04] px-2 py-[3px] leading-none text-white/55">
+                  {viewers.length > 0
+                    ? `Зрителей: ${viewers.length} · ${viewers.map((v) => v.userName).join(", ")}`
+                    : "Зрителей пока нет"}
+                </span>
               )}
             </span>
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {/* SCREEN-PRIVATE-LIVE: правый щелчок по картинке делает то же самое,
                 но кнопка нужна — иначе о возможности никто не догадается. */}
             {active.isLocal && (
