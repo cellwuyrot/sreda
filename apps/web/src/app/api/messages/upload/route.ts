@@ -9,7 +9,7 @@ import { FREE_UPLOAD_MB, PREMIUM_UPLOAD_MB, uploadLimitBytes } from "@/lib/premi
 import { canAccessConversation, getChannelPermissions } from "@/lib/connectPermissions";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import sharp from "sharp";
+import { resizeToWebp } from "@/lib/imageResize";
 import { v4 as uuid } from "uuid";
 /* Приватные вложения лежат вне public/: см. lib/uploadPaths. */
 import { uploadDirRoot } from "@/lib/uploadPaths";
@@ -114,9 +114,13 @@ export async function POST(req: NextRequest) {
        клиенту от «;codecs=vp9» никакой пользы. */
     let responseType = mime;
 
-    if (isImage) {
+        if (isImage) {
       fileName = `${fileId}.webp`;
-      finalBuffer = await sharp(buffer).resize(COMPRESS_MAX_WIDTH, COMPRESS_MAX_WIDTH, { fit: "inside", withoutEnlargement: true }).webp({ quality: COMPRESS_QUALITY }).toBuffer();
+      /* FIX-SHARPCOMPAT: автоматически выбирает нативный sharp или WASM. */
+      finalBuffer = await resizeToWebp(buffer, {
+        maxDimension: COMPRESS_MAX_WIDTH,
+        quality: COMPRESS_QUALITY,
+      });
       responseType = "image/webp";
     } else if (isVideo) {
       /* Расширение тоже считалось по полному типу — из-за этого webm-заметка,
