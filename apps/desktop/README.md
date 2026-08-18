@@ -2,7 +2,7 @@
 
 Десктоп-клиент для коммуникационной платформы **TrioZ Connect**, построенный
 как **тонкая Electron-обёртка** поверх существующего веб-приложения
-([`acoulbot/trioztest`](https://github.com/acoulbot/trioztest)).
+([`cellwuyrot/sreda`](https://github.com/cellwuyrot/sreda)).
 
 Приложение **не дублирует** бизнес-логику: весь backend, REST API, Socket.IO и
 Prisma переиспользуются без изменений. Десктоп-оболочка загружает тот же
