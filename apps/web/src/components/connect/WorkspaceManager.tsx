@@ -38,6 +38,9 @@ export default function WorkspaceManager({ groupId, channels, canManage, onChang
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  /* FIX-WSRENAME: какой блок переименовываем и что введено. */
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const addModule = async (m: typeof MODULES[number]) => {
     setBusy(m.type); setError("");
@@ -48,6 +51,24 @@ export default function WorkspaceManager({ groupId, channels, canManage, onChang
         body: JSON.stringify({ name: m.defaultName, type: m.type, groupId }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Ошибка"); }
+      onChanged();
+    } catch (e) { setError(e instanceof Error ? e.message : "Ошибка"); }
+    setBusy(null);
+  };
+
+  /* FIX-WSRENAME: названия блоков рабочей среды были неизменяемы: в этом списке
+     имя рисовалось обычным текстом, рядом были только порядок, выключатель и
+     удаление, а блок всю жизнь оставался с именем по умолчанию из
+     lib/channelModules. Сервер переименование всегда разрешал (PUT
+     /api/channels/[id] принимает name и сам проверяет права) — не хватало поля. */
+  const renameChannel = async (id: string) => {
+    const name = renameValue.trim();
+    if (!name) return;
+    setBusy(id); setError("");
+    try {
+      const res = await fetch(`/api/channels/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Ошибка"); }
+      setRenameId(null);
       onChanged();
     } catch (e) { setError(e instanceof Error ? e.message : "Ошибка"); }
     setBusy(null);
@@ -156,7 +177,26 @@ export default function WorkspaceManager({ groupId, channels, canManage, onChang
                 <div className="mt-3 flex flex-wrap gap-2">
                   {existing.map((c) => (
                     <div key={c.id} className="flex items-center gap-2 text-xs bg-white dark:bg-neutral-800 rounded-lg pl-3 pr-2 py-1.5 border border-neutral-200 dark:border-white/5">
-                      <span className="text-neutral-700 dark:text-neutral-200 max-w-[12rem] truncate">{c.name}</span>
+                      {renameId === c.id ? (
+                        <form
+                          onSubmit={(e) => { e.preventDefault(); renameChannel(c.id); }}
+                          className="flex items-center gap-1"
+                        >
+                          <input
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Escape") setRenameId(null); }}
+                            autoFocus
+                            maxLength={80}
+                            aria-label="Название блока"
+                            className="w-[10rem] bg-transparent border-b border-violet-500 dark:border-cyan-400 text-xs outline-none text-neutral-800 dark:text-neutral-100"
+                          />
+                          <button type="submit" disabled={busy === c.id || !renameValue.trim()} className="text-[11px] px-2 py-0.5 rounded bg-violet-600 dark:bg-cyan-500 text-white disabled:opacity-50">Готово</button>
+                          <button type="button" onClick={() => setRenameId(null)} className="text-[11px] px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">Отмена</button>
+                        </form>
+                      ) : (
+                        <span className="text-neutral-700 dark:text-neutral-200 max-w-[12rem] truncate">{c.name}</span>
+                      )}
                       {canManage && (confirmId === c.id ? (
                         <span className="flex items-center gap-1">
                           <button onClick={() => removeChannel(c.id)} disabled={busy === c.id} className="text-[11px] px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600 disabled:opacity-50">Удалить навсегда</button>
@@ -180,6 +220,16 @@ export default function WorkspaceManager({ groupId, channels, canManage, onChang
                               className="px-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 disabled:opacity-30 disabled:cursor-default"
                             >▼</button>
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => { setRenameId(c.id); setRenameValue(c.name); }}
+                            disabled={busy === c.id}
+                            title="Переименовать блок"
+                            aria-label="Переименовать блок"
+                            className="text-neutral-400 hover:text-violet-600 dark:hover:text-cyan-400 transition-colors disabled:opacity-40"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.5 5.5l3 3M4 20h4L18 10l-4-4L4 16v4z" /></svg>
+                          </button>
                           <button
                             type="button"
                             role="switch"
