@@ -105,7 +105,7 @@ redis-cli ping
 
 ```bash
 cd /root
-git clone https://github.com/acoulbot/trioztest.git
+git clone https://github.com/cellwuyrot/sreda.git
 cd trioztest
 npm install
 ```
@@ -284,7 +284,7 @@ docker compose version
 
 ```bash
 cd /root
-git clone https://github.com/acoulbot/trioztest.git
+git clone https://github.com/cellwuyrot/sreda.git
 cd trioztest
 ```
 
