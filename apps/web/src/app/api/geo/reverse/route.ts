@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
     const res = await fetch(url, {
       headers: {
         // Требование политики Nominatim: идентифицирующий User-Agent.
-        "User-Agent": "trioz-messenger/1.0 (+https://github.com/acoulbot/trioztest)",
+        "User-Agent": "trioz-messenger/1.0 (+https://trioz.ru)",
       },
       signal: AbortSignal.timeout(6000),
       cache: "no-store",

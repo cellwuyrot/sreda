@@ -1,45 +1,23 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# ── Dependencies ─────────────────────────────────────────────────────
-node_modules/
-/.pnp
-.pnp.js
-.yarn/install-state.gz
-
-# ── Build output ─────────────────────────────────────────────────────
-# Next.js (apps/web), TypeScript builds (apps/desktop, packages/shared),
-# electron-builder output (apps/desktop/release).
-**/.next/
-**/out/
-packages/*/dist/
-apps/desktop/dist/
-apps/desktop/release/
-
-# pdf.js worker + assets copied from node_modules at build time
-# (see apps/web/next.config.mjs).
-apps/web/public/pdf.worker.min.js
-apps/web/public/pdfjs/
-
-# ── Testing ──────────────────────────────────────────────────────────
-/coverage
-
-# ── Misc ─────────────────────────────────────────────────────────────
-.DS_Store
-*.pem
-
-# ── Debug logs ───────────────────────────────────────────────────────
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# ── Local env files ──────────────────────────────────────────────────
 .env
-.env*.local
+*.sqlite
+*.db
+*.sqlite-journal
+node_modules/
+.next/
+dist/
+build/
+.git/
+# User uploads and storage
+apps/web/public/uploads/
+apps/web/public/desktop/
+apps/web/storage/
 
-# ── Vercel ───────────────────────────────────────────────────────────
-.vercel
+# Backups and temp files
+apps/web/.env.*
+apps/web/-H
+*.log
 
+<<<<<<< HEAD
 # ── TypeScript ───────────────────────────────────────────────────────
 *.tsbuildinfo
 **/next-env.d.ts
@@ -83,4 +61,7 @@ apps/web/storage/uploads/*
 apps/web/public/desktop/*
 !apps/web/public/desktop/.gitkeep
 !apps/web/public/desktop/README.md
+.codebase-memory/ 
+=======
+>>>>>>> 5aef584e21cca13eca8ac0c2132905e8629293f7
 .codebase-memory/ 
