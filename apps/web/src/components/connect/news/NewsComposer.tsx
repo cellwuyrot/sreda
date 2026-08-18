@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { renderContent, type RenderOptions } from "@/components/connect/messageFormat";
 import { MAX_ASSET_BYTES, WORKSPACE_ASSET_TYPES } from "@/lib/workspaceAssets";
+import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import {
   MAX_POST_TITLE,
   applyFormat,
@@ -282,7 +283,8 @@ export default function NewsComposer({
     setError(null);
     try {
       const body = new FormData();
-      body.append("file", file);
+      // FIX-NOSHARP: обложку уменьшает браузер.
+      body.append("file", await downscaleForChat(file));
       body.append("channelId", channelId);
       const res = await fetch("/api/workspace/upload", { method: "POST", body });
       const data: { url?: string; error?: string } | null = await res.json().catch(() => null);
@@ -310,7 +312,8 @@ export default function NewsComposer({
       const added: PostAttachment[] = [];
       for (const file of files) {
         const body = new FormData();
-        body.append("file", file);
+        // FIX-NOSHARP: материал новости уменьшает браузер.
+        body.append("file", await downscaleForChat(file));
         body.append("channelId", channelId);
         const res = await fetch("/api/messages/upload", { method: "POST", body });
         const data: (PostAttachment & { error?: string }) | null = await res.json().catch(() => null);

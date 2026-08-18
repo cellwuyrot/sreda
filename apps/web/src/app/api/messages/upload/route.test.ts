@@ -34,12 +34,7 @@ vi.mock("fs/promises", () => ({
   mkdir: vi.fn().mockResolvedValue(undefined),
 }));
 
-/* sharp тянет нативный модуль и нужен только картинкам. */
-vi.mock("sharp", () => ({
-  default: () => ({
-    resize: () => ({ webp: () => ({ toBuffer: async () => Buffer.from("webp") }) }),
-  }),
-}));
+/* FIX-NOSHARP: обработки картинок на сервере нет — подменять нечего. */
 vi.mock("uuid", () => ({ v4: () => "file-id" }));
 
 import { getServerSession } from "next-auth";

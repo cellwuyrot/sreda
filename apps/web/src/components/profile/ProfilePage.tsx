@@ -21,6 +21,7 @@ import {
   UsersIcon,
 } from "@/components/ui/ConnectIcons";
 import { TrashIcon } from "@/components/ui/ConnectIconsExtra";
+import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { useCall } from "@/components/call/CallProvider"; // CALL
 
 /**
@@ -442,7 +443,8 @@ export default function ProfilePage({ username }: { username?: string }) {
     try {
       for (const file of files.slice(0, 10)) {
         const form = new FormData();
-        form.append("file", file);
+        // FIX-NOSHARP: фото для стены уменьшает браузер.
+        form.append("file", await downscaleForChat(file));
         const res = await fetch("/api/wall/upload", {
           method: "POST",
           body: form,

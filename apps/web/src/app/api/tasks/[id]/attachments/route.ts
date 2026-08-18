@@ -6,7 +6,7 @@ import { rateLimit } from "@/lib/rateLimit";
 import { validateImageMagicBytes } from "@/lib/fileValidation";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import { resizeToWebp } from "@/lib/imageResize";
+import { imageDimensionError, prepareImage } from "@/lib/imageResize"; // FIX-NOSHARP
 import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
 /* Приватные вложения лежат вне public/: см. lib/uploadPaths. */
@@ -23,8 +23,6 @@ const MAX_DOC_SIZE = 25 * 1024 * 1024;
 // FIX-TASKVIDEO: короткие ролики к задаче. Лимит намеренно жёсткий (5 МБ) —
 // файлы лежат на диске приложения и раздаются без транскодирования.
 const MAX_VIDEO_SIZE = 5 * 1024 * 1024;
-const COMPRESS_MAX = 1920;
-const COMPRESS_QUALITY = 80;
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const ALLOWED_DOC_EXT = [
@@ -139,13 +137,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       finalBuffer = buffer;
       mime = "image/gif";
     } else {
-      /* FIX-SHARPCOMPAT: автоматически выбирает нативный sharp или WASM. */
-      fileName = `${fileId}.webp`;
-      finalBuffer = await resizeToWebp(buffer, {
-        maxDimension: COMPRESS_MAX,
-        quality: COMPRESS_QUALITY,
-      });
-      mime = "image/webp";
+      /* FIX-NOSHARP: без перекодирования — картинку уменьшает браузер. */
+      const dimensionError = imageDimensionError(buffer);
+      if (dimensionError) return NextResponse.json({ error: dimensionError }, { status: 400 });
+      const stored = prepareImage(buffer, file.type);
+      fileName = `${fileId}.${stored.ext}`;
+      finalBuffer = stored.buffer;
+      mime = stored.mime;
     }
   } else if (isVideo) {
     // FIX-TASKVIDEO: сохраняем как есть (без перекодирования), но с проверкой
