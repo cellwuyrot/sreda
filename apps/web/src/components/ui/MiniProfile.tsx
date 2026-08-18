@@ -147,7 +147,9 @@ export default function MiniProfile({ user, children, onMessageClick, side = "ri
               <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
             </div>
 
-            <div className="px-3 pb-3 -mt-6">
+            {/* FIX-BGZ: содержимое тоже позиционированное, иначе баннер (relative)
+                рисуется поверх аватара, заезжающего на него отрицательным отступом. */}
+            <div className="relative z-10 px-3 pb-3 -mt-6">
               {/* Avatar */}
               <div className="mb-2">
                 <GlowAvatar user={user} size={40} />

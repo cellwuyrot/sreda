@@ -1,5 +1,5 @@
 "use client";
-​
+
 // Меню по правому клику на имени или аватаре в чате.
 //
 // MODERATION: состав меню больше не собирается здесь из булевых флагов
@@ -12,7 +12,7 @@
 //
 // Список на клиенте — подсказка, а не разрешение. Каждый маршрут проверяет
 // ранги сам; здесь мы лишь не рисуем заведомо мёртвые пункты.
-​
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -29,7 +29,7 @@ import {
   type ModerationAction,
 } from "@/lib/groupModeration";
 import { bannerImgStyle } from "@/lib/bannerFraming"; // FIX-BGCROP
-​
+
 export interface CtxMenuUser {
   id: string;
   name: string;
@@ -42,25 +42,25 @@ export interface CtxMenuUser {
   lastSeen?: string | null;
   profileBanner?: string | null;
 }
-​
+
 /** Цветной тег сообщества. У каждого сообщества свой набор. */
 export interface CtxMenuTag {
   name: string;
   color: string;
 }
-​
+
 export interface CtxMenuRole {
   id: string;
   name: string;
   color: string;
 }
-​
+
 /** Сообщение, на котором вызвали меню. Без него пункты «удалить…» не нужны. */
 export interface CtxMenuMessage {
   id: string;
   channelId: string;
 }
-​
+
 interface UserContextMenuProps {
   user: CtxMenuUser;
   x: number;
@@ -91,15 +91,15 @@ interface UserContextMenuProps {
   onSetNickname: (nick: string | null) => void;
   onToggleIgnore: () => void;
 }
-​
+
 type FriendState = "loading" | "none" | "friends" | "outgoing" | "incoming";
-​
+
 type FriendsResponse = {
   friends?: { id: string; friendshipId?: string }[];
   pending?: { id: string; sender?: { id: string } }[];
   sent?: { id: string; receiver?: { id: string } }[];
 };
-​
+
 const REPORT_REASONS = [
   { value: "spam", label: "Спам или реклама" },
   { value: "insult", label: "Оскорбления" },
@@ -108,16 +108,16 @@ const REPORT_REASONS = [
   { value: "scam", label: "Мошенничество" },
   { value: "other", label: "Другое" },
 ] as const;
-​
+
 const ITEM = "w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left transition-colors text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/[0.07] disabled:opacity-50 disabled:cursor-default";
 const DANGER = "w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left transition-colors text-red-500 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-default";
-​
+
 function Divider() {
   return <div className="my-1 border-t border-neutral-200 dark:border-white/10" />;
 }
-​
+
 type SubMenu = "timeout" | "roles" | "purge" | "report" | "setrole" | null;
-​
+
 export default function UserContextMenu({
   user, x, y, currentUserId, groupId, targetMemberId, viewerRole, targetRole,
   message, targetTags, onPointerKeep, onPointerAway, roles, targetRoleIds, nickname, ignored, onClose, onMention, onOpenDm, onSetNickname, onToggleIgnore,
@@ -131,7 +131,7 @@ export default function UserContextMenu({
      край переписки и «Пожаловаться» было не достать. */
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-​
+
   const [friendState, setFriendState] = useState<FriendState>("loading");
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [assignedRoles, setAssignedRoles] = useState<Set<string>>(new Set(targetRoleIds));
@@ -142,7 +142,7 @@ export default function UserContextMenu({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const isSelf = user.id === currentUserId;
-​
+
   /* Единый расчёт прав — тот же, которым пользуются серверные маршруты. */
   const actions = useMemo<ModerationAction[]>(() => {
     if (!groupId) return [];
@@ -153,10 +153,10 @@ export default function UserContextMenu({
       hasMessage: !!message,
     });
   }, [groupId, viewerRole, targetRole, isSelf, message]);
-​
+
   const can = useCallback((a: ModerationAction) => actions.includes(a), [actions]);
   const grantableRoles = useMemo(() => assignableRoles(viewerRole), [viewerRole]);
-​
+
   /* Меню держим в пределах экрана. Высоту считаем по `scrollHeight`, а не по
      текущей: раскрытый подсписок причин жалобы длиннее экрана, и без потолка
      с прокруткой нижние пункты просто некуда деть. */
@@ -167,7 +167,7 @@ export default function UserContextMenu({
       const margin = 10;
       const available = window.innerHeight - margin * 2;
       const height = Math.min(el.scrollHeight, available);
-​
+
       /* Если снизу от точки клика меню не помещается — раскрываем его ВВЕРХ,
          а не прижимаем к нижней кромке. Прижатие давало обрезанный низ, когда
          замер прошёл раньше, чем список действий отрисовался целиком: высота
@@ -176,14 +176,14 @@ export default function UserContextMenu({
       let top = y;
       if (y + height > window.innerHeight - margin) top = y - height;
       top = Math.max(margin, Math.min(top, window.innerHeight - height - margin));
-​
+
       setPos({
         left: Math.max(margin, Math.min(x, window.innerWidth - el.offsetWidth - margin)),
         top,
         maxHeight: available,
       });
     };
-​
+
     place();
     /* Второй замер после отрисовки: к этому моменту шрифты и вложенные списки
        уже на месте, и высота окончательная. */
@@ -194,7 +194,7 @@ export default function UserContextMenu({
       window.removeEventListener("resize", place);
     };
   }, [x, y, openSub, friendState, error, notice, mounted]);
-​
+
   // Закрытие по клику вне меню и по Escape.
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -208,7 +208,7 @@ export default function UserContextMenu({
       window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
-​
+
   // Состояние дружбы: пункт контекстный — добавить / принять / убрать.
   useEffect(() => {
     if (isSelf) return;
@@ -229,7 +229,7 @@ export default function UserContextMenu({
       .catch(() => { if (alive) setFriendState("none"); });
     return () => { alive = false; };
   }, [isSelf, user.id]);
-​
+
   const api = useCallback(async (url: string, method: string, body?: unknown): Promise<boolean> => {
     setBusy(true);
     setError(null);
@@ -254,12 +254,12 @@ export default function UserContextMenu({
       setBusy(false);
     }
   }, []);
-​
+
   const openProfile = () => {
     if (user.username) router.push(`/profile/${encodeURIComponent(user.username)}`); // PROFILE-WALL2
     onClose();
   };
-​
+
   /* Никнейм вводится полем прямо в меню.
      Раньше здесь стоял window.prompt — и в десктоп-оболочке пункт не делал
      ничего: Electron диалог prompt() не реализует, вызов молча возвращает null.
@@ -270,12 +270,12 @@ export default function UserContextMenu({
     onSetNickname(value ? value : null);
     onClose();
   };
-​
+
   const clearNickname = () => {
     onSetNickname(null);
     onClose();
   };
-​
+
   const handleFriend = async () => {
     if (friendState === "none") {
       if (await api("/api/friends", "POST", { userId: user.id, username: user.username ?? undefined })) {
@@ -294,9 +294,9 @@ export default function UserContextMenu({
       }
     }
   };
-​
+
   /* ── Жалоба ───────────────────────────────────────────────────────────── */
-​
+
   const sendReport = async (reason: string) => {
     if (!groupId) return;
     if (await api(`/api/groups/${groupId}/reports`, "POST", {
@@ -308,18 +308,18 @@ export default function UserContextMenu({
       setNotice("Жалоба отправлена модераторам");
     }
   };
-​
+
   /* ── Меры ─────────────────────────────────────────────────────────────── */
-​
+
   const removeMessage = async (): Promise<boolean> => {
     if (!message) return false;
     return api(`/api/messages?messageId=${encodeURIComponent(message.id)}`, "DELETE");
   };
-​
+
   const onDeleteMessage = async () => {
     if (await removeMessage()) setNotice("Сообщение удалено");
   };
-​
+
   const onDeleteAndTimeout = async () => {
     if (!groupId || !targetMemberId) return;
     if (!(await removeMessage())) return;
@@ -327,7 +327,7 @@ export default function UserContextMenu({
       setNotice(`Удалено, ограничение на ${DELETE_AND_TIMEOUT_MINUTES} минут`);
     }
   };
-​
+
   const onDeleteAndBan = async () => {
     if (!groupId) return;
     if (!window.confirm(
@@ -338,7 +338,7 @@ export default function UserContextMenu({
       setNotice("Сообщение удалено, пользователь заблокирован");
     }
   };
-​
+
   const onPurge = async (scope: string, label: string) => {
     if (!groupId) return;
     if (!window.confirm(`${label} от ${user.name}?\n\nЭто необратимо.`)) return;
@@ -365,7 +365,7 @@ export default function UserContextMenu({
       setBusy(false);
     }
   };
-​
+
   const applyTimeout = async (minutes: number) => {
     if (!groupId || !targetMemberId) return;
     if (await api(`/api/groups/${groupId}/members/${targetMemberId}/timeout`, "POST", { minutes })) {
@@ -373,7 +373,7 @@ export default function UserContextMenu({
       setNotice("Таймаут выдан");
     }
   };
-​
+
   const removeTimeout = async () => {
     if (!groupId || !targetMemberId) return;
     if (await api(`/api/groups/${groupId}/members/${targetMemberId}/timeout`, "DELETE")) {
@@ -381,7 +381,7 @@ export default function UserContextMenu({
       setNotice("Таймаут снят");
     }
   };
-​
+
   const kickUser = async () => {
     if (!groupId || !targetMemberId) return;
     if (!window.confirm(`Исключить ${user.name} из группы? Вернуться по приглашению он сможет.`)) return;
@@ -389,7 +389,7 @@ export default function UserContextMenu({
       setNotice("Участник исключён");
     }
   };
-​
+
   const banUser = async () => {
     if (!groupId) return;
     if (!window.confirm(`Заблокировать ${user.name}? Он будет исключён и не сможет вернуться по приглашению.`)) return;
@@ -397,7 +397,7 @@ export default function UserContextMenu({
       setNotice("Пользователь заблокирован");
     }
   };
-​
+
   const setRole = async (role: string) => {
     if (!groupId || !targetMemberId) return;
     if (await api(`/api/groups/${groupId}/members/${targetMemberId}`, "PATCH", { role })) {
@@ -405,7 +405,7 @@ export default function UserContextMenu({
       setNotice(`Новая роль: ${ROLE_LABEL[role] ?? role}`);
     }
   };
-​
+
   const toggleRole = async (roleId: string) => {
     if (!groupId) return;
     const has = assignedRoles.has(roleId);
@@ -419,7 +419,7 @@ export default function UserContextMenu({
       });
     }
   };
-​
+
   const sub = (name: Exclude<SubMenu, null>) => () => setOpenSub(openSub === name ? null : name);
   /* Стрелка подменю рисуется, а не набирается символом. Знаки ▸ и ▾ в разных
      системных шрифтах выглядят по-разному: где-то это едва различимая точка,
@@ -439,12 +439,12 @@ export default function UserContextMenu({
       <path d="M9 6l6 6-6 6" />
     </svg>
   );
-​
+
   const showModeration = can("delete-message") || can("purge") || can("timeout") || can("kick") || can("ban");
   const showAdmin = (can("assign-tags") && roles.length > 0) || (can("set-role") && grantableRoles.length > 0);
-​
+
   if (!mounted) return null;
-​
+
   /* Мини-профиль. Ник, роль и теги переехали сюда из ленты сообщений: в чате
      они повторялись у каждого автора и съедали строку. Роль и теги здесь —
      всегда те, что действуют в ЭТОМ сообществе, поэтому у одного человека в
@@ -470,7 +470,7 @@ export default function UserContextMenu({
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
       </div>
-​
+
       <div className="flex items-start gap-2.5 px-2.5 pt-2 pb-2 -mt-5 relative flex-shrink-0">
         <GlowAvatar
           user={{
@@ -573,7 +573,7 @@ export default function UserContextMenu({
           </div>
         </div>
       )}
-​
+
       {!isSelf && (
         <>
           <Divider />
@@ -610,7 +610,7 @@ export default function UserContextMenu({
           )}
         </>
       )}
-​
+
       {showModeration && groupId && (
         <>
           <Divider />
@@ -666,7 +666,7 @@ export default function UserContextMenu({
           )}
         </>
       )}
-​
+
       {showAdmin && groupId && (
         <>
           <Divider />
@@ -711,14 +711,13 @@ export default function UserContextMenu({
           )}
         </>
       )}
-​
+
       {(error || notice) && (
         <div className={`px-2.5 py-1 text-[11px] ${error ? "text-red-500" : "text-green-500"}`}>{error ?? notice}</div>
       )}
       </div>
     </div>
   );
-​
+
   return createPortal(menu, document.body);
 }
-​
