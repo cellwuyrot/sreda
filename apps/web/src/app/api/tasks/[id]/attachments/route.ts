@@ -6,7 +6,8 @@ import { rateLimit } from "@/lib/rateLimit";
 import { validateImageMagicBytes } from "@/lib/fileValidation";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import sharp from "sharp";
+/* FIX-JIMP: sharp → Jimp. */
+import Jimp from "jimp";
 import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
 /* Приватные вложения лежат вне public/: см. lib/uploadPaths. */
@@ -139,12 +140,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       finalBuffer = buffer;
       mime = "image/gif";
     } else {
-      fileName = `${fileId}.webp`;
-      finalBuffer = await sharp(buffer)
-        .resize(COMPRESS_MAX, COMPRESS_MAX, { fit: "inside", withoutEnlargement: true })
-        .webp({ quality: COMPRESS_QUALITY })
-        .toBuffer();
-      mime = "image/webp";
+      /* FIX-JIMP: JPEG вместо WebP — Jimp 0.x не требует плагина. */
+      fileName = `${fileId}.jpg`;
+      const img = await Jimp.read(buffer);
+      if (img.getWidth() > COMPRESS_MAX || img.getHeight() > COMPRESS_MAX) {
+        img.scaleToFit(COMPRESS_MAX, COMPRESS_MAX);
+      }
+      img.quality(COMPRESS_QUALITY);
+      finalBuffer = await img.getBufferAsync(Jimp.MIME_JPEG);
+      mime = "image/jpeg";
     }
   } else if (isVideo) {
     // FIX-TASKVIDEO: сохраняем как есть (без перекодирования), но с проверкой

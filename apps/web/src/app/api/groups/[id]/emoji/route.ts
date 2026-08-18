@@ -13,7 +13,9 @@ import { EMOJI_SIZE_PX, FREE_GROUP_EMOJI, PREMIUM_GROUP_EMOJI, groupEmojiLimit }
 import { uploadDirRoot } from "@/lib/uploadPaths";
 import { mkdir, writeFile, unlink } from "fs/promises";
 import path from "path";
-import sharp from "sharp";
+/* FIX-JIMP: sharp → Jimp. Для эмодзи нужна прозрачность — используем PNG.
+   Jimp.MIME_PNG поддерживается без плагинов в jimp 0.x. */
+import Jimp from "jimp";
 import { v4 as uuid } from "uuid";
 
 /** Имя без двоеточий: его набирают руками в сообщении, поэтому только нижний
@@ -145,25 +147,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const check = validateImageFile(buffer, file.type);
   if (!check.valid) return NextResponse.json({ error: check.error }, { status: 400 });
 
-  const fileName = `${uuid()}.webp`;
+  /* FIX-JIMP: PNG сохраняет прозрачность; filename теперь .png */
+  const fileName = `${uuid()}.png`;
   const dir = uploadDirRoot(UPLOAD_DIR);
   const url = `/uploads/${UPLOAD_DIR}/${fileName}`;
 
   try {
-    /* Единый размер и формат делает сервер: клиент присылает что угодно, а в
-       переписке эмодзи должны стоять в одной строке одинаковыми. `contain` с
-       прозрачным фоном сохраняет пропорции — широкая картинка не растягивается
-       в квадрат, а получает пустые поля. Анимацию не включаем: sharp без
-       `animated: true` берёт первый кадр, что для GIF нам и нужно. */
-    const webp = await sharp(buffer)
-      .resize(EMOJI_SIZE_PX, EMOJI_SIZE_PX, {
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      })
-      .webp()
-      .toBuffer();
+    const image = await Jimp.read(buffer);
+    /* contain вписывает картинку в квадрат, сохраняя пропорции; прозрачный
+       фон (0x00000000) оставляет поля пустыми, а не белыми. */
+    image.contain(EMOJI_SIZE_PX, EMOJI_SIZE_PX);
+    const png = await image.getBufferAsync(Jimp.MIME_PNG);
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, fileName), webp, { flag: "wx" });
+    await writeFile(path.join(dir, fileName), png, { flag: "wx" });
   } catch (error) {
     console.error("[GroupEmoji] convert/write failed:", error);
     return NextResponse.json({ error: "Не удалось обработать картинку" }, { status: 500 });
