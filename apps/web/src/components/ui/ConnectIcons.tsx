@@ -66,13 +66,17 @@ export function BellIcon(props: IconProps) {
   );
 }
 
+/* FIX-POLLBLOCK: было четыре штриха — столбчатая диаграмма общего вида, такой же
+   значок берёт любая статистика. Опрос — это варианты с отметкой выбора:
+   карточка, строки-варианты, выбранный отмечен галкой. */
 export function PollIcon(props: IconProps) {
   return (
     <IconBase {...props}>
-      <path d="M5 19V9" />
-      <path d="M12 19V5" />
-      <path d="M19 19v-7" />
-      <path d="M3 19h18" />
+      <rect x="3" y="4" width="18" height="16" rx="3.5" />
+      <path d="M6.2 9.1l1.1 1.2 2.1-2.4" />
+      <path d="M12.4 9h5" />
+      <circle cx="7.4" cy="15" r="1.3" />
+      <path d="M12.4 15h3.2" />
     </IconBase>
   );
 }

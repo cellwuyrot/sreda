@@ -22,14 +22,20 @@ export default function MessageBody({
   text,
   options,
 }: {
-  text: string;
+  /* FIX-DM-COPY: текст бывает пустым и даже null (сообщение только с вложением). */
+  text: string | null | undefined;
   options?: RenderOptions;
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  if (!isLongMessage(text)) return <>{renderContent(text, options)}</>;
+  /* Приводим к строке один раз: дальше текст трогают три разные ветки, и
+     каждая без этого могла бы упасть на null. */
+  const safeText = typeof text === "string" ? text : "";
+  if (!safeText) return null;
 
-  const words = countWords(text);
+  if (!isLongMessage(safeText)) return <>{renderContent(safeText, options)}</>;
+
+  const words = countWords(safeText);
 
   return (
     <>
@@ -40,7 +46,7 @@ export default function MessageBody({
             : "max-h-[18rem] overflow-hidden border-b border-dashed border-neutral-300 dark:border-white/15"
         }
       >
-        {renderContent(text, options)}
+        {renderContent(safeText, options)}
       </div>
       <button
         type="button"

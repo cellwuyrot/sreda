@@ -106,6 +106,24 @@ export function tailWindow(state: WindowState, total: number): WindowState {
   return { size, hideBelow: 0 };
 }
 
+/**
+ * FIX-DM-COPY: есть ли в ленте живое выделение.
+ *
+ * Выделение — состояние браузера, привязанное к КОНКРЕТНЫМ узлам. Если в этот
+ * момент перестроить окно, узлы с началом выделения уйдут из дерева — именно
+ * так ломалось копирование в личных сообщениях: человек раскрывал длинное
+ * сообщение (высота строки разом менялась в разы), ведёл мышью — а лента в это
+ * время пересчитывала окно. Пока выделяют — окно не трогаем: человек важнее
+ * экономии узлов на пару секунд.
+ */
+function hasLiveSelectionInside(el: HTMLElement): boolean {
+	if (typeof window === "undefined") return false;
+	const sel = window.getSelection();
+	if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+	const node = sel.anchorNode;
+	return !!node && el.contains(node);
+}
+
 export function useMessageWindow(
   count: number,
   scrollRef: RefObject<HTMLElement | null>,
@@ -133,6 +151,9 @@ export function useMessageWindow(
     const el = scrollRef.current;
     const total = count;
     if (!el || total <= WINDOW_MIN) return;
+
+    // FIX-DM-COPY: пока держат выделение, строки из дерева не убираем.
+    if (hasLiveSelectionInside(el)) return;
 
     const curEnd = Math.max(0, total - state.hideBelow);
     const curStart = Math.max(0, curEnd - state.size);
