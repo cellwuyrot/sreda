@@ -36,6 +36,9 @@ import { messageLengthError, countWords, messageLimits } from "@/lib/messageLimi
 import { hasPremium } from "@/lib/premium";
 import { useMessageWindow } from "@/hooks/useMessageWindow";
 import ForwardModal from "./ForwardModal";
+// FIX-FWDBUF: пересылка через внутренний буфер.
+import ForwardPendingBar from "./ForwardPendingBar";
+import { formatForwarded, putForward, type ForwardItem } from "@/lib/forwardBuffer";
 import MessageHoverToolbar from "./MessageHoverToolbar";
 import ThreadPanel from "./ThreadPanel";
 import { useFileDropPaste } from "@/hooks/useFileDropPaste";
@@ -309,6 +312,16 @@ const MessageRow = memo(function MessageRow({
                   onDelete={() => deleteMessage(msg.id)}
                   onPin={canPin ? () => pinMessage(msg.id) : undefined}
                   boardContext={{ authorName: msg.user.name, channelName, channelId }}
+                  /* FIX-FWDBUF: в каналах кнопки пересылки раньше вообще не было —
+                     окно со списком открыть было неоткуда. Теперь пересылка одинаковая
+                     в каналах и ЛС: сообщение в буфер, дальше — «Переслать сюда». */
+                  onForward={() =>
+                    putForward({
+                      content: msg.content,
+                      userName: msg.user.name,
+                      attachments: msg.attachments ?? null,
+                    })
+                  }
                 />
               )}
               {isGrouped ? (
@@ -2238,6 +2251,27 @@ export default function MessageArea({
   }, []);
 
 
+  /** FIX-FWDBUF: отправить содержимое буфера в этот канал. */
+  const forwardHere = useCallback(
+    async (item: ForwardItem) => {
+      if (!channelId) return false;
+      let atts: unknown;
+      try {
+        atts = item.attachments ? JSON.parse(item.attachments) : undefined;
+      } catch {
+        atts = undefined;
+      }
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ channelId, content: formatForwarded(item), attachments: atts }),
+      }).catch(() => null);
+      return !!res?.ok;
+    },
+    [channelId],
+  );
+
   const openForwardModal = async (msg: Message) => {
     setForwardMsg({ content: msg.content, userName: msg.user.name });
     setForwardSearch("");
@@ -2793,6 +2827,8 @@ export default function MessageArea({
                         onHover={composerTags.setActiveIndex}
                       />
                     )}
+                    {/* FIX-FWDBUF: полоса «выберите получателя» — одна и та же в каналах и ЛС. */}
+                    <ForwardPendingBar onSendHere={forwardHere} disabled={!channelId} />
                     <textarea
                       ref={textareaRef}
                       value={newMessage}
