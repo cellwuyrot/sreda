@@ -6,7 +6,7 @@ import { rateLimit } from "@/lib/rateLimit";
 import { validateImageMagicBytes } from "@/lib/fileValidation";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import sharp from "sharp";
+import { resizeToWebp } from "@/lib/imageResize";
 import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
 /* Приватные вложения лежат вне public/: см. lib/uploadPaths. */
@@ -139,11 +139,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       finalBuffer = buffer;
       mime = "image/gif";
     } else {
+      /* FIX-SHARPCOMPAT: автоматически выбирает нативный sharp или WASM. */
       fileName = `${fileId}.webp`;
-      finalBuffer = await sharp(buffer)
-        .resize(COMPRESS_MAX, COMPRESS_MAX, { fit: "inside", withoutEnlargement: true })
-        .webp({ quality: COMPRESS_QUALITY })
-        .toBuffer();
+      finalBuffer = await resizeToWebp(buffer, {
+        maxDimension: COMPRESS_MAX,
+        quality: COMPRESS_QUALITY,
+      });
       mime = "image/webp";
     }
   } else if (isVideo) {
