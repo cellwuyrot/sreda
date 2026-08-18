@@ -6,6 +6,9 @@ import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import DayNightBackground from "@/components/connect/DayNightBackground";
 import ForwardModal from "@/components/connect/ForwardModal";
+// FIX-FWDBUF: пересылка через внутренний буфер — человек сам выбирает место.
+import ForwardPendingBar from "@/components/connect/ForwardPendingBar";
+import { formatForwarded, putForward, type ForwardItem } from "@/lib/forwardBuffer";
 import GeoPicker from "@/components/ui/GeoPicker";
 import { useFileDropPaste } from "@/hooks/useFileDropPaste";
 import { useMobile } from "@/hooks/useMobile";
@@ -1432,6 +1435,51 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [forwardMsg, showToast],
   );
 
+  /**
+   * FIX-FWDBUF: кнопка «Переслать» теперь кладёт сообщение во внутренний буфер.
+   *
+   * Дальше человек сам переходит в нужный диалог или канал — там над полем
+   * ввода ждёт полоса «Переслать сюда». Старое окно со списком осталось в коде
+   * и продолжает работать: оно больше не основной путь, а запасной.
+   */
+  const beginForward = useCallback(
+    (msg: Message) => {
+      // Как и раньше: из приватного (зашифрованного) чата пересылать нельзя.
+      if (msg._encrypted || isE2EEMessage(msg.content)) {
+        showToast("Сообщения из приватного чата пересылать нельзя");
+        return;
+      }
+      putForward({
+        content: msg.content,
+        userName: msg.user.name,
+        attachments: msg.attachments ?? null,
+      });
+      showToast("Сообщение скопировано — выберите получателя");
+    },
+    [showToast],
+  );
+
+  /** FIX-FWDBUF: отправить содержимое буфера в открытый сейчас диалог. */
+  const forwardHere = useCallback(
+    async (item: ForwardItem) => {
+      if (!selectedConvId) return false;
+      let atts: unknown;
+      try {
+        atts = item.attachments ? JSON.parse(item.attachments) : undefined;
+      } catch {
+        atts = undefined;
+      }
+      const res = await fetch(`/api/dm/${selectedConvId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: formatForwarded(item), attachments: atts }),
+      }).catch(() => null);
+      return !!res?.ok;
+    },
+    [selectedConvId],
+  );
+
   // ── Add to Favorites (self-conversation) ──────────────────────────────────────
   const addToFavorites = useCallback(
     async (msg: Message) => {
@@ -1751,7 +1799,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onToggleReaction={toggleReaction}
               onPin={pinMessage}
               onOpenThread={openThread}
-              onForward={openForwardModal}
+              onForward={beginForward}
               onFavorite={addToFavorites}
               onStartEdit={startEdit}
               /* BUSINESS-PAY: в деловом разговоре убираются «В сейф», «Переслать»
@@ -1809,6 +1857,11 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                 </button>
               </div>
             )}
+
+            {/* FIX-FWDBUF: полоса появляется, когда сообщение ждёт получателя. */}
+            <div className="px-3">
+              <ForwardPendingBar onSendHere={forwardHere} disabled={!selectedConvId} />
+            </div>
 
             <DMMessageComposer
               input={input}

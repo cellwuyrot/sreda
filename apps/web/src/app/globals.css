@@ -1385,3 +1385,23 @@ html[data-tz-skin-font="on"] kbd {
   max-width: 100%;
   padding-bottom: 2px;
 }
+
+/* FIX-FWDBUF: пересланное сообщение выглядит иначе, чем своё.
+   Цветом различать нельзя: цвет в чате уже занят темой и состояниями
+   сообщения (не дошло, изменено, выделено). Остаётся шрифт — он же и
+   переживает копирование вида в тёмную/светлую тему. */
+.tz-fwd {
+  border-left: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  padding-left: 8px;
+}
+.tz-fwd-head {
+  font-size: 11px;
+  line-height: 1.3;
+  opacity: 0.65;
+  margin-bottom: 2px;
+}
+.tz-fwd-body {
+  font-family: Georgia, "Times New Roman", "Noto Serif", serif;
+  font-style: italic;
+  letter-spacing: 0.1px;
+}
