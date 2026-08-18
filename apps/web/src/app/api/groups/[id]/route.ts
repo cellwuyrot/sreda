@@ -7,7 +7,7 @@ import { logAction } from "@/lib/audit";
 import { logGroupAction } from "@/lib/groupAudit";
 import { emitToUsers } from "@/lib/socketEmit";
 import { checkBan } from "@/lib/banCheck";
-import { GROUP_MEMBER_SELECT, MEMBERS_PAGE_SIZE, groupMemberOrder } from "@/lib/groupMemberSelect";
+import { GROUP_MEMBER_SELECT, MEMBERS_PAGE_SIZE, groupMemberOrder, withMemberOverrides } from "@/lib/groupMemberSelect";
 
 /** Personal room ids of every member of a group, for socket broadcasts. */
 async function groupMemberIds(groupId: string): Promise<string[]> {
@@ -109,6 +109,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({
     ...group,
     channels: visibleChannels,
+    // FIX-SRVSHOW: участники — с персональными настройками профиля для этой группы.
+    members: group.members.map(withMemberOverrides),
     membersTotal,
     myRole: membership.role,
     rulesAccepted: membership.rulesAccepted,
