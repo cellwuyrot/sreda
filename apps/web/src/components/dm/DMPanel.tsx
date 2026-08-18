@@ -11,6 +11,7 @@ import ForwardPendingBar from "@/components/connect/ForwardPendingBar";
 import { formatForwarded, putForward, type ForwardItem } from "@/lib/forwardBuffer";
 import GeoPicker from "@/components/ui/GeoPicker";
 import { useFileDropPaste } from "@/hooks/useFileDropPaste";
+import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { useMobile } from "@/hooks/useMobile";
 import { useHistoryLayer } from "@/components/connect/hooks/useMobileHistoryStack"; // MOBILE-UI
 import DMConversationList from "./DMConversationList";
@@ -1040,7 +1041,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           const fd = new FormData();
-          fd.append("file", file);
+          // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+          fd.append("file", await downscaleForChat(file));
           fd.append("conversationId", conversationId);
           setUploadProgress({ name: file.name, percent: 0, index: i + 1, total: files.length });
           try {
@@ -1163,7 +1165,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       const uploaded: Attachment[] = [];
       for (const file of files) {
         const fd = new FormData();
-        fd.append("file", file);
+        // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+        fd.append("file", await downscaleForChat(file));
         fd.append("conversationId", conversationId);
         const res = await fetch("/api/messages/upload", { method: "POST", body: fd });
         if (!res.ok) continue;
