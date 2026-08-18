@@ -128,7 +128,7 @@ android {
 
         // The web origin the WebView loads. Override per build type / flavour
         // here without touching the Kotlin source (consumed by Config.kt).
-        buildConfigField("String", "APP_URL", "\"https://connect.trioz.ru\"")
+        buildConfigField("String", "APP_URL", "\"https://trioz.ru\"")
         buildConfigField("String", "START_PATH", "\"/connect\"")
     }
 

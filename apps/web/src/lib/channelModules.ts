@@ -78,7 +78,18 @@ export const CHANNEL_MODULES: ChannelModule[] = [
 export const MODULE_TYPES: ChannelModuleType[] = CHANNEL_MODULES.map((m) => m.type);
 
 /** Типы каналов переписки: они всегда в общем списке, а не в панели модулей. */
-export const CHAT_CHANNEL_TYPES = ["TEXT", "VOICE"] as const;
+/* FIX-FEED: FEED — «улучшенный чат»: та же лента постов, что у модуля
+   «Новости» (заголовок, обложка, вложения, обсуждение под записью, возможность
+   закрыть комментарии), но это обычный канал переписки по правам — писать в
+   него могут все участники, пока админ не сузит это через postAccess. Поэтому
+   тип стоит здесь, рядом с TEXT, а не среди модулей: в панели «Разделы» ему
+   делать нечего, он живёт в списке текстовых каналов. */
+export const CHAT_CHANNEL_TYPES = ["TEXT", "FEED", "VOICE"] as const;
+
+/** Канал показывается лентой постов, а не перепиской (FIX-FEED). */
+export function isFeedType(type: unknown): boolean {
+  return type === "NEWS" || type === "FEED";
+}
 
 /**
  * Полный whitelist типов канала для API.

@@ -6,7 +6,7 @@
 
 Приложение **не дублирует** бизнес-логику: весь backend, REST API, Socket.IO и
 Prisma переиспользуются без изменений. Десктоп-оболочка загружает тот же
-веб-фронтенд (по умолчанию `https://connect.trioz.ru`) и добавляет нативные
+веб-фронтенд (по умолчанию `https://trioz.ru`) и добавляет нативные
 возможности, которых нет в браузере.
 
 ## Возможности
@@ -59,7 +59,7 @@ resources/           # иконки для рантайма (окно, трей)
 ```bash
 npm install           # поставит Electron и зависимости
 
-# указать бэкенд (по умолчанию https://connect.trioz.ru):
+# указать бэкенд (по умолчанию https://trioz.ru):
 export TRIOZ_APP_URL="http://localhost:3000"
 
 npm run dev           # сборка + запуск с DevTools
@@ -115,7 +115,7 @@ macOS → `.dmg`, Linux → `.AppImage` / `.deb` (тоже просто скач
 ### Как выложить и как клиент установит
 
 1. Задайте в `electron-builder.yml` адрес вашего сервера в `publish.url` и
-   `nsisWeb.appPackageUrl` (например `https://connect.trioz.ru/desktop/`).
+   `nsisWeb.appPackageUrl` (например `https://trioz.ru/desktop/`).
 2. Соберите (см. выше) и **опубликуйте содержимое `release/` в хранилище
    раздачи** (`*.nsis.7z`, `*.blockmap`, `latest.yml` и сами установщики):
    - локально — `npm run desktop:publish` (копирует в `apps/web/public/desktop/`);
@@ -166,7 +166,7 @@ if (window.triozDesktop?.isDesktop) {
 
 | Переменная | Назначение | По умолчанию |
 |---|---|---|
-| `TRIOZ_APP_URL` | URL веб-фронтенда | `https://connect.trioz.ru` |
+| `TRIOZ_APP_URL` | URL веб-фронтенда | `https://trioz.ru` |
 | `TRIOZ_DEV` | `1` — открыть DevTools и включить подробный лог | — |
 
 Пользовательские настройки (автозапуск, трей, уведомления, хоткеи) хранятся

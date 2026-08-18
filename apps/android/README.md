@@ -48,11 +48,11 @@ Android Gradle Plugin 8.6.1, Kotlin 1.9.25, `compileSdk`/`targetSdk` 34.
 
 ## Куда смотрит приложение (адрес сервера)
 
-По умолчанию оболочка грузит `https://connect.trioz.ru/connect`. Адрес задаётся
+По умолчанию оболочка грузит `https://trioz.ru/connect`. Адрес задаётся
 **на этапе сборки** в `app/build.gradle.kts`:
 
 ```kotlin
-buildConfigField("String", "APP_URL", "\"https://connect.trioz.ru\"")
+buildConfigField("String", "APP_URL", "\"https://trioz.ru\"")
 buildConfigField("String", "START_PATH", "\"/connect\"")
 ```
 

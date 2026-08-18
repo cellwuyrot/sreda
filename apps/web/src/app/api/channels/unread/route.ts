@@ -48,7 +48,8 @@ export async function GET() {
     select: { id: true, groupId: true, name: true, type: true },
   });
   const newsChannelIds = new Set(
-    channelRows.filter((c) => c.type === "NEWS").map((c) => c.id),
+    // FIX-FEED: у улучшенного чата та же таблица и те же черновики, что у новостей.
+    channelRows.filter((c) => c.type === "NEWS" || c.type === "FEED").map((c) => c.id),
   );
 
   /* Заглушка: если канал или вся группа замьючены, счётчик новостей не показываем.

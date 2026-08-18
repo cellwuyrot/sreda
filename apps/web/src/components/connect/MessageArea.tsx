@@ -622,10 +622,13 @@ export default function MessageArea({
   /* Роль аккаунта и подписка — из сессии: currentUserRole в пропсах это роль в
      сообществе, к тарифу она отношения не имеет. */
   const { data: session } = useSession();
-  const isNewsChannel = channelType === "NEWS";
+  /* FIX-FEED: улучшенный чат рисуется той же лентой, что новости, но писать в
+     него могут все участники — ограничение по роли ниже к нему не применяется. */
+  const isFeedChannel = channelType === "FEED";
+  const isNewsChannel = channelType === "NEWS" || isFeedChannel;
   const isOwnerAdmin = currentUserRole === "OWNER" || currentUserRole === "ADMIN" || currentUserRole === "SITE_ADMIN";
   const isPrivilegedRole = isOwnerAdmin || currentUserRole === "MODERATOR";
-  const canWriteNews = isNewsChannel && isPrivilegedRole;
+  const canWriteNews = isNewsChannel && (isFeedChannel || isPrivilegedRole);
   // Unified write-access gate (NEWS channels + block-level postAccess)
   //
   // FIX-NEWSACL: явно заданный postAccess проверяется ПЕРВЫМ. Раньше ветка
@@ -641,7 +644,7 @@ export default function MessageArea({
   } else if (postAccess === "MOD" && !isPrivilegedRole) {
     canPost = false;
     readOnlyNotice = "Писать в этот раздел могут только администраторы и модераторы";
-  } else if (isNewsChannel && !canWriteNews) {
+  } else if (isNewsChannel && !isFeedChannel && !canWriteNews) {
     // Канал новостей без явной настройки: прежнее поведение — модераторы+.
     canPost = false;
     readOnlyNotice = "Канал новостей — писать могут только администраторы и модераторы";

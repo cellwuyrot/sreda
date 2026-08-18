@@ -43,7 +43,7 @@ mkdir -p /var/www/trioz/apps/web/public/uploads/{avatars,groups,messages,banners
 ## Публикация десктоп-установщиков (с автообновлением)
 
 Клиент обновляется через `electron-updater`: он опрашивает фид
-`https://connect.trioz.ru/desktop/latest.yml` и ставит новую версию **только
+`https://trioz.ru/desktop/latest.yml` и ставит новую версию **только
 если она строго больше** установленной. Поэтому «обновить проект» = собрать
 установщик с **большей версией** и положить его (вместе с `latest*.yml`) туда,
 откуда сайт раздаёт `/desktop/`.
