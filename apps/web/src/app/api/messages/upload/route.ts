@@ -9,7 +9,9 @@ import { FREE_UPLOAD_MB, PREMIUM_UPLOAD_MB, uploadLimitBytes } from "@/lib/premi
 import { canAccessConversation, getChannelPermissions } from "@/lib/connectPermissions";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import sharp from "sharp";
+/* FIX-JIMP: sharp → Jimp. Фото отправляем в JPEG — прозрачность не нужна,
+   файл меньше чем PNG. Jimp.MIME_JPEG работает без плагинов. */
+import Jimp from "jimp";
 import { v4 as uuid } from "uuid";
 /* Приватные вложения лежат вне public/: см. lib/uploadPaths. */
 import { uploadDirRoot } from "@/lib/uploadPaths";
@@ -114,10 +116,18 @@ export async function POST(req: NextRequest) {
        клиенту от «;codecs=vp9» никакой пользы. */
     let responseType = mime;
 
+    /* FIX-JIMP */
     if (isImage) {
-      fileName = `${fileId}.webp`;
-      finalBuffer = await sharp(buffer).resize(COMPRESS_MAX_WIDTH, COMPRESS_MAX_WIDTH, { fit: "inside", withoutEnlargement: true }).webp({ quality: COMPRESS_QUALITY }).toBuffer();
-      responseType = "image/webp";
+      fileName = `${fileId}.jpg`;
+      const img = await Jimp.read(buffer);
+      /* scaleToFit уменьшает до заданных размеров, сохраняя пропорции;
+         withoutEnlargement: маленькие картинки не растягиваются. */
+      if (img.getWidth() > COMPRESS_MAX_WIDTH || img.getHeight() > COMPRESS_MAX_WIDTH) {
+        img.scaleToFit(COMPRESS_MAX_WIDTH, COMPRESS_MAX_WIDTH);
+      }
+      img.quality(COMPRESS_QUALITY);
+      finalBuffer = await img.getBufferAsync(Jimp.MIME_JPEG);
+      responseType = "image/jpeg";
     } else if (isVideo) {
       /* Расширение тоже считалось по полному типу — из-за этого webm-заметка,
          даже пройди она проверку, легла бы на диск как .mp4. */
