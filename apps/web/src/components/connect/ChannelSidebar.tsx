@@ -16,6 +16,18 @@ import { VoiceChannelIcon, ChatIcon, PrivateChatIcon, PrivateVoiceIcon } from "@
 import ScreenSharePrivacyModal from "@/components/voice/ScreenSharePrivacyModal";
 import { isModuleType } from "@/lib/channelModules";
 
+/* FIX-SRVCHAN: каналы, рождённые из услуги (Админ ▸ Услуги), живут только в
+   блоках справа. Опознаём их не только по serviceId, но и по устойчивому
+   окончанию названия: старые установки успели накопить такие каналы с пустым
+   serviceId (услуга пересоздавалась), и именно они всплывали в «Текстовых чатах»
+   главного сообщества рядом с общим чатом. */
+const SERVICE_CHANNEL_SUFFIX = / \u2014 (\u041e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u0435|\u0412\u043e\u043f\u0440\u043e\u0441\u044b)$/;
+
+function isServiceLinkedChannel(ch: { name?: string; serviceId?: string | null }): boolean {
+  if (ch.serviceId) return true;
+  return !!ch.name && SERVICE_CHANNEL_SUFFIX.test(ch.name);
+}
+
 /* ─── Props ─── */
 
 interface ChannelSidebarProps {
@@ -149,6 +161,8 @@ export default function ChannelSidebar({
 
     for (const ch of textChannels) {
       if (ch.parentId) continue;
+      // FIX-SRVCHAN: осиротевший чат услуги (serviceId потерян) в общий список не попадает.
+      if (!ch.serviceId && isServiceLinkedChannel(ch)) continue;
       if (ch.serviceId) {
         const arr = serviceMap.get(ch.serviceId) ?? [];
         arr.push(ch);
@@ -181,7 +195,9 @@ export default function ChannelSidebar({
     return textChannels.filter((ch) => {
       const c = ch as unknown as { id: string; type?: string; parentId?: string | null; serviceId?: string | null };
       // FIX-FEED: улучшенный чат стоит в том же списке, что обычный.
-      return c.id !== generalChannelId && !c.parentId && !c.serviceId && (c.type === "TEXT" || c.type === "FEED");
+      // FIX-SRVCHAN: чаты услуг показывает только панель разделов.
+      if (isServiceLinkedChannel(c as { name?: string; serviceId?: string | null })) return false;
+      return c.id !== generalChannelId && !c.parentId && (c.type === "TEXT" || c.type === "FEED");
     });
   }, [blockMode, textChannels, generalChannelId]);
 
