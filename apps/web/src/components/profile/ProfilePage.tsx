@@ -130,8 +130,8 @@ function BackButton() {
  * закрытом телефоне. Показывать их в браузере было бы обманом: звонок ушёл бы
  * в пустоту, если вкладка адресата закрыта.
  *
- * Ошибка показывается здесь же, рядом с кнопкой: «Звонить можно только друзьям»
- * или «Абонент занят» — без этого нажатие выглядело бы как сломанное.
+ * Ошибка показывается отдельной строкой под кнопками: «Звонить можно только
+ * друзьям» или «Абонент занят» — без этого нажатие выглядело бы как сломанное.
  */
 function CallButtons({ head }: { head: ProfileHead }) {
   const { callSupported, startCall, state } = useCall();
@@ -149,32 +149,38 @@ function CallButtons({ head }: { head: ProfileHead }) {
     if (!result.ok) setError(result.error ?? "Звонок недоступен");
   };
 
+  /* PROFILE-CALL-FIX: кнопки — прямые дети общей строки действий (flex-wrap в
+     шапке), а не отдельный вложенный блок. Так они переносятся вместе с
+     «Подписаться», а не сжимаются в одну тесную колонку. shrink-0 +
+     whitespace-nowrap не дают кнопке ужаться настолько, чтобы иконка налезла на
+     текст; min-h-[44px] держит цель под палец. Ошибка — во всю ширину строки
+     (basis-full), отдельной строкой под кнопками. */
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void dial(false)}
-          disabled={busy}
-          className="flex min-h-[44px] items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
-          aria-label={`Позвонить ${head.name}`}
-        >
-          <MicIcon size={16} style={{ color: "inherit" }} />
-          Позвонить
-        </button>
-        <button
-          type="button"
-          onClick={() => void dial(true)}
-          disabled={busy}
-          className="flex min-h-[44px] items-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
-          aria-label={`Видеовызов ${head.name}`}
-        >
-          <FilmIcon size={16} style={{ color: "inherit" }} />
-          Видео
-        </button>
-      </div>
-      {error && <div className="text-[11px] text-red-500">{error}</div>}
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => void dial(false)}
+        disabled={busy}
+        className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50 max-sm:flex-1"
+        aria-label={`Позвонить ${head.name}`}
+      >
+        <MicIcon size={16} style={{ color: "inherit" }} />
+        Позвонить
+      </button>
+      <button
+        type="button"
+        onClick={() => void dial(true)}
+        disabled={busy}
+        className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5 max-sm:flex-1"
+        aria-label={`Видеовызов ${head.name}`}
+      >
+        <FilmIcon size={16} style={{ color: "inherit" }} />
+        Видео
+      </button>
+      {error && (
+        <div className="basis-full text-[11px] text-red-500 sm:text-right">{error}</div>
+      )}
+    </>
   );
 }
 
@@ -389,32 +395,37 @@ export default function ProfilePage({ username }: { username?: string }) {
           }
         />
         <div className="p-4 pt-0">
-          <div className="flex items-end gap-4 -mt-10">
+          {/* PROFILE-HEAD-FIX: на телефоне (WebView Android) шапка встаёт в
+              колонку, а кнопки действий переезжают на отдельную строку под
+              именем. Раньше аватар, имя, «Позвонить», «Видео» и «Подписаться»
+              стояли в одной строке без переноса: на узком экране они сжимались,
+              иконки налезали на текст и вёрстка ломалась. */}
+          <div className="-mt-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
             <GlowAvatar user={head} size={80} />
-            <div className="flex-1 min-w-0 pb-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-semibold text-neutral-900 dark:text-white truncate">{head.name}</h1>
-              </div>
+            <div className="min-w-0 flex-1 sm:pb-1">
+              <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-white">{head.name}</h1>
               <div className="text-sm text-neutral-500 dark:text-gray-400">@{head.username}</div>
             </div>
 
-            {/* CALL: звонок другу — только на чужой странице и только в приложении для телефона */}
-            {!head.isSelf && <CallButtons head={head} />}
-
+            {/* CALL: звонок другу — только на чужой странице и только в приложении для телефона.
+                Кнопки действий в одной переносимой строке, чтобы ничего не наезжало. */}
             {!head.isSelf && (
-              <button
-                type="button"
-                onClick={toggleFollow}
-                disabled={followBusy}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
-                  isFollowing
-                    ? "border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
-                    : "bg-indigo-600 text-white hover:bg-indigo-500"
-                }`}
-              >
-                <UserPlusIcon size={16} style={{ color: "inherit" }} />
-                {isFollowing ? "Вы подписаны" : "Подписаться"}
-              </button>
+              <div className="flex flex-wrap items-center gap-2 max-sm:w-full sm:justify-end">
+                <CallButtons head={head} />
+                <button
+                  type="button"
+                  onClick={toggleFollow}
+                  disabled={followBusy}
+                  className={`flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 max-sm:flex-1 ${
+                    isFollowing
+                      ? "border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
+                      : "bg-indigo-600 text-white hover:bg-indigo-500"
+                  }`}
+                >
+                  <UserPlusIcon size={16} style={{ color: "inherit" }} />
+                  {isFollowing ? "Вы подписаны" : "Подписаться"}
+                </button>
+              </div>
             )}
           </div>
 

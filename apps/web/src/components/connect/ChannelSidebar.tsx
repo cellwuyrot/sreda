@@ -171,6 +171,19 @@ export default function ChannelSidebar({
     return { groups, ungrouped };
   }, [isMainCommunity, textChannels]);
 
+  /* FIX-MAINTEXT: остальные текстовые чаты блочного режима. В блочном режиме
+     (главная группа и группы с разделами) список показывал ровно один чат —
+     общий, — и созданный второй текстовый канал попадал в никуда: сервер его
+     создавал, а в боковой панели его не было. Разделы (parentId) и чаты услуг
+     (serviceId) здесь не нужны — их показывают свои панели. */
+  const blockTextChannels = useMemo(() => {
+    if (!blockMode) return [];
+    return textChannels.filter((ch) => {
+      const c = ch as unknown as { id: string; type?: string; parentId?: string | null; serviceId?: string | null };
+      return c.id !== generalChannelId && !c.parentId && !c.serviceId && c.type === "TEXT";
+    });
+  }, [blockMode, textChannels, generalChannelId]);
+
   /* ── Track voice channel occupants via separate socket ── */
   const [channelUsersMap, setChannelUsersMap] = useState<Record<string, VoiceUser[]>>({});
   const [volumeOpen, setVolumeOpen] = useState<string | null>(null);
@@ -298,18 +311,55 @@ export default function ChannelSidebar({
         {/* ── Block mode: single general chat at top ── */}
         {blockMode && generalChannel && (
           <>
-            <div className="px-2 py-1 text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Общий чат</div>
+            {/* FIX-MAINTEXT: в главной группе голосовые каналы настраивались как обычно,
+                а текстовый — никак: строка общего чата рисовалась с canManage={false},
+                поэтому у неё не было ни настроек, ни удаления, а кнопки «создать» рядом
+                не было вовсе. Права тут те же, что и у голосовых, и их проверяет сервер
+                (POST /api/channels и PUT|DELETE /api/channels/[id] — только владелец и
+                администратор); интерфейс просто перестал скрывать разрешённое. */}
+            <div className="group/cat flex items-center justify-between px-2 py-1">
+              <span className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Текстовые чаты</span>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => onCreateChannel({ groupType: "TEXT", defaultType: "TEXT" })}
+                  title="Создать текстовый чат"
+                  aria-label="Создать текстовый чат"
+                  className="text-neutral-400 transition-colors hover:text-violet-600 dark:hover:text-cyan-400 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <ChannelItem
               ch={generalChannel}
               selectedChannel={selectedChannel}
               unreadCounts={unreadCounts}
               mentionChannels={mentionChannels}
-              canManage={false}
+              canManage={!!canManage}
               onChannelClick={onChannelClick}
               onDeleteChannel={onDeleteChannel}
+              onEditChannel={canManage ? setEditingChannel : undefined}
               isMuted={channelMutes[generalChannel.id] ?? (groupMuted && channelMutes[generalChannel.id] !== false)}
               onToggleMute={handleToggleChannelMute}
             />
+            {blockTextChannels.map((ch) => (
+              <ChannelItem
+                key={ch.id}
+                ch={ch}
+                selectedChannel={selectedChannel}
+                unreadCounts={unreadCounts}
+                mentionChannels={mentionChannels}
+                canManage={!!canManage}
+                onChannelClick={onChannelClick}
+                onDeleteChannel={onDeleteChannel}
+                onEditChannel={canManage ? setEditingChannel : undefined}
+                isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)}
+                onToggleMute={handleToggleChannelMute}
+              />
+            ))}
           </>
         )}
 
