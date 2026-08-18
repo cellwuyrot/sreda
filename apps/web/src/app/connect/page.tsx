@@ -349,7 +349,7 @@ function ConnectPageInner() {
         const pendingDeepLink = !!deepLinkRef.current?.channel && deepLinkRef.current?.group === data.id;
         // Правила ещё не приняты → показываем гейт правил, канал не открываем.
         // Условие точно совпадает с веткой рендера GroupRulesGate ниже.
-        const rulesGated = !!data.rules && !data.rulesAccepted && data.myRole === "MEMBER";
+        const rulesGated = !data.isMain && !!data.rules && !data.rulesAccepted && data.myRole === "MEMBER";
         const firstText = data.channels.find((c) => c.type === "TEXT");
         setSelectedChannel(!pendingDeepLink && !rulesGated && firstText ? firstText.id : null);
       }
@@ -725,6 +725,22 @@ function ConnectPageInner() {
   }, [anyScreenShare]);
 
   const handleChannelClick = (channel: Channel) => {
+    /* FIX-RULESGATE: пока правила группы не приняты, участник не попадает
+       ни в текстовый канал, ни в голосовой. Раньше экран с правилами
+       показывался только до первого клика по списку каналов, и его можно
+       было обойти вручную или ссылкой. Главная группа TZ Connect —
+       исключение: в неё вступают автоматически при регистрации. */
+    if (
+      groupDetail &&
+      !groupDetail.isMain &&
+      !!groupDetail.rules &&
+      !groupDetail.rulesAccepted &&
+      groupDetail.myRole === "MEMBER"
+    ) {
+      setSelectedChannel(null);
+      setMobileView("chat");
+      return;
+    }
     if (channel.type === "VOICE") {
       voice.joinVoice(channel.id, channel.name);
     } else {
@@ -1273,7 +1289,7 @@ function ConnectPageInner() {
                 )
               ) : selectedGroup && groupReady && groupDetail ? (
                 <div className="flex-1 flex items-center justify-center overflow-y-auto">
-                  {groupDetail.rules && !groupDetail.rulesAccepted && groupDetail.myRole === "MEMBER" ? (
+                  {!groupDetail.isMain && groupDetail.rules && !groupDetail.rulesAccepted && groupDetail.myRole === "MEMBER" ? (
                     <GroupRulesGate group={groupDetail} onAccept={async () => {
                       await fetch(`/api/groups/${groupDetail.id}/accept-rules`, { method: "POST" });
                       setGroupDetail({ ...groupDetail, rulesAccepted: true });

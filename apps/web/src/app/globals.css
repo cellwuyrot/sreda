@@ -1349,3 +1349,39 @@ html[data-tz-skin-font="on"] pre,
 html[data-tz-skin-font="on"] kbd {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
+
+
+/* FIX-REACTPOP: окно выбора реакции держится внутри области чата.
+
+   Окно было жёстко прибито к правому краю бара действий (`right: 0`). В личных
+   сообщениях бар у своих сообщений стоит справа, а у собеседника — слева,
+   поэтому в половине случаев окно уезжало за границу переписки и было видно
+   лишь частично. Сторона привязки теперь зависит от стороны сообщения, а
+   размер ограничен вьюпортом — окно физически не может выйти за экран.
+
+   Плюс на время открытия снимается paint-containment строки: у `.tz-msg-row` стоит
+   `content-visibility: auto`, и всё, что выступает дальше запаса
+   `overflow-clip-margin`, обрезается — именно это срезало низ окна. */
+.tz-react-pop {
+  right: 0;
+  left: auto;
+  max-width: min(320px, calc(100vw - 24px));
+  max-height: min(330px, 60vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.tz-dm-peer .tz-react-pop {
+  left: 0;
+  right: auto;
+}
+.tz-msg-row:has(.tz-react-pop) {
+  content-visibility: visible;
+  contain: none;
+}
+
+/* Ряд готовых реакций под сообщением не должен выходить за край пузыря:
+   при переносе на вторую строку последняя пилюля попадала под обрезку. */
+.tz-dm-msg-row .tz-reaction-row {
+  max-width: 100%;
+  padding-bottom: 2px;
+}

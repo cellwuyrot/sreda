@@ -535,9 +535,13 @@ export default function ChannelSidebar({
               </button>
               {canManage && voiceOpen && (
                 <div className="flex gap-0.5 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100">
-                  <button onClick={() => onCreateChannel({ createCategory: true, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать группу голосовых каналов" title="Создать группу голосовых каналов">
+                  <button onClick={() => onCreateChannel({ createCategory: true, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать папку для голосовых каналов" title="Папка для голосовых каналов">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1v22M5 8h14M5 16h14" />
+                      {/* FIX-VOICEPLUS: рядом стояли два визуально одинаковых «плюса»:
+                          «группа голосовых каналов» и «голосовой канал». Функции разные,
+                          поэтому убрана не кнопка, а путаница: у группы теперь папка. */}
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8a2 2 0 012-2h3.6l1.6 2H19a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11.5v5M9.5 14h5" />
                     </svg>
                   </button>
                   <button onClick={() => onCreateChannel({ groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать голосовой канал" title="Создать голосовой канал">

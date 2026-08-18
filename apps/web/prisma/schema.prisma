@@ -30,6 +30,10 @@ model User {
   /// закрывается по этому флагу (lib/auth.ts).
   isDeleted              Boolean                     @default(false)
   deletedAt              DateTime?
+  /// FIX-VAULTPW: пароль «Сейфа» в личных сообщениях. Хранится только
+  /// bcrypt-хеш; пустое значение = пароль ещё не задан, и при первом
+  /// входе человека просят его придумать.
+  vaultPasswordHash      String?
   bio                    String?                     @db.VarChar(200)
   socialLinks            String?                     @db.Text
   customStatus           String?                     @db.VarChar(100)

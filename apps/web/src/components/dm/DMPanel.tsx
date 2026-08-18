@@ -38,6 +38,7 @@ import { messageLengthError } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
 import { useMessageWindow } from "@/hooks/useMessageWindow";
 import ChatErrorBoundary from "@/components/ui/ChatErrorBoundary";
+import VaultLock from "@/components/dm/VaultLock";
 import { uploadWithProgress } from "@/lib/uploadWithProgress"; // FIX-UPLOAD
 // FIX-ICONS: фирменные SVG-иконки вместо PNG и эмодзи «💬»
 import { PinIcon, ChatIcon } from "@/components/ui/ConnectIcons";
@@ -77,6 +78,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   // ── Data state ────────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  /* FIX-VAULTPW: разблокировка Сейфа держится только в памяти панели. */
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
   /* MOBILE-UI: на телефоне открытая беседа — слой поверх списка диалогов:
      системная «назад» закрывает её и возвращает к списку, а не выкидывает
      из раздела сообщений. */
@@ -222,6 +225,14 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     () => conversations.find((c) => c.id === selectedConvId) || null,
     [conversations, selectedConvId],
   );
+
+  /* FIX-VAULTPW: Сейф — переписка с самим собой. Пока пароль не введён, ни
+     сообщения, ни поле ввода не отрисовываются. */
+  const isVaultConv = !!selectedConv && selectedConv.other.id === currentUserId;
+  const isVaultLocked = isVaultConv && !vaultUnlocked;
+  useEffect(() => {
+    setVaultUnlocked(false);
+  }, [selectedConvId]);
   const otherUser = selectedConv?.other ?? null;
   // Variant A: разделяем защищённые (E2EE) и открытые сообщения по вкладкам.
   const visibleMessages = useMemo(
@@ -1722,6 +1733,9 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                 разбирала всё дерево переписки — человек видел пустой экран вместо
                 разговора. Причина того вылета устранена отдельно, но цена любой
                 будущей ошибки не должна быть такой. */}
+            {isVaultLocked ? (
+              <VaultLock onUnlocked={() => setVaultUnlocked(true)} />
+            ) : (
             <ChatErrorBoundary resetKey={selectedConvId} label="Не удалось показать переписку">
             <DMMessageList
               messages={visibleMessages}
@@ -1763,11 +1777,12 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onScrollToBottom={scrollToBottom}
             />
             </ChatErrorBoundary>
+            )}
 
             {/* BUSINESS-LOCK: клиенту при закрытой отправке ввод заменяется
                 объяснением. Отказ на отправку он увидел бы только после того, как
                 набрал текст, — а это хуже, чем честно закрытое поле. */}
-            {lockedForMe ? (
+            {isVaultLocked ? null : lockedForMe ? (
               <div className="border-t border-[var(--cn-border)] px-4 py-4 text-center">
                 <p className="text-xs text-[var(--cn-text-dim)]">
                   Администрация закрыла отправку сообщений по этому обращению.
