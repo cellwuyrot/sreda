@@ -1,51 +1,35 @@
-/* FIX-SHARPCOMPAT: обёртка над sharp, которая не зависит от нативных
-   бинарников конкретной платформы.
-
-   Sharp 0.34+ включает пакет @img/sharp-wasm32, который уже прописан
-   в package-lock.json и работает без любых нативных привязок.
-   Если обычный нативный sharp почему-то не загружается (несовместимое
-   железо), функция makeSharp() автоматически переключается на WASM.
-
-   lock-файл не меняется — CI проходит с тем же npm ci. */
-
+/* FIX-SHARPCOMPAT: совместимость sharp с любым железом.
+​
+   Sharp 0.34+ включает @img/sharp-wasm32 как опциональную зависимость и
+   автоматически переключается на неё если нативный бинарь не подходит
+   к платформе. Ручной импорт WASM не нужен — sharp делает это сам.
+​
+   Здесь мы только скрываем ошибку загрузки (MODULE_NOT_FOUND при неожиданной
+   архитектуре) и логируем её, чтобы было понятно что происходит.  Если sharp
+   не загрузился совсем — выбрасываем понятное сообщение. */
+​
 import type { Sharp } from "sharp";
-
+​
 type SharpFactory = (input: Buffer) => Sharp;
-
+​
 let _factory: SharpFactory | null = null;
 let _tried = false;
-
+​
 async function getFactory(): Promise<SharpFactory> {
   if (_factory) return _factory;
-  if (_tried) throw new Error("sharp is unavailable on this platform");
+  if (_tried) throw new Error("[imageResize] sharp unavailable — run: npm rebuild sharp");
   _tried = true;
-
-  // Попытка 1: обычный нативный sharp
-  try {
-    const s = (await import("sharp")).default;
-    // Проверочный вызов: если нативный модуль не загрузился, ошибка возникнет здесь.
-    await s(Buffer.alloc(8)).metadata();
-    _factory = (buf: Buffer) => s(buf);
-    console.log("[imageResize] using native sharp");
-    return _factory;
-  } catch (e1) {
-    console.warn("[imageResize] native sharp failed, trying WASM build:", (e1 as Error).message);
-  }
-
-  // Попытка 2: WASM-сборка (уже есть в lock-файле как @img/sharp-wasm32)
-  try {
-    const s = (await import("@img/sharp-wasm32")).default as SharpFactory;
-    _factory = s;
-    console.log("[imageResize] using WASM sharp");
-    return _factory;
-  } catch (e2) {
-    throw new Error(
-      `sharp unavailable (native: platform mismatch; wasm: ${(e2 as Error).message}). ` +
-        "Run: npm rebuild sharp",
-    );
-  }
+​
+  // sharp 0.34+ сам выбирает нативный бинарь или WASM-сборку;
+  // нам достаточно просто импортировать пакет.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sharpMod = await import("sharp").catch((err: Error) => {
+    throw new Error(`[imageResize] failed to load sharp: ${err.message}. Run: npm rebuild sharp`);
+  });
+  _factory = sharpMod.default as unknown as SharpFactory;
+  return _factory;
 }
-
+​
 export interface ResizeOptions {
   /** Максимальный размер стороны (для scaleToFit). */
   maxDimension: number;
@@ -56,10 +40,10 @@ export interface ResizeOptions {
   /** Размер квадрата (contain-режим). */
   containSize?: number;
 }
-
+​
 /**
  * Сжимает / вписывает картинку и отдаёт WebP-буфер.
- * Использует нативный sharp если доступен, иначе WASM-фоллбек.
+ * Использует нативный sharp или WASM-сборку — sharp выбирает сам.
  */
 export async function resizeToWebp(input: Buffer, opts: ResizeOptions): Promise<Buffer> {
   const factory = await getFactory();
@@ -80,3 +64,4 @@ export async function resizeToWebp(input: Buffer, opts: ResizeOptions): Promise<
     .webp({ quality: opts.quality })
     .toBuffer();
 }
+​
