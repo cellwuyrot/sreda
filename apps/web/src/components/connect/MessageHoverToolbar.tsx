@@ -289,7 +289,7 @@ export default function MessageHoverToolbar({
           <button type="button" onClick={toggleReactions} title="Добавить реакцию" aria-label="Добавить реакцию">
             {I.smile}
           </button>
-          {reactionOpen && <div className={`absolute right-0 z-50 rounded-xl border border-[var(--cn-border)] bg-[var(--cn-sidebar)] p-1.5 shadow-xl ${reactionUp ? "bottom-full mb-1" : "top-full mt-1"}`}><TriozEmojiGrid compact groupEmojis={groupEmojis} onSelect={(emoji) => { onReact(emoji); setReactionOpen(false); }}/></div>}
+          {reactionOpen && <div className={`tz-react-pop absolute z-50 rounded-xl border border-[var(--cn-border)] bg-[var(--cn-sidebar)] p-1.5 shadow-xl ${reactionUp ? "bottom-full mb-1" : "top-full mt-1"}`}><TriozEmojiGrid compact groupEmojis={groupEmojis} onSelect={(emoji) => { onReact(emoji); setReactionOpen(false); }}/></div>}
         </div>
       )}
       {contentText.trim().length > 0 && (

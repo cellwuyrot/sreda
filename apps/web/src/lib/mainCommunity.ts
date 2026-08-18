@@ -212,6 +212,11 @@ export async function syncServicesToMainCommunity() {
             groupId: main.id,
             serviceId: service.id,
             isRestricted: restricted,
+            // FIX-SRVHIDE: выключенная в админке услуга убирается из блочной
+            // структуры целиком. Одного isRestricted не хватало: канал без
+            // выданных ролей проходит проверку доступа как открытый
+            // (см. app/api/groups/[id]/route.ts) и продолжал висеть у всех.
+            hidden: restricted,
             sortOrder: d.sortOrder,
           },
         });
@@ -223,11 +228,12 @@ export async function syncServicesToMainCommunity() {
         d.role.icon !== d.icon ||
         d.role.type !== d.type ||
         d.role.isRestricted !== restricted ||
+        d.role.hidden !== restricted ||
         d.role.sortOrder !== d.sortOrder
       ) {
         await prisma.channel.update({
           where: { id: d.role.id },
-          data: { name: d.name, icon: d.icon, type: d.type, isRestricted: restricted, sortOrder: d.sortOrder },
+          data: { name: d.name, icon: d.icon, type: d.type, isRestricted: restricted, hidden: restricted, sortOrder: d.sortOrder },
         });
       }
     }
