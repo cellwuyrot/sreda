@@ -20,6 +20,7 @@ import { CheckIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import { isOnline, timeAgo } from "@/lib/timeAgo";
 import {
+import { bannerImgStyle } from "@/lib/bannerFraming"; // FIX-BGCROP
   allowedActions,
   assignableRoles,
   DELETE_AND_TIMEOUT_MINUTES,
@@ -465,7 +466,7 @@ export default function UserContextMenu({
       <div className="relative h-14 flex-shrink-0 overflow-hidden rounded-t-[10px] bg-gradient-to-br from-violet-500/30 to-indigo-600/20 dark:from-cyan-500/20 dark:to-violet-600/20">
         {user.profileBanner && (
           /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={user.profileBanner} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img src={user.profileBanner} alt="" className="absolute inset-0 h-full w-full object-cover" style={bannerImgStyle(user.profileBanner)} />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
       </div>

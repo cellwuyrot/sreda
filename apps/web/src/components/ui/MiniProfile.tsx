@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import { isOnline, timeAgo } from "@/lib/timeAgo";
+import { bannerImgStyle } from "@/lib/bannerFraming"; // FIX-BGCROP
 
 interface MiniProfileUser {
   id: string;
@@ -140,6 +141,7 @@ export default function MiniProfile({ user, children, onMessageClick, side = "ri
                   src={user.profileBanner}
                   alt=""
                   className="absolute inset-0 h-full w-full object-cover"
+                  style={bannerImgStyle(user.profileBanner)}
                 />
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />

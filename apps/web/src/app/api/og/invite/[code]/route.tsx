@@ -196,7 +196,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cod
         {/* Подвал */}
         <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
           <div style={{ width: 26, height: 26, borderRadius: "50%", border: `2px solid ${ACCENT}60`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: ACCENT }}>◈</div>
-          <div style={{ fontSize: 17, color: "#6b7280", letterSpacing: "0.12em", display: "flex" }}>connect.trioz.ru · TZ.Connect</div>
+          <div style={{ fontSize: 17, color: "#6b7280", letterSpacing: "0.12em", display: "flex" }}>trioz.ru · TZ.Connect</div>
         </div>
       </div>
     ),

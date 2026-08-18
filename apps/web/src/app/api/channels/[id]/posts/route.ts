@@ -77,7 +77,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   /* Лента осмысленна только в новостном канале: в остальных поля поста пустые,
      и клиент получил бы список сообщений, притворяющийся постами. */
-  if (permission.channelType !== "NEWS") {
+  // FIX-FEED: лента есть и у улучшенного чата (FEED), а не только у новостей.
+  if (permission.channelType !== "NEWS" && permission.channelType !== "FEED") {
     return NextResponse.json({ error: "Этот раздел не является лентой новостей" }, { status: 400 });
   }
 
@@ -142,7 +143,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!permission.canView) {
     return NextResponse.json({ error: permission.denialReason ?? "Forbidden" }, { status: 403 });
   }
-  if (permission.channelType !== "NEWS") {
+  // FIX-FEED: лента есть и у улучшенного чата (FEED), а не только у новостей.
+  if (permission.channelType !== "NEWS" && permission.channelType !== "FEED") {
     return NextResponse.json({ error: "Этот раздел не является лентой новостей" }, { status: 400 });
   }
   /* Публикует только модерация — то же правило, что и раньше в /api/messages.
