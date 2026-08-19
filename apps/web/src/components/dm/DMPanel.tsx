@@ -33,6 +33,7 @@ import {
 import {
   decryptMessage,
   encryptMessage,
+  ensurePublicKeyPublished, // FIX-E2EEBTN
   getOrCreateKeyPair,
   isE2EEMessage,
 } from "@/lib/e2ee";
@@ -179,6 +180,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const [peerPublicKey, setPeerPublicKey] = useState<JsonWebKey | null>(null);
   const [chatMode, setChatMode] = useState<"open" | "secure">("open");
   const e2eeEnabled = chatMode === "secure";
+  /* FIX-E2EEBTN: на аккаунте лежит ключ другого устройства. Тогда собеседник
+     шифрует на тот ключ, и здесь читать его нечем — об этом надо сказать
+     прямо, а не прятать кнопку. */
+  const [keyConflict, setKeyConflict] = useState(false);
 
   /* Подписка нужна для предела длины сообщения: без Premium он вдвое меньше.
      Берём из сессии — это тариф аккаунта, а не роль в сообществе. */
@@ -467,11 +472,24 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   }, [loadConversations]);
 
   // ── E2EE init: my own keypair ────────────────────────────────────────────
+  /* FIX-E2EEBTN: пара мало того что создаётся — её открытая часть теперь
+     публикуется. Без этого собеседник никогда не мог получить наш ключ, а
+     значит и кнопка защищённого режима не появлялась ни у него, ни у нас. */
   useEffect(() => {
+    if (!currentUserId) return;
+    let alive = true;
     getOrCreateKeyPair()
-      .then((kp) => setMyPrivateKey(kp.privateKey))
+      .then(async (kp) => {
+        if (!alive) return;
+        setMyPrivateKey(kp.privateKey);
+        const result = await ensurePublicKeyPublished(currentUserId, kp.publicKeyJwk);
+        if (alive) setKeyConflict(result === "conflict");
+      })
       .catch(() => {});
-  }, []);
+    return () => {
+      alive = false;
+    };
+  }, [currentUserId]);
 
   // ── Fetch peer's public key when a conversation opens ─────────────────────
   const fetchPeerKey = useCallback(async (peerId: string) => {
@@ -1695,9 +1713,33 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               other={otherUser.id === currentUserId ? { ...otherUser, name: "Сейф" } : otherUser}
               subtitle={businessSubtitle}
               e2eeReady={e2eeReady}
+              /* FIX-E2EEBTN: в деловом разговоре шифрования нет намеренно (его читает
+                 вся администрация по роли), там кнопки быть не должно. В личной
+                 переписке она есть всегда: пропавшая кнопка неотличима от потери
+                 возможности. */
+              e2eeSupported={!isBusiness}
+              e2eeHint={
+                keyConflict
+                  ? "На аккаунте ключ другого устройства. Перенесите ключ: настройки → Шифрование E2EE → Импорт ключа"
+                  : "Собеседник ещё не создал ключ шифрования — нажмите, чтобы проверить снова"
+              }
               e2eeEnabled={e2eeEnabled}
               showPinned={showPinned}
-              onToggleE2EE={() => setChatMode((mm) => (mm === "secure" ? "open" : "secure"))}
+              onToggleE2EE={() => {
+                /* FIX-E2EEBTN: пока ключа собеседника нет, нажатие не переключает режим,
+                   а запрашивает ключ заново и объясняет причину. Молча включить
+                   защиту нельзя: шифровать было бы не на чей ключ. */
+                if (!e2eeReady) {
+                  if (otherId) fetchPeerKey(otherId);
+                  showToast(
+                    keyConflict
+                      ? "На аккаунте ключ другого устройства: перенесите ключ через настройки → Шифрование E2EE"
+                      : "Защищённый режим будет доступен, когда собеседник откроет личные сообщения хотя бы раз",
+                  );
+                  return;
+                }
+                setChatMode((mm) => (mm === "secure" ? "open" : "secure"));
+              }}
               onTogglePinned={() => {
                 setShowPinned((v) => !v);
                 if (!showPinned) fetchPinnedMessages();
