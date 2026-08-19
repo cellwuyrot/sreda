@@ -502,6 +502,8 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
           <ControlButton
             onClick={() => {
               if (cameraBusy) return;
+              /* FIX-SHARECAM: случайное нажатие сразу показывало вас каналу. */
+              if (!voice.isCameraOn && !window.confirm("Включить камеру? Вас увидят участники голосового канала.")) return;
               setCameraBusy(true);
               void voice.toggleCamera().finally(() => setCameraBusy(false));
             }}
