@@ -250,7 +250,7 @@ export default function ModuleSettingsModal({ channelId, onClose, onSaved }: { c
   if (typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Настройки раздела">
+    <div className="fixed inset-0 z-[92] flex items-center justify-center bg-black/50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Настройки раздела"> {/* FIX-SHAREZ */}
       <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-neutral-900 rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-1 text-neutral-900 dark:text-white">
           <GearIcon size={18} />
