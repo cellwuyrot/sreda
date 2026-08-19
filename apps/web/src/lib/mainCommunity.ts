@@ -275,12 +275,14 @@ export async function syncServicesToMainCommunity(options?: { createForServiceId
         d.role.icon !== d.icon ||
         d.role.type !== d.type ||
         d.role.isRestricted !== restricted ||
-        d.role.hidden !== restricted ||
-        d.role.sortOrder !== d.sortOrder
+        d.role.hidden !== restricted
       ) {
+        /* FIX-DRAGORDER: sortOrder здесь больше не переписывается: иначе сверка с
+           админкой возвращала бы разделы услуг на «свои» места сразу после
+           того, как их перетащили мышью. Начальный порядок ставится при создании. */
         await prisma.channel.update({
           where: { id: d.role.id },
-          data: { name: d.name, icon: d.icon, type: d.type, isRestricted: restricted, hidden: restricted, sortOrder: d.sortOrder },
+          data: { name: d.name, icon: d.icon, type: d.type, isRestricted: restricted, hidden: restricted },
         });
       }
     }
