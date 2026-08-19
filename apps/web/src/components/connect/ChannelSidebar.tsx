@@ -16,6 +16,7 @@ import { VoiceChannelIcon, ChatIcon, PrivateChatIcon, PrivateVoiceIcon } from "@
 import ScreenSharePrivacyModal from "@/components/voice/ScreenSharePrivacyModal";
 import { isModuleType } from "@/lib/channelModules";
 import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
+import { useDragOrder } from "./useDragOrder"; // FIX-DRAGORDER
 
 /* ─── Props ─── */
 
@@ -79,16 +80,21 @@ export default function ChannelSidebar({
     () => groupDetail.channels.filter((c) => c.type === "VOICE"),
     [groupDetail.channels],
   );
-  const generalChannel = useMemo(
-    () =>
-      /* FIX-GENERAL: без подмены. Раньше, когда своего общего чата нет, на его
-         место вставал первый текстовый канал — в главном сообществе это оказывался
-         канал услуги. */
-      (generalChannelId ? groupDetail.channels.find((c) => c.id === generalChannelId) : null) ?? null,
-    [generalChannelId, groupDetail.channels],
-  );
 
   /* ── Channel settings modal ── */
+  /* FIX-DRAGORDER: порядок каналов задаётся перетаскиванием прямо в колонке.
+     Сохраняет тот же PUT /api/channels/reorder, что и окно «Порядок каналов»:
+     сервер пишет sortOrder по индексу и сам проверяет права. */
+  const commitOrder = async (ids: string[]) => {
+    await fetch("/api/channels/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelIds: ids, groupId: groupDetail.id }),
+    }).catch(() => {});
+    onGroupRefresh?.();
+  };
+  const drag = useDragOrder({ enabled: !!canManage, onReorder: commitOrder });
+
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   /* Окно запуска демонстрации: то же, что в развёрнутой комнате. Кнопка здесь
      стартовала показ сразу, поэтому качество и звук выбрать было негде, а
@@ -187,8 +193,21 @@ export default function ChannelSidebar({
       // FIX-FEED: улучшенный чат стоит в том же списке, что обычный.
       // FIX-SRVCHAN: чаты услуг показывает только панель разделов.
       if (isServiceLinkedChannel(c as { name?: string; serviceId?: string | null })) return false;
-      return c.id !== generalChannelId && !c.parentId && (c.type === "TEXT" || c.type === "FEED");
-    });
+      /* FIX-CHATCOL: общий чат больше не исключается из списка: он такой же чат
+         этой колонки. Заодно ушла главная причина бага: без закреплённого
+         чата весь блок «Текстовые чаты» вообще не рисовался. */
+      return !c.parentId && (c.type === "TEXT" || c.type === "FEED");
+    })
+      .slice()
+      .sort((a, b) => {
+        const so = ((a as { sortOrder?: number }).sortOrder ?? 0) - ((b as { sortOrder?: number }).sortOrder ?? 0);
+        if (so !== 0) return so;
+        /* Пока порядок вручную не задан (sortOrder у всех 0) общий
+           чат остаётся сверху; дальше решает перетаскивание. */
+        if (a.id === generalChannelId) return -1;
+        if (b.id === generalChannelId) return 1;
+        return 0;
+      });
   }, [blockMode, textChannels, generalChannelId]);
 
   /* ── Track voice channel occupants via separate socket ── */
@@ -316,7 +335,7 @@ export default function ChannelSidebar({
           hidden keeps the list to a single, vertically-scrolling column. */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-0.5" aria-label="Каналы">
         {/* ── Block mode: single general chat at top ── */}
-        {blockMode && generalChannel && (
+        {blockMode && (
           <>
             {/* FIX-MAINTEXT: в главной группе голосовые каналы настраивались как обычно,
                 а текстовый — никак: строка общего чата рисовалась с canManage={false},
@@ -340,32 +359,25 @@ export default function ChannelSidebar({
                 </button>
               )}
             </div>
-            <ChannelItem
-              ch={generalChannel}
-              selectedChannel={selectedChannel}
-              unreadCounts={unreadCounts}
-              mentionChannels={mentionChannels}
-              canManage={!!canManage}
-              onChannelClick={onChannelClick}
-              onDeleteChannel={onDeleteChannel}
-              onEditChannel={canManage ? setEditingChannel : undefined}
-              isMuted={channelMutes[generalChannel.id] ?? (groupMuted && channelMutes[generalChannel.id] !== false)}
-              onToggleMute={handleToggleChannelMute}
-            />
             {blockTextChannels.map((ch) => (
-              <ChannelItem
+              <div
                 key={ch.id}
-                ch={ch}
-                selectedChannel={selectedChannel}
-                unreadCounts={unreadCounts}
-                mentionChannels={mentionChannels}
-                canManage={!!canManage}
-                onChannelClick={onChannelClick}
-                onDeleteChannel={onDeleteChannel}
-                onEditChannel={canManage ? setEditingChannel : undefined}
-                isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)}
-                onToggleMute={handleToggleChannelMute}
-              />
+                className={drag.itemClass(ch.id)}
+                {...drag.itemProps(ch.id, blockTextChannels.map((c) => c.id))}
+              >
+                <ChannelItem
+                  ch={ch}
+                  selectedChannel={selectedChannel}
+                  unreadCounts={unreadCounts}
+                  mentionChannels={mentionChannels}
+                  canManage={!!canManage}
+                  onChannelClick={onChannelClick}
+                  onDeleteChannel={onDeleteChannel}
+                  onEditChannel={canManage ? setEditingChannel : undefined}
+                  isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)}
+                  onToggleMute={handleToggleChannelMute}
+                />
+              </div>
             ))}
           </>
         )}
@@ -505,7 +517,7 @@ export default function ChannelSidebar({
 						)}
                         </div>
                         {!isCollapsed && children.map(sub => (
-                          <div key={sub.id} className="ml-4 border-l border-neutral-200 dark:border-white/5">
+                          <div key={sub.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5${drag.itemClass(sub.id)}`} {...drag.itemProps(sub.id, children.map(c => c.id))}>
                             <ChannelItem ch={sub} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[sub.id] ?? (groupMuted && channelMutes[sub.id] !== false)} onToggleMute={handleToggleChannelMute} />
                           </div>
                         ))}
@@ -513,7 +525,7 @@ export default function ChannelSidebar({
                     );
                   })}
                   {rootChannels.map(ch => (
-                    <div key={ch.id}>
+                    <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, rootChannels.map(c => c.id))}>
                       <ChannelItem ch={ch} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)} onToggleMute={handleToggleChannelMute} />
                     </div>
                   ))}
@@ -601,7 +613,7 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className="ml-4 border-l border-neutral-200 dark:border-white/5 pl-1">
+                          <div key={ch.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5 pl-1${drag.itemClass(ch.id)}`} {...drag.itemProps(ch.id, children.map(c => c.id))}>
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
@@ -676,7 +688,7 @@ export default function ChannelSidebar({
               const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
               return (
-                <div key={ch.id}>
+                <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, voiceChannels.filter((c) => !c.parentId).map((c) => c.id))}>
                   {/* Channel button */}
                   <div className="group flex items-center">
                     <button
