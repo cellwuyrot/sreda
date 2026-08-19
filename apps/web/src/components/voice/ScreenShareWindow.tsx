@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { useVoice, SCREEN_COMFORT_VIEWERS, type ScreenShare } from "@/contexts/VoiceContext";
+import { useVoice, SCREEN_COMFORT_VIEWERS, type ScreenShare, type CameraShare } from "@/contexts/VoiceContext"; // FIX-SHARECAMBOX
 import ScreenSharePrivacyModal from "./ScreenSharePrivacyModal"; // SCREEN-PRIVATE-LIVE
 
 interface ScreenShareWindowProps {
@@ -95,30 +95,72 @@ function RoundButton({ title, active = false, danger = false, disabled = false, 
  */
 function useShareAreaRect(active: boolean) {
   const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  /* FIX-RAILSHARE: есть ли на экране сама область показа. Отличать «области
+     нет вовсе» от «область есть, но узкая» обязательно: второе — телефон, там
+     показ и должен занимать всё окно, а первое — человек вообще ушёл из
+     сообществ (друзья, сообщения, бизнес-чат), и там показу разворачиваться
+     нельзя — иначе переход по левой панели выглядит как «показ раскрылся на
+     всё окно и съел приложение». Начальное значение — true: до первого замера
+     лучше не мигать плашкой. */
+  const [hasHost, setHasHost] = useState(true);
 
   useEffect(() => {
     if (!active) return;
+    let frame = 0;
+    let resizeObserver: ResizeObserver | null = null;
+    let observedHost: Element | null = null;
+
     const measure = () => {
       const host = document.querySelector("[data-tz-share-area]");
-      if (!host) { setRect(null); return; }
+      /* Колонка контента пересобирается при смене раздела — наблюдатель
+         перевешиваем на новый узел, иначе он остался бы на выброшенном. */
+      if (host !== observedHost) {
+        if (observedHost) resizeObserver?.unobserve(observedHost);
+        observedHost = host;
+        if (host) resizeObserver?.observe(host);
+      }
+      if (!host) {
+        setHasHost(false);
+        setRect(null);
+        return;
+      }
+      setHasHost(true);
       const r = host.getBoundingClientRect();
       if (r.width < 320 || r.height < 240) { setRect(null); return; } // узкий экран — во всё окно
-      setRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+      /* Сравнение с прежними числами обязательно: замер вызывается на любое
+         изменение разметки, а новый объект при тех же координатах давал бы
+         лишнюю отрисовку и новое изменение разметки — то есть круг. */
+      setRect((prev) =>
+        prev && prev.left === r.left && prev.top === r.top && prev.width === r.width && prev.height === r.height
+          ? prev
+          : { left: r.left, top: r.top, width: r.width, height: r.height },
+      );
     };
-    measure();
-    window.addEventListener("resize", measure);
+
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => { frame = 0; measure(); });
+    };
+
     /* Колонку можно тащить за разделитель — следим за её размером, иначе окно
        показа осталось бы стоять по старым координатам. */
-    const host = document.querySelector("[data-tz-share-area]");
-    const observer = host && typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    if (host && observer) observer.observe(host);
+    resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+    measure();
+    window.addEventListener("resize", schedule);
+    /* FIX-RAILSHARE: область показа не только меняет размер, но и появляется /
+       исчезает вместе с разделом. Замер был одноразовым, и окно оставалось
+       стоять по координатам чужого раздела. */
+    const mutationObserver = typeof MutationObserver !== "undefined" ? new MutationObserver(schedule) : null;
+    mutationObserver?.observe(document.body, { childList: true, subtree: true });
     return () => {
-      window.removeEventListener("resize", measure);
-      observer?.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
     };
   }, [active]);
 
-  return rect;
+  return { rect, hasHost };
 }
 
 function useAttachStream(stream: MediaStream | null) {
@@ -253,7 +295,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
 
   const active = shares.find((share) => share.socketId === activeId) ?? shares[0] ?? null;
   const attachVideo = useAttachStream(active?.stream ?? null);
-  const areaRect = useShareAreaRect(true);
+  const { rect: areaRect, hasHost: shareAreaPresent } = useShareAreaRect(true); // FIX-RAILSHARE
 
   /* SCREEN-VIEWERS: пока открыто окно чужой трансляции, сообщаем серверу, что
      смотрим именно её — ведущий и другие зрители видят состав. Эффект стоит до
@@ -368,7 +410,10 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      другой канал. Во втором случае разворачиваем не во весь экран, а в мини —
      человек сейчас читает переписку, и накрывать её нельзя. Плашка стоит слева
      снизу: справа внизу живёт мини-виджет голосового канала. */
-  const collapsedByChannel = !onVoiceChannel && mode === "full";
+  /* FIX-RAILSHARE: ушли из сообществ вовсе (друзья, сообщения, бизнес-чат) —
+     показ тоже убирается в плашку. Раньше в этих разделах отметки области
+     нет, и окно разворачивалось на всё приложение вместо перехода. */
+  const collapsedByChannel = (!onVoiceChannel || !shareAreaPresent) && mode === "full";
   if ((viewerDismissed || collapsedByChannel) && bannerHidden) return null;
   if (viewerDismissed || collapsedByChannel) {
     const title = collapsedByChannel
@@ -563,6 +608,24 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
                   : "Экран доступен участникам · правый клик — настройки"
                 : "Экран доступен участникам"}
             </div>
+            {/* FIX-SHARECAMBOX: окошки камер поверх показа. Кнопка камеры в шапке
+                была, а самой картинки в окне демонстрации никто не выводил:
+                включивший камеру не видел ни себя, ни собеседников и не мог
+                понять, идёт ли видео вообще. Полоса справа сверху, а не в боковой
+                колонке: колонка скрыта на узких окнах, а камера нужна всегда. */}
+            {(voice.cameraShares.length > 0 || voice.isCameraOn) && (
+              <div className="absolute right-3 top-3 z-[8] flex w-[168px] max-h-[calc(100%-24px)] flex-col gap-2 overflow-y-auto">
+                <div className="rounded-md bg-black/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">Камеры</div>
+                {voice.cameraShares.map((camera) => (
+                  <CameraTile key={camera.socketId} camera={camera} />
+                ))}
+                {voice.cameraShares.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-white/15 bg-black/60 px-2 py-3 text-center text-[10px] text-white/50">
+                    Камера включается…
+                  </div>
+                )}
+              </div>
+            )}
           </main>
 
           <aside className="hidden lg:flex w-56 xl:w-64 shrink-0 flex-col gap-2 min-h-0">
@@ -645,5 +708,29 @@ function ShareTile({ share, active, blurred, onSelect }: { share: ScreenShare; a
       <video ref={attachVideo} autoPlay muted playsInline className={`absolute inset-0 w-full h-full object-cover ${blurred ? "blur-md scale-110" : ""}`} />
       <span className="absolute inset-x-0 bottom-0 px-2 py-1 bg-black/70 text-[9px] text-white/75 truncate">{share.isLocal ? "Ваш экран" : share.userName}</span>
     </button>
+  );
+}
+
+/**
+ * FIX-SHARECAMBOX: одно окошко камеры в полосе поверх демонстрации.
+ *
+ * Звук выключен всегда, включая чужие камеры: голос идёт отдельным
+ * потоком голосового канала, и второй источник того же звука давал бы эхо.
+ * Свою картинку отражаем по горизонтали — человек ждёт зеркала, а не
+ * вида со стороны; чужую — нет.
+ */
+function CameraTile({ camera }: { camera: CameraShare }) {
+  const attachVideo = useAttachStream(camera.stream);
+  return (
+    <div className="relative w-full aspect-video overflow-hidden rounded-lg border border-white/12 bg-black shadow-lg">
+      <video
+        ref={attachVideo}
+        autoPlay
+        muted
+        playsInline
+        className={`absolute inset-0 w-full h-full object-cover ${camera.isLocal ? "scale-x-[-1]" : ""}`}
+      />
+      <span className="absolute inset-x-0 bottom-0 px-1.5 py-0.5 bg-black/70 text-[9px] text-white/75 truncate">{camera.userName}</span>
+    </div>
   );
 }
