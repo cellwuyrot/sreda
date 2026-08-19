@@ -162,15 +162,44 @@ export async function sendServiceDocuments(params: {
   const documents = parseDocuments(service.documents);
   if (documents.length === 0) return false;
 
-  const lines = documents.map((doc) => `• ${doc.name} — ${doc.url}`).join("\n");
-  const content = [
-    `Документы по услуге «${service.title}» — работа выполняется согласно ним:`,
-    lines,
-  ].join("\n\n");
+  /* FIX-SRVDOC2: бумаги уходят ВЛОЖЕНИЯМИ, а не строчками со ссылками.
+
+     Раньше в чат уходил обычный текст вида «• название — /uploads/…». Для
+     переписки это была строка без вложений: нажать не на что, скачать нечего,
+     в списке вложений разговора документа нет — то есть со стороны клиента
+     «документ отправлен» было написано, а документа не было.
+
+     Формат вложения тот же, что у файла, отправленного руками (см. Attachment в
+     components/dm/dmTypes): ничего особенного для деловых бумаг не заводим,
+     иначе предпросмотр, скачивание и список вложений пришлось бы учить ещё
+     одному виду сообщения. */
+  const attachments = documents
+    /* Только файлы из своего хранилища: проверка вложений в личных
+       сообщениях принимает ровно такие адреса, и посторонняя ссылка,
+       попавшая в базу ручной правкой, должна отнять один документ, а не
+       всю отправку. */
+    .filter((doc) => doc.url.startsWith("/uploads/"))
+    .map((doc) => ({
+      url: doc.url,
+      name: doc.name,
+      size: doc.size,
+      type: doc.mime ?? "application/octet-stream",
+      isImage: /\.(png|jpe?g|gif|webp|bmp)$/i.test(doc.url),
+    }));
+  if (attachments.length === 0) return false;
+
+  /* Подпись к вложениям короткая: перечислять имена файлов в тексте больше
+     не нужно — они видны на самих вложениях. */
+  const content = `Документы по услуге «${service.title}» — работа выполняется согласно ним.`;
 
   const now = new Date();
   await prisma.directMessage.create({
-    data: { conversationId: params.conversationId, userId: params.authorId, content },
+    data: {
+      conversationId: params.conversationId,
+      userId: params.authorId,
+      content,
+      attachments: JSON.stringify(attachments),
+    },
   });
   await prisma.directConversation.update({
     where: { id: params.conversationId },
