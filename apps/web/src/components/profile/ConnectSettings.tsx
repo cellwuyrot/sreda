@@ -16,7 +16,6 @@ import { SettingsTabs } from "@/components/settings/SettingsUI";
 import ConnectProfileSettings from "@/components/profile/ConnectProfileSettings";
 import ChatAppearanceSettings from "@/components/profile/ChatAppearanceSettings";
 import ChatShowcase from "@/components/profile/ChatShowcase";
-import ServerProfileSection from "@/components/profile/ServerProfileSection";
 import IgnoreListSection from "@/components/profile/IgnoreListSection";
 
 type ConnectTab = "profile" | "appearance" | "privacy";
@@ -43,7 +42,8 @@ export default function ConnectSettings({
       {tab === "profile" && (
         <div className="space-y-4">
           <ConnectProfileSettings role={role} isPremium={isPremium} />
-          <ServerProfileSection />
+          {/* FIX-NOSRVPROFILE: «Профиль на выбранном сервере» убран до того, как
+              переопределения будут видны во всех местах сразу. */}
         </div>
       )}
 

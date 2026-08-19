@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import BackButton from "@/components/ui/BackButton"; // BACK-STEP
 import { useTheme } from "@/components/Providers";
 import { useConnectTheme } from "@/contexts/ThemeContext";
 import { useLang } from "@/lib/i18n"; // FIX-I18N
@@ -17,7 +16,6 @@ import ConnectProfileSettings from "@/components/profile/ConnectProfileSettings"
 import ChatAppearanceSettings from "@/components/profile/ChatAppearanceSettings";
 import PremiumAppearanceSettings from "@/components/profile/PremiumAppearanceSettings"; // PREMIUM-SKIN
 import ChatShowcase from "@/components/profile/ChatShowcase";
-import ServerProfileSection from "@/components/profile/ServerProfileSection";
 import IgnoreListSection from "@/components/profile/IgnoreListSection";
 import DesktopCachePanel from "@/components/settings/DesktopCachePanel";
 import InfoTooltip from "@/components/ui/InfoTooltip";
@@ -1981,7 +1979,12 @@ export default function SettingsPage() {
             <div className="mt-6 space-y-4">
               <ConnectProfileSettings role={profile.role} isPremium={effectivePremium} sections="appearance" />
               <ChatAppearanceSettings />
-              <ServerProfileSection />
+              {/* FIX-NOSRVPROFILE: раздел «Профиль на выбранном сервере» убран.
+                  Обещание отдельного оформления для каждого сообщества держится на
+                  том, что его видят все поверхности сразу — список участников, карточка,
+                  сообщения, упоминания. Пока это не так, настройка только сбивала с толку,
+                  поэтому вход закрыт до готовности всего пути. Сами поля в базе целы:
+                  возврат раздела ничего не потеряет. */}
             </div>
 
             {/* PREMIUM-SKIN: свободная кастомизация для подписчиков идёт после выбора
@@ -2192,11 +2195,16 @@ export default function SettingsPage() {
         <aside className={`md:w-60 md:flex-shrink-0 ${mobileContentOpen ? "hidden md:block" : "block"}`}>
           <div className="md:sticky md:top-20">
             <div className="flex items-center gap-3 mb-4 px-1">
-              <BackButton fallback={isDesktop ? "/connect" : "/"} className="text-accent hover:opacity-70 transition-opacity" aria-label={isDesktop ? "Назад в TZ.Connect" : "На главную"}>
+              {/* FIX-BACKEXIT: из настроек «назад» — это выход в мессенджер, а не
+                  шаг по следу посещений. Шаг по следу здесь замыкался: внутри настроек
+                  разделы меняются без смены адреса, а /connect тоже не меняет адрес при
+                  переходе по группам — след оказывался из двух соседей, и кнопка водила
+                  по кругу настройки ↔ мессенджер. Выход один и всегда один тот же. */}
+              <Link href="/connect" className="text-accent hover:opacity-70 transition-opacity" aria-label="Назад в TZ.Connect">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
-              </BackButton>
+              </Link>
               <h1 className="text-xl font-bold text-neutral-900 dark:text-white">Настройки</h1>
             </div>
 

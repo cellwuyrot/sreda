@@ -15,18 +15,7 @@ import { MicIcon, MutedMicIcon, DeafenOffIcon, DeafenOnIcon, NsIcon, ScreenShare
 import { VoiceChannelIcon, ChatIcon, PrivateChatIcon, PrivateVoiceIcon } from "@/components/ui/ConnectIcons";
 import ScreenSharePrivacyModal from "@/components/voice/ScreenSharePrivacyModal";
 import { isModuleType } from "@/lib/channelModules";
-
-/* FIX-SRVCHAN: каналы, рождённые из услуги (Админ ▸ Услуги), живут только в
-   блоках справа. Опознаём их не только по serviceId, но и по устойчивому
-   окончанию названия: старые установки успели накопить такие каналы с пустым
-   serviceId (услуга пересоздавалась), и именно они всплывали в «Текстовых чатах»
-   главного сообщества рядом с общим чатом. */
-const SERVICE_CHANNEL_SUFFIX = / \u2014 (\u041e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u0435|\u0412\u043e\u043f\u0440\u043e\u0441\u044b)$/;
-
-function isServiceLinkedChannel(ch: { name?: string; serviceId?: string | null }): boolean {
-  if (ch.serviceId) return true;
-  return !!ch.name && SERVICE_CHANNEL_SUFFIX.test(ch.name);
-}
+import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
 
 /* ─── Props ─── */
 
@@ -92,10 +81,11 @@ export default function ChannelSidebar({
   );
   const generalChannel = useMemo(
     () =>
-      (generalChannelId
-        ? groupDetail.channels.find((c) => c.id === generalChannelId)
-        : textChannels.find((c) => !c.parentId)) ?? null,
-    [generalChannelId, groupDetail.channels, textChannels],
+      /* FIX-GENERAL: без подмены. Раньше, когда своего общего чата нет, на его
+         место вставал первый текстовый канал — в главном сообществе это оказывался
+         канал услуги. */
+      (generalChannelId ? groupDetail.channels.find((c) => c.id === generalChannelId) : null) ?? null,
+    [generalChannelId, groupDetail.channels],
   );
 
   /* ── Channel settings modal ── */
@@ -296,7 +286,7 @@ export default function ChannelSidebar({
         }}
       >
         {onBack && (
-          <button onClick={onBack} className="md:hidden -ml-2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center flex-shrink-0 text-neutral-400 active:text-neutral-600 dark:active:text-white" aria-label="Назад к сообществам">
+          <button onClick={onBack} className="-ml-2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center flex-shrink-0 text-neutral-400 hover:text-neutral-600 active:text-neutral-600 dark:hover:text-white dark:active:text-white" aria-label="Назад к сообществам" title="Назад к сообществам">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>

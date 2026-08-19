@@ -17,6 +17,7 @@ import NavRail from "@/components/connect/NavRail";
 import { NavSection } from "@/components/connect/NavRail";
 import GroupListPanel from "@/components/connect/GroupListPanel";
 import ChannelSidebar from "@/components/connect/ChannelSidebar";
+import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
 import MessageArea from "@/components/connect/MessageArea";
 import { applyChatAppearance, loadChatAppearance } from "@/lib/chatAppearance";
 import { applyPremiumSkin, loadPremiumSkin, PREMIUM_SKIN_EVENT } from "@/lib/premiumSkin"; // PREMIUM-SKIN
@@ -680,6 +681,17 @@ function ConnectPageInner() {
     setMobileView("chat");
   };
 
+  /* FIX-BACKTRAP: выход из группы — состоянием, а не историей браузера.
+     Внутри сообщества адрес не меняется (/connect переписывается через
+     replaceState), поэтому «назад» уводило на прошлую СТРАНИЦУ — в настройки, —
+     а они возвращали в /connect, который снова открывал ту же группу. Круг,
+     из которого не выбраться в список сообществ. */
+  const exitGroup = useCallback(() => {
+    setSelectedChannel(null);
+    setSelectedGroup(null);
+    setMobileView("groups");
+  }, []);
+
   const handleMessageFriend = (friendId: string) => {
     setDmFriendId(friendId);
     setActiveSection("dm");
@@ -891,7 +903,13 @@ function ConnectPageInner() {
   // Block-based layout for the main community: general chat + voice + section blocks
   const isBlockMode = !!groupDetail?.isMain || !!groupDetail?.sectionsEnabled;
   const generalChannelId = isBlockMode && groupDetail
-    ? (groupDetail.channels.find((c) => c.type === "TEXT" && !c.parentId)?.id ?? null)
+    /* FIX-GENERAL: общий чат — только СВОЙ канал сообщества. Канал услуги,
+       попавший на его место, становился закреплённой строкой без удаления.
+       FIX-SRVLINK: проверяем общим признаком — одного serviceId мало, у старых
+       каналов услуг он пуст, и именно они занимали место общего чата. */
+    ? (groupDetail.channels.find(
+        (c) => c.type === "TEXT" && !c.parentId && !isServiceLinkedChannel(c),
+      )?.id ?? null)
     : null;
 
   return (
@@ -1196,6 +1214,7 @@ function ConnectPageInner() {
                 /* Sub-nav: channels inside selected group */
                 <ChannelSidebar
                   groupDetail={groupDetail}
+                  onBack={exitGroup} /* FIX-BACKTRAP */
                   selectedChannel={selectedChannel}
                   unreadCounts={unreadCounts}
                   mentionChannels={mentionChannels}
