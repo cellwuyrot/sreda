@@ -37,18 +37,25 @@ function staffOnly(role: string | undefined): boolean {
 async function loadService(id: string) {
   return prisma.service.findUnique({
     where: { id },
-    select: { id: true, title: true, documents: true },
+    select: { id: true, title: true, active: true, documents: true },
   });
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!staffOnly(session.user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
   const service = await loadService(id);
   if (!service) return NextResponse.json({ error: "Услуга не найдена" }, { status: 404 });
+
+  /* FIX-SRVDOC: чтение списка больше не только для администрации. Документ,
+     по которому выполняется работа, клиент должен видеть до заказа — иначе он
+     соглашается с условиями, которых ему нигде не показали. Но выключенная в
+     админке услуга остаётся закрытой: её бумаги — черновики администрации. */
+  if (!staffOnly(session.user.role) && !service.active) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   return NextResponse.json({
     title: service.title,
