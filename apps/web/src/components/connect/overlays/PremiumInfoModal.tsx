@@ -6,7 +6,7 @@ import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { buildWireGuardConfig, generateWireGuardKeyPair } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
-import { isDesktop } from "@/lib/desktop"; // APP-ONLY // NETLINK
+import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
 import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
 
 /* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
@@ -21,8 +21,14 @@ import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
    Почему ключ рождается здесь, а не на сервере: приватная половина не должна
    существовать нигде, кроме устройства владельца. Она живёт только в памяти
    этой страницы, попадает в готовый профиль и не сохраняется даже у нас в
-   localStorage — отсюда прямое следствие: профиль показывается один раз, а
-   «восстановить» его нельзя, только перевыпустить.
+   localStorage.
+
+   VPN-ONECLICK: профиль больше не отдаётся человеку файлом. Раньше окно строило
+   `.conf` и предлагало скачать его для стороннего клиента (Amnezia) — то есть
+   «включение» на деле было ручной установкой пакета. Теперь собранный профиль
+   уходит прямо в десктоп-оболочку, и она поднимает туннель сама, по кнопке.
+   В браузере системный туннель поднять физически нечем, поэтому там окно честно
+   отправляет человека в приложение вместо выдачи файла.
 
    Свой X25519 (см. lib/wgKeys.ts), а не WebCrypto: X25519 в `crypto.subtle`
    появился только в Chromium 133, а десктоп-оболочка проекта собрана на
@@ -174,15 +180,16 @@ function RoutingChoice({
   );
 }
 
-function handshakeLabel(iso: string | null): string {
-  if (!iso) return "туннель ещё не поднимался";
+/** Короткая подпись под индикатором, когда туннель поднят: активен или молчит. */
+function tunnelSinceLabel(iso: string | null): string {
+  if (!iso) return "туннель поднят";
   const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 3 * 60_000) return "туннель активен";
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 60) return `последняя связь ${minutes} мин назад`;
+  if (minutes < 1) return "подключено только что";
+  if (minutes < 60) return `подключено ${minutes} мин назад`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `последняя связь ${hours} ч назад`;
-  return `последняя связь ${Math.floor(hours / 24)} дн назад`;
+  if (hours < 24) return `подключено ${hours} ч назад`;
+  return `подключено ${Math.floor(hours / 24)} дн назад`;
 }
 
 function VpnPanel({ onClose }: { onClose: () => void }) {
@@ -190,10 +197,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  /* Профиль с приватным ключом. Живёт только здесь: ни в localStorage, ни на
-     сервере его нет и быть не может. */
-  const [config, setConfig] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   /* Выбранный режим до нажатия кнопки. В браузере по умолчанию «весь трафик» — этого
      от соединения и ждут. В десктоп-оболочке — наоборот (см. эффект ниже). */
   const [routing, setRouting] = useState<VpnRouting>("ALL");
@@ -202,6 +205,12 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
    * чтение в теле компонента дало бы расхождение разметки при гидратации.
    */
   const [desktopShell, setDesktopShell] = useState(false);
+  /* VPN-ONECLICK: умеет ли эта сборка оболочки реально поднимать туннель, и его
+     живое состояние. В браузере и в старых сборках моста `vpn` нет — тогда
+     включать нечем, и панель отправляет человека в приложение. */
+  const [canTunnel, setCanTunnel] = useState(false);
+  const [tunnel, setTunnel] = useState<DesktopVpnState | null>(null);
+
   useEffect(() => {
     if (!isDesktop()) return;
     setDesktopShell(true);
@@ -212,46 +221,99 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     setRouting((prev) => (prev === "ALL" ? "SERVICES" : prev));
   }, []);
 
-  const enroll = useCallback(async (mode: VpnRouting): Promise<boolean> => {
+  /* VPN-ONECLICK: снимок состояния туннеля при открытии окна (он мог быть поднят
+     до загрузки страницы) и подписка на живые изменения. */
+  useEffect(() => {
+    const bridge = getDesktopApi()?.vpn;
+    if (!bridge) return;
+    setCanTunnel(true);
+    let alive = true;
+    bridge
+      .status()
+      .then((st) => {
+        if (alive) setTunnel(st);
+      })
+      .catch(() => {});
+    const off = bridge.onState((st) => setTunnel(st));
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
+
+  /**
+   * Зарегистрировать публичный ключ и собрать профиль прямо на устройстве.
+   * Приватный ключ живёт только в этой функции и уходит лишь в возвращаемый
+   * профиль — ни в localStorage, ни на сервер. Возвращает профиль или null
+   * (ошибка либо узел ещё не сообщил параметры); текст ошибки уже выставлен.
+   */
+  const enroll = useCallback(async (mode: VpnRouting): Promise<string | null> => {
+    const pair = generateWireGuardKeyPair();
+    const res = await fetch("/api/vpn/me", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ publicKey: pair.publicKey, routing: mode }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setError(data?.error || "Не удалось выдать доступ");
+      return null;
+    }
+    const peer = data.peer as VpnPeerState;
+    setState((prev) => ({
+      ...(prev ?? {}),
+      serviceEnabled: prev?.serviceEnabled ?? true,
+      entitled: prev?.entitled ?? true,
+      nodeReady: prev?.nodeReady ?? true,
+      peer,
+    }));
+    setError("");
+    if (peer.tunnel.serverPublicKey && peer.tunnel.endpoint) {
+      return buildWireGuardConfig({
+        privateKey: pair.privateKey,
+        address: peer.address,
+        dns: peer.tunnel.dns,
+        serverPublicKey: peer.tunnel.serverPublicKey,
+        endpoint: peer.tunnel.endpoint,
+        allowedIps: peer.tunnel.allowedIps,
+        extra: peer.tunnel.extra ?? null,
+      });
+    }
+    return null;
+  }, []);
+
+  /* VPN-ONECLICK: включить соединение. Собираем свежий профиль и тут же
+     передаём его оболочке — она поднимает туннель. Файл никуда не сохраняется:
+     профиль живёт ровно до того, как уедет в туннель. */
+  const connect = useCallback(
+    async (mode: VpnRouting) => {
+      const bridge = getDesktopApi()?.vpn;
+      if (!bridge) return;
+      setBusy(true);
+      try {
+        const config = await enroll(mode);
+        if (!config) return;
+        const st = await bridge.up(config);
+        setTunnel(st);
+      } catch {
+        setError("Не удалось поднять туннель в приложении");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [enroll],
+  );
+
+  const disconnectTunnel = useCallback(async () => {
+    const bridge = getDesktopApi()?.vpn;
+    if (!bridge) return;
     setBusy(true);
     try {
-      const pair = generateWireGuardKeyPair();
-      const res = await fetch("/api/vpn/me", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicKey: pair.publicKey, routing: mode }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setError(data?.error || "Не удалось выдать доступ");
-        return false;
-      }
-      const peer = data.peer as VpnPeerState;
-      setState((prev) => ({
-        ...(prev ?? {}),
-        serviceEnabled: prev?.serviceEnabled ?? true,
-        entitled: prev?.entitled ?? true,
-        nodeReady: prev?.nodeReady ?? true,
-        peer,
-      }));
-      if (peer.tunnel.serverPublicKey && peer.tunnel.endpoint) {
-        setConfig(
-          buildWireGuardConfig({
-            privateKey: pair.privateKey,
-            address: peer.address,
-            dns: peer.tunnel.dns,
-            serverPublicKey: peer.tunnel.serverPublicKey,
-            endpoint: peer.tunnel.endpoint,
-            allowedIps: peer.tunnel.allowedIps,
-            extra: peer.tunnel.extra ?? null,
-          }),
-        );
-      }
+      const st = await bridge.down();
+      setTunnel(st);
       setError("");
-      return true;
     } catch {
-      setError("Не удалось создать ключ на этом устройстве");
-      return false;
+      setError("Не удалось выключить туннель");
     } finally {
       setBusy(false);
     }
@@ -283,9 +345,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  /* Переезд на другой сервер меняет адрес и точку подключения, поэтому прежний
-     профиль на устройстве перестаёт работать. Говорим об этом сразу: тишина после
-     переезда читается как поломка сервиса, а не как собственное действие. */
+  /* Переезд на другой сервер меняет адрес и точку подключения. Если туннель
+     сейчас поднят, сразу перекладываем его на новый узел свежим профилем: иначе
+     прежний профиль на устройстве молча перестал бы работать. */
   const switchServer = async (nodeId: string) => {
     setBusy(true);
     try {
@@ -300,10 +362,11 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         return;
       }
       setError("");
-      /* Старый показанный профиль больше не действителен — убираем его с экрана,
-         чтобы его не сохранили уже после переезда. */
-      setConfig(null);
       await refresh();
+      const wasUp = tunnel?.state === "on" || tunnel?.state === "connecting";
+      if (getDesktopApi()?.vpn && wasUp) {
+        await connect(routing);
+      }
     } catch {
       setError("Ошибка сети");
     } finally {
@@ -311,17 +374,28 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const disconnect = async () => {
+  /* Полный отзыв доступа: снять туннель и удалить пира на сервере. Нужен, когда
+     человек уходит с устройства насовсем; обычное «выключить» запись о доступе
+     не трогает, чтобы включить снова можно было одной кнопкой. */
+  const revoke = async () => {
     setBusy(true);
     try {
+      const bridge = getDesktopApi()?.vpn;
+      if (bridge) {
+        try {
+          const st = await bridge.down();
+          setTunnel(st);
+        } catch {
+          /* туннель мог быть уже снят — отзыву это не мешает */
+        }
+      }
       const res = await fetch("/api/vpn/me", { method: "DELETE" });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error || "Не удалось выключить");
+        setError(data?.error || "Не удалось отключить доступ");
         return;
       }
       setError("");
-      setConfig(null);
       await refresh();
     } catch {
       setError("Ошибка сети");
@@ -334,43 +408,26 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     let cancelled = false;
     void refresh().then((next) => {
       if (cancelled || !next) return;
-        /* VPN-ROUTING: автовыдача убрана намеренно. Раньше доступ выдавался сам
-           при открытии окна, и человек не мог сказать, что именно гнать через
-           туннель, — а выбрать за него нельзя: «весь трафик» и «только сервисы
-           TZ» это два разных решения. Один экран, одна кнопка, выбор виден до
-           нажатия. Прежний выбор подставляется, если пир уже есть. */
+      /* Прежний выбор режима подставляется, если пир уже есть. */
       if (next.peer) setRouting(next.peer.routing === "SERVICES" ? "SERVICES" : "ALL");
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [refresh]);
 
-  const copyConfig = async () => {
-    if (!config) return;
-    try {
-      await navigator.clipboard.writeText(config);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      setError("Буфер обмена недоступен — выделите текст профиля вручную");
-    }
-  };
-
-  const downloadConfig = () => {
-    if (!config) return;
-    const blob = new Blob([config], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "trioz.conf";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const connected =
-    !!state?.peer?.lastHandshakeAt &&
-    Date.now() - new Date(state.peer.lastHandshakeAt).getTime() < 3 * 60_000;
-  const active = !!state?.serviceEnabled && connected;
+  /* VPN-ONECLICK: «активно» теперь означает поднятый ЛОКАЛЬНЫЙ туннель, а не
+     рукопожатие серверной записи: именно он и есть то, что человек включил
+     кнопкой. В браузере туннеля нет — значит и не активно. */
+  const tunnelOn = tunnel?.state === "on";
+  const tunnelConnecting = tunnel?.state === "connecting";
+  const tunnelDisconnecting = tunnel?.state === "disconnecting";
+  const active = canTunnel && tunnelOn;
   const nodeIncomplete = !!state?.peer && (!state.peer.tunnel.serverPublicKey || !state.peer.tunnel.endpoint);
+  /* Ошибку туннеля показываем рядом с сетевыми ошибками — источник для человека один. */
+  const shownError = error || (canTunnel ? tunnel?.error ?? "" : "");
+  /* Всё для включения на месте: право есть, сервис включён, узел готов. */
+  const ready = !!state?.entitled && !!state.serviceEnabled && state.nodeReady;
 
   /* NETLINK-2: ответ читается только через эти переменные. Прямое обращение к
      вложенным полям уже один раз уронило весь мессенджер, когда сервер ответил
@@ -396,7 +453,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-neutral-400 dark:text-white/40">TZ Premium · Надёжное соединение</p>
             <h3 className="mt-1 text-xl font-semibold">Защищённое соединение</h3>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">Входит в Premium — выдаётся автоматически</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">Входит в Premium — включается одной кнопкой</p>
           </div>
           <button onClick={onClose} className="rounded-xl p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-white/[0.07] dark:hover:text-white" aria-label="Закрыть"><XIcon size={15} style={{ color: "inherit" }} /></button>
         </div>
@@ -405,6 +462,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           <div
             className={`relative grid h-28 w-28 place-items-center rounded-full border transition-all duration-300 ${active
               ? "border-emerald-400/50 bg-emerald-500 text-white shadow-[0_0_45px_rgba(34,197,94,.34)]"
+              : tunnelConnecting
+              ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-600 dark:text-cyan-300"
               : "border-neutral-300 bg-neutral-100 text-neutral-500 shadow-inner dark:border-white/10 dark:bg-white/[0.06] dark:text-white/50"}`}
             aria-hidden
           >
@@ -440,51 +499,56 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          {state?.entitled && state.serviceEnabled && !state.nodeReady && !state.peer && (
+          {state?.entitled && state.serviceEnabled && !state.nodeReady && (
             <>
               <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Узлы ещё не готовы</strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Ни один сервер не вышел на связь. Доступ выдастся сам, как только узел появится.
+                Ни один сервер не вышел на связь. Включение станет доступно, как только узел появится.
               </span>
             </>
           )}
 
-          {state?.entitled && state.serviceEnabled && state.nodeReady && !state.peer && (
+          {ready && canTunnel && (
             <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
-                {busy ? "Создаём ключ и выдаём доступ…" : "Готово к включению"}
-              </strong>
-              {!busy && (
-                <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                  Выберите, что пойдёт через туннель — это влияет на выдаваемый профиль
-                </span>
-              )}
-            </>
-          )}
-
-          {state?.peer && (
-            <>
-              <strong className={`mt-4 text-sm ${active ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-600 dark:text-white/65"}`}>
-                {active ? "Соединение активно" : "Доступ выдан"}
+              <strong className={`mt-4 text-sm ${active ? "text-emerald-600 dark:text-emerald-400" : tunnelConnecting ? "text-cyan-600 dark:text-cyan-300" : "text-neutral-600 dark:text-white/65"}`}>
+                {active
+                  ? "Соединение активно"
+                  : tunnelConnecting
+                  ? "Подключаем…"
+                  : tunnelDisconnecting
+                  ? "Выключаем…"
+                  : "Готово к включению"}
               </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                {handshakeLabel(state.peer.lastHandshakeAt)}
+                {active
+                  ? `${tunnelSinceLabel(tunnel?.since ?? null)} · режим: ${
+                      ROUTING_OPTIONS.find((o) => o.value === state?.peer?.routing)?.title.toLowerCase() ?? "весь трафик"
+                    }`
+                  : tunnelConnecting
+                  ? "Устанавливаем туннель — это занимает несколько секунд"
+                  : "Выберите, что пойдёт через туннель, и нажмите «Включить»"}
               </span>
-              <span className="mt-0.5 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Режим:{" "}
-                {ROUTING_OPTIONS.find((option) => option.value === state.peer?.routing)?.title.toLowerCase() ??
-                  "весь трафик"}
+            </>
+          )}
+
+          {ready && !canTunnel && (
+            <>
+              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Включение — в приложении</strong>
+              <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
+                {desktopShell
+                  ? "Обновите приложение TZ\u00a0Connect до последней версии — в нём соединение поднимается одной кнопкой."
+                  : "Соединение поднимается в приложении TZ\u00a0Connect для компьютера — в браузере системный туннель включить нельзя."}
               </span>
             </>
           )}
         </div>
 
-        {error && (
-          <p className="mt-4 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">{error}</p>
+        {shownError && (
+          <p className="mt-4 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">{shownError}</p>
         )}
         {nodeIncomplete && (
           <p className="mt-4 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-            Узел ещё не сообщил свои параметры — профиль соберётся, как только он выйдет на связь.
+            Узел ещё не сообщил свои параметры — включение станет доступно, как только он выйдет на связь.
           </p>
         )}
 
@@ -542,9 +606,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* Выбор сервера показываем только тому, у кого уже есть доступ: до выдачи
-            ключа менять нечего, а список только запутывает. */}
-        {state?.peer && servers.length > 0 && (
+        {/* Выбор сервера — только тому, кто действительно может подключиться из
+            приложения: в браузере переезд ничего бы не поднял. */}
+        {canTunnel && state?.peer && servers.length > 0 && (
           <div className="mt-3">
             <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Сервер</p>
             <div className="mt-2 grid gap-2">
@@ -580,96 +644,38 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               })}
             </div>
             <p className="mt-1.5 text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
-              После переезда на другой сервер нужен новый профиль: адрес и точка подключения в нём другие.
+              При смене сервера включённый туннель сам переедет на новый узел.
             </p>
           </div>
         )}
 
-        {state?.peer && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void disconnect()}
-            className="mt-3 w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/5"
-          >
-            {busy ? "Подождите…" : "Выключить соединение"}
-          </button>
-        )}
-
-        {/* ── Готовый профиль ── */}
-        {config && (
-          <div className="mt-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-neutral-700 dark:text-white/80">Профиль WireGuard</span>
-              <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
-                показывается один раз
-              </span>
-            </div>
-            <pre className="mt-2 max-h-56 overflow-auto rounded-xl bg-neutral-900 px-3 py-2 text-[10.5px] leading-relaxed text-green-300 dark:bg-black/50">{config}</pre>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={copyConfig}
-                className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
-              >
-                {copied ? "Скопировано" : "Скопировать"}
-              </button>
-              <button
-                type="button"
-                onClick={downloadConfig}
-                className="rounded-xl border border-neutral-200 px-4 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/5"
-              >
-                Скачать trioz.conf
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
-              Приватный ключ внутри профиля создан на этом устройстве и на сервер не отправлялся.
-              Сохраните файл: показать его снова невозможно.
-            </p>
-          </div>
-        )}
-
-        {/* Включение: выбор режима виден до нажатия, выдача идёт по кнопке. */}
-        {state?.entitled && state.serviceEnabled && state.nodeReady && !state.peer && (
-          <>
-            <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
+        {/* ── Включение / выключение ──
+            VPN-ONECLICK: скачивания файла-профиля больше нет. В приложении туннель
+            поднимает и снимает сама оболочка; в браузере включать нечем, поэтому
+            показываем, что подключение живёт в приложении. */}
+        {ready && canTunnel && (
+          active || tunnelConnecting || tunnelDisconnecting ? (
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void enroll(routing)}
-              className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+              disabled={busy || tunnelConnecting || tunnelDisconnecting}
+              onClick={() => void disconnectTunnel()}
+              className="mt-5 w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/5"
             >
-              {busy ? "Включаем…" : "Включить соединение"}
+              {tunnelConnecting ? "Подключаем…" : tunnelDisconnecting ? "Выключаем…" : "Выключить соединение"}
             </button>
-          </>
-        )}
-
-        {/* Перевыпуск нужен, когда профиль потерян, устройство сменилось или
-            человек решил сменить режим: `AllowedIPs` живёт в профиле, и поменять
-            его задним числом нельзя — только выдать новый. */}
-        {state?.peer && !config && (
-          <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
-        )}
-        {state?.peer && !config && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void enroll(routing)}
-            className="mt-5 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
-          >
-            {busy
-              ? "Перевыпускаем…"
-              : routing === state.peer.routing
-              ? "Перевыпустить профиль"
-              : "Перевыпустить в этом режиме"}
-          </button>
-        )}
-        {state?.peer && !config && (
-          <p className="mt-1.5 text-center text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
-            {routing === state.peer.routing
-              ? "Появится новый ключ, а прежнее устройство отключится: один аккаунт — один ключ."
-              : "Смена режима — это новый профиль: прежний перестанет работать, режим записан внутри него."}
-          </p>
+          ) : (
+            <>
+              <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
+              <button
+                type="button"
+                disabled={busy || nodeIncomplete}
+                onClick={() => void connect(routing)}
+                className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+              >
+                {busy ? "Включаем…" : "Включить соединение"}
+              </button>
+            </>
+          )
         )}
 
         {state?.peer && (
@@ -687,6 +693,18 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               <strong className="mt-1 block text-xs">{state.peer.exitIp || "общий"}</strong>
             </div>
           </div>
+        )}
+
+        {/* Полный отзыв доступа — вторично: обычное «выключить» доступ не трогает. */}
+        {state?.peer && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void revoke()}
+            className="mt-3 w-full text-center text-[11px] text-neutral-400 underline-offset-2 transition hover:text-neutral-600 hover:underline disabled:opacity-50 dark:text-white/35 dark:hover:text-white/60"
+          >
+            Отключить и удалить доступ на этом аккаунте
+          </button>
         )}
       </div>
     </div>

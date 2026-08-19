@@ -9,6 +9,7 @@ import type {
   ScreenShareContext,
   ScreenSource,
 } from "../shared/types";
+import type { VpnStatePayload } from "../shared/vpnPlan"; // VPN-ONECLICK
 import { initUpdateButton } from "./updateButton";
 
 /**
@@ -148,6 +149,21 @@ const api = {
   /** FIX-ACT: обнаруженная активность пользователя на ПК («Слушает музыку в Spotify» или null). */
   onActivity: (cb: (label: string | null) => void): Unsubscribe =>
     on(IPC.ACTIVITY_CHANGED, (label) => cb(typeof label === "string" ? label : null)),
+
+  /**
+   * VPN-ONECLICK: реальный туннель по кнопке. `up` принимает готовый профиль
+   * (собран на устройстве, приватный ключ по сети не уходит), `down` снимает
+   * туннель, `status` отдаёт состояние при открытии окна, `onState` — живые
+   * изменения. Всего этого нет в старых сборках оболочки, поэтому веб-часть
+   * обязана делать feature-detect.
+   */
+  vpn: {
+    up: (config: string): Promise<VpnStatePayload> => ipcRenderer.invoke(IPC.VPN_UP, config),
+    down: (): Promise<VpnStatePayload> => ipcRenderer.invoke(IPC.VPN_DOWN),
+    status: (): Promise<VpnStatePayload> => ipcRenderer.invoke(IPC.VPN_STATUS),
+    onState: (cb: (state: VpnStatePayload) => void): Unsubscribe =>
+      on(IPC.VPN_STATE, (state) => cb(state as VpnStatePayload)),
+  },
 };
 
 export type TriozDesktopApi = typeof api;
