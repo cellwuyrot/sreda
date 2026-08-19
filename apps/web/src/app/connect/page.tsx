@@ -256,6 +256,8 @@ function ConnectPageInner() {
       if (key !== "dm") setDmFriendId(null);
       if (key !== "communities") { setSelectedChannel(null); }
       if (key === "communities") { setSelectedGroup(null); setMobileView("groups"); }
+      // FIX-RAILSHARE: то же самое для нижней навигации и свайпа на телефоне.
+      setVoiceViewFocused(false);
     },
     [],
   );
@@ -937,6 +939,10 @@ function ConnectPageInner() {
           setActiveSection(section);
           if (section !== "dm") setDmFriendId(null);
           if (section !== "communities") setSelectedChannel(null);
+          /* FIX-RAILSHARE: человек перешёл в другой раздел — показ экрана
+             убирается в плашку и не накрывает то, куда он шёл. Вернуться к
+             трансляции — плашкой или щелчком по голосовому каналу. */
+          setVoiceViewFocused(false);
         }}
         myProfileUser={myProfileUser}
         userName={session.user.name ?? ""}
