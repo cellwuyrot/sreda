@@ -40,6 +40,26 @@ import {
 const run = promisify(execFile);
 
 /**
+ * FIX-WGPUBKEY: запуск команды с данными на стандартном входе.
+ *
+ * `execFile` не умеет опцию `input` — она есть только у синхронного
+ * `execFileSync`. Из-за этого `wg pubkey` не получал приватный ключ и не видел
+ * конца ввода: процесс агента вставал навсегда ещё до первого отчёта, а в
+ * журнале не появлялось ни одной строки — снаружи это выглядело как «служба
+ * запущена и молчит». Поэтому ключ пишем в stdin руками и закрываем поток.
+ */
+function runWithInput(file, args, input) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(file, args, (error, stdout, stderr) => {
+      if (error) reject(error);
+      else resolve({ stdout, stderr });
+    });
+    child.stdin.on("error", reject);
+    child.stdin.end(input);
+  });
+}
+
+/**
  * VPN-TRANSPORT: каким инструментом управлять интерфейсом.
  *
  * Обфусцированный форк WireGuard ставит бинарник `awg` с тем же набором команд,
@@ -143,7 +163,9 @@ async function ensurePrivateKey() {
 }
 
 async function derivePublicKey(privateKey) {
-  const { stdout } = await wg(["pubkey"], { input: privateKey });
+  // FIX-WGPUBKEY: приватный ключ уходит в stdin через runWithInput, а не через
+  // несуществующую у execFile опцию `input`.
+  const { stdout } = await runWithInput(await detectTool(), ["pubkey"], `${privateKey}\n`);
   return stdout.trim();
 }
 
