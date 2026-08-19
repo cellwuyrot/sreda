@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "0a096f40b306df864cc82278e139dda5f2c51dc4",
-    "indexed_at": "2026-08-19T13:24:32Z",
+    "commit": "68ca92069dd6e6e47d5b8d8bcdf47b1c8dc0f461",
+    "indexed_at": "2026-08-19T16:19:29Z",
     "project": "trioz",
-    "nodes": 10149,
-    "edges": 44478,
+    "nodes": 10151,
+    "edges": 44504,
     "original_size": 20316160,
-    "compressed_size": 4675166,
+    "compressed_size": 4676739,
     "compression_level": 9
 }
