@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { LRUCache } from "lru-cache";
 import { rateLimit } from "@/lib/rateLimit";
+import { safeUrl } from "@/lib/urlSafety"; // FIX-OGIMG
 
 /**
  * Превью ссылок: заголовок, описание и картинка страницы по её адресу.
@@ -41,33 +42,8 @@ export interface LinkPreview {
   siteName: string;
 }
 
-/** Адреса, до которых серверу ходить нельзя: свои и внутренние сети. */
-function isBlockedHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") || h.endsWith(".local")) return true;
-  if (h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true;
-
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (!ipv4) return false;
-  const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
-  if (a === 10 || a === 127 || a === 0) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true; // метаданные облака
-  return false;
-}
-
-function safeUrl(raw: string): URL | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  if (isBlockedHost(parsed.hostname)) return null;
-  return parsed;
-}
+/* FIX-OGIMG: проверка адреса переехала в lib/urlSafety — по тем же правилам
+   ходит наружу прокси картинки (app/api/link-preview/image). */
 
 function decodeEntities(value: string): string {
   return value
@@ -165,14 +141,26 @@ export async function GET(req: NextRequest) {
   const { html, finalUrl } = fetched;
   const titleTag = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
   const image = metaContent(html, "og:image") || metaContent(html, "twitter:image");
+  let imageUrl: string | null = null;
+  if (image) {
+    try {
+      const absolute = new URL(image, finalUrl).toString();
+      imageUrl = safeUrl(absolute) ? absolute : null;
+    } catch {
+      imageUrl = null;
+    }
+  }
 
   const preview: LinkPreview = {
     url: finalUrl.toString(),
     title: (metaContent(html, "og:title") || (titleTag?.[1] ? decodeEntities(titleTag[1]).trim() : "")).slice(0, 200),
     description: (metaContent(html, "og:description") || metaContent(html, "description")).slice(0, 300),
-    /* Картинку тоже пропускаем через проверку адреса: og:image может указывать
-       во внутреннюю сеть, и тогда её загрузит уже браузер читателя. */
-    image: image && safeUrl(new URL(image, finalUrl).toString()) ? new URL(image, finalUrl).toString() : null,
+    /* FIX-OGIMG: в карточку уходит НЕ чужой адрес, а наш прокси. Чужой ломался
+       на защите от хотлинка и на http-картинках (смешанное содержимое), а
+       вместе с ним карточка раскрывала IP читателя владельцу ссылки.
+       Проверка адреса остаётся здесь же: og:image может указывать во
+       внутреннюю сеть. */
+    image: imageUrl ? `/api/link-preview/image?url=${encodeURIComponent(imageUrl)}` : null,
     siteName: (metaContent(html, "og:site_name") || finalUrl.hostname).slice(0, 100),
   };
 
