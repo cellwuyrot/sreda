@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { freshActivity } from "@/lib/activity"; // FIX-ACT
+import { resolveProfileBanner } from "@/lib/profileBannerFallback"; // FIX-BANNERWEB
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -112,7 +113,8 @@ export async function GET(req: NextRequest) {
     statusEmoji: user.statusEmoji,
     avatarGlowEnabled: user.avatarGlowEnabled,
     avatarGlowColors: user.avatarGlowColors,
-    profileBanner: user.profileBanner,
+    // FIX-BANNERWEB: пустое поле добираем прежним фоном из профиля сообщества.
+    profileBanner: await resolveProfileBanner(user.id, user.profileBanner),
     lastSeen: showOnline ? user.lastSeen : null,
     showOnline,
     createdAt: user.createdAt,
