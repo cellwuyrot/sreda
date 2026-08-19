@@ -1868,6 +1868,28 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isConnected, pttEnabled, keysMatchPtt]);
 
+  /* FIX-CAMSHARE: во время демонстрации экрана соединение почти всегда занято
+     переговорами (signalingState не равен "stable"), а прежний код в этом случае
+     просто пропускал отправку offer: дорожка добавлялась локально, но до других
+     участников не доезжала. Со стороны это выглядело так, будто камеру и показ
+     нельзя включить одновременно. Теперь offer уходит сразу, если можно, иначе —
+     при первом возврате соединения в стабильное состояние. */
+  const offerWhenStable = useCallback((peerId: string, pc: RTCPeerConnection) => {
+    const send = async () => {
+      try {
+        const offer = await patchedOffer(pc);
+        socketRef.current?.emit("voice-offer", { to: peerId, offer });
+      } catch { /* ignore */ }
+    };
+    if (pc.signalingState === "stable") { void send(); return; }
+    const onChange = () => {
+      if (pc.signalingState !== "stable") return;
+      pc.removeEventListener("signalingstatechange", onChange);
+      void send();
+    };
+    pc.addEventListener("signalingstatechange", onChange);
+  }, []);
+
   /* ── FIX-CAM: выключить камеру ── */
   const stopCamera = useCallback(async () => {
     if (!cameraStreamRef.current) return;
@@ -1931,12 +1953,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       for (const [id, pc] of peersRef.current) {
         const senders = stream.getTracks().map(t => pc.addTrack(t, stream));
         cameraSendersRef.current.set(id, senders);
-        if (pc.signalingState === "stable") {
-          try {
-            const offer = await patchedOffer(pc);
-            socketRef.current?.emit("voice-offer", { to: id, offer });
-          } catch { /* ignore */ }
-        }
+        offerWhenStable(id, pc); // FIX-CAMSHARE
       }
       // Сообщаем id стрима, чтобы получатели отличили камеру от демонстрации.
       socketRef.current?.emit("camera-started", { channelId: channelIdRef.current, streamId: stream.id });
@@ -1947,7 +1964,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       cameraRequestingRef.current = false;
     }
-  }, [stopCamera]);
+  }, [stopCamera, offerWhenStable]);
 
   /* ── FIX-CAM: тумблер камеры ── */
   const toggleCamera = useCallback(async () => {
@@ -2234,12 +2251,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         if (!isScreenAllowedFor(id)) continue;
         const senders = shareTracks.map(t => pc.addTrack(t, stream));
         screenSendersRef.current.set(id, senders);
-        if (pc.signalingState === "stable") {
-          try {
-            const offer = await patchedOffer(pc);
-            socketRef.current?.emit("voice-offer", { to: id, offer });
-          } catch { /* ignore */ }
-        }
+        offerWhenStable(id, pc); // FIX-CAMSHARE
       }
       retuneScreenSenders();
       socketRef.current?.emit("screen-share-started", { channelId: channelIdRef.current, quality, allowUserIds: allowSet ? Array.from(allowSet) : null });
@@ -2251,7 +2263,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       screenShareRequestingRef.current = false;
     }
-  }, [isConnected, setScreenVideo, stopScreenShare, playSound, retuneScreenSenders]);
+  }, [isConnected, setScreenVideo, stopScreenShare, playSound, retuneScreenSenders, offerWhenStable]);
 
   /* ── Смена состава допущенных на живом показе ──
      SCREEN-PRIVATE-LIVE: ведущий открывает панель правым щелчком по своему окну
