@@ -447,7 +447,10 @@ export default function ChannelSidebar({
             <div className="flex items-center justify-between px-2 py-1 group/cat">
               <button
                 onClick={() => setTextOpen(o => !o)}
-                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                /* FIX-SECFONT: два главных раздела колонки жирнее и темнее созданных
+                    групп: раньше новая группа выглядела ровно так же, и структура
+                    колонки сливалась в один список. */
+                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-500 dark:text-neutral-200 uppercase tracking-[0.14em] font-bold hover:text-neutral-700 dark:hover:text-white transition-colors"
                 aria-expanded={textOpen}
               >
                 <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${textOpen ? "rotate-90" : "rotate-0"}`} fill="currentColor" viewBox="0 0 6 10">
@@ -488,14 +491,32 @@ export default function ChannelSidebar({
                     const isCollapsed = !!collapsedCategories[cat.id];
                     const children = flatList.filter(c => c.parentId === cat.id);
                     return (
-                      <div key={cat.id} className="!mt-2">
+                      /* FIX-DRAGORDER2: группы каналов тоже перетаскиваются по вертикали. */
+                      <div key={cat.id} className={`!mt-2${drag.itemClass(cat.id)}`} {...drag.itemProps(cat.id, textCategories.map(c => c.id))}>
                         <div className="flex items-center justify-between px-2 py-1 group/cat">
-                          <button onClick={() => toggleCategoryGroup(cat.id)} className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
+                          <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
                             <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${!isCollapsed ? "rotate-90" : "rotate-0"}`} fill="currentColor" viewBox="0 0 6 10">
                               <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
                             </svg>
                             {cat.name}
                           </button>
+                        {/* FIX-CATSET: у группы каналов теперь есть свои настройки:
+                            имя, значок и доступ по ролям. Раньше скрыть от части
+                            участников можно было только каждый канал по отдельности. */}
+                        {canManage && (
+                          <button
+                            onClick={() => setEditingChannel(cat)}
+                            className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
+                            aria-label={`Настройки группы ${cat.name}`}
+                            title="Настройки группы каналов: имя, значок, доступ по ролям"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </button>
+                        )}
+
                           {canManage && !isCollapsed && (
                             <button onClick={() => onCreateChannel({ parentId: cat.id, groupType: "TEXT", defaultType: "TEXT" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100" aria-label="Создать канал в группе">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -541,7 +562,10 @@ export default function ChannelSidebar({
             <div className="flex items-center justify-between px-2 py-1 !mt-3 group/cat">
               <button
                 onClick={() => setVoiceOpen(o => !o)}
-                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                /* FIX-SECFONT: два главных раздела колонки жирнее и темнее созданных
+                    групп: раньше новая группа выглядела ровно так же, и структура
+                    колонки сливалась в один список. */
+                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-500 dark:text-neutral-200 uppercase tracking-[0.14em] font-bold hover:text-neutral-700 dark:hover:text-white transition-colors"
                 aria-expanded={voiceOpen}
               >
                 <svg
@@ -577,14 +601,32 @@ export default function ChannelSidebar({
                   const isCollapsed = !!collapsedCategories[cat.id];
                   const children = voiceChannels.filter((c) => c.parentId === cat.id);
                   return (
-                    <div key={cat.id} className="!mt-2">
+                    /* FIX-DRAGORDER2: то же для групп голосовых каналов. */
+                    <div key={cat.id} className={`!mt-2${drag.itemClass(cat.id)}`} {...drag.itemProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id))}>
                       <div className="flex items-center justify-between px-2 py-1 group/cat">
-                        <button onClick={() => toggleCategoryGroup(cat.id)} className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
+                        <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
                           <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${!isCollapsed ? "rotate-90" : "rotate-0"}`} fill="none" viewBox="0 0 6 10">
                             <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                           {cat.name}
                         </button>
+                        {/* FIX-CATSET: у группы каналов теперь есть свои настройки:
+                            имя, значок и доступ по ролям. Раньше скрыть от части
+                            участников можно было только каждый канал по отдельности. */}
+                        {canManage && (
+                          <button
+                            onClick={() => setEditingChannel(cat)}
+                            className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
+                            aria-label={`Настройки группы ${cat.name}`}
+                            title="Настройки группы каналов: имя, значок, доступ по ролям"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </button>
+                        )}
+
                         {canManage && !isCollapsed && (
                           <button onClick={() => onCreateChannel({ parentId: cat.id, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100" aria-label="Создать голосовой канал в группе">
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
