@@ -899,6 +899,8 @@ export default function ChannelSidebar({
               members={groupDetail.members}
               membersTotal={groupDetail.membersTotal}
               canSeeMembers={!(isMainCommunity && !canManage && userRole !== "ADMIN")}
+              canManage={canManage} /* FIX-MODDRAG */
+              onRefresh={() => onGroupRefresh?.()}
               onSelect={(ch) => onChannelClick(ch as unknown as Channel)}
             />
           </div>

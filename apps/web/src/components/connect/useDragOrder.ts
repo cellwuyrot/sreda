@@ -1,13 +1,13 @@
 "use client";
-​
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-​
+
 /* FIX-DRAGORDER: единая механика «нажал ЛКМ, потянул, отпустил» для любого
    вертикального списка каналов, групп каналов и разделов. Порядок живёт в
    sortOrder канала, поэтому собственного состояния списка у хука нет — только
    подсветка перетаскивания; сохранение делает вызывающая сторона.
-​
+
    FIX-DRAGORDER2: раньше здесь был штатный HTML5-drag (draggable + onDragStart).
    Строка канала — это кнопка во всю ширину, а Chromium не начинает
    перетаскивание, когда жест начался на элементе управления: каналы вне
@@ -15,15 +15,15 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent }
    pointer-событий: нажатие → сдвиг на несколько пикселей → отпускание.
    Обычный клик при этом жив: подавляется только тот, который завершил
    перетаскивание. Сенсорные жесты не трогаем — там прокрутка. */
-​
+
 const START_DISTANCE = 5;
-​
+
 export type DragItemProps = {
   "data-drag-id"?: string;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
   onClickCapture?: (e: ReactMouseEvent<HTMLElement>) => void;
 };
-​
+
 function moved(ids: string[], from: string, to: string): string[] {
   const fromAt = ids.indexOf(from);
   const toAt = ids.indexOf(to);
@@ -33,7 +33,7 @@ function moved(ids: string[], from: string, to: string): string[] {
   rest.splice(fromAt < toAt ? at + 1 : at, 0, from);
   return rest;
 }
-​
+
 /* Куда целимся: берём элемент под курсором и поднимаемся вверх до первого
    соседа из того же списка. Подъём нужен для групп каналов: внутри них
    лежат свои перетаскиваемые строки, и курсор почти всегда над ребёнком. */
@@ -48,7 +48,7 @@ function targetIdAt(x: number, y: number, ids: string[]): string | null {
   }
   return null;
 }
-​
+
 export function useDragOrder({
   enabled,
   onReorder,
@@ -73,17 +73,17 @@ export function useDragOrder({
   useEffect(() => {
     reorderRef.current = onReorder;
   }, [onReorder]);
-​
+
   const reset = useCallback(() => {
     session.current = null;
     setDragId(null);
     setOverId(null);
     if (typeof document !== "undefined") document.body.style.userSelect = "";
   }, []);
-​
+
   useEffect(() => {
     if (!enabled) return;
-​
+
     const onMove = (e: PointerEvent) => {
       const s = session.current;
       if (!s) return;
@@ -97,7 +97,7 @@ export function useDragOrder({
       s.over = over && over !== s.id ? over : null;
       setOverId(s.over);
     };
-​
+
     const onUp = () => {
       const s = session.current;
       reset();
@@ -110,7 +110,7 @@ export function useDragOrder({
       const next = moved(s.ids, s.id, s.over);
       if (next.join(",") !== s.ids.join(",")) reorderRef.current(next);
     };
-​
+
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
@@ -121,7 +121,7 @@ export function useDragOrder({
       reset();
     };
   }, [enabled, reset]);
-​
+
   const itemProps = (id: string, ids: string[]): DragItemProps => {
     if (!enabled || ids.length < 2) return {};
     return {
@@ -137,12 +137,11 @@ export function useDragOrder({
       },
     };
   };
-​
+
   /* Подсветка отдельно от обработчиков: у рядов и плиток свои классы,
      и подменять им style из хука нельзя — он там уже занят. */
   const itemClass = (id: string) =>
     `${dragId === id ? " opacity-40" : ""}${overId === id ? " ring-1 ring-violet-500/70 dark:ring-cyan-400/70 rounded-lg" : ""}`;
-​
+
   return { dragId, overId, itemProps, itemClass };
 }
-​
