@@ -999,7 +999,7 @@ export default function GroupSettingsModal({
 	};
 
 	return (
-		<div className="fixed inset-0 z-[60] flex bg-neutral-100 dark:bg-neutral-950">
+		<div className="fixed inset-0 z-[92] flex bg-neutral-100 dark:bg-neutral-950"> {/* FIX-SHAREZ: выше окна демонстрации экрана (z-76/77) */}
 			{/* ─── Sidebar (grouped navigation, like /settings) ─── */}
 			<aside className="hidden md:flex w-64 flex-col border-r border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4 overflow-y-auto">
 				<div className="flex items-center gap-3 mb-6 px-1">
@@ -1087,7 +1087,7 @@ export default function GroupSettingsModal({
 
 			{/* ─── Confirm dialog ─── */}
 			{confirm && (
-				<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={() => setConfirm(null)}>
+				<div className="fixed inset-0 z-[96] flex items-center justify-center bg-black/60 p-4" onClick={() => setConfirm(null)}>
 					<div className="w-full max-w-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>
 						<p className="text-sm text-neutral-800 dark:text-gray-200 mb-4">{confirm.message}</p>
 						{confirm.withReason && (

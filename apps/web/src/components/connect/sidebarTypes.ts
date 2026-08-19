@@ -19,6 +19,8 @@ export interface VoiceUser {
   userId: string;
   userName: string;
   muted: boolean;
+  /** FIX-VAVATAR: аватар приходит с сервера вместе с присутствием. */
+  avatar?: string | null;
 }
 
 export interface GroupDetail {

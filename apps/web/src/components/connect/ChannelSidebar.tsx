@@ -6,7 +6,7 @@ import { type GlowAvatarUser } from "@/components/ui/GlowAvatar";
 import type { Channel, VoiceUser, GroupDetail, VoiceState, VoiceActions } from "./sidebarTypes";
 import { ChannelSettingsModal } from "./ChannelSettingsModal";
 import { ChannelItem } from "./ChannelItem";
-import { VoiceUserRow, VoiceControlBtn } from "./VoiceControls";
+import { VoiceUserRow, VoiceControlBtn, VoiceOccupantsStrip } from "./VoiceControls"; // FIX-VAVATAR
 import SectionsPanel from "./SectionsPanel";
 import ModulesPanel from "./ModulesPanel";
 import GroupHeaderMenu from "./GroupHeaderMenu";
@@ -229,6 +229,13 @@ export default function ChannelSidebar({
       setChannelUsersMap(prev => ({ ...prev, [channelId]: users }));
     };
     sock.on("voice-channel-users", handle);
+    /* FIX-VPRESENCE: поштучные запросы по каналам остаются, но сводный ответ
+       надёжнее: он отдаёт все комнаты своих сообществ сразу, включая приватные
+       по ролям голосовые каналы, где столбик с количеством оставался пустым. */
+    const handleAll = (all: Record<string, VoiceUser[]>) => {
+      setChannelUsersMap(prev => ({ ...prev, ...all }));
+    };
+    sock.on("all-voice-users", handleAll);
     const currentGroupId = groupDetail.id;
     const onConnect = () => {
       // Live voice-presence updates are now scoped to the channel's group room
@@ -236,6 +243,7 @@ export default function ChannelSidebar({
       // the sidebar previews updating. The per-channel query below still seeds
       // the current snapshot immediately.
       sock.emit("join-group", { groupId: currentGroupId });
+      sock.emit("get-all-voice-users"); // FIX-VPRESENCE
       voiceChannelsRef.current.forEach(ch => sock.emit("get-voice-channel-users", { channelId: ch.id }));
     };
     sock.on("connect", onConnect);
@@ -252,6 +260,7 @@ export default function ChannelSidebar({
       if (document.visibilityState === "hidden") return;
       reconcileId = setInterval(() => {
         if (!sock.connected || document.visibilityState === "hidden") return;
+        sock.emit("get-all-voice-users"); // FIX-VPRESENCE
         voiceChannelsRef.current.forEach(ch => sock.emit("get-voice-channel-users", { channelId: ch.id }));
       }, 30_000);
     };
@@ -685,7 +694,7 @@ export default function ChannelSidebar({
                                 <span className="text-base flex items-center" title={ch.isRestricted ? "Приватный голосовой канал — доступ по ролям" : undefined}>{ch.isRestricted ? <PrivateVoiceIcon size={18} tone="inactive" /> : ch.icon ? ch.icon : <VoiceChannelIcon size={18} tone="inactive" />}</span>
                                 <span className="truncate flex-1">{ch.name}</span>
                                 {shareCount > 0 && <span className="h-6 px-1.5 rounded-md bg-blue-500/15 text-blue-500 dark:text-cyan-300 inline-flex items-center gap-1" title={`${shareCount} активных трансляций`}><ScreenShareIcon />{shareCount > 1 && <span className="text-[10px] font-semibold">{shareCount}</span>}</span>}
-                                {displayUsers.length > 0 && !isActive && (
+                                {displayUsers.length > 0 && ( /* FIX-VPRESENCE: счётчик виден всегда */
                                   <span className="text-[10px] font-semibold text-neutral-500 dark:text-gray-300 bg-neutral-200/70 dark:bg-white/10 rounded-full px-1.5 min-w-[18px] text-center">{displayUsers.length}</span>
                                 )}
                               </button>
@@ -716,6 +725,8 @@ export default function ChannelSidebar({
                                 </div>
                               )}
                             </div>
+                            {/* FIX-VAVATAR: кто в канале — видно и без захода в него. */}
+                            <VoiceOccupantsStrip users={displayUsers} />
                           </div>
                         );
                       })}
@@ -751,7 +762,7 @@ export default function ChannelSidebar({
                       <span className="text-base flex items-center" title={ch.isRestricted ? "Приватный голосовой канал — доступ по ролям" : undefined}>{ch.isRestricted ? <PrivateVoiceIcon size={18} tone="inactive" /> : ch.icon ? ch.icon : <VoiceChannelIcon size={18} tone="inactive" />}</span>
                       <span className="truncate flex-1">{ch.name}</span>
                       {shareCount > 0 && <span className="h-6 px-1.5 rounded-md bg-blue-500/15 text-blue-500 dark:text-cyan-300 inline-flex items-center gap-1" title={`${shareCount} активных трансляций`}><ScreenShareIcon />{shareCount > 1 && <span className="text-[10px] font-semibold">{shareCount}</span>}</span>}
-                      {displayUsers.length > 0 && !isActive && (
+                      {displayUsers.length > 0 && ( /* FIX-VPRESENCE: счётчик виден всегда */
                         <span className="text-[10px] font-semibold text-neutral-500 dark:text-gray-300 bg-neutral-200/70 dark:bg-white/10 rounded-full px-1.5 min-w-[18px] text-center">{displayUsers.length}</span>
                       )}
                     </button>
@@ -791,6 +802,7 @@ export default function ChannelSidebar({
                       {isActive && voiceState && (
                         <VoiceUserRow
                           name={userName}
+                          avatar={myProfileUser.avatar} /* FIX-VAVATAR */
                           muted={voiceState.isMuted}
                           speaking={voiceState.localSpeaking && !voiceState.isMuted}
                           sharingScreen={voiceState.isSharingScreen}
@@ -807,6 +819,7 @@ export default function ChannelSidebar({
                         >
                           <VoiceUserRow
                             name={u.userName}
+                            avatar={u.avatar} /* FIX-VAVATAR */
                             muted={u.muted}
                             speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
                             quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
