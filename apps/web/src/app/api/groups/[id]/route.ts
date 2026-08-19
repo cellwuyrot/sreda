@@ -82,6 +82,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // должен скрывать канал и от модератора (он входит в isAdminRole).
   const isOwnerAdmin = membership.role === "OWNER" || membership.role === "ADMIN";
   let visibleChannels = group.channels.filter((ch) => {
+    /* FIX-SRVHIDE2: скрытый канал не виден НИКОМУ, включая администрацию.
+       Флаг hidden ставит выключенная в админке услуга, а фильтр ниже работал
+       только для рядовых участников — владелец и администратор продолжали
+       видеть раздел выключенной услуги и не понимали, применилась ли правка.
+       Включать обратно в Админ ▸ Услуги — там же, где выключили. */
+    if ((ch as { hidden?: boolean }).hidden) return false;
     const access = (ch as { readAccess?: string }).readAccess ?? "ALL";
     if (access === "ADMIN") return isOwnerAdmin;
     if (access === "MOD") return isAdminRole;

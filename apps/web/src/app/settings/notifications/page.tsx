@@ -5,7 +5,7 @@ import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import BackButton from "@/components/ui/BackButton"; // BACK-STEP
+import Link from "next/link";
 
 interface NotificationItem {
   id: string;
@@ -168,11 +168,12 @@ export default function NotificationsPage() {
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 py-8 px-4">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
-          <BackButton fallback="/connect" aria-label="Назад в TZ.Connect" className="text-neutral-400 hover:text-neutral-600 dark:hover:text-white transition-colors">
+          {/* FIX-BACKEXIT: тот же единый выход в мессенджер. */}
+          <Link href="/connect" aria-label="Назад в TZ.Connect" className="text-neutral-400 hover:text-neutral-600 dark:hover:text-white transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-          </BackButton>
+          </Link>
           <h1 className="text-xl font-bold text-neutral-900 dark:text-white">Уведомления</h1>
           {unreadCount > 0 && (
             <span className="px-2 py-0.5 rounded-full bg-violet-600 text-white text-xs font-medium">{unreadCount}</span>

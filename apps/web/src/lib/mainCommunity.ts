@@ -145,7 +145,20 @@ export async function ensureAppealsChannel(): Promise<void> {
   }
 }
 
-export async function syncServicesToMainCommunity() {
+/**
+ * FIX-SRVCREATE: сверка больше не создаёт каналы сама по себе.
+ *
+ * Каналы услуги заводятся ровно один раз — в момент создания услуги в админке
+ * (`createForServiceId`). До этого сверка была «авторитетом» и добивала набор до
+ * трёх каналов при каждом открытии списка сообществ — удалённый
+ * администратором канал возвращался через секунды, и со стороны это
+ * выглядело так, будто список чатов зашит в код.
+ *
+ * Сверка продолжает делать всё остальное: переименование, иконки, порядок,
+ * скрытие выключенной услуги, удаление каналов удалённой услуги и приём
+ * осиротевших каналов с потерянным serviceId.
+ */
+export async function syncServicesToMainCommunity(options?: { createForServiceId?: string }) {
   const main = await getMainCommunity();
   if (!main) return;
 
@@ -157,6 +170,33 @@ export async function syncServicesToMainCommunity() {
     where: { groupId: main.id, serviceId: { not: null } },
   });
   type ExistingChannel = (typeof existingChannels)[number];
+
+  /* FIX-SRVLINK: приём осиротевших каналов. На рабочей установке есть чаты вида
+     «Услуга — Обсуждение» с пустым serviceId: их завела старая сверка, а услуга
+     потом пересоздавалась. Сверка их не видела и считала услугу без каналов,
+     а интерфейс считал их обычными чатами сообщества. Берём только те, чьё имя
+     однозначно говорит о родстве (точный заголовок услуги плюс окончание), иначе
+     под раздачу попал бы собственный канал сообщества с тем же названием. */
+  const orphans = await prisma.channel.findMany({
+    where: { groupId: main.id, serviceId: null },
+    select: { id: true, name: true },
+  });
+  for (const service of services) {
+    const kin = orphans.filter(
+      (o) =>
+        o.name === `${service.title}${DISCUSSION_SUFFIX}` ||
+        o.name === `${service.title}${QUESTIONS_SUFFIX}`,
+    );
+    if (kin.length === 0) continue;
+    await prisma.channel.updateMany({
+      where: { id: { in: kin.map((k) => k.id) } },
+      data: { serviceId: service.id },
+    });
+    for (const k of kin) {
+      const row = await prisma.channel.findUnique({ where: { id: k.id } });
+      if (row) existingChannels.push(row);
+    }
+  }
 
   // Group existing channels by serviceId; anything whose service no longer
   // exists is queued for deletion.
@@ -202,7 +242,14 @@ export async function syncServicesToMainCommunity() {
       { role: questions, name: `${service.title}${QUESTIONS_SUFFIX}`, type: "TEXT", icon: QUESTIONS_ICON, sortOrder: base + 2 },
     ];
 
+    /* FIX-SRVCREATE: создаём только тогда, когда об этом попросили явно — то есть
+       при создании услуги в админке. Любой другой вызов сверки (а её зовёт
+       каждый запрос списка сообществ) только приводит в порядок то, что есть.
+       Именно поэтому удалённый чат теперь остаётся удалённым. */
+    const mayCreate = options?.createForServiceId === service.id;
+
     for (const d of desired) {
+      if (!d.role && !mayCreate) continue;
       if (!d.role) {
         await prisma.channel.create({
           data: {
