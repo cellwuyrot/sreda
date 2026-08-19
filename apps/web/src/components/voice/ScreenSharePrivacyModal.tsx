@@ -144,10 +144,14 @@ export default function ScreenSharePrivacyModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className={`w-full rounded-2xl border border-white/10 bg-[#171a1d] p-5 shadow-2xl ${
+        /* FIX-SHAREWIDE: у панели у курсора ширина фиксированная. В строке
+           классов рядом стояли w-full и w-[320px]; порядок классов ничего не
+           решает, побеждал w-full — и окно «Кто видит ваш экран»
+           растягивалось на всю ширину приложения. */
+        className={`rounded-2xl border border-white/10 bg-[#171a1d] p-5 shadow-2xl ${
           anchor
-            ? "absolute w-[320px]"
-            : `max-h-[calc(100vh-2rem)] overflow-y-auto ${shellSources && withQuality ? "max-w-xl" : "max-w-sm"}`
+            ? "absolute w-[320px] max-w-[calc(100vw-24px)] max-h-[calc(100vh-24px)] overflow-y-auto"
+            : `w-full max-h-[calc(100vh-2rem)] overflow-y-auto ${shellSources && withQuality ? "max-w-xl" : "max-w-sm"}`
         }`}
         style={anchoredStyle}
         onClick={(e) => e.stopPropagation()}
