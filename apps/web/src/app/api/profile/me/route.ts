@@ -6,6 +6,7 @@ import { hasPremium } from "@/lib/premium";
 import { getIO } from "@/lib/socketEmit";
 import { sanitizeText } from "@/lib/sanitize";
 import { checkBan } from "@/lib/banCheck";
+import { resolveProfileBanner } from "@/lib/profileBannerFallback"; // FIX-BANNERWEB
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -55,6 +56,9 @@ export async function GET() {
   }
 
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  /* FIX-BANNERWEB: настройки показывают тот же фон, что и профиль, и заодно
+     переносят прежнее значение из профиля сообщества на пользователя. */
+  user.profileBanner = await resolveProfileBanner(userId, (user.profileBanner as string | null) ?? null);
   return NextResponse.json(user);
 }
 
