@@ -28,7 +28,7 @@ import {
   TIMEOUT_OPTIONS,
   type ModerationAction,
 } from "@/lib/groupModeration";
-import { bannerImgStyle } from "@/lib/bannerFraming"; // FIX-BGCROP
+import ProfileBanner from "@/components/ui/ProfileBanner"; // FIX-BANNERONE
 
 export interface CtxMenuUser {
   id: string;
@@ -463,13 +463,8 @@ export default function UserContextMenu({
     >
       {/* Шапка-баннер: раньше её рисовала отдельная карточка по наведению, и
           две панели налезали друг на друга. Теперь окно одно. */}
-      <div className="relative h-14 flex-shrink-0 overflow-hidden rounded-t-[10px] bg-gradient-to-br from-violet-500/30 to-indigo-600/20 dark:from-cyan-500/20 dark:to-violet-600/20">
-        {user.profileBanner && (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={user.profileBanner} alt="" className="absolute inset-0 h-full w-full object-cover" style={bannerImgStyle(user.profileBanner)} />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
-      </div>
+      {/* FIX-BANNERONE: та же картинка и то же кадрирование, что на странице профиля. */}
+      <ProfileBanner src={user.profileBanner} className="h-14 flex-shrink-0 rounded-t-[10px]" />
 
       <div className="flex items-start gap-2.5 px-2.5 pt-2 pb-2 -mt-5 relative flex-shrink-0">
         <GlowAvatar

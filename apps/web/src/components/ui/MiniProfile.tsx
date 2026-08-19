@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import { isOnline, timeAgo } from "@/lib/timeAgo";
-import { bannerImgStyle } from "@/lib/bannerFraming"; // FIX-BGCROP
+import ProfileBanner from "@/components/ui/ProfileBanner"; // FIX-BANNERONE
 
 interface MiniProfileUser {
   id: string;
@@ -134,18 +134,8 @@ export default function MiniProfile({ user, children, onMessageClick, side = "ri
               bg-white dark:bg-neutral-800
               border border-neutral-200 dark:border-white/10"
           >
-            {/* Banner */}
-            <div className="relative h-14 overflow-hidden bg-gradient-to-br from-violet-500/30 to-indigo-600/20 dark:from-cyan-500/20 dark:to-violet-600/20">
-              {user.profileBanner && (
-                <img
-                  src={user.profileBanner}
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover"
-                  style={bannerImgStyle(user.profileBanner)}
-                />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
-            </div>
+            {/* Banner — FIX-BANNERONE: общий компонент, без своей копии разметки. */}
+            <ProfileBanner src={user.profileBanner} className="h-14" />
 
             {/* FIX-BGZ: содержимое тоже позиционированное, иначе баннер (relative)
                 рисуется поверх аватара, заезжающего на него отрицательным отступом. */}
