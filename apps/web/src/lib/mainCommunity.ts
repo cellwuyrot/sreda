@@ -239,7 +239,11 @@ export async function syncServicesToMainCommunity(options?: { createForServiceId
     }> = [
       { role: news, name: service.title, type: "NEWS", icon: service.icon || NEWS_ICON, sortOrder: base },
       { role: discussion, name: `${service.title}${DISCUSSION_SUFFIX}`, type: "TEXT", icon: DISCUSSION_ICON, sortOrder: base + 1 },
-      { role: questions, name: `${service.title}${QUESTIONS_SUFFIX}`, type: "TEXT", icon: QUESTIONS_ICON, sortOrder: base + 2 },
+      /* FIX-MAINQA: вопросы по услуге — раздел «вопрос-ответ» (QAPanel), а не
+         обычный чат. В остальных группах такой раздел был изначально, и разное
+         поведение одной и той же кнопки сбивало с толку. Сверка подтянет тип и
+         у уже созданных каналов: сообщения старого чата при этом не трогаются. */
+      { role: questions, name: `${service.title}${QUESTIONS_SUFFIX}`, type: "QA", icon: QUESTIONS_ICON, sortOrder: base + 2 },
     ];
 
     /* FIX-SRVCREATE: создаём только тогда, когда об этом попросили явно — то есть

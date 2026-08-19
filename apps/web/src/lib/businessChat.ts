@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { parseDocuments } from "@/lib/businessPayment"; // FIX-SRVDOC
 
 /**
  * Деловой чат по обращению.
@@ -133,6 +134,49 @@ export interface EnsureBusinessChatParams {
   subject: string;
   /** Исходный текст заявки. */
   appealBody: string;
+  /**
+   * FIX-SRVDOC: услуга, выбранная клиентом в «Сотрудничестве». Если указана,
+   * вторым сообщением в чат уйдут приложенные к услуге документы.
+   */
+  serviceId?: string | null;
+}
+
+/**
+ * FIX-SRVDOC: прислать в деловой чат документы выбранной услуги.
+ *
+ * Автором ставится сторона администрации, а не клиент: бумаги выдаёт проект, и
+ * в переписке они должны читаться как ответ администрации, а не как вложение
+ * заявителя. Отсутствие документов — не ошибка: у части услуг бумаг просто нет.
+ */
+export async function sendServiceDocuments(params: {
+  conversationId: string;
+  authorId: string;
+  serviceId: string;
+}): Promise<boolean> {
+  const service = await prisma.service.findUnique({
+    where: { id: params.serviceId },
+    select: { title: true, documents: true },
+  });
+  if (!service) return false;
+
+  const documents = parseDocuments(service.documents);
+  if (documents.length === 0) return false;
+
+  const lines = documents.map((doc) => `• ${doc.name} — ${doc.url}`).join("\n");
+  const content = [
+    `Документы по услуге «${service.title}» — работа выполняется согласно ним:`,
+    lines,
+  ].join("\n\n");
+
+  const now = new Date();
+  await prisma.directMessage.create({
+    data: { conversationId: params.conversationId, userId: params.authorId, content },
+  });
+  await prisma.directConversation.update({
+    where: { id: params.conversationId },
+    data: { lastMessageAt: now },
+  });
+  return true;
 }
 
 /**
@@ -185,6 +229,23 @@ export async function ensureBusinessChat(params: EnsureBusinessChatParams): Prom
       },
       select: { id: true },
     });
+
+    /* FIX-SRVDOC: документы выбранной услуги уходят вторым сообщением сразу после
+       заявки: клиент открывает чат и видит бумаги, по которым будет идти работа, без
+       отдельного вопроса администрации. Ошибку глотаем: сам чат уже создан, и
+       терять его из-за неотправленного списка файлов нельзя. */
+    if (params.serviceId) {
+      try {
+        await sendServiceDocuments({
+          conversationId: conversation.id,
+          authorId: slotId,
+          serviceId: params.serviceId,
+        });
+      } catch (err) {
+        console.warn("[business] не удалось приложить документы услуги", params.serviceId, err);
+      }
+    }
+
     return conversation.id;
   } catch (err) {
     /* Гонка двух одновременных вызовов: уникальность по appealId не даст создать
