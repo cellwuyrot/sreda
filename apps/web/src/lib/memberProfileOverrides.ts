@@ -41,7 +41,10 @@ export async function applyMemberOverrides<
     if (!over) continue;
     if (over.displayName) user.name = over.displayName;
     if (over.avatar) user.avatar = over.avatar;
-    if (over.profileBanner) user.profileBanner = over.profileBanner;
+    /* FIX-BANNERONE: фон профиля НЕ переопределяется по сообществу. Иначе в
+       чате мини-профиль показывал одну картинку, а страница пользователя —
+       другую; раздел «Профиль на выбранном сервере», ради которого это
+       переопределение делалось, убран (FIX-NOSRVPROFILE). */
   }
   return items;
 }

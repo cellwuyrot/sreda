@@ -23,7 +23,7 @@ import {
 import { TrashIcon } from "@/components/ui/ConnectIconsExtra";
 import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { useCall } from "@/components/call/CallProvider"; // CALL
-import { bannerBackgroundStyle } from "@/lib/bannerFraming"; // FIX-BGCROP
+import ProfileBanner from "@/components/ui/ProfileBanner"; // FIX-BANNERONE
 
 /**
  * PROFILE-WALL: личная страница — шапка, стена, подписчики, подписки.
@@ -527,10 +527,10 @@ export default function ProfilePage({ username }: { username?: string }) {
 
       {/* Шапка */}
       <div className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900/60">
-        <div
-          className="h-32 bg-gradient-to-r from-indigo-500/30 to-fuchsia-500/30"
-          style={bannerBackgroundStyle(head.profileBanner)}
-        />
+        {/* FIX-BANNERONE: фон профиля рисует общий компонент — тегом <img>, а не
+            свойством background-image. Так рамка из настроек совпадает с
+            мини-профилем, и пустой блок больше не выдаёт себя за «фона нет». */}
+        <ProfileBanner src={head.profileBanner} className="h-32" overlay={false} />
         <div className="p-4 pt-0">
           {/* PROFILE-HEAD-FIX: на телефоне (WebView Android) шапка встаёт в
               колонку, а кнопки действий переезжают на отдельную строку под
