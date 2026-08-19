@@ -60,6 +60,15 @@ export const IPC = {
    * часов.
    */
   GET_UPDATE_STATE: "desktop:get-update-state",
+  /**
+   * VPN-ONECLICK: управление туннелем из окна приложения. `VPN_UP` принимает
+   * готовый профиль (с приватным ключом, который не покидает устройство),
+   * `VPN_DOWN` снимает туннель, `VPN_STATUS` отдаёт текущее состояние при
+   * открытии окна — туннель мог быть поднят до загрузки страницы.
+   */
+  VPN_UP: "desktop:vpn-up",
+  VPN_DOWN: "desktop:vpn-down",
+  VPN_STATUS: "desktop:vpn-status",
   // renderer → main (send)
   SET_BADGE: "desktop:set-badge",
   /** NEW: немедленно пересчитать цифру непрочитанного на значке приложения. */
@@ -116,4 +125,6 @@ export const IPC = {
   ACTIVITY_CHANGED: "desktop:activity-changed",
   /** UPD-BTN: main → renderer: обновление скачивается или готово к установке. */
   UPDATE_STATE: "desktop:update-state",
+  /** VPN-ONECLICK: main → renderer: состояние туннеля изменилось. */
+  VPN_STATE: "desktop:vpn-state",
 } as const;

@@ -20,6 +20,7 @@ import {
   syncOverlay,
 } from "./overlay"; // FIX-OVL
 import { currentUpdateState, installDownloadedUpdate } from "./updater"; // UPD-BTN
+import { vpnUp, vpnDown, vpnState } from "./vpn"; // VPN-ONECLICK
 import type { VoiceOverlayState } from "../shared/types";
 
 /** Register every IPC endpoint the preload bridge relies on. */
@@ -43,6 +44,13 @@ export function registerIpc(): void {
   ipcMain.on(IPC.INSTALL_UPDATE, () => {
     installDownloadedUpdate();
   });
+
+  /* VPN-ONECLICK: поднять/снять туннель и отдать его текущее состояние.
+     Профиль приходит от renderer готовым (собран на устройстве, с приватным
+     ключом, который по сети не передаётся) — main лишь исполняет команды ОС. */
+  ipcMain.handle(IPC.VPN_UP, (_e, config: unknown) => vpnUp(typeof config === "string" ? config : ""));
+  ipcMain.handle(IPC.VPN_DOWN, () => vpnDown());
+  ipcMain.handle(IPC.VPN_STATUS, () => vpnState());
 
   ipcMain.handle(IPC.SET_CONFIG, (_e, patch: Partial<DesktopConfig>): DesktopConfig => {
     const previous = getConfig();
