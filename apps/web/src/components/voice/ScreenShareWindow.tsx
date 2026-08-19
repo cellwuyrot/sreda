@@ -1,11 +1,11 @@
 "use client";
-
+​
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useVoice, SCREEN_COMFORT_VIEWERS, type ScreenShare } from "@/contexts/VoiceContext";
 import ScreenSharePrivacyModal from "./ScreenSharePrivacyModal"; // SCREEN-PRIVATE-LIVE
-
+​
 interface ScreenShareWindowProps {
   shares: ScreenShare[];
   onStopLocal?: () => void;
@@ -33,7 +33,7 @@ interface ScreenShareWindowProps {
    */
   focusNonce?: number;
 }
-
+​
 // FIX-SS-MODES: у демонстрации ровно два режима отображения — «Во весь экран»
 // (full) и «Мини-окно» (mini). Прежний третий режим «Средний» удалён: он
 // открывался сам поверх комнаты и воспринимался как «непонятная штука».
@@ -42,9 +42,9 @@ interface ScreenShareWindowProps {
 // Мини-окно — это компактный плеер ВНУТРИ приложения, перетаскиваемый мышью;
 // из него можно только развернуть демонстрацию во весь экран или закрыть её.
 type ViewMode = "full" | "mini";
-
+​
 type IconName = "mic" | "sound" | "noise" | "full" | "mini" | "exit" | "stop" | "leave" | "return" | "gear";
-
+​
 function Icon({ name }: { name: IconName }) {
   const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   if (name === "mic") return <svg {...common}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/></svg>;
@@ -60,7 +60,7 @@ function Icon({ name }: { name: IconName }) {
   if (name === "gear") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
   return null;
 }
-
+​
 function RoundButton({ title, active = false, danger = false, disabled = false, onClick, children }: {
   title: string;
   active?: boolean;
@@ -76,7 +76,7 @@ function RoundButton({ title, active = false, danger = false, disabled = false, 
       : "bg-white/[0.06] text-white/75 border-white/10 hover:bg-white/10 hover:text-white";
   return <button type="button" title={title} aria-label={title} disabled={disabled} onClick={onClick} className={`w-11 h-11 rounded-xl border inline-flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${color}`}>{children}</button>;
 }
-
+​
 /**
  * Прямоугольник области чата — окно показа раскрывается ровно в ней.
  *
@@ -95,7 +95,7 @@ function RoundButton({ title, active = false, danger = false, disabled = false, 
  */
 function useShareAreaRect(active: boolean) {
   const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-
+​
   useEffect(() => {
     if (!active) return;
     const measure = () => {
@@ -117,10 +117,10 @@ function useShareAreaRect(active: boolean) {
       observer?.disconnect();
     };
   }, [active]);
-
+​
   return rect;
 }
-
+​
 function useAttachStream(stream: MediaStream | null) {
   // FIX-SS-WHITE: устойчивое подключение потока к <video>. При смене режима
   // (полный экран / мини) элемент <video> пересоздаётся, и раньше бывал кадр,
@@ -138,7 +138,7 @@ function useAttachStream(stream: MediaStream | null) {
     element.oncanplay = tryPlay;
   }, [stream]);
 }
-
+​
 export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel = true, focusNonce = 0 }: ScreenShareWindowProps) {
   const voice = useVoice();
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -156,7 +156,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      из размытия видно только то, что показ идёт. */
   const [consented, setConsented] = useState<Set<string>>(() => new Set());
   const [launching, setLaunching] = useState(true);
-
+​
   // ── Мини-окно ──────────────────────────────────────────────────────
   // Компактный плеер в пределах окна приложения; перетаскивается мышью за
   // шапку. Никакого системного PiP всего приложения (FIX-SS-PIP).
@@ -165,8 +165,11 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      щелчком по своему показу или шестерёнкой в шапке; координаты нужны, чтобы
      окошко появилось у курсора. */
   const [privacyAt, setPrivacyAt] = useState<{ x: number; y: number } | null>(null);
+  /* FIX-SHARECAM: состояние кнопки камеры держим рядом с остальными хуками: ниже в файле
+     есть ранние return, а хуки после них запрещены (react-hooks/rules-of-hooks). */
+  const [cameraBusy, setCameraBusy] = useState(false);
   const miniDragRef = useRef<{ dx: number; dy: number; w: number; h: number } | null>(null);
-
+​
   const onMiniDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest("button")) return;
     const card = e.currentTarget.closest("section");
@@ -189,7 +192,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   }, []);
-
+​
   useEffect(() => {
     if (shares.length === 0) {
       setActiveId(null);
@@ -211,7 +214,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
       setActiveId(shares[0].socketId);
     }
   }, [shares, activeId]);
-
+​
   /* Запрос «покажи трансляцию» разворачивает окно заново. Согласие на просмотр
      при этом НЕ выдаётся: картинка снова под размытием, пока человек не нажмёт
      «Смотреть». Возврат к показу и согласие смотреть — разные решения. */
@@ -221,14 +224,14 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     setBannerHidden(false);
     setMode("full");
   }, [focusNonce]);
-
+​
   /* Сменилась сама трансляция — скрытая плашка больше не про неё. Раньше это
      сбрасывалось только когда показов не осталось совсем: после ухода одного
      ведущего и прихода другого плашка оставалась скрытой. */
   useEffect(() => {
     if (activeId) setBannerHidden(false);
   }, [activeId]);
-
+​
   /* Смена голосового канала — новый разговор. Отказ смотреть чей-то показ в
      прежнем канале к новому отношения не имеет: человек заходит туда, где уже
      идёт трансляция, и должен её увидеть, а не остаться с решением, принятым
@@ -240,18 +243,18 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     setBannerHidden(false);
     setMode("full");
   }, [voiceChannelId]);
-
+​
   useEffect(() => {
     if (!activeId) return;
     setLaunching(true);
     const timer = window.setTimeout(() => setLaunching(false), 1650);
     return () => window.clearTimeout(timer);
   }, [activeId]);
-
+​
   const active = shares.find((share) => share.socketId === activeId) ?? shares[0] ?? null;
   const attachVideo = useAttachStream(active?.stream ?? null);
   const areaRect = useShareAreaRect(true);
-
+​
   /* SCREEN-VIEWERS: пока открыто окно чужой трансляции, сообщаем серверу, что
      смотрим именно её — ведущий и другие зрители видят состав. Эффект стоит до
      раннего return ниже: хуки нельзя вызывать условно. */
@@ -265,9 +268,9 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     setViewingScreen(watchedSocketId);
     return () => setViewingScreen(null);
   }, [watchedSocketId, setViewingScreen]);
-
+​
   if (!active || typeof document === "undefined") return null;
-
+​
   const isViewer = !active.isLocal;
   /* Ники зрителей текущей трансляции. */
   const viewers = voice.screenViewers.get(active.socketId) ?? [];
@@ -279,9 +282,9 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
       ? "Стабильно"
       : voice.localPing < 150 ? "Отлично" : "Средне";
   const streamLabel = `${active.quality.resolution}p · до ${active.quality.fps} FPS`;
-
+​
   const accept = () => setConsented((prev) => new Set(prev).add(active.socketId));
-
+​
   /* Заслонка поверх размытой картинки. Показывается ровно до выбора: смотреть
      или нет. «Не смотреть» не останавливает чужой показ — он продолжается,
      просто без вас, и вернуться можно плашкой в углу. */
@@ -314,10 +317,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
       </div>
     </div>
   ) : null;
-
-  /* FIX-SHARECAM: кнопки камеры в шапке показа не было вовсе: во весь экран панель
-     комнаты недоступна, и включить камеру было негде. */
-  const [cameraBusy, setCameraBusy] = useState(false);
+​
   const toggleCameraWithConfirm = () => {
     if (cameraBusy) return;
     /* Подтверждение только на включение: выключать надо одним нажатием. */
@@ -325,7 +325,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     setCameraBusy(true);
     void voice.toggleCamera().finally(() => setCameraBusy(false));
   };
-
+​
   const stopOrExit = () => {
     if (canStop) { onStopLocal?.(); return; }
     /* «Прекратить просмотр» возвращает всё к началу: согласие снимается, и при
@@ -339,7 +339,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     });
     setViewerDismissed(true);
   };
-
+​
   /* SCREEN-PRIVATE-LIVE: правый щелчок по СВОЕЙ демонстрации открывает
      настройки приватности. У чужой трансляции контекстное меню не трогаем. */
   const openPrivacyMenu = (e: React.MouseEvent) => {
@@ -347,7 +347,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     e.preventDefault();
     setPrivacyAt({ x: e.clientX, y: e.clientY });
   };
-
+​
   const privacyPanel = privacyAt && active.isLocal ? (
     <ScreenSharePrivacyModal
       anchor={privacyAt}
@@ -363,7 +363,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
       }}
     />
   ) : null;
-
+​
   /* Свёрнуто в плашку в двух случаях: зритель сам закрыл просмотр либо ушёл в
      другой канал. Во втором случае разворачиваем не во весь экран, а в мини —
      человек сейчас читает переписку, и накрывать её нельзя. Плашка стоит слева
@@ -416,7 +416,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
       document.body,
     );
   }
-
+​
   if (mode === "mini") {
     // FIX-SS-PIP: обычное мини-окно внутри приложения. Из него два действия:
     // развернуть во весь экран или закрыть просмотр (стримеру — остановить).
@@ -453,7 +453,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
       document.body,
     );
   }
-
+​
   // Полноэкранный режим — единственный «развёрнутый» вид демонстрации.
   return createPortal(
     <motion.div
@@ -532,7 +532,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
             <button type="button" onClick={stopOrExit} title={canStop ? "Остановить демонстрацию" : "Прекратить просмотр"} className="w-8 h-8 rounded-lg text-red-300 hover:bg-red-500/15 inline-flex items-center justify-center"><Icon name={canStop ? "stop" : "exit"} /></button>
           </div>
         </header>
-
+​
         <div className="flex-1 min-h-0 flex gap-3 p-3">
           <main
             className="relative flex-1 min-w-0 min-h-0 overflow-hidden rounded-lg border border-white/10 bg-black"
@@ -564,7 +564,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
                 : "Экран доступен участникам"}
             </div>
           </main>
-
+​
           <aside className="hidden lg:flex w-56 xl:w-64 shrink-0 flex-col gap-2 min-h-0">
             <div className="rounded-lg border border-white/10 bg-[#171a1d] p-3">
               <div className="text-[9px] uppercase tracking-[0.12em] text-white/35 mb-2">Трансляция</div>
@@ -610,7 +610,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
             </div>
           </aside>
         </div>
-
+​
         <footer className="min-h-[70px] px-3 py-2.5 border-t border-white/10 bg-[#171a1d] flex items-center justify-center gap-2">
           <RoundButton title={voice.isMuted ? "Включить микрофон" : "Выключить микрофон"} danger={voice.isMuted} onClick={voice.toggleMute}><Icon name="mic" /></RoundButton>
           <RoundButton title={voice.isDeafened ? "Включить звук" : "Выключить звук"} danger={voice.isDeafened} onClick={voice.toggleDeafen}><Icon name="sound" /></RoundButton>
@@ -637,7 +637,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     document.body,
   );
 }
-
+​
 function ShareTile({ share, active, blurred, onSelect }: { share: ScreenShare; active: boolean; blurred: boolean; onSelect: () => void }) {
   const attachVideo = useAttachStream(share.stream);
   return (
@@ -647,3 +647,4 @@ function ShareTile({ share, active, blurred, onSelect }: { share: ScreenShare; a
     </button>
   );
 }
+​
