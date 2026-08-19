@@ -1,19 +1,27 @@
 "use client";
 
-import { useState, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 /* FIX-DRAGORDER: единая механика «нажал ЛКМ, потянул, отпустил» для любого
-   вертикального списка каналов и разделов. Порядок живёт в sortOrder канала,
-   поэтому собственного состояния у хука нет — только подсветка перетаскивания;
-   сохранение делает вызывающая сторона (PUT /api/channels/reorder). */
+   вертикального списка каналов, групп каналов и разделов. Порядок живёт в
+   sortOrder канала, поэтому собственного состояния списка у хука нет — только
+   подсветка перетаскивания; сохранение делает вызывающая сторона.
+
+   FIX-DRAGORDER2: раньше здесь был штатный HTML5-drag (draggable + onDragStart).
+   Строка канала — это кнопка во всю ширину, а Chromium не начинает
+   перетаскивание, когда жест начался на элементе управления: каналы вне
+   группы практически не брались вовсе. Теперь жест собирается вручную из
+   pointer-событий: нажатие → сдвиг на несколько пикселей → отпускание.
+   Обычный клик при этом жив: подавляется только тот, который завершил
+   перетаскивание. Сенсорные жесты не трогаем — там прокрутка. */
+
+const START_DISTANCE = 5;
 
 export type DragItemProps = {
-  draggable?: boolean;
-  onDragStart?: (e: DragEvent<HTMLElement>) => void;
-  onDragOver?: (e: DragEvent<HTMLElement>) => void;
-  onDragLeave?: () => void;
-  onDrop?: (e: DragEvent<HTMLElement>) => void;
-  onDragEnd?: () => void;
+  "data-drag-id"?: string;
+  onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
+  onClickCapture?: (e: ReactMouseEvent<HTMLElement>) => void;
 };
 
 function moved(ids: string[], from: string, to: string): string[] {
@@ -26,6 +34,21 @@ function moved(ids: string[], from: string, to: string): string[] {
   return rest;
 }
 
+/* Куда целимся: берём элемент под курсором и поднимаемся вверх до первого
+   соседа из того же списка. Подъём нужен для групп каналов: внутри них
+   лежат свои перетаскиваемые строки, и курсор почти всегда над ребёнком. */
+function targetIdAt(x: number, y: number, ids: string[]): string | null {
+  let el: Element | null = document.elementFromPoint(x, y);
+  while (el) {
+    if (el instanceof HTMLElement) {
+      const id = el.dataset.dragId;
+      if (id && ids.includes(id)) return id;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
 export function useDragOrder({
   enabled,
   onReorder,
@@ -35,40 +58,78 @@ export function useDragOrder({
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const session = useRef<{
+    id: string;
+    ids: string[];
+    x: number;
+    y: number;
+    started: boolean;
+    over: string | null;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const reorderRef = useRef(onReorder);
+  reorderRef.current = onReorder;
+
+  const reset = useCallback(() => {
+    session.current = null;
+    setDragId(null);
+    setOverId(null);
+    if (typeof document !== "undefined") document.body.style.userSelect = "";
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const onMove = (e: PointerEvent) => {
+      const s = session.current;
+      if (!s) return;
+      if (!s.started) {
+        if (Math.abs(e.clientX - s.x) + Math.abs(e.clientY - s.y) < START_DISTANCE) return;
+        s.started = true;
+        setDragId(s.id);
+        document.body.style.userSelect = "none";
+      }
+      const over = targetIdAt(e.clientX, e.clientY, s.ids);
+      s.over = over && over !== s.id ? over : null;
+      setOverId(s.over);
+    };
+
+    const onUp = () => {
+      const s = session.current;
+      reset();
+      if (!s || !s.started) return;
+      /* После перетаскивания браузер всё равно пришлёт click по строке —
+         иначе канал ещё и открывался бы на каждое перемещение. */
+      suppressClick.current = true;
+      window.setTimeout(() => { suppressClick.current = false; }, 300);
+      if (!s.over) return;
+      const next = moved(s.ids, s.id, s.over);
+      if (next.join(",") !== s.ids.join(",")) reorderRef.current(next);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      reset();
+    };
+  }, [enabled, reset]);
 
   const itemProps = (id: string, ids: string[]): DragItemProps => {
     if (!enabled || ids.length < 2) return {};
     return {
-      draggable: true,
-      onDragStart: (e) => {
-        setDragId(id);
-        e.dataTransfer.effectAllowed = "move";
-        try {
-          e.dataTransfer.setData("text/plain", id);
-        } catch {
-          /* некоторые сборки Electron запрещают setData — перетаскивание работает и без него */
-        }
+      "data-drag-id": id,
+      onPointerDown: (e) => {
+        if (e.pointerType !== "mouse" || e.button !== 0) return;
+        session.current = { id, ids: [...ids], x: e.clientX, y: e.clientY, started: false, over: null };
       },
-      onDragOver: (e) => {
-        if (!dragId || dragId === id) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        if (overId !== id) setOverId(id);
-      },
-      onDragLeave: () => setOverId((o) => (o === id ? null : o)),
-      onDrop: (e) => {
+      onClickCapture: (e) => {
+        if (!suppressClick.current) return;
         e.preventDefault();
         e.stopPropagation();
-        const from = dragId;
-        setDragId(null);
-        setOverId(null);
-        if (!from || from === id) return;
-        const next = moved(ids, from, id);
-        if (next.join(",") !== ids.join(",")) onReorder(next);
-      },
-      onDragEnd: () => {
-        setDragId(null);
-        setOverId(null);
       },
     };
   };
