@@ -2447,11 +2447,21 @@ export default function MessageArea({
           ) : (
             pinnedMessages.map(pm => (
               <div key={pm.id} className="px-4 py-2 flex items-start gap-2 hover:bg-black/5 dark:hover:bg-white/5 border-b border-[var(--cn-border)] last:border-0">
-              <div className="flex-1 min-w-0 relative">
+              {/* FIX-PINJUMP: строка была простым блоком текста — нажатие никуда не вело.
+                  Переход использует тот же jumpToMessage, что и клик по ответу: он догружает
+                  старую историю, если сообщение выше загруженного куска, а потом подсвечивает
+                  найденную строку. Панель закрываем: иначе она накрывает верх переписки,
+                  куда мы только что прокрутились. */}
+              <button
+                type="button"
+                onClick={() => { setShowPinned(false); jumpToMessage(pm.id); }}
+                className="flex-1 min-w-0 relative text-left cursor-pointer"
+                title="Перейти к сообщению"
+              >
 
                   <span className="text-xs font-medium text-accent">{pm.user.name}</span>
                   <p className="text-sm text-[var(--cn-text)] line-clamp-2">{pm.content || "[файл]"}</p>
-                </div>
+                </button>
                 {canPin && (
                   <button onClick={() => togglePin(pm.id)} className="flex-shrink-0 p-1 text-neutral-400 hover:text-red-500" title="Открепить">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
