@@ -24,6 +24,7 @@ import { useMobile } from "@/hooks/useMobile";
 import type { MediaNoteKind } from "@/lib/mediaNote";
 import { noteFileName } from "@/lib/mediaNote";
 import DayNightBackground from "@/components/connect/DayNightBackground";
+import ServiceDocsBar from "@/components/connect/ServiceDocsBar"; // FIX-SRVDOC
 import { PlusMenu } from "@/components/connect/ChannelTools";
 import { ModuleSettingsButton } from "@/components/connect/ModuleSettingsModal"; // FIX-NEWSGEAR
 import type { Message, MessageUser, ForwardTarget } from "./messageTypes";
@@ -110,6 +111,8 @@ interface MessageAreaProps {
   channelIcon: string | null;
   channelType?: string;
   postAccess?: string;
+  /** FIX-SRVDOC: услуга раздела — по ней показываем приложенные документы. */
+  serviceId?: string | null;
   currentUserId: string;
   currentUserName?: string;
   currentUserRole: string;
@@ -617,7 +620,7 @@ const MessageRow = memo(function MessageRow({
 });
 
 export default function MessageArea({
-  channelId, channelName, channelIcon, channelType = "TEXT", postAccess = "ALL", currentUserId, currentUserName = "", currentUserRole, currentUserCommunityRole = "MEMBER", isBanned, onBack, onNewMessage, highlightMessageId, onHighlightConsumed, onOpenDm,
+  channelId, channelName, channelIcon, channelType = "TEXT", postAccess = "ALL", serviceId = null, currentUserId, currentUserName = "", currentUserRole, currentUserCommunityRole = "MEMBER", isBanned, onBack, onNewMessage, highlightMessageId, onHighlightConsumed, onOpenDm,
 }: MessageAreaProps) {
   /* Роль аккаунта и подписка — из сессии: currentUserRole в пропсах это роль в
      сообществе, к тарифу она отношения не имеет. */
@@ -2426,6 +2429,9 @@ export default function MessageArea({
           </button>
         </div>
       </header>
+
+      {/* FIX-SRVDOC: документы услуги — сразу под именем раздела. */}
+      <ServiceDocsBar serviceId={serviceId} />
 
       {/* Pinned messages panel */}
       {showPinned && (

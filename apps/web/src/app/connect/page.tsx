@@ -1046,6 +1046,7 @@ function ConnectPageInner() {
                           channelIcon={selectedChannelData.icon}
                           channelType={selectedChannelData.type}
                           postAccess={selectedChannelData.postAccess}
+                          serviceId={selectedChannelData.serviceId} /* FIX-SRVDOC */
                           currentUserId={userId}
                           currentUserName={session.user.name ?? ""}
                           currentUserRole={userRole}
@@ -1295,6 +1296,7 @@ function ConnectPageInner() {
                   channelIcon={selectedChannelData.icon}
                   channelType={selectedChannelData.type}
                   postAccess={selectedChannelData.postAccess}
+                  serviceId={selectedChannelData.serviceId} /* FIX-SRVDOC */
                   currentUserId={userId}
                   currentUserName={session.user.name ?? ""}
                   currentUserRole={userRole}
