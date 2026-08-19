@@ -1380,6 +1380,8 @@ function ConnectPageInner() {
                 members={groupDetail.members}
                 membersTotal={groupDetail.membersTotal}
                 canSeeMembers={!hideMembersForMain}
+                canManage={!!canManage} /* FIX-MODDRAG */
+                onRefresh={() => { if (selectedGroup) fetchGroupDetail(selectedGroup); }}
                 onSelect={(ch) => handleChannelClick(ch as unknown as Channel)}
               />
             )}
