@@ -27,6 +27,9 @@ const memo = new Map<string, Preview | null>();
 
 export default function LinkPreviewCard({ url }: { url: string }) {
   const [data, setData] = useState<Preview | null>(() => memo.get(url) ?? null);
+  /* FIX-OGIMG: если картинка всё же не пришла (сайт отдал 404, файл удалён),
+     показываем карточку без картинки, а не крестик «битое изображение». */
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     if (memo.has(url)) {
@@ -39,7 +42,10 @@ export default function LinkPreviewCard({ url }: { url: string }) {
       .then((d: Preview | null) => {
         const value = d && (d.title || d.description || d.image) ? d : null;
         memo.set(url, value);
-        if (alive) setData(value);
+        if (alive) {
+          setImageFailed(false); // FIX-OGIMG
+          setData(value);
+        }
       })
       .catch(() => {
         memo.set(url, null);
@@ -56,12 +62,14 @@ export default function LinkPreviewCard({ url }: { url: string }) {
       rel="noopener noreferrer"
       className="mt-1.5 flex gap-3 max-w-[440px] rounded-xl border border-[var(--cn-border)] bg-[var(--cn-card)] p-2.5 hover:border-violet-400 dark:hover:border-cyan-400/60 transition-colors"
     >
-      {data.image && (
+      {data.image && !imageFailed && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={data.image}
           alt=""
           loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setImageFailed(true)} /* FIX-OGIMG */
           className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
         />
       )}
