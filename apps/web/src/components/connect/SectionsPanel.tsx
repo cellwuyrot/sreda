@@ -183,14 +183,10 @@ export default function SectionsPanel({
           </span>
           <PanelChevron collapsed={collapsed} />
         </button>
-        {canManage && view === "sections" && (
-          <button
-            onClick={() => setCreateParent(null)}
-            className="text-xs font-medium text-accent border border-[var(--cn-border)] rounded-lg px-2.5 py-1 hover:bg-[var(--cn-hover)] transition-colors"
-          >
-            ＋ блок
-          </button>
-        )}
+        {/* FIX-PLUSBLOCK: кнопка «＋ блок» убрана — блоки-разделы заводятся в
+            Админ ▸ Услуги. Вторая точка создания плодила разделы без услуги:
+            они висели в списке, а сверка с админкой про них не знала. Пункты внутри
+            блока добавляются по-прежнему здесь. */}
       </div>
       )}
 
@@ -359,12 +355,14 @@ export default function SectionsPanel({
 
 /* ── Create block / list modal (admin only) ── */
 
+/* FIX-BLOCKTYPES: у пункта блока три смысла — новости, вопрос-ответ и чат
+   (обычный либо улучшенный). «База знаний» убрана: это отдельный модуль
+   сообщества со своим экраном, а не форма пункта раздела. */
 const FORM_TYPES: { v: string; label: string }[] = [
-  { v: "TEXT", label: "Открытый чат" },
+  { v: "TEXT", label: "Чат" },
   { v: "FEED", label: "Улучшенный чат" }, // FIX-FEED
   { v: "NEWS", label: "Новости" },
   { v: "QA", label: "Вопрос-ответ" },
-  { v: "WIKI", label: "База знаний" },
 ];
 
 function BlockModal({
@@ -624,17 +622,36 @@ function BlockSettingsModal({
                     <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                   </button>
                 </div>
-                <div className="mt-2">
-                  <select
-                    value={(it as { type?: string }).type || "TEXT"}
-                    onChange={(e) => setItems((arr) => arr.map((x) => x.id === it.id ? { ...x, type: e.target.value } : x))}
-                    className="text-[11px] rounded-lg px-2 py-1 border bg-transparent"
-                    style={{ color: "var(--cn-text)", borderColor: "var(--cn-border)" }}
-                  >
-                    {FORM_TYPES.map((ft) => (
-                      <option key={ft.v} value={ft.v} style={{ color: "#000" }}>{ft.label}</option>
-                    ))}
-                  </select>
+                {/* FIX-BLOCKTYPES: у пункта две настройки, и обе здесь: чем он является
+                    и кто в нём пишет. Право на ответ раньше задавалось только при
+                    создании — потом поменять его было негде. */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1 text-[11px]" style={{ color: "var(--cn-muted)" }}>
+                    Вид
+                    <select
+                      value={(it as { type?: string }).type || "TEXT"}
+                      onChange={(e) => setItems((arr) => arr.map((x) => x.id === it.id ? { ...x, type: e.target.value } : x))}
+                      className="text-[11px] rounded-lg px-2 py-1 border bg-transparent"
+                      style={{ color: "var(--cn-text)", borderColor: "var(--cn-border)" }}
+                    >
+                      {FORM_TYPES.map((ft) => (
+                        <option key={ft.v} value={ft.v} style={{ color: "#000" }}>{ft.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px]" style={{ color: "var(--cn-muted)" }}>
+                    Пишут
+                    <select
+                      value={it.access}
+                      onChange={(e) => setItems((arr) => arr.map((x) => x.id === it.id ? { ...x, access: e.target.value as Access } : x))}
+                      className="text-[11px] rounded-lg px-2 py-1 border bg-transparent"
+                      style={{ color: "var(--cn-text)", borderColor: "var(--cn-border)" }}
+                    >
+                      <option value="ALL" style={{ color: "#000" }}>Все участники</option>
+                      <option value="MOD" style={{ color: "#000" }}>Модераторы и админы</option>
+                      <option value="ADMIN" style={{ color: "#000" }}>Только админы</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             ))}
