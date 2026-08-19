@@ -17,6 +17,17 @@ interface DMMessageHeaderProps {
    */
   subtitle?: string;
   e2eeReady: boolean;
+  /**
+   * FIX-E2EEBTN: уместно ли шифрование в этой переписке вообще.
+   *
+   * Отдельно от e2eeReady намеренно. Раньше кнопка рисовалась только при
+   * e2eeReady, и отсутствие ключа у собеседника выглядело как исчезновение
+   * возможности. Теперь в личной переписке кнопка есть всегда: при неготовности
+   * она приглушена и объясняет причину, а в деловом разговоре её нет совсем.
+   */
+  e2eeSupported?: boolean;
+  /** Почему защищённый режим пока недоступен. */
+  e2eeHint?: string;
   e2eeEnabled: boolean;
   showPinned: boolean;
   onToggleE2EE: () => void;
@@ -51,7 +62,7 @@ function HeaderButton({ active = false, label, onClick, children }: { active?: b
   );
 }
 
-export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeEnabled, showPinned, onToggleE2EE, onTogglePinned, onBack, onUserMenu, paymentStatus, onOpenPayment }: DMMessageHeaderProps) {
+export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeSupported = true, e2eeHint, e2eeEnabled, showPinned, onToggleE2EE, onTogglePinned, onBack, onUserMenu, paymentStatus, onOpenPayment }: DMMessageHeaderProps) {
   const online = isOnline(other.lastSeen);
   /* Кнопка оплаты показывается только там, где есть обе части: и признак
      делового разговора, и обработчик. Иначе в личной переписке могла бы
@@ -110,10 +121,33 @@ export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeEnable
         <HeaderButton active={showPinned} label="Закреплённые сообщения" onClick={onTogglePinned}>
           <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3h6l1 7 2 2H6l2-2 1-7ZM12 12v9"/></svg>
         </HeaderButton>
-        {e2eeReady && (
-          <button type="button" onClick={onToggleE2EE} title={e2eeEnabled ? "Шифрование включено" : "Перейти в защищённый режим"} className={`h-10 px-3 rounded-xl border inline-flex items-center gap-2 transition-colors ${e2eeEnabled ? "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400" : "bg-[var(--cn-card)] border-[var(--cn-border)] text-neutral-500 dark:text-neutral-400 hover:bg-[var(--cn-hover)]"}`}>
-            <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-            <span className="hidden sm:inline text-[11px] font-medium">{e2eeEnabled ? "Защищённый" : "Открытый"}</span>
+        {/* FIX-E2EEBTN: кнопка режима переписки. Три состояния вместо двух:
+            защищённый, открытый и «ключа пока нет». Третье раньше просто прятало
+            кнопку, и различить «функция ещё не готова» и «функцию убрали» было нельзя. */}
+        {e2eeSupported && (
+          <button
+            type="button"
+            onClick={onToggleE2EE}
+            title={e2eeReady ? (e2eeEnabled ? "Шифрование включено" : "Перейти в защищённый режим") : (e2eeHint ?? "Защищённый режим пока недоступен")}
+            aria-label={e2eeReady ? (e2eeEnabled ? "Шифрование включено" : "Перейти в защищённый режим") : "Защищённый режим пока недоступен"}
+            aria-pressed={e2eeReady ? e2eeEnabled : undefined}
+            className={`h-10 px-3 rounded-xl border inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:focus-visible:ring-cyan-400 ${
+              !e2eeReady
+                ? "bg-[var(--cn-card)] border-dashed border-[var(--cn-border)] text-neutral-400 dark:text-neutral-500 hover:bg-[var(--cn-hover)]"
+                : e2eeEnabled
+                  ? "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"
+                  : "bg-[var(--cn-card)] border-[var(--cn-border)] text-neutral-500 dark:text-neutral-400 hover:bg-[var(--cn-hover)]"
+            }`}
+          >
+            {e2eeReady ? (
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            ) : (
+              /* Открытый замок: состояние «шифрование есть, но пока не налажено». */
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M8 10V7a4 4 0 0 1 8 0"/></svg>
+            )}
+            <span className="hidden sm:inline text-[11px] font-medium">
+              {!e2eeReady ? "Нет ключа" : e2eeEnabled ? "Защищённый" : "Открытый"}
+            </span>
           </button>
         )}
       </div>
