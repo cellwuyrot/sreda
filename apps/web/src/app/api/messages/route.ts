@@ -15,6 +15,7 @@ import { hasPremium } from "@/lib/premium";
 import { checkCensor, recordCensorHits } from "@/lib/censorService";
 import { logGroupAction } from "@/lib/groupAudit";
 import { canActOn, rankOf, RANK_MODERATOR } from "@/lib/groupModeration";
+import { applyMemberOverrides } from "@/lib/memberProfileOverrides"; // FIX-SRVCHAT
 
 const MESSAGE_SELECT = {
 	user: {
@@ -154,6 +155,8 @@ export async function GET(req: Request) {
 
 	const ordered = messages.reverse();
 	await attachGroupRoles(ordered);
+	/* FIX-SRVCHAT: имя, аватар и фон — с учётом профиля этого сообщества. */
+	await applyMemberOverrides(ordered, channel.groupId);
 	return NextResponse.json({
 		messages: ordered,
 		nextCursor: hasMore ? messages[0]?.id : null,

@@ -163,18 +163,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  /* FIX-SRVCHAN: каналы услуг восстанавливает сверка с Админ ▸ Услуги
-     (lib/mainCommunity), поэтому ручное удаление выглядело как «удаляешь — добавляется
-     новый и новый». Говорим об этом прямо вместо бессмысленного удаления. */
-  if ((channel as { serviceId?: string | null }).serviceId) {
-    return NextResponse.json(
-      {
-        error:
-          "Этот канал создан из услуги и восстанавливается автоматически. Отключите или удалите услугу в Админ ▸ Услуги — её каналы уйдут вместе с ней.",
-      },
-      { status: 400 },
-    );
-  }
+  /* FIX-CHANDEL: канал услуги удаляется как любой другой: запрет, стоявший
+     здесь раньше, лечил симптом — возвращала каналы сверка с Админ ▸ Услуги,
+     и исправлена она там же (lib/mainCommunity). */
 
   await prisma.channel.delete({ where: { id } });
 
