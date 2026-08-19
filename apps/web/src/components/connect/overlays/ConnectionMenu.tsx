@@ -147,7 +147,7 @@ export default function ConnectionMenu({
          после переезда читается как поломка сервиса. */
       flash(
         data?.needsReissue
-          ? "Сервер сменён. Перевыпустите профиль в «Настроить» — прежний больше не работает"
+          ? "Сервер сменён. Получите новый файл подключения в «Настроить» — прежний больше не работает"
           : "Готово",
       );
       await load();
@@ -168,7 +168,7 @@ export default function ConnectionMenu({
         return;
       }
       setError("");
-      flash("Соединение выключено и ключ удалён");
+      flash("Соединение выключено");
       await load();
     } catch {
       setError("Ошибка сети");
@@ -234,7 +234,7 @@ export default function ConnectionMenu({
                     : !serviceEnabled
                       ? "Сервис временно выключен"
                       : active
-                        ? `Включено${peer?.node?.name ? ` · ${peer.node.name}` : ""}`
+                        ? "Включено"
                         : peer
                           ? "Настроено, но не работает"
                           : "Выключено"}
@@ -347,11 +347,7 @@ export default function ConnectionMenu({
                             ) : null}
                           </span>
                           <span className="shrink-0 text-[10px]" style={{ color: "var(--cn-muted)" }}>
-                            {server.full === true
-                              ? "заполнен"
-                              : typeof server.load === "number"
-                                ? `загружен на ${server.load}%`
-                                : "готов"}
+                            {server.full === true ? "нет мест" : "доступен"}
                           </span>
                         </button>
                       );

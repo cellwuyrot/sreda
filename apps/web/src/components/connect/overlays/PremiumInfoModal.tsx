@@ -193,7 +193,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   /* Профиль с приватным ключом. Живёт только здесь: ни в localStorage, ни на
      сервере его нет и быть не может. */
   const [config, setConfig] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   /* Выбранный режим до нажатия кнопки. В браузере по умолчанию «весь трафик» — этого
      от соединения и ждут. В десктоп-оболочке — наоборот (см. эффект ниже). */
   const [routing, setRouting] = useState<VpnRouting>("ALL");
@@ -344,17 +343,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     return () => { cancelled = true; };
   }, [refresh]);
 
-  const copyConfig = async () => {
-    if (!config) return;
-    try {
-      await navigator.clipboard.writeText(config);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      setError("Буфер обмена недоступен — выделите текст профиля вручную");
-    }
-  };
-
   const downloadConfig = () => {
     if (!config) return;
     const blob = new Blob([config], { type: "text/plain" });
@@ -484,7 +472,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         )}
         {nodeIncomplete && (
           <p className="mt-4 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-            Узел ещё не сообщил свои параметры — профиль соберётся, как только он выйдет на связь.
+            Сервер соединения готовится — включение станет доступно через минуту.
           </p>
         )}
 
@@ -549,7 +537,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Сервер</p>
             <div className="mt-2 grid gap-2">
               {servers.map((server) => {
-                const load = Math.max(0, Math.min(100, Number(server.load) || 0));
                 const unavailable = !!server.full && !server.current;
                 return (
                   <button
@@ -569,7 +556,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="text-sm font-medium text-neutral-900 dark:text-white">{server.name}</span>
                       <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                        {server.current ? "текущий" : unavailable ? "нет мест" : `загружен на ${load}%`}
+                        {server.current ? "текущий" : unavailable ? "нет мест" : "доступен"}
                       </span>
                     </span>
                     {server.region && (
@@ -596,36 +583,24 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </button>
         )}
 
-        {/* ── Готовый профиль ── */}
+        {/* Файл подключения.
+            FIX-VPNUI: раньше здесь печатался весь профиль: ключи, адрес узла,
+            маршруты, параметры маскировки. Решать по ним человеку нечего, а секрет
+            на экране — это только риск. Осталась одна кнопка — скачать файл. */}
         {config && (
-          <div className="mt-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-neutral-700 dark:text-white/80">Профиль WireGuard</span>
-              <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
-                показывается один раз
-              </span>
-            </div>
-            <pre className="mt-2 max-h-56 overflow-auto rounded-xl bg-neutral-900 px-3 py-2 text-[10.5px] leading-relaxed text-green-300 dark:bg-black/50">{config}</pre>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={copyConfig}
-                className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
-              >
-                {copied ? "Скопировано" : "Скопировать"}
-              </button>
-              <button
-                type="button"
-                onClick={downloadConfig}
-                className="rounded-xl border border-neutral-200 px-4 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/5"
-              >
-                Скачать trioz.conf
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
-              Приватный ключ внутри профиля создан на этом устройстве и на сервер не отправлялся.
-              Сохраните файл: показать его снова невозможно.
+          <div className="mt-5 rounded-2xl border border-green-500/30 bg-green-500/[0.06] p-4">
+            <p className="text-sm font-semibold text-neutral-900 dark:text-white">Файл подключения готов</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/45">
+              Скачайте файл и откройте его в приложении Amnezia — всё остальное оно сделает само.
+              Файл выдаётся один раз: если он потеряется, просто получите новый.
             </p>
+            <button
+              type="button"
+              onClick={downloadConfig}
+              className="mt-3 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+            >
+              Скачать файл подключения
+            </button>
           </div>
         )}
 
@@ -658,36 +633,20 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             className="mt-5 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
           >
             {busy
-              ? "Перевыпускаем…"
+              ? "Готовим файл…"
               : routing === state.peer.routing
-              ? "Перевыпустить профиль"
-              : "Перевыпустить в этом режиме"}
+              ? "Получить новый файл подключения"
+              : "Получить файл для этого режима"}
           </button>
         )}
         {state?.peer && !config && (
           <p className="mt-1.5 text-center text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
             {routing === state.peer.routing
-              ? "Появится новый ключ, а прежнее устройство отключится: один аккаунт — один ключ."
-              : "Смена режима — это новый профиль: прежний перестанет работать, режим записан внутри него."}
+              ? "Новый файл отключит прежнее устройство: на аккаунт работает одно подключение."
+              : "Для нового режима нужен новый файл — прежний перестанет работать."}
           </p>
         )}
 
-        {state?.peer && (
-          <div className="mt-6 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/[0.07] dark:bg-white/[0.035]">
-              <span className="block text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Узел</span>
-              <strong className="mt-1 block text-xs">{state.peer.node?.name ?? "—"}</strong>
-            </div>
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/[0.07] dark:bg-white/[0.035]">
-              <span className="block text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">В туннеле</span>
-              <strong className="mt-1 block text-xs">{state.peer.address}</strong>
-            </div>
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/[0.07] dark:bg-white/[0.035]">
-              <span className="block text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Адрес выхода</span>
-              <strong className="mt-1 block text-xs">{state.peer.exitIp || "общий"}</strong>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
