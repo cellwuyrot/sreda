@@ -198,6 +198,12 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      из размытия видно только то, что показ идёт. */
   const [consented, setConsented] = useState<Set<string>>(() => new Set());
   const [launching, setLaunching] = useState(true);
+  /* FIX-CAMMAIN: какая камера занимает главное окно вместо экрана.
+
+     Окошки камер можно было только смотреть краем глаза: нажатие ничего не
+     делало, и разглядеть собеседника было негде -- в отличие от экранов, между
+     которыми переключение есть с самого начала. null -- в главном окне экран. */
+  const [mainCameraId, setMainCameraId] = useState<string | null>(null);
 
   // ── Мини-окно ──────────────────────────────────────────────────────
   // Компактный плеер в пределах окна приложения; перетаскивается мышью за
@@ -294,7 +300,18 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
   }, [activeId]);
 
   const active = shares.find((share) => share.socketId === activeId) ?? shares[0] ?? null;
-  const attachVideo = useAttachStream(active?.stream ?? null);
+  /* FIX-CAMMAIN: камера и экран делят одно главное окно. Второй большой
+     видеоэлемент рядом не ставим: на слабой машине два потока в полном размере
+     заметно роняют частоту кадров у самого показа. */
+  const mainCamera = voice.cameraShares.find((item) => item.socketId === mainCameraId) ?? null;
+  const attachVideo = useAttachStream(mainCamera ? mainCamera.stream : (active?.stream ?? null));
+  /* Камеру выключили (сам человек или ушёл из канала) -- возвращаем экран, иначе
+     главное окно осталось бы чёрным без объяснения. */
+  useEffect(() => {
+    if (mainCameraId && !voice.cameraShares.some((item) => item.socketId === mainCameraId)) {
+      setMainCameraId(null);
+    }
+  }, [mainCameraId, voice.cameraShares]);
   const { rect: areaRect, hasHost: shareAreaPresent } = useShareAreaRect(true); // FIX-RAILSHARE
 
   /* SCREEN-VIEWERS: пока открыто окно чужой трансляции, сообщаем серверу, что
@@ -504,7 +521,12 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="fixed z-[76] flex items-center justify-center bg-black/85"
+      /* FIX-NAVTOP: слой показа ниже верхней панели (z-50) и любых окон
+         настроек. Раньше окно демонстрации (z-76) накрывало меню под ником и
+         разделы настроек: во время показа нажать на них было нельзя, а сам
+         показ при этом никуда не спешил. Плашка и мини-окно остаются выше --
+         это мелкие плавающие элементы, они ничего не перекрывают. */
+      className="fixed z-[45] flex items-center justify-center bg-black/85"
       style={areaRect
         ? { left: areaRect.left, top: areaRect.top, width: areaRect.width, height: areaRect.height }
         : { inset: 0 }}
@@ -588,7 +610,11 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
               autoPlay
               muted
               playsInline
-              className={`absolute inset-0 w-full h-full object-contain transition-[filter] duration-300 ${awaitingConsent ? "blur-2xl scale-105" : ""}`}
+              /* FIX-CAMMAIN: своя камера в главном окне тоже зеркальная, как в
+                 окошке -- иначе при переключении картинка "переворачивалась". */
+              className={`absolute inset-0 w-full h-full object-contain transition-[filter] duration-300 ${
+                awaitingConsent && !mainCamera ? "blur-2xl scale-105" : ""
+              } ${mainCamera?.isLocal ? "scale-x-[-1]" : ""}`}
             />
             {consentOverlay}
             <AnimatePresence>
@@ -602,7 +628,10 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
             </AnimatePresence>
             <div className="absolute left-3 bottom-3 flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-black/65 text-[10px] text-white/70">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-              {active.isLocal
+              {/* FIX-CAMMAIN: подпись говорит, что сейчас в главном окне и как вернуть экран. */}
+              {mainCamera
+                ? `Камера: ${mainCamera.userName} — нажмите плитку экрана, чтобы вернуться к показу`
+                : active.isLocal
                 ? voice.isScreenPrivate
                   ? "Приватный показ · правый клик — настройки"
                   : "Экран доступен участникам · правый клик — настройки"
@@ -617,8 +646,28 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
               <div className="absolute right-3 top-3 z-[8] flex w-[168px] max-h-[calc(100%-24px)] flex-col gap-2 overflow-y-auto">
                 <div className="rounded-md bg-black/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">Камеры</div>
                 {voice.cameraShares.map((camera) => (
-                  <CameraTile key={camera.socketId} camera={camera} />
+                  <CameraTile
+                    key={camera.socketId}
+                    camera={camera}
+                    active={camera.socketId === mainCameraId}
+                    /* Повторное нажатие возвращает экран: отдельной кнопки
+                       "назад" для этого не нужно. */
+                    onSelect={() =>
+                      setMainCameraId(camera.socketId === mainCameraId ? null : camera.socketId)
+                    }
+                  />
                 ))}
+                {/* FIX-CAMMAIN: пока в главном окне камера, экран показывается
+                    плиткой здесь же -- вернуться к нему можно одним нажатием, не
+                    ища боковую колонку, которой на узком окне вообще нет. */}
+                {mainCamera && (
+                  <ShareTile
+                    share={active}
+                    active={false}
+                    blurred={false}
+                    onSelect={() => setMainCameraId(null)}
+                  />
+                )}
                 {voice.cameraShares.length === 0 && (
                   <div className="rounded-lg border border-dashed border-white/15 bg-black/60 px-2 py-3 text-center text-[10px] text-white/50">
                     Камера включается…
@@ -719,10 +768,27 @@ function ShareTile({ share, active, blurred, onSelect }: { share: ScreenShare; a
  * Свою картинку отражаем по горизонтали — человек ждёт зеркала, а не
  * вида со стороны; чужую — нет.
  */
-function CameraTile({ camera }: { camera: CameraShare }) {
+function CameraTile({
+  camera,
+  active,
+  onSelect,
+}: {
+  camera: CameraShare;
+  active: boolean;
+  onSelect: () => void;
+}) {
   const attachVideo = useAttachStream(camera.stream);
   return (
-    <div className="relative w-full aspect-video overflow-hidden rounded-lg border border-white/12 bg-black shadow-lg">
+    /* FIX-CAMMAIN: окошко -- кнопка. Рамка показывает, чья камера сейчас в
+       главном окне, поэтому нажатие видно результатом, а не только подсказкой. */
+    <button
+      type="button"
+      onClick={onSelect}
+      title={active ? "Вернуться к показу экрана" : `Показать камеру: ${camera.userName}`}
+      className={`relative w-full aspect-video overflow-hidden rounded-lg border text-left shadow-lg transition-colors ${
+        active ? "border-violet-400 dark:border-cyan-400" : "border-white/12 hover:border-white/30"
+      } bg-black`}
+    >
       <video
         ref={attachVideo}
         autoPlay
@@ -731,6 +797,6 @@ function CameraTile({ camera }: { camera: CameraShare }) {
         className={`absolute inset-0 w-full h-full object-cover ${camera.isLocal ? "scale-x-[-1]" : ""}`}
       />
       <span className="absolute inset-x-0 bottom-0 px-1.5 py-0.5 bg-black/70 text-[9px] text-white/75 truncate">{camera.userName}</span>
-    </div>
+    </button>
   );
 }
