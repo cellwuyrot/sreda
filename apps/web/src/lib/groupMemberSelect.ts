@@ -34,6 +34,10 @@ export const GROUP_MEMBER_SELECT = {
       lastSeen: true,
       avatarGlowEnabled: true,
       avatarGlowColors: true,
+      /* FIX-BANNERWEB: фон профиля вернулся в выборку. Теперь это путь к файлу
+         (десятки знаков), а не data URL, из-за которого поле однажды убрали:
+         без него карточка участника в вебе оставалась без фона. */
+      profileBanner: true,
     },
   },
   tags: {
