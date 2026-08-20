@@ -91,7 +91,11 @@ win:
 # Общие настройки установщика (применяются к обоим NSIS-таргетам).
 nsis:
   oneClick: false                       # мастер установки, а не «тихая» установка
-  perMachine: false                     # ставится для пользователя, без прав администратора
+  perMachine: true                      # SERVICE-TUNNEL: установщик один раз просит права
+                                        # администратора и регистрирует служебный
+                                        # компонент туннеля. Это единственное окно UAC
+                                        # за всё время: включение VPN потом идёт без него.
+  include: build/installer.nsh          # регистрация и удаление служебного компонента
   allowToChangeInstallationDirectory: true  # даёт выбрать папку/диск
   createDesktopShortcut: true
   createStartMenuShortcut: true
