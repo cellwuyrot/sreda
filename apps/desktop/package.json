@@ -12,8 +12,10 @@
   "main": "dist/main/index.js",
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run icons && tsc -p tsconfig.json && npm run bundle:preload",
+    "build": "npm run icons && npm run vendor:client && tsc -p tsconfig.json && npm run bundle:preload",
     "icons": "node scripts/prepare-icons.mjs",
+    "vendor:client": "node scripts/vendor-wireguard.mjs --allow-missing",
+    "vendor:client:strict": "node scripts/vendor-wireguard.mjs",
     "bundle:preload": "esbuild src/preload/index.ts src/preload/overlay.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist/preload --log-level=warning",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\"",

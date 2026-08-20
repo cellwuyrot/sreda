@@ -1,24 +1,28 @@
 /**
- * VPN-ONECLICK: менеджер туннеля WireGuard/AmneziaWG в main-процессе оболочки.
+ * VPN-EMBEDDED: менеджер туннеля со ВСТРОЕННЫМ клиентом.
  *
- * Это и есть та самая недостающая часть, из-за которой «кнопка VPN» раньше лишь
- * отдавала файл-профиль: теперь оболочка поднимает туннель сама. Веб-страница
- * передаёт готовый профиль (собранный на устройстве, с приватным ключом,
- * который никуда не уходит по сети), а этот модуль:
+ * Что было до. С `VPN-ONECLICK` кнопка включения перестала отдавать файл-профиль и
+ * стала поднимать туннель сама — но только при условии, что человек уже скачал и
+ * установил СТОРОННИЙ клиент (WireGuard или AmneziaWG). Оболочка искала его
+ * по PATH и в Program Files, а не найдя — предлагала установить. То есть «своего
+ * лаунчера» у проекта не было: был пульт к чужому приложению.
  *
- *   1. кладёт профиль во временный файл с правами 600 в каталоге приложения;
- *   2. находит установленный инструмент (wireguard.exe / wg-quick / их
- *      AmneziaWG-аналоги для обфусцированного профиля);
- *   3. поднимает туннель командой этого инструмента с повышением прав
- *      (UAC / polkit / osascript — окно ОС, а не тихий sudo);
- *   4. следит за рукопожатием и сообщает состояние в renderer;
- *   5. гарантированно снимает туннель при выключении и при выходе из приложения
- *      — иначе в режиме «весь трафик» закрытие окна оставило бы всю машину без
- *      интернета.
+ * Что теперь. Клиент лежит внутри сборки (`resources/wireguard`), и туннель
+ * поднимает именно он:
  *
- * Вся ошибкоопасная арифметика (выбор бинарника, экранирование при повышении
- * прав, разбор рукопожатия) вынесена в чистый `shared/vpnPlan.ts` и покрыта
- * тестами; здесь — только побочные эффекты, которые без реальной ОС не проверить.
+ *   • Linux/macOS — встроенный `wireguard-go` / `amneziawg-go`. Настройка идёт не
+ *     через `wg`/`wg-quick` (это часть сторонних wireguard-tools), а по UAPI —
+ *     собственным кодом в `vpnHelper.ts`.
+ *   • Windows — встроенный `wireguard.exe` ставит службу туннеля из нашего
+ *     каталога ресурсов; установленное в системе приложение не требуется.
+ *
+ * Системный клиент остался только как ЗАПАСНОЙ вариант для разработчика (в дереве
+ * исходников бинарников нет, их раскладывает шаг сборки). В собранном
+ * приложении человеку ничего доставать не нужно.
+ *
+ * Вся ошибкоопасная арифметика (разбор профиля, UAPI, команды маршрутизации,
+ * экранирование при повышении прав) живёт в чистых `shared/vpnPlan.ts` и
+ * `shared/vpnEmbedded.ts` и закрыта тестами; здесь — только побочные эффекты.
  */
 
 import { app } from "electron";
@@ -42,15 +46,24 @@ import {
   type VpnBackend,
   type VpnStatePayload,
 } from "../shared/vpnPlan";
+import {
+  EMBEDDED_DIR,
+  embeddedClientName,
+  parseUapiHandshake,
+  parseWgConfig,
+  uapiSocketPath,
+} from "../shared/vpnEmbedded";
 
 const run = promisify(execFile);
 
-/* ───────────────────────────── Состояние ───────────────────────────── */
+/* ──────────────────────────── Состояние ─────────────────────────── */
 
-let current: VpnStatePayload = { state: "off", since: null, error: null, backend: null };
+let current: VpnStatePayload = { state: "off", since: null, error: null, backend: null, embedded: true };
 /** Куда записан профиль, пока туннель поднят (для снятия и удаления). */
 let confPath = "";
-/** Каким инструментом реально подняли — нужен для команды снятия и статуса. */
+/** Способ, которым туннель реально поднят — нужен для симметричного снятия. */
+let activeMode: "embedded" | "system" | null = null;
+/** Путь к использованному бинарнику (встроенному или системному). */
 let activeExe = "";
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -73,9 +86,78 @@ export function isVpnActive(): boolean {
   return current.state === "on" || current.state === "connecting";
 }
 
-/* ─────────────────────────── Поиск бинарника ─────────────────────────── */
+/* ───────────────────── Встроенный клиент ───────────────────── */
 
-/** Каталоги, где инструмент может лежать помимо PATH. */
+/**
+ * Каталог, где лежит встроенный клиент.
+ *
+ * В упакованном приложении — `process.resourcesPath/wireguard` (бинарники
+ * кладутся через `extraResources`, а не внутрь asar: внутри архива их нельзя
+ * запустить). В режиме разработки — `resources/wireguard/<platform>` в папке
+ * приложения: туда их кладёт `npm run vendor:client`.
+ */
+function embeddedDirs(): string[] {
+  const dirs = [join(process.resourcesPath || "", EMBEDDED_DIR)];
+  if (!app.isPackaged) {
+    dirs.push(join(app.getAppPath(), "resources", EMBEDDED_DIR, process.platform));
+    dirs.push(join(app.getAppPath(), "resources", EMBEDDED_DIR));
+  }
+  return dirs.filter(Boolean);
+}
+
+/** Путь к встроенному клиенту для стека, или null, если его в сборке нет. */
+function embeddedClientPath(backend: VpnBackend): string | null {
+  const name = embeddedClientName(process.platform, backend);
+  for (const dir of embeddedDirs()) {
+    const candidate = join(dir, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Сценарий-работник, поднимающий туннель с правами администратора. Лежит
+ * рядом с остальным кодом main-процесса (`dist/main/vpnHelper.js`).
+ */
+function helperScript(): string {
+  return join(__dirname, "vpnHelper.js");
+}
+
+/**
+ * Запуск работника с правами: нашим же бинарником в режиме Node.
+ *
+ * `ELECTRON_RUN_AS_NODE=1` превращает исполняемый файл приложения в обычный Node,
+ * так что сторонний Node в системе тоже не нужен. Переменная прокидывается
+ * через `env`, потому что окно повышения прав не наследует наше окружение.
+ */
+async function runHelperElevated(args: string[]): Promise<void> {
+  const script = helperScript();
+  if (!existsSync(script)) throw new Error("Служебная часть встроенного клиента не найдена в сборке");
+  const inv = elevatedInvocation(process.platform, process.execPath, [script, ...args], {
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  });
+  try {
+    await run(inv.file, inv.args, { windowsHide: true, timeout: 120_000 });
+  } catch (err) {
+    throw describeElevationError(err);
+  }
+}
+
+/** Ошибка повышения прав или самого клиента — человеческим языком. */
+function describeElevationError(err: unknown): Error {
+  const e = err as { code?: number; stderr?: string; killed?: boolean };
+  if (e.killed) return new Error("Команда управления туннелем не завершилась вовремя");
+  const stderr = (e.stderr || "").trim();
+  /* Отказ в правах — не сбой, а выбор человека: текст об этом и говорит. */
+  if (process.platform === "linux" && e.code === 126) {
+    return new Error("Не выданы права на поднятие туннеля (запрос отклонён)");
+  }
+  return new Error(stderr || "Не удалось выполнить команду управления туннелем");
+}
+
+/* ───────────────────── Запасной путь: системный клиент ──────────── */
+
+/** Каталоги, где может лежать системный инструмент помимо PATH. */
 function knownDirs(): string[] {
   if (process.platform === "win32") {
     const pf = process.env["ProgramFiles"] || "C:\\Program Files";
@@ -90,11 +172,7 @@ function knownDirs(): string[] {
   return ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/sbin", "/usr/sbin", "/run/current-system/sw/bin"];
 }
 
-/**
- * Абсолютный путь к инструменту или null. Сначала спрашиваем систему
- * (`where` / `which`), затем пробуем известные каталоги: на Windows служба
- * WireGuard ставит `wireguard.exe` не в PATH, а в Program Files.
- */
+/** Абсолютный путь к системному инструменту или null. */
 async function findExecutable(exe: string): Promise<string | null> {
   const finder = process.platform === "win32" ? "where" : "which";
   try {
@@ -111,33 +189,53 @@ async function findExecutable(exe: string): Promise<string | null> {
   return null;
 }
 
-/* ─────────────────────────── Запуск команд ─────────────────────────── */
-
 async function runElevated(exe: string, args: string[]): Promise<void> {
   const inv = elevatedInvocation(process.platform, exe, args);
   try {
     await run(inv.file, inv.args, { windowsHide: true, timeout: 120_000 });
   } catch (err) {
-    const e = err as { code?: number; stderr?: string; killed?: boolean };
-    if (e.killed) throw new Error("Команда управления туннелем не завершилась вовремя");
-    /* Пользователь мог отклонить запрос прав (UAC/polkit) — это не сбой, а отказ. */
-    const stderr = (e.stderr || "").trim();
-    if (process.platform === "linux" && e.code === 126) {
-      throw new Error("Не выданы права на поднятие туннеля (polkit отклонил запрос)");
-    }
-    throw new Error(stderr || "Не удалось выполнить команду управления туннелем");
+    throw describeElevationError(err);
   }
 }
 
-/* ─────────────────────────── Проверка связи ─────────────────────────── */
+/* ──────────────────────── Проверка связи ────────────────────── */
 
 /**
- * Best-effort проверка рукопожатия: если `wg`/`awg` доступны, отличаем «на
- * связи» от «поднят, но молчит». Если инструмента статуса нет (бывает на
- * Windows, где служба ставится без консольного wg.exe в PATH), считаем туннель
- * поднятым — снять его человек всё равно сможет кнопкой.
+ * Состояние связи у встроенного клиента — читается через его же UAPI-сокет,
+ * без утилиты `wg`. Ответ читается под правами пользователя только если ОС
+ * разрешает; если нет — считаем туннель поднятым (снять его кнопкой всё
+ * равно можно), а не показываем ложную ошибку.
  */
-async function checkHandshake(backend: VpnBackend): Promise<"fresh" | "silent" | "unknown"> {
+async function embeddedHandshake(): Promise<"fresh" | "silent" | "unknown"> {
+  const socketPath = uapiSocketPath(process.platform);
+  if (!existsSync(socketPath)) return "unknown";
+  try {
+    const { connect } = await import("node:net");
+    const response = await new Promise<string>((resolve, reject) => {
+      const socket = connect(socketPath);
+      let out = "";
+      socket.setTimeout(5_000);
+      socket.on("connect", () => socket.end("get=1\n\n"));
+      socket.on("data", (chunk) => {
+        out += chunk.toString("utf8");
+      });
+      socket.on("timeout", () => {
+        socket.destroy();
+        reject(new Error("timeout"));
+      });
+      socket.on("error", reject);
+      socket.on("close", () => resolve(out));
+    });
+    const latest = parseUapiHandshake(response);
+    if (latest === 0) return "silent";
+    return Date.now() / 1000 - latest <= HANDSHAKE_FRESH_SECONDS ? "fresh" : "silent";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Состояние связи у системного клиента (запасной путь разработчика). */
+async function systemHandshake(backend: VpnBackend): Promise<"fresh" | "silent" | "unknown"> {
   const q = handshakeQuery(process.platform, backend);
   const exe = (await findExecutable(q.exe)) || q.exe;
   try {
@@ -150,20 +248,27 @@ async function checkHandshake(backend: VpnBackend): Promise<"fresh" | "silent" |
   }
 }
 
-function startStatusPolling(backend: VpnBackend): void {
+function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): void {
   stopStatusPolling();
   const tick = async () => {
     if (current.state !== "connecting" && current.state !== "on") return;
-    const result = await checkHandshake(backend);
+    const result =
+      mode === "embedded" && process.platform !== "win32"
+        ? await embeddedHandshake()
+        : await systemHandshake(backend);
     if (current.state !== "connecting" && current.state !== "on") return;
     if (result === "fresh" || result === "unknown") {
       if (current.state !== "on") {
-        emit({ state: "on", since: current.since ?? new Date().toISOString(), error: null, backend });
+        emit({
+          state: "on",
+          since: current.since ?? new Date().toISOString(),
+          error: null,
+          backend,
+          embedded: mode === "embedded",
+        });
       }
     }
-    // "silent" на раннем этапе — норма (первое рукопожатие идёт до ~5 c),
-    // поэтому состояние не сбрасываем: connecting так и держится до первого
-    // ответа сервера, а если он не придёт — человек это видит по индикатору.
+    // "silent" на раннем этапе — норма (первое рукопожатие идёт до ~5 c).
   };
   void tick();
   statusTimer = setInterval(() => void tick(), 15_000);
@@ -176,7 +281,7 @@ function stopStatusPolling(): void {
   }
 }
 
-/* ─────────────────────────────── Up / Down ─────────────────────────────── */
+/* ────────────────────────────── Up / Down ────────────────────────────── */
 
 /** Лёгкая проверка, что нам передали именно профиль WireGuard, а не мусор. */
 function looksLikeConfig(config: string): boolean {
@@ -212,83 +317,133 @@ function removeConfFile(): void {
 }
 
 /**
- * Поднять туннель по переданному профилю. Идемпотентна для UI: если уже
- * поднимаемся/подняты, повторный вызов ничего не ломает.
+ * Поднять туннель по переданному профилю встроенным клиентом.
+ * Идемпотентна для UI: повторный вызов во время подключения ничего не ломает.
  */
 export async function vpnUp(config: string): Promise<VpnStatePayload> {
   if (typeof config !== "string" || !looksLikeConfig(config)) {
-    emit({ state: "error", since: null, error: "Профиль подключения повреждён", backend: null });
+    emit({ state: "error", since: null, error: "Профиль подключения повреждён", backend: null, embedded: true });
     return current;
   }
   if (current.state === "connecting") return current;
 
   const obfuscated = isObfuscatedConfig(config);
-  const candidates = tunnelBackendCandidates(process.platform, obfuscated);
+  const backend: VpnBackend = obfuscated ? "amneziawg" : "wireguard";
 
-  let chosenPath: string | null = null;
-  let chosen: { exe: string; backend: VpnBackend } | null = null;
-  for (const candidate of candidates) {
-    const resolved = await findExecutable(candidate.exe);
-    if (resolved) {
-      chosenPath = resolved;
-      chosen = candidate;
-      break;
-    }
-  }
-
-  if (!chosenPath || !chosen) {
-    const missing = candidates.map((c) => c.exe).join(" / ");
-    const hint = obfuscated
-      ? "Для маскированного подключения установите клиент AmneziaWG."
-      : "Установите WireGuard: на Windows — приложение WireGuard, на Linux — пакет wireguard-tools.";
-    emit({
-      state: "error",
-      since: null,
-      error: `Не найден инструмент туннеля (${missing}). ${hint}`,
-      backend: null,
-    });
+  /* Самая частая причина «включил, а не работает» — битый профиль. Лучше
+     поймать это до окна повышения прав, чем после. */
+  const parsed = parseWgConfig(config);
+  if (!parsed.privateKey || parsed.addresses.length === 0 || parsed.peers.length === 0) {
+    emit({ state: "error", since: null, error: "Профиль подключения неполон", backend: null, embedded: true });
     return current;
   }
 
-  emit({ state: "connecting", since: null, error: null, backend: chosen.backend });
+  emit({ state: "connecting", since: null, error: null, backend, embedded: true });
 
+  const embedded = embeddedClientPath(backend);
   try {
-    // Снимаем возможный «висящий» прежний туннель, чтобы установка службы с тем
-    // же именем не спорила сама с собой (актуально после жёсткого выхода).
-    await tearDownQuietly(chosenPath);
-
+    await tearDownQuietly();
     confPath = writeConfFile(config);
-    activeExe = chosenPath;
-    await runElevated(chosenPath, tunnelUpArgs(process.platform, confPath));
 
-    emit({ state: "connecting", since: new Date().toISOString(), error: null, backend: chosen.backend });
-    startStatusPolling(chosen.backend);
+    if (embedded && process.platform === "win32") {
+      /* Windows: службу туннеля ставит наш собственный бинарник из ресурсов. */
+      activeExe = embedded;
+      activeMode = "embedded";
+      await runElevated(embedded, tunnelUpArgs(process.platform, confPath));
+    } else if (embedded) {
+      /* Linux/macOS: свой работник запускает встроенный клиент и настраивает его сам. */
+      activeExe = embedded;
+      activeMode = "embedded";
+      await runHelperElevated(["up", confPath, embedded]);
+    } else {
+      /* Запасной путь только для дерева исходников без вендоренных бинарников:
+         в установленном приложении сюда не попадают. */
+      const fallback = await resolveSystemExe(backend);
+      if (!fallback) {
+        emit({
+          state: "error",
+          since: null,
+          error: "Встроенный клиент отсутствует в этой сборке. Пересоберите приложение с шагом vendor:client.",
+          backend: null,
+          embedded: false,
+        });
+        removeConfFile();
+        return current;
+      }
+      activeExe = fallback;
+      activeMode = "system";
+      await runElevated(fallback, tunnelUpArgs(process.platform, confPath));
+    }
+
+    emit({
+      state: "connecting",
+      since: new Date().toISOString(),
+      error: null,
+      backend,
+      embedded: activeMode === "embedded",
+    });
+    startStatusPolling(backend, activeMode);
     return current;
   } catch (err) {
     removeConfFile();
     activeExe = "";
+    activeMode = null;
     emit({
       state: "error",
       since: null,
       error: err instanceof Error ? err.message : "Не удалось поднять туннель",
       backend: null,
+      embedded: true,
     });
     return current;
   }
 }
 
+/** Системный инструмент для запасного пути (только режим разработки). */
+async function resolveSystemExe(backend: VpnBackend): Promise<string> {
+  const obfuscated = backend === "amneziawg";
+  for (const candidate of tunnelBackendCandidates(process.platform, obfuscated)) {
+    const resolved = await findExecutable(candidate.exe);
+    if (resolved) return resolved;
+  }
+  return "";
+}
+
 /** Снять текущий туннель, если он есть, молча (для переустановки/выхода). */
-async function tearDownQuietly(exe: string): Promise<void> {
+async function tearDownQuietly(): Promise<void> {
   try {
-    // На Windows снимаем службу по имени; на POSIX нужен путь к профилю —
-    // если его уже нет, wg-quick сам сообщит, что снимать нечего, и мы это
-    // проглатываем: цель достигнута.
-    const path = confPath || join(vpnDir(), TUNNEL_CONF_FILE);
-    if (process.platform !== "win32" && !existsSync(path)) return;
-    await runElevated(exe, tunnelDownArgs(process.platform, path));
+    await tearDown();
   } catch {
     /* нечего снимать — это не ошибка */
   }
+}
+
+/**
+ * Фактическое снятие туннеля — тем же способом, каким поднимали.
+ * Если приложение перезапускалось и память пуста, считаем туннель встроенным:
+ * именно так его теперь поднимает приложение.
+ */
+async function tearDown(): Promise<void> {
+  const dir = vpnDir();
+  const path = confPath || join(dir, TUNNEL_CONF_FILE);
+
+  if (process.platform === "win32") {
+    const exe = activeExe || embeddedClientPath(current.backend ?? "wireguard") || (await resolveSystemExe(current.backend ?? "wireguard"));
+    if (!exe) return;
+    await runElevated(exe, tunnelDownArgs(process.platform, path));
+    return;
+  }
+
+  if (activeMode === "system") {
+    if (!activeExe || !existsSync(path)) return;
+    await runElevated(activeExe, tunnelDownArgs(process.platform, path));
+    return;
+  }
+
+  /* Встроенный клиент: снимает тот же работник, что и поднимал: ему нужно
+     убить процесс по PID и убрать правила маршрутизации. */
+  if (!existsSync(join(dir, TUNNEL_CONF_FILE)) && !confPath && current.state === "off") return;
+  await runHelperElevated(["down", dir]);
 }
 
 /** Выключить туннель по кнопке. */
@@ -298,17 +453,14 @@ export async function vpnDown(): Promise<VpnStatePayload> {
     return current;
   }
   const backend = current.backend;
-  const exe = activeExe || (await resolveDownExe(backend));
-  emit({ state: "disconnecting", since: current.since, error: null, backend });
+  emit({ state: "disconnecting", since: current.since, error: null, backend, embedded: activeMode !== "system" });
   stopStatusPolling();
   try {
-    if (exe) {
-      const path = confPath || join(vpnDir(), TUNNEL_CONF_FILE);
-      await runElevated(exe, tunnelDownArgs(process.platform, path));
-    }
+    await tearDown();
     removeConfFile();
     activeExe = "";
-    emit({ state: "off", since: null, error: null, backend: null });
+    activeMode = null;
+    emit({ state: "off", since: null, error: null, backend: null, embedded: true });
   } catch (err) {
     /* Не удалось снять — честно показываем ошибку, но туннель мог и сняться:
        оставляем прежнее «поднят», чтобы кнопка позволила повторить. */
@@ -317,18 +469,10 @@ export async function vpnDown(): Promise<VpnStatePayload> {
       since: current.since,
       error: err instanceof Error ? err.message : "Не удалось выключить туннель",
       backend,
+      embedded: activeMode !== "system",
     });
   }
   return current;
-}
-
-async function resolveDownExe(backend: VpnBackend | null): Promise<string> {
-  const obfuscated = backend === "amneziawg";
-  for (const candidate of tunnelBackendCandidates(process.platform, obfuscated)) {
-    const resolved = await findExecutable(candidate.exe);
-    if (resolved) return resolved;
-  }
-  return "";
 }
 
 /**
@@ -342,16 +486,13 @@ export async function shutdownVpn(): Promise<void> {
     removeConfFile();
     return;
   }
-  const backend = current.backend;
-  const exe = activeExe || (await resolveDownExe(backend));
   try {
-    if (exe) {
-      const path = confPath || join(vpnDir(), TUNNEL_CONF_FILE);
-      await runElevated(exe, tunnelDownArgs(process.platform, path));
-    }
+    await tearDown();
   } catch {
     /* при выходе показывать уже нечего — просто пытаемся не оставить туннель */
   } finally {
     removeConfFile();
+    activeExe = "";
+    activeMode = null;
   }
 }
