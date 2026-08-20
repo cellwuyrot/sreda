@@ -27,6 +27,7 @@ import { dirname, join } from "node:path";
 
 import { TUNNEL_NAME } from "../shared/vpnPlan";
 import {
+  WINTUN_DLL,
   ifaceDownCommands,
   ifaceUpCommands,
   isUsableConfig,
@@ -56,15 +57,36 @@ function runTool(command: string[], required: boolean): void {
 }
 
 /**
- * Дождаться UAPI-сокета клиента. Клиент создаёт его не мгновенно: сначала
- * поднимает TUN-устройство. Без ожидания настройка улетела бы в пустоту, и
+ * Можно ли уже подключиться к UAPI.
+ *
+ * Проверяем ИМЕННО подключением, а не наличием файла: в Windows UAPI —
+ * это именованный канал, который в файловой системе не виден, и проверка
+ * `existsSync` всегда говорила бы «нет».
+ */
+function canConnect(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect(path);
+    const finish = (ok: boolean) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(2_000);
+    socket.on("connect", () => finish(true));
+    socket.on("error", () => finish(false));
+    socket.on("timeout", () => finish(false));
+  });
+}
+
+/**
+ * Дождаться UAPI клиента. Клиент открывает его не мгновенно: сначала
+ * поднимает сетевое устройство. Без ожидания настройка улетела бы в пустоту, и
  * туннель поднялся бы без ключей — то есть молча не работал.
  */
-async function waitForSocket(path: string, timeoutMs: number): Promise<void> {
+async function waitForUapi(path: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (existsSync(path)) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (await canConnect(path)) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
   }
   fail("Встроенный клиент не успел поднять сетевое устройство");
 }
@@ -128,17 +150,28 @@ async function up(confPath: string, clientPath: string): Promise<void> {
   killPrevious(pidPath);
 
   const socketPath = uapiSocketPath(process.platform);
-  /* Каталог сокетов обычно создаёт сам клиент, но на чистой системе его может
-     не быть, а без каталога клиент молча не поднимает UAPI. */
-  try {
-    mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
-  } catch {
-    /* уже есть — хорошо */
-  }
-  try {
-    rmSync(socketPath, { force: true });
-  } catch {
-    /* старый сокет от аварийно умершего клиента мешать не должен */
+  const clientDir = dirname(clientPath);
+
+  if (process.platform === "win32") {
+    /* Сетевое устройство в Windows создаёт wintun.dll рядом с клиентом.
+       Проверяем её отдельно: без неё клиент падает с системной ошибкой
+       загрузки библиотеки, которая ничего не говорит ни человеку, ни нам. */
+    if (!existsSync(join(clientDir, WINTUN_DLL))) {
+      fail("Встроенный сетевой драйвер не найден в ресурсах приложения");
+    }
+  } else {
+    /* Каталог сокетов обычно создаёт сам клиент, но на чистой системе его
+       может не быть, а без каталога клиент молча не поднимает UAPI. */
+    try {
+      mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
+    } catch {
+      /* уже есть — хорошо */
+    }
+    try {
+      rmSync(socketPath, { force: true });
+    } catch {
+      /* старый сокет от аварийно умершего клиента мешать не должен */
+    }
   }
 
   /* Клиент отвязывается от нашего процесса: он обязан пережить и этого
@@ -146,6 +179,8 @@ async function up(confPath: string, clientPath: string): Promise<void> {
   const child = spawn(clientPath, [TUNNEL_NAME], {
     detached: true,
     stdio: "ignore",
+    /* Рабочая папка — рядом с клиентом: именно там Windows ищет wintun.dll. */
+    cwd: clientDir,
     env: { ...process.env, WG_PROCESS_FOREGROUND: "0" },
   });
   child.unref();
@@ -153,7 +188,7 @@ async function up(confPath: string, clientPath: string): Promise<void> {
     writeFileSync(pidPath, `${child.pid}\n`, { mode: 0o600 });
   }
 
-  await waitForSocket(socketPath, 15_000);
+  await waitForUapi(socketPath, 20_000);
 
   const routeAll = routesEverything(parsed);
   let response: string;
