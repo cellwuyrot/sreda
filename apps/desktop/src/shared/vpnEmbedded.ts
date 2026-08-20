@@ -53,6 +53,44 @@ export const EMBEDDED_DIR = "wireguard";
 export const WINTUN_DLL = "wintun.dll";
 
 /**
+ * FIX-WGHANDSHAKE: интервал keepalive по умолчанию.
+ *
+ * 25 секунд — общепринятое значение для WireGuard: меньше типового времени
+ * жизни записи в NAT (30 с), поэтому обратный путь до нас не закрывается.
+ */
+export const DEFAULT_KEEPALIVE_SECONDS = 25;
+
+/**
+ * FIX-WINTUN: где ещё в Windows может лежать `wintun.dll`, кроме ресурсов
+ * приложения.
+ *
+ * Библиотеку ищет сам Windows при загрузке клиента, и ищет он её ТОЛЬКО в папке
+ * исполняемого файла, System32 и каталогах PATH — рабочая папка процесса в этот
+ * список не входит. Поэтому «Wintun установлен» само по себе ничего не давало:
+ * распакованная пользователем библиотека лежала там, куда клиент не смотрит.
+ * Список проверяем сами и подкладываем найденное клиенту.
+ */
+export function wintunSearchDirs(env: Record<string, string | undefined>): string[] {
+  const dirs: string[] = [];
+  const push = (dir: string | undefined) => {
+    if (dir && !dirs.includes(dir)) dirs.push(dir);
+  };
+  /* Явное указание пути перекрывает всё: это путь для нестандартных сборок. */
+  push(env.TRIOZ_WINTUN_DIR);
+  const programFiles = env.ProgramFiles || "C:\\Program Files";
+  const programFilesX86 = env["ProgramFiles(x86)"];
+  const systemRoot = env.SystemRoot || "C:\\Windows";
+  /* Официальный архив wintun распаковывается как `wintun/bin/<арх>/wintun.dll`. */
+  push(`${programFiles}\\Wintun\\bin\\amd64`);
+  push(`${programFiles}\\Wintun\\bin\\arm64`);
+  push(`${programFiles}\\Wintun`);
+  push(`${programFiles}\\WireGuard`);
+  if (programFilesX86) push(`${programFilesX86}\\Wintun`);
+  push(`${systemRoot}\\System32`);
+  return dirs;
+}
+
+/**
  * Имя встроенного бинарника клиента для платформы и стека.
  *
  * Везде одна и та же пользовательская реализация на Go, только с расширением
@@ -231,9 +269,18 @@ export function uapiSetRequest(parsed: ParsedWgConfig, routeAll: boolean, platfo
     lines.push(`public_key=${base64KeyToHex(peer.publicKey)}`);
     if (peer.presharedKey) lines.push(`preshared_key=${base64KeyToHex(peer.presharedKey)}`);
     if (peer.endpoint) lines.push(`endpoint=${peer.endpoint}`);
-    if (peer.persistentKeepalive !== null) {
-      lines.push(`persistent_keepalive_interval=${peer.persistentKeepalive}`);
-    }
+    /* FIX-WGHANDSHAKE: клиент WireGuard начинает рукопожатие не при подъёме
+       интерфейса, а при ПЕРВОМ исходящем пакете в сторону узла — либо сразу,
+       если задан keepalive. Профиль без `PersistentKeepalive` давал ровно то,
+       что видно со стороны сервера: адаптер поднят, ключи заданы, а инициации
+       нет, потому что трафика ещё не было (а он и не пойдёт, пока мы ждём
+       рукопожатия — замкнутый круг). Поэтому keepalive задаём всегда, а
+       значение из профиля уважаем, если оно там есть и не нулевое. */
+    const keepalive =
+      peer.persistentKeepalive !== null && peer.persistentKeepalive > 0
+        ? peer.persistentKeepalive
+        : DEFAULT_KEEPALIVE_SECONDS;
+    lines.push(`persistent_keepalive_interval=${keepalive}`);
     lines.push("replace_allowed_ips=true");
     for (const cidr of peer.allowedIps) lines.push(`allowed_ip=${cidr}`);
   }

@@ -25,6 +25,8 @@ import {
   routesEverything,
   uapiSetRequest,
   uapiSocketPath,
+  DEFAULT_KEEPALIVE_SECONDS,
+  wintunSearchDirs,
   excludeRouteCommand,
   excludeRouteDeleteCommand,
   parseDefaultRoute,
@@ -104,9 +106,37 @@ describe("UAPI", () => {
     expect(req.endsWith("\n\n")).toBe(true);
   });
 
+  it("FIX-WGHANDSHAKE: keepalive задаётся всегда — иначе рукопожатие не начнётся", () => {
+    /* Профиль без PersistentKeepalive — именно на таком клиент молчал: адаптер
+       поднят, ключи заданы, а первый пакет так и не ушёл. */
+    const noKeepalive = ALL.filter((line) => !line.startsWith("PersistentKeepalive"));
+    const req = uapiSetRequest(parseWgConfig(noKeepalive), true, "win32");
+    expect(req).toContain(`persistent_keepalive_interval=${DEFAULT_KEEPALIVE_SECONDS}`);
+
+    /* Значение из профиля при этом остаётся главным. */
+    const custom = ALL.map((line) =>
+      line.startsWith("PersistentKeepalive") ? "PersistentKeepalive = 15" : line,
+    );
+    expect(uapiSetRequest(parseWgConfig(custom), true, "win32")).toContain(
+      "persistent_keepalive_interval=15",
+    );
+  });
+
   it("метка маршрутизации — только в Linux и только для «всего трафика»", () => {
     expect(uapiSetRequest(parseWgConfig(ALL), true, "darwin")).not.toContain("fwmark=");
     expect(uapiSetRequest(parseWgConfig(ALL), false, "linux")).not.toContain("fwmark=");
+  });
+
+  it("FIX-WINTUN: ищет системную wintun.dll в известных местах установки", () => {
+    const dirs = wintunSearchDirs({
+      TRIOZ_WINTUN_DIR: "D:\\my",
+      ProgramFiles: "C:\\Program Files",
+      SystemRoot: "C:\\Windows",
+    });
+    /* Явно указанный путь — первый: он для нестандартных сборок. */
+    expect(dirs[0]).toBe("D:\\my");
+    expect(dirs).toContain("C:\\Program Files\\Wintun\\bin\\amd64");
+    expect(dirs).toContain("C:\\Windows\\System32");
   });
 
   it("берёт самое свежее рукопожатие из ответа get=1", () => {
