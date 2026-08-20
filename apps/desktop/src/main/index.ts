@@ -13,6 +13,7 @@ import { invalidateCacheOnVersionChange, stopCacheMaintenance } from "./recovery
 import { registerMediaCacheScheme, installMediaCache } from "./mediaCache"; // FIX-CLIENTMEDIA
 import { syncOverlay, destroyOverlay } from "./overlay"; // FIX-OVL
 import { startActivityWatcher, stopActivityWatcher, resendActivity } from "./activity"; // FIX-ACT
+import { shutdownVpn, isVpnActive } from "./vpn"; // VPN-ONECLICK
 import {
   registerProtocol,
   handleDeepLink,
@@ -164,7 +165,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   setQuitting(true);
   stopCacheMaintenance(); // FIX-BLANK2
   destroyOverlay(); // FIX-OVL
@@ -173,4 +174,13 @@ app.on("before-quit", () => {
   stopActivityWatcher(); // FIX-ACT
   stopNotificationBridge();
   destroyTray();
+
+  /* VPN-ONECLICK: туннель обязан сняться до выхода. В режиме «весь трафик»
+     оставленный поднятым туннель замкнул бы на сервер всю машину, а окна, чтобы
+     это отменить, уже не было бы. Откладываем выход на один проход: снимаем
+     туннель и выходим повторно — второй before-quit уже ничего не ждёт. */
+  if (isVpnActive()) {
+    event.preventDefault();
+    void shutdownVpn().finally(() => app.quit());
+  }
 });

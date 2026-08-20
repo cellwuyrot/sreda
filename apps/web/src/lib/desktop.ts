@@ -58,6 +58,33 @@ export interface DesktopScreenShareContext extends DesktopScreenShareOptions {
   sourceId: string | null;
 }
 
+/**
+ * VPN-ONECLICK: состояние туннеля, поднимаемого самой оболочкой. Зеркало
+ * `VpnStatePayload` из `apps/desktop/src/shared/vpnPlan.ts` — источник истины
+ * там; здесь только та форма, что нужна веб-части.
+ */
+export interface DesktopVpnState {
+  state: "off" | "connecting" | "on" | "disconnecting" | "error";
+  /** ISO-время поднятия туннеля (для `on`/`connecting`), иначе null. */
+  since: string | null;
+  /** Причина ошибки (для `error`), иначе null. */
+  error: string | null;
+  /** Чем поднят туннель, если поднят: `wireguard` | `amneziawg`, иначе null. */
+  backend: "wireguard" | "amneziawg" | null;
+}
+
+/** VPN-ONECLICK: часть моста, управляющая туннелем прямо из окна приложения. */
+export interface DesktopVpnApi {
+  /** Поднять туннель по готовому профилю (с приватным ключом устройства). */
+  up(config: string): Promise<DesktopVpnState>;
+  /** Снять туннель. */
+  down(): Promise<DesktopVpnState>;
+  /** Текущее состояние — туннель мог быть поднят до загрузки страницы. */
+  status(): Promise<DesktopVpnState>;
+  /** Подписка на живые изменения состояния туннеля. */
+  onState(cb: (state: DesktopVpnState) => void): Unsubscribe;
+}
+
 export interface TriozDesktopApi {
   isDesktop: true;
   platform: string;
@@ -119,6 +146,11 @@ export interface TriozDesktopApi {
    * старых сборках шелла — обязательно feature-detect.
    */
   onNavigate?(cb: (path: string) => void): Unsubscribe;
+  /**
+   * VPN-ONECLICK: управление реальным туннелем из окна приложения. Отсутствует
+   * в старых сборках оболочки и в браузере — обязателен feature-detect.
+   */
+  vpn?: DesktopVpnApi;
 }
 
 declare global {
