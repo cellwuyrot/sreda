@@ -16,6 +16,7 @@ import {
   embeddedClientName,
   endpointHost,
   ifaceDownCommands,
+  ifaceRouteCommands,
   ifaceUpCommands,
   ipv4Mask,
   isUsableConfig,
@@ -155,26 +156,40 @@ describe("UAPI", () => {
 });
 
 describe("настройка интерфейса", () => {
-  it("Linux: адрес, MTU, подъём и отдельная таблица для «всего трафика»", () => {
+  it("Linux: подъём даёт адрес и MTU, маршруты — отдельным шагом", () => {
     const cmds = ifaceUpCommands("linux", parseWgConfig(ALL)).map((c) => c.join(" "));
     expect(cmds).toContain("ip -4 address add 10.8.0.7/32 dev trioz");
     expect(cmds).toContain("ip link set mtu 1380 dev trioz");
     expect(cmds).toContain("ip link set trioz up");
-    expect(cmds).toContain(`ip -4 route add 0.0.0.0/0 dev trioz table ${ROUTE_MARK}`);
+
+    const routes = ifaceRouteCommands("linux", parseWgConfig(ALL)).map((c) => c.join(" "));
+    expect(routes).toContain(`ip -4 route add 0.0.0.0/0 dev trioz table ${ROUTE_MARK}`);
     /* Без этого правила локальная сеть (принтеры, NAS) уедет в туннель. */
-    expect(cmds).toContain("ip -4 rule add table main suppress_prefixlength 0");
+    expect(routes).toContain("ip -4 rule add table main suppress_prefixlength 0");
+  });
+
+  it("ИНВАРИАНТ: подъём интерфейса не меняет маршрутизацию и DNS", () => {
+    /* Самое вредное из возможных состояний — трафик уже завёрнут в туннель,
+       который ещё не здоровался с узлом: интернета нет нигде. Поэтому команды
+       подъёма не имеют права содержать ни маршрутов, ни DNS — ни на одной ОС. */
+    for (const platform of ["linux", "darwin", "win32"] as NodeJS.Platform[]) {
+      const cmds = ifaceUpCommands(platform, parseWgConfig(ALL)).map((c) => c.join(" "));
+      expect(cmds.some((c) => c.includes("route"))).toBe(false);
+      expect(cmds.some((c) => c.includes("dnsserver"))).toBe(false);
+      expect(cmds.some((c) => c.includes("rule"))).toBe(false);
+    }
   });
 
   it("ИНВАРИАНТ: в частичном режиме маршрута по умолчанию нет", () => {
     /* «Только сервисы», уводящие весь трафик, — это обман пользователя. */
-    const cmds = ifaceUpCommands("linux", parseWgConfig(SERVICES)).map((c) => c.join(" "));
+    const cmds = ifaceRouteCommands("linux", parseWgConfig(SERVICES)).map((c) => c.join(" "));
     expect(cmds.some((c) => c.includes("0.0.0.0/0"))).toBe(false);
     expect(cmds).toContain("ip -4 route add 10.8.0.0/24 dev trioz");
   });
 
   it("macOS: от петли спасает маршрут до точки подключения и две половины маршрута", () => {
     const conf = ALL.replace("vpn1.example.ru:51820", "203.0.113.10:51820");
-    const cmds = ifaceUpCommands("darwin", parseWgConfig(conf)).map((c) => c.join(" "));
+    const cmds = ifaceRouteCommands("darwin", parseWgConfig(conf)).map((c) => c.join(" "));
     expect(cmds.some((c) => c.includes("203.0.113.10/32"))).toBe(true);
     expect(cmds.some((c) => c.includes("0.0.0.0/1"))).toBe(true);
     expect(cmds.some((c) => c.includes("128.0.0.0/1"))).toBe(true);
@@ -190,22 +205,27 @@ describe("настройка интерфейса", () => {
     expect(win.every((c) => c.startsWith("netsh "))).toBe(true);
     expect(win.some((c) => c.includes("delete route 0.0.0.0/1"))).toBe(true);
     expect(win.some((c) => c.includes("delete route 128.0.0.0/1"))).toBe(true);
+    /* Статический DNS туннеля тоже обязан уйти: иначе имена не разрешаются. */
+    expect(win.some((c) => c.includes("dnsservers") && c.includes("dhcp"))).toBe(true);
   });
 
-  it("Windows настраивается штатным netsh и без маршрута по умолчанию", () => {
+  it("Windows: адрес штатным netsh, маршруты и DNS — после рукопожатия", () => {
     const cmds = ifaceUpCommands("win32", parseWgConfig(ALL)).map((c) => c.join(" "));
     /* Ни одного стороннего инструмента: только то, что есть в любой Windows. */
     expect(cmds.every((c) => c.startsWith("netsh "))).toBe(true);
     /* /32 в профиле → маска для netsh: он не понимает длину префикса. */
     expect(cmds.some((c) => c.includes("address=10.8.0.7 mask=255.255.255.255"))).toBe(true);
     expect(cmds.some((c) => c.includes("mtu=1380"))).toBe(true);
+
+    const routes = ifaceRouteCommands("win32", parseWgConfig(ALL)).map((c) => c.join(" "));
+    expect(routes.every((c) => c.startsWith("netsh "))).toBe(true);
     /* DNS туннеля — иначе имена утекают к прежнему серверу. */
-    expect(cmds.some((c) => c.includes("dnsservers") && c.includes("1.1.1.1"))).toBe(true);
+    expect(routes.some((c) => c.includes("dnsservers") && c.includes("1.1.1.1"))).toBe(true);
     /* Две половины вместо 0.0.0.0/0: системный шлюз остаётся на месте, и
        пакеты самого туннеля не заворачиваются в туннель. */
-    expect(cmds.some((c) => c.includes("add route 0.0.0.0/1"))).toBe(true);
-    expect(cmds.some((c) => c.includes("add route 128.0.0.0/1"))).toBe(true);
-    expect(cmds.some((c) => c.includes("0.0.0.0/0"))).toBe(false);
+    expect(routes.some((c) => c.includes("add route 0.0.0.0/1"))).toBe(true);
+    expect(routes.some((c) => c.includes("add route 128.0.0.0/1"))).toBe(true);
+    expect(routes.some((c) => c.includes("0.0.0.0/0"))).toBe(false);
   });
 
   it("хост точки подключения без порта, включая IPv6 в скобках", () => {
