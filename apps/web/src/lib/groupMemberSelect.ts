@@ -17,6 +17,13 @@ export const GROUP_MEMBER_SELECT = {
   role: true,
   mutedUntil: true,
   muteReason: true,
+  /* FIX-SRVSHOW: персональные переопределения для этого сообщества. Без них
+     раздел «Профиль на выбранном сервере» писал в базу, но нигде не показывался:
+     список участников и карточка брали только общий профиль, и выглядело это как
+     «настройки на группу не принимаются». */
+  displayName: true,
+  avatar: true,
+  profileBanner: true,
   user: {
     select: {
       id: true,
@@ -27,6 +34,10 @@ export const GROUP_MEMBER_SELECT = {
       lastSeen: true,
       avatarGlowEnabled: true,
       avatarGlowColors: true,
+      /* FIX-BANNERWEB: фон профиля вернулся в выборку. Теперь это путь к файлу
+         (десятки знаков), а не data URL, из-за которого поле однажды убрали:
+         без него карточка участника в вебе оставалась без фона. */
+      profileBanner: true,
     },
   },
   tags: {
@@ -46,3 +57,30 @@ export const groupMemberOrder = () => [{ joinedAt: "asc" as const }, { id: "asc"
 
 /** Размер страницы участников в снимке сообщества. */
 export const MEMBERS_PAGE_SIZE = 50;
+
+/**
+ * FIX-SRVSHOW: наложить переопределения сообщества на общий профиль.
+ *
+ * Имя и аватар в ответе уже готовые к показу: клиенту не нужно знать о двух
+ * источниках и повторять эту логику в каждом месте. Ник (@username) остаётся
+ * единым на всю площадку — иначе упоминания и поиск людей разошлись бы с тем,
+ * что написано в карточке.
+ */
+export function withMemberOverrides<
+  T extends {
+    displayName?: string | null;
+    avatar?: string | null;
+    profileBanner?: string | null;
+    user: { name: string; avatar: string | null; profileBanner?: string | null };
+  },
+>(member: T): T {
+  return {
+    ...member,
+    user: {
+      ...member.user,
+      name: member.displayName ?? member.user.name,
+      avatar: member.avatar ?? member.user.avatar,
+      profileBanner: member.profileBanner ?? member.user.profileBanner ?? null,
+    },
+  };
+}

@@ -3,10 +3,10 @@
 /**
  * Свои эмодзи сообщества (раздел «Эмодзи» в настройках).
  *
- * Клиент здесь ничего не конвертирует и не показывает предпросмотр: картинку
- * отдаём серверу как есть, а он приводит её к квадрату 128×128 в WebP. Иначе в
- * наборе оказались бы эмодзи, обрезанные по-разному в разных браузерах, а в
- * переписке они стояли бы в строке вразнобой.
+ * FIX-NOSHARP: квадрат 128×128 делает БРАУЗЕР перед отправкой — на сервере
+ * обработки картинок больше нет (нативная библиотека несовместима с процессором
+ * машины). Правило одно для всех клиентов, поэтому набор остаётся ровным, а
+ * сервер проверяет сигнатуру и сторону.
  *
  * Предел набора зависит от подписки ВЛАДЕЛЬЦА сообщества — это неочевидно,
  * поэтому число приходит с сервера вместе со списком (одним запросом) и
@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
+import { downscaleForEmoji } from "@/lib/clientImageResize"; // FIX-NOSHARP
 
 interface GroupEmoji {
   id: string;
@@ -85,7 +86,7 @@ export default function EmojiPanel({ groupId, canManage }: { groupId: string; ca
     setError("");
     try {
       const body = new FormData();
-      body.append("file", file);
+      body.append("file", await downscaleForEmoji(file)); // FIX-NOSHARP
       body.append("name", name.trim().toLowerCase());
       const res = await fetch(`/api/groups/${groupId}/emoji`, { method: "POST", body });
       const data = await res.json().catch(() => null);

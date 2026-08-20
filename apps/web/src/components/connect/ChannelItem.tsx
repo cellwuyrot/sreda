@@ -1,7 +1,7 @@
 "use client";
 
 import type { Channel } from "./sidebarTypes";
-import { ChatIcon, PrivateChatIcon, PrivateVoiceIcon, VoiceChannelIcon, BellOffIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
+import { ChatIcon, NewsIcon, PrivateChatIcon, PrivateVoiceIcon, VoiceChannelIcon, BellOffIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS, FIX-FEED
 
 export function ChannelItem({ ch, selectedChannel, unreadCounts, mentionChannels = {}, canManage, onChannelClick, onDeleteChannel, onEditChannel, isMuted, onToggleMute }: {
   ch: Channel;
@@ -40,6 +40,9 @@ export function ChannelItem({ ch, selectedChannel, unreadCounts, mentionChannels
             )
           ) : ch.type === "VOICE" ? (
             <VoiceChannelIcon size={18} tone="inactive" />
+          ) : !ch.icon && (ch.type === "FEED" || ch.type === "NEWS") ? (
+            /* FIX-FEED: лента отличается от переписки уже в списке каналов. */
+            <NewsIcon size={18} tone="inactive" />
           ) : ch.icon ? (
             ch.icon
           ) : (

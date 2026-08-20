@@ -117,6 +117,9 @@ function evaluate(channel: ChannelRow, membership: MembershipRow | null): Channe
     channel.postAccess === "ADMIN" ? canManage : channel.postAccess === "MOD" ? canModerate : true;
   /* Новости — лента, а не переписка: публиковать в ней может только модерация,
      независимо от postAccess. */
+  /* FIX-FEED: ограничение «только модерация» касается ТОЛЬКО модуля новостей.
+     Улучшенный чат (FEED) — та же лента, но общая: право писать в нём решает
+     postAccess, как в обычном канале. */
   const canPost = canView && passesPostAccess && (channel.type !== "NEWS" || canModerate);
 
   /* NEWSPOST: комментарий под постом — не публикация.

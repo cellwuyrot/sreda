@@ -24,6 +24,7 @@ import { useMobile } from "@/hooks/useMobile";
 import type { MediaNoteKind } from "@/lib/mediaNote";
 import { noteFileName } from "@/lib/mediaNote";
 import DayNightBackground from "@/components/connect/DayNightBackground";
+import ServiceDocsBar from "@/components/connect/ServiceDocsBar"; // FIX-SRVDOC
 import { PlusMenu } from "@/components/connect/ChannelTools";
 import { ModuleSettingsButton } from "@/components/connect/ModuleSettingsModal"; // FIX-NEWSGEAR
 import type { Message, MessageUser, ForwardTarget } from "./messageTypes";
@@ -36,9 +37,13 @@ import { messageLengthError, countWords, messageLimits } from "@/lib/messageLimi
 import { hasPremium } from "@/lib/premium";
 import { useMessageWindow } from "@/hooks/useMessageWindow";
 import ForwardModal from "./ForwardModal";
+// FIX-FWDBUF: пересылка через внутренний буфер.
+import ForwardPendingBar from "./ForwardPendingBar";
+import { formatForwarded, putForward, type ForwardItem } from "@/lib/forwardBuffer";
 import MessageHoverToolbar from "./MessageHoverToolbar";
 import ThreadPanel from "./ThreadPanel";
 import { useFileDropPaste } from "@/hooks/useFileDropPaste";
+import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { getDesktopApi } from "@/lib/desktop";
 import { fetchAllGroupMembers } from "@/lib/groupMembersFetch";
 import { uploadWithProgress } from "@/lib/uploadWithProgress"; // FIX-UPLOAD
@@ -106,6 +111,8 @@ interface MessageAreaProps {
   channelIcon: string | null;
   channelType?: string;
   postAccess?: string;
+  /** FIX-SRVDOC: услуга раздела — по ней показываем приложенные документы. */
+  serviceId?: string | null;
   currentUserId: string;
   currentUserName?: string;
   currentUserRole: string;
@@ -309,6 +316,16 @@ const MessageRow = memo(function MessageRow({
                   onDelete={() => deleteMessage(msg.id)}
                   onPin={canPin ? () => pinMessage(msg.id) : undefined}
                   boardContext={{ authorName: msg.user.name, channelName, channelId }}
+                  /* FIX-FWDBUF: в каналах кнопки пересылки раньше вообще не было —
+                     окно со списком открыть было неоткуда. Теперь пересылка одинаковая
+                     в каналах и ЛС: сообщение в буфер, дальше — «Переслать сюда». */
+                  onForward={() =>
+                    putForward({
+                      content: msg.content,
+                      userName: msg.user.name,
+                      attachments: msg.attachments ?? null,
+                    })
+                  }
                 />
               )}
               {isGrouped ? (
@@ -603,15 +620,18 @@ const MessageRow = memo(function MessageRow({
 });
 
 export default function MessageArea({
-  channelId, channelName, channelIcon, channelType = "TEXT", postAccess = "ALL", currentUserId, currentUserName = "", currentUserRole, currentUserCommunityRole = "MEMBER", isBanned, onBack, onNewMessage, highlightMessageId, onHighlightConsumed, onOpenDm,
+  channelId, channelName, channelIcon, channelType = "TEXT", postAccess = "ALL", serviceId = null, currentUserId, currentUserName = "", currentUserRole, currentUserCommunityRole = "MEMBER", isBanned, onBack, onNewMessage, highlightMessageId, onHighlightConsumed, onOpenDm,
 }: MessageAreaProps) {
   /* Роль аккаунта и подписка — из сессии: currentUserRole в пропсах это роль в
      сообществе, к тарифу она отношения не имеет. */
   const { data: session } = useSession();
-  const isNewsChannel = channelType === "NEWS";
+  /* FIX-FEED: улучшенный чат рисуется той же лентой, что новости, но писать в
+     него могут все участники — ограничение по роли ниже к нему не применяется. */
+  const isFeedChannel = channelType === "FEED";
+  const isNewsChannel = channelType === "NEWS" || isFeedChannel;
   const isOwnerAdmin = currentUserRole === "OWNER" || currentUserRole === "ADMIN" || currentUserRole === "SITE_ADMIN";
   const isPrivilegedRole = isOwnerAdmin || currentUserRole === "MODERATOR";
-  const canWriteNews = isNewsChannel && isPrivilegedRole;
+  const canWriteNews = isNewsChannel && (isFeedChannel || isPrivilegedRole);
   // Unified write-access gate (NEWS channels + block-level postAccess)
   //
   // FIX-NEWSACL: явно заданный postAccess проверяется ПЕРВЫМ. Раньше ветка
@@ -627,7 +647,7 @@ export default function MessageArea({
   } else if (postAccess === "MOD" && !isPrivilegedRole) {
     canPost = false;
     readOnlyNotice = "Писать в этот раздел могут только администраторы и модераторы";
-  } else if (isNewsChannel && !canWriteNews) {
+  } else if (isNewsChannel && !isFeedChannel && !canWriteNews) {
     // Канал новостей без явной настройки: прежнее поведение — модераторы+.
     canPost = false;
     readOnlyNotice = "Канал новостей — писать могут только администраторы и модераторы";
@@ -2011,7 +2031,8 @@ export default function MessageArea({
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fd = new FormData();
-        fd.append("file", file);
+        // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+        fd.append("file", await downscaleForChat(file));
         fd.append("channelId", channelId);
         setUploadProgress({ name: file.name, percent: 0, index: i + 1, total: files.length });
         try {
@@ -2130,7 +2151,8 @@ export default function MessageArea({
       const uploadedAttachments: ReturnType<typeof parseAttachments> = [];
       for (const file of files) {
         const fd = new FormData();
-        fd.append("file", file);
+        // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+        fd.append("file", await downscaleForChat(file));
         fd.append("channelId", channelId);
         const uploadRes = await fetch("/api/messages/upload", { method: "POST", body: fd });
         if (!uploadRes.ok) {
@@ -2237,6 +2259,27 @@ export default function MessageArea({
     });
   }, []);
 
+
+  /** FIX-FWDBUF: отправить содержимое буфера в этот канал. */
+  const forwardHere = useCallback(
+    async (item: ForwardItem) => {
+      if (!channelId) return false;
+      let atts: unknown;
+      try {
+        atts = item.attachments ? JSON.parse(item.attachments) : undefined;
+      } catch {
+        atts = undefined;
+      }
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ channelId, content: formatForwarded(item), attachments: atts }),
+      }).catch(() => null);
+      return !!res?.ok;
+    },
+    [channelId],
+  );
 
   const openForwardModal = async (msg: Message) => {
     setForwardMsg({ content: msg.content, userName: msg.user.name });
@@ -2387,6 +2430,9 @@ export default function MessageArea({
         </div>
       </header>
 
+      {/* FIX-SRVDOC: документы услуги — сразу под именем раздела. */}
+      <ServiceDocsBar serviceId={serviceId} />
+
       {/* Pinned messages panel */}
       {showPinned && (
         <div className="border-b border-[var(--cn-border)] bg-[var(--cn-accent-dim)] max-h-[40vh] overflow-y-auto">
@@ -2401,11 +2447,21 @@ export default function MessageArea({
           ) : (
             pinnedMessages.map(pm => (
               <div key={pm.id} className="px-4 py-2 flex items-start gap-2 hover:bg-black/5 dark:hover:bg-white/5 border-b border-[var(--cn-border)] last:border-0">
-              <div className="flex-1 min-w-0 relative">
+              {/* FIX-PINJUMP: строка была простым блоком текста — нажатие никуда не вело.
+                  Переход использует тот же jumpToMessage, что и клик по ответу: он догружает
+                  старую историю, если сообщение выше загруженного куска, а потом подсвечивает
+                  найденную строку. Панель закрываем: иначе она накрывает верх переписки,
+                  куда мы только что прокрутились. */}
+              <button
+                type="button"
+                onClick={() => { setShowPinned(false); jumpToMessage(pm.id); }}
+                className="flex-1 min-w-0 relative text-left cursor-pointer"
+                title="Перейти к сообщению"
+              >
 
                   <span className="text-xs font-medium text-accent">{pm.user.name}</span>
                   <p className="text-sm text-[var(--cn-text)] line-clamp-2">{pm.content || "[файл]"}</p>
-                </div>
+                </button>
                 {canPin && (
                   <button onClick={() => togglePin(pm.id)} className="flex-shrink-0 p-1 text-neutral-400 hover:text-red-500" title="Открепить">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -2793,6 +2849,8 @@ export default function MessageArea({
                         onHover={composerTags.setActiveIndex}
                       />
                     )}
+                    {/* FIX-FWDBUF: полоса «выберите получателя» — одна и та же в каналах и ЛС. */}
+                    <ForwardPendingBar onSendHere={forwardHere} disabled={!channelId} />
                     <textarea
                       ref={textareaRef}
                       value={newMessage}

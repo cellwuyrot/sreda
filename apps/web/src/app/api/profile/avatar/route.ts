@@ -34,7 +34,19 @@ export async function POST(req: Request) {
   const uploadDir = path.join(process.cwd(), "public", "uploads", subDir);
   await mkdir(uploadDir, { recursive: true });
 
-  const ext = sanitizeExtension(file.name);
+  /* FIX-BGCROP: расширение берём из ПРОВЕРЕННОГО типа, а не из имени файла.
+     Гифка, попавшая сюда без имени (вставка из буфера, «Поделиться» на
+     телефоне), сохранялась как .jpg: байты оставались анимированными, но файл
+     отдавался как image/jpeg — часть браузеров показывала один первый кадр, и
+     выглядело это как «гиф перестал загружаться». Имя файла остаётся запасным
+     вариантом для типов, которых нет в таблице. */
+  const EXT_BY_MIME: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+  };
+  const ext = EXT_BY_MIME[file.type] ?? sanitizeExtension(file.name);
   const filename = `${session.user.id}-${Date.now()}.${ext}`;
   await writeFile(path.join(uploadDir, filename), buffer);
 

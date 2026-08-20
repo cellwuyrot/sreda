@@ -1,6 +1,7 @@
 "use client";
 
 import { isModuleType } from "@/lib/channelModules";
+import { useDragOrder } from "./useDragOrder"; // FIX-MODDRAG
 import { MembersList, type MemberListEntry } from "./GroupDialogs";
 import { COLLAPSED_WIDTH, CollapsedStrip, PanelChevron, VIEW_TITLE, usePanelView } from "./panelCollapse";
 
@@ -48,6 +49,7 @@ const META: Record<string, Meta> = {
 
 export default function ModulesPanel({
   channels, selectedChannel, groupId, members, membersTotal, canSeeMembers = true, variant = "desktop", onSelect,
+  canManage = false, onRefresh,
 }: {
   channels: ModChannel[];
   selectedChannel: string | null;
@@ -60,9 +62,27 @@ export default function ModulesPanel({
   /** desktop = отдельная колонка справа; mobile = встроенный блок внутри списка каналов. */
   variant?: "desktop" | "mobile";
   onSelect: (ch: ModChannel) => void;
+  /** FIX-MODDRAG: кому разрешено менять порядок разделов перетаскиванием. */
+  canManage?: boolean;
+  /** Переспросить состав группы после сохранённого порядка. */
+  onRefresh?: () => void;
 }) {
   const isMobile = variant === "mobile";
   const mods = channels.filter((c) => isModuleType(c.type) && !c.hidden);
+
+  /* FIX-MODDRAG: в обычных группах разделы шли тем порядком, в каком их когда-то
+     создали, и переставить их было негде: перетаскивание было только у плиток
+     главной группы (SectionsPanel) и у каналов левой колонки. Порядок живёт в
+     sortOrder канала и сохраняется тем же PUT /api/channels/reorder. */
+  const commitOrder = async (ids: string[]) => {
+    await fetch("/api/channels/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelIds: ids, groupId }),
+    }).catch(() => {});
+    onRefresh?.();
+  };
+  const drag = useDragOrder({ enabled: canManage, onReorder: commitOrder });
   // Показ панели — общая механика с SectionsPanel, один источник истины.
   const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers);
   const stripOnly = collapsed && !isMobile;
@@ -118,8 +138,13 @@ export default function ModulesPanel({
           const m = META[ch.type] ?? META.DOCS;
           const active = selectedChannel === ch.id;
           return (
-            <button
+            <div
               key={ch.id}
+              /* FIX-MODDRAG: тянется вся карточка — обычный клик по ней работает как раньше. */
+              className={drag.itemClass(ch.id)}
+              {...drag.itemProps(ch.id, mods.map((item) => item.id))}
+            >
+            <button
               onClick={() => onSelect(ch)}
               aria-current={active ? "true" : undefined}
               className="w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-all focus-visible:outline-none focus-visible:ring-2"
@@ -137,6 +162,7 @@ export default function ModulesPanel({
               </span>
               <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" style={{ color: "var(--cn-muted)" }} {...sw}><path d="M9 6l6 6-6 6" /></svg>
             </button>
+            </div>
           );
         })}
     </div>

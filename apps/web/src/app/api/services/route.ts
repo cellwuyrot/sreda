@@ -49,8 +49,8 @@ export async function POST(req: Request) {
     data: { title, description, icon, order: order || 0 },
   });
 
-  // Sync to main community
-  syncServicesToMainCommunity().catch(() => {});
+  /* FIX-SRVCREATE: каналы новой услуги заводятся здесь и больше нигде. */
+  syncServicesToMainCommunity({ createForServiceId: service.id }).catch(() => {});
 
   return NextResponse.json(service);
 }

@@ -18,7 +18,7 @@ const playfair = Playfair_Display({
   weight: ["400", "500", "600", "700", "800", "900"],
 });
 
-const BASE_URL = "https://connect.trioz.ru";
+const BASE_URL = "https://trioz.ru";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

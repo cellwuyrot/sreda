@@ -204,13 +204,17 @@ export function JoinGroupModal({ onClose, onJoined }: { onClose: () => void; onJ
 export function CreateChannelModal({ groupId, initialParentId = null, initialCreateCategory = false, initialGroupType = "TEXT", initialType = "TEXT", onClose, onCreated }: { groupId: string; initialParentId?: string | null; initialCreateCategory?: boolean; initialGroupType?: "TEXT" | "VOICE"; initialType?: string; onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
   const [type, setType] = useState(initialType);
+  /* FIX-FEED: «обычный или улучшенный» — отдельный переключатель, а не третья
+     кнопка рядом с «Текстовый/Голосовой»: улучшенный чат — это тот же текстовый
+     канал, и к выбору голоса он отношения не имеет. */
+  const [enhanced, setEnhanced] = useState(initialType === "FEED");
   const [parentId, setParentId] = useState<string | null>(initialParentId);
   const [createCategory, setCreateCategory] = useState(initialCreateCategory);
   const [groupType, setGroupType] = useState<"TEXT" | "VOICE">(initialGroupType);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const effectiveType = createCategory ? "CATEGORY" : type;
+  const effectiveType = createCategory ? "CATEGORY" : type === "VOICE" ? "VOICE" : enhanced ? "FEED" : type;
 
   const handleCreate = async () => {
     if (!name.trim()) return;
@@ -254,6 +258,24 @@ export function CreateChannelModal({ groupId, initialParentId = null, initialCre
             Голосовой
           </button>
         </div>
+        {/* FIX-FEED: вид текстового канала. Голосовому выбор не нужен, группе каналов тоже. */}
+        {!createCategory && type !== "VOICE" && (
+          <div className="space-y-1.5">
+            <div className="flex gap-2">
+              <button onClick={() => setEnhanced(false)} className={`flex-1 px-3 py-2 rounded-xl text-sm transition-all ${!enhanced ? "bg-violet-50 dark:bg-cyan-400/20 text-accent border border-violet-200 dark:border-cyan-400/30" : "bg-neutral-50 dark:bg-neutral-700 text-neutral-500 dark:text-gray-400 border border-neutral-200 dark:border-white/5"}`}>
+                Обычный чат
+              </button>
+              <button onClick={() => setEnhanced(true)} className={`flex-1 px-3 py-2 rounded-xl text-sm transition-all ${enhanced ? "bg-violet-50 dark:bg-cyan-400/20 text-accent border border-violet-200 dark:border-cyan-400/30" : "bg-neutral-50 dark:bg-neutral-700 text-neutral-500 dark:text-gray-400 border border-neutral-200 dark:border-white/5"}`}>
+                Улучшенный чат
+              </button>
+            </div>
+            <p className="text-[11px] leading-4 text-neutral-500 dark:text-neutral-400">
+              {enhanced
+                ? "Лента как в «Новостях»: заголовок, обложка, вложения, отдельное обсуждение под каждой записью, можно закрыть комментарии, отложить публикацию или сохранить черновик. Писать могут все участники — сузить это можно в настройках канала."
+                : "Привычная переписка сообщениями."}
+            </p>
+          </div>
+        )}
         {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
         <div className="flex gap-2 pt-1">
           <Button onClick={handleCreate} disabled={loading || !name.trim()} size="md" className="flex-1">

@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { parseDocuments } from "@/lib/businessPayment"; // FIX-SRVDOC
 
 /**
  * Деловой чат по обращению.
@@ -133,6 +134,78 @@ export interface EnsureBusinessChatParams {
   subject: string;
   /** Исходный текст заявки. */
   appealBody: string;
+  /**
+   * FIX-SRVDOC: услуга, выбранная клиентом в «Сотрудничестве». Если указана,
+   * вторым сообщением в чат уйдут приложенные к услуге документы.
+   */
+  serviceId?: string | null;
+}
+
+/**
+ * FIX-SRVDOC: прислать в деловой чат документы выбранной услуги.
+ *
+ * Автором ставится сторона администрации, а не клиент: бумаги выдаёт проект, и
+ * в переписке они должны читаться как ответ администрации, а не как вложение
+ * заявителя. Отсутствие документов — не ошибка: у части услуг бумаг просто нет.
+ */
+export async function sendServiceDocuments(params: {
+  conversationId: string;
+  authorId: string;
+  serviceId: string;
+}): Promise<boolean> {
+  const service = await prisma.service.findUnique({
+    where: { id: params.serviceId },
+    select: { title: true, documents: true },
+  });
+  if (!service) return false;
+
+  const documents = parseDocuments(service.documents);
+  if (documents.length === 0) return false;
+
+  /* FIX-SRVDOC2: бумаги уходят ВЛОЖЕНИЯМИ, а не строчками со ссылками.
+
+     Раньше в чат уходил обычный текст вида «• название — /uploads/…». Для
+     переписки это была строка без вложений: нажать не на что, скачать нечего,
+     в списке вложений разговора документа нет — то есть со стороны клиента
+     «документ отправлен» было написано, а документа не было.
+
+     Формат вложения тот же, что у файла, отправленного руками (см. Attachment в
+     components/dm/dmTypes): ничего особенного для деловых бумаг не заводим,
+     иначе предпросмотр, скачивание и список вложений пришлось бы учить ещё
+     одному виду сообщения. */
+  const attachments = documents
+    /* Только файлы из своего хранилища: проверка вложений в личных
+       сообщениях принимает ровно такие адреса, и посторонняя ссылка,
+       попавшая в базу ручной правкой, должна отнять один документ, а не
+       всю отправку. */
+    .filter((doc) => doc.url.startsWith("/uploads/"))
+    .map((doc) => ({
+      url: doc.url,
+      name: doc.name,
+      size: doc.size,
+      type: doc.mime ?? "application/octet-stream",
+      isImage: /\.(png|jpe?g|gif|webp|bmp)$/i.test(doc.url),
+    }));
+  if (attachments.length === 0) return false;
+
+  /* Подпись к вложениям короткая: перечислять имена файлов в тексте больше
+     не нужно — они видны на самих вложениях. */
+  const content = `Документы по услуге «${service.title}» — работа выполняется согласно ним.`;
+
+  const now = new Date();
+  await prisma.directMessage.create({
+    data: {
+      conversationId: params.conversationId,
+      userId: params.authorId,
+      content,
+      attachments: JSON.stringify(attachments),
+    },
+  });
+  await prisma.directConversation.update({
+    where: { id: params.conversationId },
+    data: { lastMessageAt: now },
+  });
+  return true;
 }
 
 /**
@@ -185,6 +258,23 @@ export async function ensureBusinessChat(params: EnsureBusinessChatParams): Prom
       },
       select: { id: true },
     });
+
+    /* FIX-SRVDOC: документы выбранной услуги уходят вторым сообщением сразу после
+       заявки: клиент открывает чат и видит бумаги, по которым будет идти работа, без
+       отдельного вопроса администрации. Ошибку глотаем: сам чат уже создан, и
+       терять его из-за неотправленного списка файлов нельзя. */
+    if (params.serviceId) {
+      try {
+        await sendServiceDocuments({
+          conversationId: conversation.id,
+          authorId: slotId,
+          serviceId: params.serviceId,
+        });
+      } catch (err) {
+        console.warn("[business] не удалось приложить документы услуги", params.serviceId, err);
+      }
+    }
+
     return conversation.id;
   } catch (err) {
     /* Гонка двух одновременных вызовов: уникальность по appealId не даст создать

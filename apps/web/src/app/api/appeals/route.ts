@@ -127,6 +127,9 @@ export async function POST(req: NextRequest) {
   const subject = (data.subject || "").trim();
   const body = (data.body || "").trim();
   const requestedCategory = (data.category || "").trim();
+  /* FIX-SRVDOC: услуга из кнопки «Сотрудничество»: по ней в деловой чат
+     подкладываются приложенные документы. Не пришла — заявка принимается как раньше. */
+  const serviceId = typeof data.serviceId === "string" ? data.serviceId.trim() : "";
   const isBanAppeal = requestedCategory === "BAN_APPEAL";
 
   if (!subject || !body) {
@@ -211,6 +214,7 @@ export async function POST(req: NextRequest) {
         clientId: session.user.id,
         subject,
         appealBody: body,
+        serviceId: serviceId || null,
       });
     } catch (err) {
       console.warn("[appeals] не удалось открыть деловой чат по новой заявке", appeal.id, err);

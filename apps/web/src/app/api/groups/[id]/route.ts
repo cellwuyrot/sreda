@@ -7,7 +7,7 @@ import { logAction } from "@/lib/audit";
 import { logGroupAction } from "@/lib/groupAudit";
 import { emitToUsers } from "@/lib/socketEmit";
 import { checkBan } from "@/lib/banCheck";
-import { GROUP_MEMBER_SELECT, MEMBERS_PAGE_SIZE, groupMemberOrder } from "@/lib/groupMemberSelect";
+import { GROUP_MEMBER_SELECT, MEMBERS_PAGE_SIZE, groupMemberOrder, withMemberOverrides } from "@/lib/groupMemberSelect";
 
 /** Personal room ids of every member of a group, for socket broadcasts. */
 async function groupMemberIds(groupId: string): Promise<string[]> {
@@ -82,6 +82,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // должен скрывать канал и от модератора (он входит в isAdminRole).
   const isOwnerAdmin = membership.role === "OWNER" || membership.role === "ADMIN";
   let visibleChannels = group.channels.filter((ch) => {
+    /* FIX-SRVHIDE2: скрытый канал не виден НИКОМУ, включая администрацию.
+       Флаг hidden ставит выключенная в админке услуга, а фильтр ниже работал
+       только для рядовых участников — владелец и администратор продолжали
+       видеть раздел выключенной услуги и не понимали, применилась ли правка.
+       Включать обратно в Админ ▸ Услуги — там же, где выключили. */
+    if ((ch as { hidden?: boolean }).hidden) return false;
     const access = (ch as { readAccess?: string }).readAccess ?? "ALL";
     if (access === "ADMIN") return isOwnerAdmin;
     if (access === "MOD") return isAdminRole;
@@ -109,6 +115,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({
     ...group,
     channels: visibleChannels,
+    // FIX-SRVSHOW: участники — с персональными настройками профиля для этой группы.
+    members: group.members.map(withMemberOverrides),
     membersTotal,
     myRole: membership.role,
     rulesAccepted: membership.rulesAccepted,

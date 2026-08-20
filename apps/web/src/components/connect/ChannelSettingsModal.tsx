@@ -130,7 +130,7 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[92] flex items-center justify-center p-4" /* FIX-SHAREZ */ onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 dark:border-white/5">
@@ -159,7 +159,9 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
             <div>
               <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1 block">Тип канала</label>
               <div className="flex items-center gap-2 px-3 py-2 bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl text-sm text-neutral-600 dark:text-neutral-300">
-                {type === "TEXT" ? <><ChatIcon size={16} /> Текстовый</> : type === "NEWS" ? <><NewsIcon size={16} /> Новости</> : <><VoiceChannelIcon size={16} /> Голосовой</>}
+                {/* FIX-FEED: улучшенный чат — отдельная подпись, иначе он показывался «голосовым». */}
+                {/* FIX-CATSET */}
+                {type === "CATEGORY" ? <>Группа каналов</> : type === "TEXT" ? <><ChatIcon size={16} /> Текстовый</> : type === "FEED" ? <><NewsIcon size={16} /> Улучшенный чат</> : type === "NEWS" ? <><NewsIcon size={16} /> Новости</> : <><VoiceChannelIcon size={16} /> Голосовой</>}
               </div>
             </div>
 

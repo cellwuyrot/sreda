@@ -13,7 +13,7 @@ import { EMOJI_SIZE_PX, FREE_GROUP_EMOJI, PREMIUM_GROUP_EMOJI, groupEmojiLimit }
 import { uploadDirRoot } from "@/lib/uploadPaths";
 import { mkdir, writeFile, unlink } from "fs/promises";
 import path from "path";
-import sharp from "sharp";
+import { imageExtensionFromBuffer, imageSize } from "@/lib/imageResize"; // FIX-NOSHARP
 import { v4 as uuid } from "uuid";
 
 /** Имя без двоеточий: его набирают руками в сообщении, поэтому только нижний
@@ -23,8 +23,8 @@ import { v4 as uuid } from "uuid";
    эмодзи с именем «30» превращает «12:30:45» в картинку посреди времени. */
 const NAME_RE = /^(?=.*[a-z])[a-z0-9_]{2,32}$/;
 
-/** Вход ограничен 5 МБ: на выходе всё равно квадрат 128×128, и файл крупнее
- *  этого — только лишняя работа для sharp и лишний трафик. */
+/** Вход ограничен 5 МБ: браузер присылает уже квадрат 128×128, и файл
+ *  крупнее этого — только лишний трафик. */
 const MAX_INPUT_BYTES = 5 * 1024 * 1024;
 
 const UPLOAD_DIR = "emoji";
@@ -141,29 +141,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const buffer = Buffer.from(await file.arrayBuffer());
   /* Тип проверяем по самим байтам, а не по заголовку из браузера: заявить
-     «image/png» может кто угодно, а sharp получит на вход что придётся. */
+     «image/png» может кто угодно, а файл с чужим содержимым так легла бы на диск. */
   const check = validateImageFile(buffer, file.type);
   if (!check.valid) return NextResponse.json({ error: check.error }, { status: 400 });
 
-  const fileName = `${uuid()}.webp`;
+  /* FIX-NOSHARP: расширение — по самим байтам: файл ложится в том формате, в
+     котором пришёл, перекодирования на сервере больше нет. */
+  const detectedExt = imageExtensionFromBuffer(buffer);
+  if (!detectedExt) {
+    return NextResponse.json({ error: "Не удалось разобрать картинку" }, { status: 400 });
+  }
+  const fileName = `${uuid()}.${detectedExt}`;
   const dir = uploadDirRoot(UPLOAD_DIR);
   const url = `/uploads/${UPLOAD_DIR}/${fileName}`;
 
   try {
-    /* Единый размер и формат делает сервер: клиент присылает что угодно, а в
-       переписке эмодзи должны стоять в одной строке одинаковыми. `contain` с
-       прозрачным фоном сохраняет пропорции — широкая картинка не растягивается
-       в квадрат, а получает пустые поля. Анимацию не включаем: sharp без
-       `animated: true` берёт первый кадр, что для GIF нам и нужно. */
-    const webp = await sharp(buffer)
-      .resize(EMOJI_SIZE_PX, EMOJI_SIZE_PX, {
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      })
-      .webp()
-      .toBuffer();
+    /* FIX-NOSHARP: квадрат EMOJI_SIZE_PX делает браузер перед отправкой
+       (lib/clientImageResize). Сервер проверяет сторону: иначе в наборе
+       оказалась бы фотография во весь экран, и строка переписки разъехалась бы. */
+    const maxSide = EMOJI_SIZE_PX * 4;
+    const size = imageSize(buffer);
+    if (size && Math.max(size.width, size.height) > maxSide) {
+      return NextResponse.json(
+        {
+          error: `Картинка слишком большая: ${size.width}×${size.height}. Нужна квадратная, до ${maxSide} px по стороне`,
+        },
+        { status: 400 },
+      );
+    }
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, fileName), webp, { flag: "wx" });
+    await writeFile(path.join(dir, fileName), buffer, { flag: "wx" });
   } catch (error) {
     console.error("[GroupEmoji] convert/write failed:", error);
     return NextResponse.json({ error: "Не удалось обработать картинку" }, { status: 500 });

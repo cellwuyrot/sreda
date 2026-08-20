@@ -6,7 +6,7 @@ import { type GlowAvatarUser } from "@/components/ui/GlowAvatar";
 import type { Channel, VoiceUser, GroupDetail, VoiceState, VoiceActions } from "./sidebarTypes";
 import { ChannelSettingsModal } from "./ChannelSettingsModal";
 import { ChannelItem } from "./ChannelItem";
-import { VoiceUserRow, VoiceControlBtn } from "./VoiceControls";
+import { VoiceUserRow, VoiceControlBtn, VoiceOccupantsStrip } from "./VoiceControls"; // FIX-VAVATAR
 import SectionsPanel from "./SectionsPanel";
 import ModulesPanel from "./ModulesPanel";
 import GroupHeaderMenu from "./GroupHeaderMenu";
@@ -15,6 +15,8 @@ import { MicIcon, MutedMicIcon, DeafenOffIcon, DeafenOnIcon, NsIcon, ScreenShare
 import { VoiceChannelIcon, ChatIcon, PrivateChatIcon, PrivateVoiceIcon } from "@/components/ui/ConnectIcons";
 import ScreenSharePrivacyModal from "@/components/voice/ScreenSharePrivacyModal";
 import { isModuleType } from "@/lib/channelModules";
+import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
+import { useDragOrder } from "./useDragOrder"; // FIX-DRAGORDER
 
 /* ─── Props ─── */
 
@@ -78,15 +80,21 @@ export default function ChannelSidebar({
     () => groupDetail.channels.filter((c) => c.type === "VOICE"),
     [groupDetail.channels],
   );
-  const generalChannel = useMemo(
-    () =>
-      (generalChannelId
-        ? groupDetail.channels.find((c) => c.id === generalChannelId)
-        : textChannels.find((c) => !c.parentId)) ?? null,
-    [generalChannelId, groupDetail.channels, textChannels],
-  );
 
   /* ── Channel settings modal ── */
+  /* FIX-DRAGORDER: порядок каналов задаётся перетаскиванием прямо в колонке.
+     Сохраняет тот же PUT /api/channels/reorder, что и окно «Порядок каналов»:
+     сервер пишет sortOrder по индексу и сам проверяет права. */
+  const commitOrder = async (ids: string[]) => {
+    await fetch("/api/channels/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelIds: ids, groupId: groupDetail.id }),
+    }).catch(() => {});
+    onGroupRefresh?.();
+  };
+  const drag = useDragOrder({ enabled: !!canManage, onReorder: commitOrder });
+
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   /* Окно запуска демонстрации: то же, что в развёрнутой комнате. Кнопка здесь
      стартовала показ сразу, поэтому качество и звук выбрать было негде, а
@@ -149,6 +157,8 @@ export default function ChannelSidebar({
 
     for (const ch of textChannels) {
       if (ch.parentId) continue;
+      // FIX-SRVCHAN: осиротевший чат услуги (serviceId потерян) в общий список не попадает.
+      if (!ch.serviceId && isServiceLinkedChannel(ch)) continue;
       if (ch.serviceId) {
         const arr = serviceMap.get(ch.serviceId) ?? [];
         arr.push(ch);
@@ -171,6 +181,35 @@ export default function ChannelSidebar({
     return { groups, ungrouped };
   }, [isMainCommunity, textChannels]);
 
+  /* FIX-MAINTEXT: остальные текстовые чаты блочного режима. В блочном режиме
+     (главная группа и группы с разделами) список показывал ровно один чат —
+     общий, — и созданный второй текстовый канал попадал в никуда: сервер его
+     создавал, а в боковой панели его не было. Разделы (parentId) и чаты услуг
+     (serviceId) здесь не нужны — их показывают свои панели. */
+  const blockTextChannels = useMemo(() => {
+    if (!blockMode) return [];
+    return textChannels.filter((ch) => {
+      const c = ch as unknown as { id: string; type?: string; parentId?: string | null; serviceId?: string | null };
+      // FIX-FEED: улучшенный чат стоит в том же списке, что обычный.
+      // FIX-SRVCHAN: чаты услуг показывает только панель разделов.
+      if (isServiceLinkedChannel(c as { name?: string; serviceId?: string | null })) return false;
+      /* FIX-CHATCOL: общий чат больше не исключается из списка: он такой же чат
+         этой колонки. Заодно ушла главная причина бага: без закреплённого
+         чата весь блок «Текстовые чаты» вообще не рисовался. */
+      return !c.parentId && (c.type === "TEXT" || c.type === "FEED");
+    })
+      .slice()
+      .sort((a, b) => {
+        const so = ((a as { sortOrder?: number }).sortOrder ?? 0) - ((b as { sortOrder?: number }).sortOrder ?? 0);
+        if (so !== 0) return so;
+        /* Пока порядок вручную не задан (sortOrder у всех 0) общий
+           чат остаётся сверху; дальше решает перетаскивание. */
+        if (a.id === generalChannelId) return -1;
+        if (b.id === generalChannelId) return 1;
+        return 0;
+      });
+  }, [blockMode, textChannels, generalChannelId]);
+
   /* ── Track voice channel occupants via separate socket ── */
   const [channelUsersMap, setChannelUsersMap] = useState<Record<string, VoiceUser[]>>({});
   const [volumeOpen, setVolumeOpen] = useState<string | null>(null);
@@ -190,6 +229,13 @@ export default function ChannelSidebar({
       setChannelUsersMap(prev => ({ ...prev, [channelId]: users }));
     };
     sock.on("voice-channel-users", handle);
+    /* FIX-VPRESENCE: поштучные запросы по каналам остаются, но сводный ответ
+       надёжнее: он отдаёт все комнаты своих сообществ сразу, включая приватные
+       по ролям голосовые каналы, где столбик с количеством оставался пустым. */
+    const handleAll = (all: Record<string, VoiceUser[]>) => {
+      setChannelUsersMap(prev => ({ ...prev, ...all }));
+    };
+    sock.on("all-voice-users", handleAll);
     const currentGroupId = groupDetail.id;
     const onConnect = () => {
       // Live voice-presence updates are now scoped to the channel's group room
@@ -197,6 +243,7 @@ export default function ChannelSidebar({
       // the sidebar previews updating. The per-channel query below still seeds
       // the current snapshot immediately.
       sock.emit("join-group", { groupId: currentGroupId });
+      sock.emit("get-all-voice-users"); // FIX-VPRESENCE
       voiceChannelsRef.current.forEach(ch => sock.emit("get-voice-channel-users", { channelId: ch.id }));
     };
     sock.on("connect", onConnect);
@@ -213,6 +260,7 @@ export default function ChannelSidebar({
       if (document.visibilityState === "hidden") return;
       reconcileId = setInterval(() => {
         if (!sock.connected || document.visibilityState === "hidden") return;
+        sock.emit("get-all-voice-users"); // FIX-VPRESENCE
         voiceChannelsRef.current.forEach(ch => sock.emit("get-voice-channel-users", { channelId: ch.id }));
       }, 30_000);
     };
@@ -266,7 +314,7 @@ export default function ChannelSidebar({
         }}
       >
         {onBack && (
-          <button onClick={onBack} className="md:hidden -ml-2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center flex-shrink-0 text-neutral-400 active:text-neutral-600 dark:active:text-white" aria-label="Назад к сообществам">
+          <button onClick={onBack} className="-ml-2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center flex-shrink-0 text-neutral-400 hover:text-neutral-600 active:text-neutral-600 dark:hover:text-white dark:active:text-white" aria-label="Назад к сообществам" title="Назад к сообществам">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -296,20 +344,50 @@ export default function ChannelSidebar({
           hidden keeps the list to a single, vertically-scrolling column. */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-0.5" aria-label="Каналы">
         {/* ── Block mode: single general chat at top ── */}
-        {blockMode && generalChannel && (
+        {blockMode && (
           <>
-            <div className="px-2 py-1 text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Общий чат</div>
-            <ChannelItem
-              ch={generalChannel}
-              selectedChannel={selectedChannel}
-              unreadCounts={unreadCounts}
-              mentionChannels={mentionChannels}
-              canManage={false}
-              onChannelClick={onChannelClick}
-              onDeleteChannel={onDeleteChannel}
-              isMuted={channelMutes[generalChannel.id] ?? (groupMuted && channelMutes[generalChannel.id] !== false)}
-              onToggleMute={handleToggleChannelMute}
-            />
+            {/* FIX-MAINTEXT: в главной группе голосовые каналы настраивались как обычно,
+                а текстовый — никак: строка общего чата рисовалась с canManage={false},
+                поэтому у неё не было ни настроек, ни удаления, а кнопки «создать» рядом
+                не было вовсе. Права тут те же, что и у голосовых, и их проверяет сервер
+                (POST /api/channels и PUT|DELETE /api/channels/[id] — только владелец и
+                администратор); интерфейс просто перестал скрывать разрешённое. */}
+            <div className="group/cat flex items-center justify-between px-2 py-1">
+              <span className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Текстовые чаты</span>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => onCreateChannel({ groupType: "TEXT", defaultType: "TEXT" })}
+                  title="Создать текстовый чат"
+                  aria-label="Создать текстовый чат"
+                  className="text-neutral-400 transition-colors hover:text-violet-600 dark:hover:text-cyan-400 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {blockTextChannels.map((ch) => (
+              <div
+                key={ch.id}
+                className={drag.itemClass(ch.id)}
+                {...drag.itemProps(ch.id, blockTextChannels.map((c) => c.id))}
+              >
+                <ChannelItem
+                  ch={ch}
+                  selectedChannel={selectedChannel}
+                  unreadCounts={unreadCounts}
+                  mentionChannels={mentionChannels}
+                  canManage={!!canManage}
+                  onChannelClick={onChannelClick}
+                  onDeleteChannel={onDeleteChannel}
+                  onEditChannel={canManage ? setEditingChannel : undefined}
+                  isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)}
+                  onToggleMute={handleToggleChannelMute}
+                />
+              </div>
+            ))}
           </>
         )}
 
@@ -378,7 +456,10 @@ export default function ChannelSidebar({
             <div className="flex items-center justify-between px-2 py-1 group/cat">
               <button
                 onClick={() => setTextOpen(o => !o)}
-                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                /* FIX-SECFONT: два главных раздела колонки жирнее и темнее созданных
+                    групп: раньше новая группа выглядела ровно так же, и структура
+                    колонки сливалась в один список. */
+                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-500 dark:text-neutral-200 uppercase tracking-[0.14em] font-bold hover:text-neutral-700 dark:hover:text-white transition-colors"
                 aria-expanded={textOpen}
               >
                 <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${textOpen ? "rotate-90" : "rotate-0"}`} fill="currentColor" viewBox="0 0 6 10">
@@ -419,14 +500,32 @@ export default function ChannelSidebar({
                     const isCollapsed = !!collapsedCategories[cat.id];
                     const children = flatList.filter(c => c.parentId === cat.id);
                     return (
-                      <div key={cat.id} className="!mt-2">
+                      /* FIX-DRAGORDER2: группы каналов тоже перетаскиваются по вертикали. */
+                      <div key={cat.id} className={`!mt-2${drag.itemClass(cat.id)}`} {...drag.itemProps(cat.id, textCategories.map(c => c.id))}>
                         <div className="flex items-center justify-between px-2 py-1 group/cat">
-                          <button onClick={() => toggleCategoryGroup(cat.id)} className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
+                          <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
                             <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${!isCollapsed ? "rotate-90" : "rotate-0"}`} fill="currentColor" viewBox="0 0 6 10">
                               <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
                             </svg>
                             {cat.name}
                           </button>
+                        {/* FIX-CATSET: у группы каналов теперь есть свои настройки:
+                            имя, значок и доступ по ролям. Раньше скрыть от части
+                            участников можно было только каждый канал по отдельности. */}
+                        {canManage && (
+                          <button
+                            onClick={() => setEditingChannel(cat)}
+                            className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
+                            aria-label={`Настройки группы ${cat.name}`}
+                            title="Настройки группы каналов: имя, значок, доступ по ролям"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </button>
+                        )}
+
                           {canManage && !isCollapsed && (
                             <button onClick={() => onCreateChannel({ parentId: cat.id, groupType: "TEXT", defaultType: "TEXT" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100" aria-label="Создать канал в группе">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -448,7 +547,7 @@ export default function ChannelSidebar({
 						)}
                         </div>
                         {!isCollapsed && children.map(sub => (
-                          <div key={sub.id} className="ml-4 border-l border-neutral-200 dark:border-white/5">
+                          <div key={sub.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5${drag.itemClass(sub.id)}`} {...drag.itemProps(sub.id, children.map(c => c.id))}>
                             <ChannelItem ch={sub} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[sub.id] ?? (groupMuted && channelMutes[sub.id] !== false)} onToggleMute={handleToggleChannelMute} />
                           </div>
                         ))}
@@ -456,7 +555,7 @@ export default function ChannelSidebar({
                     );
                   })}
                   {rootChannels.map(ch => (
-                    <div key={ch.id}>
+                    <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, rootChannels.map(c => c.id))}>
                       <ChannelItem ch={ch} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)} onToggleMute={handleToggleChannelMute} />
                     </div>
                   ))}
@@ -472,7 +571,10 @@ export default function ChannelSidebar({
             <div className="flex items-center justify-between px-2 py-1 !mt-3 group/cat">
               <button
                 onClick={() => setVoiceOpen(o => !o)}
-                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                /* FIX-SECFONT: два главных раздела колонки жирнее и темнее созданных
+                    групп: раньше новая группа выглядела ровно так же, и структура
+                    колонки сливалась в один список. */
+                className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-500 dark:text-neutral-200 uppercase tracking-[0.14em] font-bold hover:text-neutral-700 dark:hover:text-white transition-colors"
                 aria-expanded={voiceOpen}
               >
                 <svg
@@ -485,9 +587,13 @@ export default function ChannelSidebar({
               </button>
               {canManage && voiceOpen && (
                 <div className="flex gap-0.5 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100">
-                  <button onClick={() => onCreateChannel({ createCategory: true, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать группу голосовых каналов" title="Создать группу голосовых каналов">
+                  <button onClick={() => onCreateChannel({ createCategory: true, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать папку для голосовых каналов" title="Папка для голосовых каналов">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1v22M5 8h14M5 16h14" />
+                      {/* FIX-VOICEPLUS: рядом стояли два визуально одинаковых «плюса»:
+                          «группа голосовых каналов» и «голосовой канал». Функции разные,
+                          поэтому убрана не кнопка, а путаница: у группы теперь папка. */}
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8a2 2 0 012-2h3.6l1.6 2H19a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11.5v5M9.5 14h5" />
                     </svg>
                   </button>
                   <button onClick={() => onCreateChannel({ groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать голосовой канал" title="Создать голосовой канал">
@@ -504,14 +610,32 @@ export default function ChannelSidebar({
                   const isCollapsed = !!collapsedCategories[cat.id];
                   const children = voiceChannels.filter((c) => c.parentId === cat.id);
                   return (
-                    <div key={cat.id} className="!mt-2">
+                    /* FIX-DRAGORDER2: то же для групп голосовых каналов. */
+                    <div key={cat.id} className={`!mt-2${drag.itemClass(cat.id)}`} {...drag.itemProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id))}>
                       <div className="flex items-center justify-between px-2 py-1 group/cat">
-                        <button onClick={() => toggleCategoryGroup(cat.id)} className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-neutral-400 uppercase tracking-wider font-semibold hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
+                        <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
                           <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${!isCollapsed ? "rotate-90" : "rotate-0"}`} fill="none" viewBox="0 0 6 10">
                             <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                           {cat.name}
                         </button>
+                        {/* FIX-CATSET: у группы каналов теперь есть свои настройки:
+                            имя, значок и доступ по ролям. Раньше скрыть от части
+                            участников можно было только каждый канал по отдельности. */}
+                        {canManage && (
+                          <button
+                            onClick={() => setEditingChannel(cat)}
+                            className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
+                            aria-label={`Настройки группы ${cat.name}`}
+                            title="Настройки группы каналов: имя, значок, доступ по ролям"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </button>
+                        )}
+
                         {canManage && !isCollapsed && (
                           <button onClick={() => onCreateChannel({ parentId: cat.id, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100" aria-label="Создать голосовой канал в группе">
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -540,7 +664,7 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className="ml-4 border-l border-neutral-200 dark:border-white/5 pl-1">
+                          <div key={ch.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5 pl-1${drag.itemClass(ch.id)}`} {...drag.itemProps(ch.id, children.map(c => c.id))}>
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
@@ -570,7 +694,7 @@ export default function ChannelSidebar({
                                 <span className="text-base flex items-center" title={ch.isRestricted ? "Приватный голосовой канал — доступ по ролям" : undefined}>{ch.isRestricted ? <PrivateVoiceIcon size={18} tone="inactive" /> : ch.icon ? ch.icon : <VoiceChannelIcon size={18} tone="inactive" />}</span>
                                 <span className="truncate flex-1">{ch.name}</span>
                                 {shareCount > 0 && <span className="h-6 px-1.5 rounded-md bg-blue-500/15 text-blue-500 dark:text-cyan-300 inline-flex items-center gap-1" title={`${shareCount} активных трансляций`}><ScreenShareIcon />{shareCount > 1 && <span className="text-[10px] font-semibold">{shareCount}</span>}</span>}
-                                {displayUsers.length > 0 && !isActive && (
+                                {displayUsers.length > 0 && ( /* FIX-VPRESENCE: счётчик виден всегда */
                                   <span className="text-[10px] font-semibold text-neutral-500 dark:text-gray-300 bg-neutral-200/70 dark:bg-white/10 rounded-full px-1.5 min-w-[18px] text-center">{displayUsers.length}</span>
                                 )}
                               </button>
@@ -601,6 +725,8 @@ export default function ChannelSidebar({
                                 </div>
                               )}
                             </div>
+                            {/* FIX-VAVATAR: кто в канале — видно и без захода в него. */}
+                            <VoiceOccupantsStrip users={displayUsers} />
                           </div>
                         );
                       })}
@@ -615,7 +741,7 @@ export default function ChannelSidebar({
               const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
               return (
-                <div key={ch.id}>
+                <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, voiceChannels.filter((c) => !c.parentId).map((c) => c.id))}>
                   {/* Channel button */}
                   <div className="group flex items-center">
                     <button
@@ -636,7 +762,7 @@ export default function ChannelSidebar({
                       <span className="text-base flex items-center" title={ch.isRestricted ? "Приватный голосовой канал — доступ по ролям" : undefined}>{ch.isRestricted ? <PrivateVoiceIcon size={18} tone="inactive" /> : ch.icon ? ch.icon : <VoiceChannelIcon size={18} tone="inactive" />}</span>
                       <span className="truncate flex-1">{ch.name}</span>
                       {shareCount > 0 && <span className="h-6 px-1.5 rounded-md bg-blue-500/15 text-blue-500 dark:text-cyan-300 inline-flex items-center gap-1" title={`${shareCount} активных трансляций`}><ScreenShareIcon />{shareCount > 1 && <span className="text-[10px] font-semibold">{shareCount}</span>}</span>}
-                      {displayUsers.length > 0 && !isActive && (
+                      {displayUsers.length > 0 && ( /* FIX-VPRESENCE: счётчик виден всегда */
                         <span className="text-[10px] font-semibold text-neutral-500 dark:text-gray-300 bg-neutral-200/70 dark:bg-white/10 rounded-full px-1.5 min-w-[18px] text-center">{displayUsers.length}</span>
                       )}
                     </button>
@@ -676,6 +802,7 @@ export default function ChannelSidebar({
                       {isActive && voiceState && (
                         <VoiceUserRow
                           name={userName}
+                          avatar={myProfileUser.avatar} /* FIX-VAVATAR */
                           muted={voiceState.isMuted}
                           speaking={voiceState.localSpeaking && !voiceState.isMuted}
                           sharingScreen={voiceState.isSharingScreen}
@@ -692,6 +819,7 @@ export default function ChannelSidebar({
                         >
                           <VoiceUserRow
                             name={u.userName}
+                            avatar={u.avatar} /* FIX-VAVATAR */
                             muted={u.muted}
                             speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
                             quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
@@ -784,6 +912,8 @@ export default function ChannelSidebar({
               members={groupDetail.members}
               membersTotal={groupDetail.membersTotal}
               canSeeMembers={!(isMainCommunity && !canManage && userRole !== "ADMIN")}
+              canManage={canManage} /* FIX-MODDRAG */
+              onRefresh={() => onGroupRefresh?.()}
               onSelect={(ch) => onChannelClick(ch as unknown as Channel)}
             />
           </div>

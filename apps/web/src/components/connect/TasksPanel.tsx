@@ -10,6 +10,7 @@ import { ModuleSettingsButton } from "./ModuleSettingsModal";
 import BottomSheet from "@/components/mobile/BottomSheet"; // MOBILE-FIX
 import { useMobile } from "@/hooks/useMobile"; // MOBILE-FIX
 import { playUiSound } from "@/lib/uiSounds"; // FIX-SFX: локальный звук «задача создана»
+import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { fetchAllGroupMembers } from "@/lib/groupMembersFetch";
 // FIX-ICONS: фирменные SVG-иконки вместо эмодзи (📋 📎 ☑ ✕ 📄)
 import { TaskIcon, XIcon, FileIcon, CheckIcon, AttachmentIcon } from "@/components/ui/ConnectIcons";
@@ -742,7 +743,8 @@ function TaskDetailsContent({ task, currentUserId, canModerate, members, onRefre
           continue;
         }
         const fd = new FormData();
-        fd.append("file", file);
+        // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+        fd.append("file", await downscaleForChat(file));
         const res = await fetch(`/api/tasks/${task.id}/attachments`, { method: "POST", body: fd });
         if (!res.ok) {
           /* 413 отдаёт обратный прокси (nginx) — тело не JSON, поэтому
@@ -1352,7 +1354,8 @@ function TaskAddModal({ channelId, members, onClose, onCreated }: {
         if (taskId) {
           for (const file of pendingFiles) {
             const fd = new FormData();
-            fd.append("file", file);
+            // FIX-NOSHARP: уменьшаем в браузере.
+            fd.append("file", await downscaleForChat(file));
             await fetch(`/api/tasks/${taskId}/attachments`, { method: "POST", body: fd }).catch(() => {});
           }
         }

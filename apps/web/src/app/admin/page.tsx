@@ -48,6 +48,7 @@ const GROUPS: NavGroup[] = [
     id: "content",
     label: "Контент сайта",
     items: [
+      { title: "Правовая информация", description: "Пользовательское соглашение на /about", href: "/admin/legal", icon: <Icon path={<><path d="M6 3h9l3 3v15H6z" /><path d="M9 9h6M9 13h6M9 17h4" /></>} /> },
       { title: "О проекте", description: "Тексты и блоки страницы /about", href: "/admin/about", icon: <Icon path={<><circle cx="12" cy="12" r="9" /><path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18M3 12h18" /></>} /> },
       { title: "Окна главной", description: "Фоны, цвета и контент 4 окон", href: "/admin/windows", icon: <Icon path={<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>} /> },
       { title: "Контент", description: "Статьи и категории", href: "/admin/content", icon: <Icon path={<><path d="M4 4h16v16H4z" /><path d="M8 8h8M8 12h8M8 16h5" /></>} />, countKey: "articles" },

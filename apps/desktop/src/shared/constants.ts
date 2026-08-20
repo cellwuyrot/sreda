@@ -10,7 +10,18 @@
 export { SOCKET_PATH, SOCKET_EVENTS } from "@trioz/shared";
 
 /** Default web frontend origin to load when nothing is configured. */
-export const DEFAULT_APP_URL = "https://connect.trioz.ru";
+export const DEFAULT_APP_URL = "https://trioz.ru";
+
+/**
+ * FIX-DOMAIN2: адреса, которые были стандартными раньше.
+ *
+ * electron-store записывает стандартные значения в settings.json при первом запуске,
+ * и с того момента старый адрес перестаёт быть «стандартом» и становится выбором
+ * пользователя — смена стандартного значения в сборке такой клиент не переучивает.
+ * Поэтому записанный старый стандарт при запуске заменяется на новый (см. main/config.ts).
+ * Адрес, введённый руками и не совпадающий со старым стандартом, остаётся как есть.
+ */
+export const LEGACY_APP_URLS = ["https://connect.trioz.ru", "http://connect.trioz.ru"] as const;
 
 /**
  * The desktop shell is a dedicated TZ.Connect messaging client, so it always
