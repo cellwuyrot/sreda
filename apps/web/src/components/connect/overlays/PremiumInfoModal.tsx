@@ -115,7 +115,7 @@ const ROUTING_OPTIONS: { value: VpnRouting; title: string; note: string }[] = [
  * APP-ONLY: в десктоп-версии режим «только приложение» — не мелкая настройка, а главный
  * вопрос доверия: человек должен видеть без чтения документации, что банк-клиент,
  * рабочая VPN работодателя и весь прочий трафик компьютера остаются вне туннеля.
- * Поэтому в оболочке показываем явную плашку под выбором режима.
+ * Поэтому в оболочке показываемявную плашку под выбором режима.
  */
 function RoutingChoice({
   value,
@@ -548,7 +548,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         )}
         {nodeIncomplete && (
           <p className="mt-4 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-            Узел ещё не сообщил свои параметры — включение станет доступно, как только он выйдет на связь.
+            Сервер соединения готовится — включение станет доступно через минуту.
           </p>
         )}
 
@@ -613,7 +613,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Сервер</p>
             <div className="mt-2 grid gap-2">
               {servers.map((server) => {
-                const load = Math.max(0, Math.min(100, Number(server.load) || 0));
                 const unavailable = !!server.full && !server.current;
                 return (
                   <button
@@ -633,7 +632,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="text-sm font-medium text-neutral-900 dark:text-white">{server.name}</span>
                       <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                        {server.current ? "текущий" : unavailable ? "нет мест" : `загружен на ${load}%`}
+                        {server.current ? "текущий" : unavailable ? "нет мест" : "доступен"}
                       </span>
                     </span>
                     {server.region && (
@@ -676,23 +675,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               </button>
             </>
           )
-        )}
-
-        {state?.peer && (
-          <div className="mt-6 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/[0.07] dark:bg-white/[0.035]">
-              <span className="block text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Узел</span>
-              <strong className="mt-1 block text-xs">{state.peer.node?.name ?? "—"}</strong>
-            </div>
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/[0.07] dark:bg-white/[0.035]">
-              <span className="block text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">В туннеле</span>
-              <strong className="mt-1 block text-xs">{state.peer.address}</strong>
-            </div>
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/[0.07] dark:bg-white/[0.035]">
-              <span className="block text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Адрес выхода</span>
-              <strong className="mt-1 block text-xs">{state.peer.exitIp || "общий"}</strong>
-            </div>
-          </div>
         )}
 
         {/* Полный отзыв доступа — вторично: обычное «выключить» доступ не трогает. */}
