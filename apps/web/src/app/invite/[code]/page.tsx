@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
   // Абсолютный базовый URL — краулерам мессенджеров нужны абсолютные ссылки на
   // картинку. Хост берём из заголовков запроса (за прокси — x-forwarded-*).
   const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "connect.trioz.ru";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "trioz.ru";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
 

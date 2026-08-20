@@ -307,7 +307,7 @@ export async function GET(req: NextRequest) {
               display: "flex",
             }}
           >
-            connect.trioz.ru
+            trioz.ru
           </div>
         </div>
       </div>

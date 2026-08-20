@@ -53,6 +53,68 @@ export async function getOrCreateKeyPair(): Promise<{ publicKeyJwk: JsonWebKey; 
   return { publicKeyJwk, privateKey: keyPair.privateKey };
 }
 
+/**
+ * FIX-E2EEBTN: результат публикации открытого ключа.
+ *
+ *   published — ключа на аккаунте не было, теперь есть;
+ *   already   — на сервере уже лежит ровно этот ключ;
+ *   conflict  — на аккаунте ключ с другого устройства. Подменять его нельзя:
+ *               вся переписка, зашифрованная для прежнего ключа, станет
+ *               нечитаемой. Нужен перенос ключа через «Импорт ключа»;
+ *   error     — сеть или сервер не ответили.
+ */
+export type PublishKeyResult = "published" | "already" | "conflict" | "error";
+
+/**
+ * FIX-E2EEBTN: выкладывает открытую часть ключа на сервер, если её там нет.
+ *
+ * Из-за отсутствия этого шага кнопка защищённого режима и пропадала.
+ * getOrCreateKeyPair складывает пару только в IndexedDB своего браузера, а
+ * на сервер ключ уходил ровно в одном месте — в importKeysFromJSON, то есть
+ * только если человек вручную импортировал резервную копию. У обычного
+ * пользователя поле e2eePublicKey в базе оставалось пустым навсегда. А в
+ * панели ЛС кнопка показывается лишь когда есть две части: свой закрытый
+ * ключ и открытый ключ собеседника — второй всегда приходил пустым, и
+ * кнопки не было ни у одной из сторон.
+ *
+ * Замена чужого ключа здесь не делается сознательно: автоматическая замена
+ * при каждом входе с нового браузера тихо уничтожала бы всю старую
+ * зашифрованную переписку.
+ */
+export async function ensurePublicKeyPublished(
+  myUserId: string,
+  publicKeyJwk: JsonWebKey
+): Promise<PublishKeyResult> {
+  const x = publicKeyJwk.x;
+  const y = publicKeyJwk.y;
+  if (typeof x !== "string" || typeof y !== "string") return "error";
+
+  try {
+    const current = await fetch(`/api/e2ee?userId=${encodeURIComponent(myUserId)}`, {
+      credentials: "include",
+    });
+    if (current.ok) {
+      const data = (await current.json()) as { publicKey?: { x?: string; y?: string } | null };
+      const server = data.publicKey;
+      if (server) return server.x === x && server.y === y ? "already" : "conflict";
+    }
+
+    /* Отправляем ровно четыре поля открытого ключа: сервер отклоняет запись,
+       в которой есть хоть что-то лишнее — и правильно делает. */
+    const res = await fetch("/api/e2ee", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ publicKey: { kty: "EC", crv: "P-256", x, y } }),
+    });
+    if (res.ok) return "published";
+    if (res.status === 409) return "conflict";
+    return "error";
+  } catch {
+    return "error";
+  }
+}
+
 /** Назначение ключа вшито в сам ключ: см. комментарий к deriveSharedKey. */
 const KDF_INFO = "trioz-e2ee-v2/aes-256-gcm";
 

@@ -28,7 +28,7 @@ object Config {
     /** Единственный раздел, ради которого существует клиент. */
     val startPath: String = BuildConfig.START_PATH
 
-    /** Полный URL, который оболочка открывает при запуске, например https://connect.trioz.ru/connect */
+    /** Полный URL, который оболочка открывает при запуске, например https://trioz.ru/connect */
     val startUrl: String get() = appUrl + startPath
 
     /**

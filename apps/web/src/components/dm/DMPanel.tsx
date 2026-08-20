@@ -6,8 +6,12 @@ import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import DayNightBackground from "@/components/connect/DayNightBackground";
 import ForwardModal from "@/components/connect/ForwardModal";
+// FIX-FWDBUF: пересылка через внутренний буфер — человек сам выбирает место.
+import ForwardPendingBar from "@/components/connect/ForwardPendingBar";
+import { formatForwarded, putForward, type ForwardItem } from "@/lib/forwardBuffer";
 import GeoPicker from "@/components/ui/GeoPicker";
 import { useFileDropPaste } from "@/hooks/useFileDropPaste";
+import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { useMobile } from "@/hooks/useMobile";
 import { useHistoryLayer } from "@/components/connect/hooks/useMobileHistoryStack"; // MOBILE-UI
 import DMConversationList from "./DMConversationList";
@@ -29,6 +33,7 @@ import {
 import {
   decryptMessage,
   encryptMessage,
+  ensurePublicKeyPublished, // FIX-E2EEBTN
   getOrCreateKeyPair,
   isE2EEMessage,
 } from "@/lib/e2ee";
@@ -37,6 +42,8 @@ import { noteFileName, type MediaNoteKind } from "@/lib/mediaNote";
 import { messageLengthError } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
 import { useMessageWindow } from "@/hooks/useMessageWindow";
+import ChatErrorBoundary from "@/components/ui/ChatErrorBoundary";
+import VaultLock from "@/components/dm/VaultLock";
 import { uploadWithProgress } from "@/lib/uploadWithProgress"; // FIX-UPLOAD
 // FIX-ICONS: фирменные SVG-иконки вместо PNG и эмодзи «💬»
 import { PinIcon, ChatIcon } from "@/components/ui/ConnectIcons";
@@ -76,6 +83,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   // ── Data state ────────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  /* FIX-VAULTPW: разблокировка Сейфа держится только в памяти панели. */
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
   /* MOBILE-UI: на телефоне открытая беседа — слой поверх списка диалогов:
      системная «назад» закрывает её и возвращает к списку, а не выкидывает
      из раздела сообщений. */
@@ -171,6 +180,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const [peerPublicKey, setPeerPublicKey] = useState<JsonWebKey | null>(null);
   const [chatMode, setChatMode] = useState<"open" | "secure">("open");
   const e2eeEnabled = chatMode === "secure";
+  /* FIX-E2EEBTN: на аккаунте лежит ключ другого устройства. Тогда собеседник
+     шифрует на тот ключ, и здесь читать его нечем — об этом надо сказать
+     прямо, а не прятать кнопку. */
+  const [keyConflict, setKeyConflict] = useState(false);
 
   /* Подписка нужна для предела длины сообщения: без Premium он вдвое меньше.
      Берём из сессии — это тариф аккаунта, а не роль в сообществе. */
@@ -221,6 +234,14 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     () => conversations.find((c) => c.id === selectedConvId) || null,
     [conversations, selectedConvId],
   );
+
+  /* FIX-VAULTPW: Сейф — переписка с самим собой. Пока пароль не введён, ни
+     сообщения, ни поле ввода не отрисовываются. */
+  const isVaultConv = !!selectedConv && selectedConv.other.id === currentUserId;
+  const isVaultLocked = isVaultConv && !vaultUnlocked;
+  useEffect(() => {
+    setVaultUnlocked(false);
+  }, [selectedConvId]);
   const otherUser = selectedConv?.other ?? null;
   // Variant A: разделяем защищённые (E2EE) и открытые сообщения по вкладкам.
   const visibleMessages = useMemo(
@@ -451,11 +472,24 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   }, [loadConversations]);
 
   // ── E2EE init: my own keypair ────────────────────────────────────────────
+  /* FIX-E2EEBTN: пара мало того что создаётся — её открытая часть теперь
+     публикуется. Без этого собеседник никогда не мог получить наш ключ, а
+     значит и кнопка защищённого режима не появлялась ни у него, ни у нас. */
   useEffect(() => {
+    if (!currentUserId) return;
+    let alive = true;
     getOrCreateKeyPair()
-      .then((kp) => setMyPrivateKey(kp.privateKey))
+      .then(async (kp) => {
+        if (!alive) return;
+        setMyPrivateKey(kp.privateKey);
+        const result = await ensurePublicKeyPublished(currentUserId, kp.publicKeyJwk);
+        if (alive) setKeyConflict(result === "conflict");
+      })
       .catch(() => {});
-  }, []);
+    return () => {
+      alive = false;
+    };
+  }, [currentUserId]);
 
   // ── Fetch peer's public key when a conversation opens ─────────────────────
   const fetchPeerKey = useCallback(async (peerId: string) => {
@@ -1025,7 +1059,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           const fd = new FormData();
-          fd.append("file", file);
+          // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+          fd.append("file", await downscaleForChat(file));
           fd.append("conversationId", conversationId);
           setUploadProgress({ name: file.name, percent: 0, index: i + 1, total: files.length });
           try {
@@ -1148,7 +1183,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       const uploaded: Attachment[] = [];
       for (const file of files) {
         const fd = new FormData();
-        fd.append("file", file);
+        // FIX-NOSHARP: уменьшаем в браузере — на сервере обработки больше нет.
+        fd.append("file", await downscaleForChat(file));
         fd.append("conversationId", conversationId);
         const res = await fetch("/api/messages/upload", { method: "POST", body: fd });
         if (!res.ok) continue;
@@ -1420,6 +1456,51 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [forwardMsg, showToast],
   );
 
+  /**
+   * FIX-FWDBUF: кнопка «Переслать» теперь кладёт сообщение во внутренний буфер.
+   *
+   * Дальше человек сам переходит в нужный диалог или канал — там над полем
+   * ввода ждёт полоса «Переслать сюда». Старое окно со списком осталось в коде
+   * и продолжает работать: оно больше не основной путь, а запасной.
+   */
+  const beginForward = useCallback(
+    (msg: Message) => {
+      // Как и раньше: из приватного (зашифрованного) чата пересылать нельзя.
+      if (msg._encrypted || isE2EEMessage(msg.content)) {
+        showToast("Сообщения из приватного чата пересылать нельзя");
+        return;
+      }
+      putForward({
+        content: msg.content,
+        userName: msg.user.name,
+        attachments: msg.attachments ?? null,
+      });
+      showToast("Сообщение скопировано — выберите получателя");
+    },
+    [showToast],
+  );
+
+  /** FIX-FWDBUF: отправить содержимое буфера в открытый сейчас диалог. */
+  const forwardHere = useCallback(
+    async (item: ForwardItem) => {
+      if (!selectedConvId) return false;
+      let atts: unknown;
+      try {
+        atts = item.attachments ? JSON.parse(item.attachments) : undefined;
+      } catch {
+        atts = undefined;
+      }
+      const res = await fetch(`/api/dm/${selectedConvId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: formatForwarded(item), attachments: atts }),
+      }).catch(() => null);
+      return !!res?.ok;
+    },
+    [selectedConvId],
+  );
+
   // ── Add to Favorites (self-conversation) ──────────────────────────────────────
   const addToFavorites = useCallback(
     async (msg: Message) => {
@@ -1632,9 +1713,33 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               other={otherUser.id === currentUserId ? { ...otherUser, name: "Сейф" } : otherUser}
               subtitle={businessSubtitle}
               e2eeReady={e2eeReady}
+              /* FIX-E2EEBTN: в деловом разговоре шифрования нет намеренно (его читает
+                 вся администрация по роли), там кнопки быть не должно. В личной
+                 переписке она есть всегда: пропавшая кнопка неотличима от потери
+                 возможности. */
+              e2eeSupported={!isBusiness}
+              e2eeHint={
+                keyConflict
+                  ? "На аккаунте ключ другого устройства. Перенесите ключ: настройки → Шифрование E2EE → Импорт ключа"
+                  : "Собеседник ещё не создал ключ шифрования — нажмите, чтобы проверить снова"
+              }
               e2eeEnabled={e2eeEnabled}
               showPinned={showPinned}
-              onToggleE2EE={() => setChatMode((mm) => (mm === "secure" ? "open" : "secure"))}
+              onToggleE2EE={() => {
+                /* FIX-E2EEBTN: пока ключа собеседника нет, нажатие не переключает режим,
+                   а запрашивает ключ заново и объясняет причину. Молча включить
+                   защиту нельзя: шифровать было бы не на чей ключ. */
+                if (!e2eeReady) {
+                  if (otherId) fetchPeerKey(otherId);
+                  showToast(
+                    keyConflict
+                      ? "На аккаунте ключ другого устройства: перенесите ключ через настройки → Шифрование E2EE"
+                      : "Защищённый режим будет доступен, когда собеседник откроет личные сообщения хотя бы раз",
+                  );
+                  return;
+                }
+                setChatMode((mm) => (mm === "secure" ? "open" : "secure"));
+              }}
               onTogglePinned={() => {
                 setShowPinned((v) => !v);
                 if (!showPinned) fetchPinnedMessages();
@@ -1717,6 +1822,14 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
 
             {/* Messages */}
+            {/* FIX-DM-COPY: граница ошибок. Ошибка при отрисовке ОДНОГО сообщения
+                разбирала всё дерево переписки — человек видел пустой экран вместо
+                разговора. Причина того вылета устранена отдельно, но цена любой
+                будущей ошибки не должна быть такой. */}
+            {isVaultLocked ? (
+              <VaultLock onUnlocked={() => setVaultUnlocked(true)} />
+            ) : (
+            <ChatErrorBoundary resetKey={selectedConvId} label="Не удалось показать переписку">
             <DMMessageList
               messages={visibleMessages}
               currentUserId={currentUserId}
@@ -1731,7 +1844,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onToggleReaction={toggleReaction}
               onPin={pinMessage}
               onOpenThread={openThread}
-              onForward={openForwardModal}
+              onForward={beginForward}
               onFavorite={addToFavorites}
               onStartEdit={startEdit}
               /* BUSINESS-PAY: в деловом разговоре убираются «В сейф», «Переслать»
@@ -1756,11 +1869,13 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               showScrollBtn={showScrollBtn}
               onScrollToBottom={scrollToBottom}
             />
+            </ChatErrorBoundary>
+            )}
 
             {/* BUSINESS-LOCK: клиенту при закрытой отправке ввод заменяется
                 объяснением. Отказ на отправку он увидел бы только после того, как
                 набрал текст, — а это хуже, чем честно закрытое поле. */}
-            {lockedForMe ? (
+            {isVaultLocked ? null : lockedForMe ? (
               <div className="border-t border-[var(--cn-border)] px-4 py-4 text-center">
                 <p className="text-xs text-[var(--cn-text-dim)]">
                   Администрация закрыла отправку сообщений по этому обращению.
@@ -1787,6 +1902,11 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                 </button>
               </div>
             )}
+
+            {/* FIX-FWDBUF: полоса появляется, когда сообщение ждёт получателя. */}
+            <div className="px-3">
+              <ForwardPendingBar onSendHere={forwardHere} disabled={!selectedConvId} />
+            </div>
 
             <DMMessageComposer
               input={input}

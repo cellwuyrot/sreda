@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { useVoice, SCREEN_COMFORT_VIEWERS, type ScreenShare } from "@/contexts/VoiceContext";
+import { useVoice, SCREEN_COMFORT_VIEWERS, type ScreenShare, type CameraShare } from "@/contexts/VoiceContext"; // FIX-SHARECAMBOX
 import ScreenSharePrivacyModal from "./ScreenSharePrivacyModal"; // SCREEN-PRIVATE-LIVE
 
 interface ScreenShareWindowProps {
@@ -95,30 +95,72 @@ function RoundButton({ title, active = false, danger = false, disabled = false, 
  */
 function useShareAreaRect(active: boolean) {
   const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  /* FIX-RAILSHARE: есть ли на экране сама область показа. Отличать «области
+     нет вовсе» от «область есть, но узкая» обязательно: второе — телефон, там
+     показ и должен занимать всё окно, а первое — человек вообще ушёл из
+     сообществ (друзья, сообщения, бизнес-чат), и там показу разворачиваться
+     нельзя — иначе переход по левой панели выглядит как «показ раскрылся на
+     всё окно и съел приложение». Начальное значение — true: до первого замера
+     лучше не мигать плашкой. */
+  const [hasHost, setHasHost] = useState(true);
 
   useEffect(() => {
     if (!active) return;
+    let frame = 0;
+    let resizeObserver: ResizeObserver | null = null;
+    let observedHost: Element | null = null;
+
     const measure = () => {
       const host = document.querySelector("[data-tz-share-area]");
-      if (!host) { setRect(null); return; }
+      /* Колонка контента пересобирается при смене раздела — наблюдатель
+         перевешиваем на новый узел, иначе он остался бы на выброшенном. */
+      if (host !== observedHost) {
+        if (observedHost) resizeObserver?.unobserve(observedHost);
+        observedHost = host;
+        if (host) resizeObserver?.observe(host);
+      }
+      if (!host) {
+        setHasHost(false);
+        setRect(null);
+        return;
+      }
+      setHasHost(true);
       const r = host.getBoundingClientRect();
       if (r.width < 320 || r.height < 240) { setRect(null); return; } // узкий экран — во всё окно
-      setRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+      /* Сравнение с прежними числами обязательно: замер вызывается на любое
+         изменение разметки, а новый объект при тех же координатах давал бы
+         лишнюю отрисовку и новое изменение разметки — то есть круг. */
+      setRect((prev) =>
+        prev && prev.left === r.left && prev.top === r.top && prev.width === r.width && prev.height === r.height
+          ? prev
+          : { left: r.left, top: r.top, width: r.width, height: r.height },
+      );
     };
-    measure();
-    window.addEventListener("resize", measure);
+
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => { frame = 0; measure(); });
+    };
+
     /* Колонку можно тащить за разделитель — следим за её размером, иначе окно
        показа осталось бы стоять по старым координатам. */
-    const host = document.querySelector("[data-tz-share-area]");
-    const observer = host && typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    if (host && observer) observer.observe(host);
+    resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+    measure();
+    window.addEventListener("resize", schedule);
+    /* FIX-RAILSHARE: область показа не только меняет размер, но и появляется /
+       исчезает вместе с разделом. Замер был одноразовым, и окно оставалось
+       стоять по координатам чужого раздела. */
+    const mutationObserver = typeof MutationObserver !== "undefined" ? new MutationObserver(schedule) : null;
+    mutationObserver?.observe(document.body, { childList: true, subtree: true });
     return () => {
-      window.removeEventListener("resize", measure);
-      observer?.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
     };
   }, [active]);
 
-  return rect;
+  return { rect, hasHost };
 }
 
 function useAttachStream(stream: MediaStream | null) {
@@ -156,6 +198,12 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      из размытия видно только то, что показ идёт. */
   const [consented, setConsented] = useState<Set<string>>(() => new Set());
   const [launching, setLaunching] = useState(true);
+  /* FIX-CAMMAIN: какая камера занимает главное окно вместо экрана.
+
+     Окошки камер можно было только смотреть краем глаза: нажатие ничего не
+     делало, и разглядеть собеседника было негде -- в отличие от экранов, между
+     которыми переключение есть с самого начала. null -- в главном окне экран. */
+  const [mainCameraId, setMainCameraId] = useState<string | null>(null);
 
   // ── Мини-окно ──────────────────────────────────────────────────────
   // Компактный плеер в пределах окна приложения; перетаскивается мышью за
@@ -165,6 +213,9 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      щелчком по своему показу или шестерёнкой в шапке; координаты нужны, чтобы
      окошко появилось у курсора. */
   const [privacyAt, setPrivacyAt] = useState<{ x: number; y: number } | null>(null);
+  /* FIX-SHARECAM: состояние кнопки камеры держим рядом с остальными хуками: ниже в файле
+     есть ранние return, а хуки после них запрещены (react-hooks/rules-of-hooks). */
+  const [cameraBusy, setCameraBusy] = useState(false);
   const miniDragRef = useRef<{ dx: number; dy: number; w: number; h: number } | null>(null);
 
   const onMiniDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -249,8 +300,19 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
   }, [activeId]);
 
   const active = shares.find((share) => share.socketId === activeId) ?? shares[0] ?? null;
-  const attachVideo = useAttachStream(active?.stream ?? null);
-  const areaRect = useShareAreaRect(true);
+  /* FIX-CAMMAIN: камера и экран делят одно главное окно. Второй большой
+     видеоэлемент рядом не ставим: на слабой машине два потока в полном размере
+     заметно роняют частоту кадров у самого показа. */
+  const mainCamera = voice.cameraShares.find((item) => item.socketId === mainCameraId) ?? null;
+  const attachVideo = useAttachStream(mainCamera ? mainCamera.stream : (active?.stream ?? null));
+  /* Камеру выключили (сам человек или ушёл из канала) -- возвращаем экран, иначе
+     главное окно осталось бы чёрным без объяснения. */
+  useEffect(() => {
+    if (mainCameraId && !voice.cameraShares.some((item) => item.socketId === mainCameraId)) {
+      setMainCameraId(null);
+    }
+  }, [mainCameraId, voice.cameraShares]);
+  const { rect: areaRect, hasHost: shareAreaPresent } = useShareAreaRect(true); // FIX-RAILSHARE
 
   /* SCREEN-VIEWERS: пока открыто окно чужой трансляции, сообщаем серверу, что
      смотрим именно её — ведущий и другие зрители видят состав. Эффект стоит до
@@ -315,6 +377,14 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     </div>
   ) : null;
 
+  const toggleCameraWithConfirm = () => {
+    if (cameraBusy) return;
+    /* Подтверждение только на включение: выключать надо одним нажатием. */
+    if (!voice.isCameraOn && !window.confirm("Включить камеру? Вас увидят участники голосового канала.")) return;
+    setCameraBusy(true);
+    void voice.toggleCamera().finally(() => setCameraBusy(false));
+  };
+
   const stopOrExit = () => {
     if (canStop) { onStopLocal?.(); return; }
     /* «Прекратить просмотр» возвращает всё к началу: согласие снимается, и при
@@ -357,7 +427,10 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      другой канал. Во втором случае разворачиваем не во весь экран, а в мини —
      человек сейчас читает переписку, и накрывать её нельзя. Плашка стоит слева
      снизу: справа внизу живёт мини-виджет голосового канала. */
-  const collapsedByChannel = !onVoiceChannel && mode === "full";
+  /* FIX-RAILSHARE: ушли из сообществ вовсе (друзья, сообщения, бизнес-чат) —
+     показ тоже убирается в плашку. Раньше в этих разделах отметки области
+     нет, и окно разворачивалось на всё приложение вместо перехода. */
+  const collapsedByChannel = (!onVoiceChannel || !shareAreaPresent) && mode === "full";
   if ((viewerDismissed || collapsedByChannel) && bannerHidden) return null;
   if (viewerDismissed || collapsedByChannel) {
     const title = collapsedByChannel
@@ -448,45 +521,52 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="fixed z-[76] flex items-center justify-center bg-black/85"
+      /* FIX-NAVTOP: слой показа ниже верхней панели (z-50) и любых окон
+         настроек. Раньше окно демонстрации (z-76) накрывало меню под ником и
+         разделы настроек: во время показа нажать на них было нельзя, а сам
+         показ при этом никуда не спешил. Плашка и мини-окно остаются выше --
+         это мелкие плавающие элементы, они ничего не перекрывают. */
+      className="fixed z-[45] flex items-center justify-center bg-black/85"
       style={areaRect
         ? { left: areaRect.left, top: areaRect.top, width: areaRect.width, height: areaRect.height }
         : { inset: 0 }}
     >
       <motion.section initial={{ opacity: 0, scale: 0.97, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", damping: 28, stiffness: 260 }} className="pointer-events-auto w-full h-full rounded-none border-0 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[#111315] shadow-2xl">
         <header className="h-[52px] min-h-[52px] px-3.5 flex items-center gap-3 border-b border-white/10 bg-[#171a1d]">
-          <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-          <div className="min-w-0">
+          <span className="w-2 h-2 shrink-0 rounded-full bg-red-400 animate-pulse" />
+          {/* FIX-SHAREHEAD: шапка — три блока: точка, текст, кнопки. Средний
+              блок не растягивался, и вторая строка («Зрителей пока нет») уезжала
+              вправо, упираясь в кнопки. */}
+          <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
             <strong className="text-xs text-white block truncate">
               {active.userName} демонстрирует экран
               {active.isLocal && voice.isScreenPrivate && (
                 <span className="ml-1.5 text-[9px] font-medium text-amber-300">приватно</span>
               )}
             </strong>
-            <span className="text-[9px] text-white/40">
-              LIVE · {quality}
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[9px] leading-none text-white/40">
+              <span className="whitespace-nowrap">LIVE · {quality}</span>
               {/* SCREEN-VIEWERS: кто смотрит прямо сейчас. У ведущего это
                   кнопка: управление доступом раньше пряталось за шестерёнкой и
                   правым щелчком, и половина о нём не догадывалась. */}
               {active.isLocal ? (
-                <>
-                  {" · "}
-                  <button
-                    type="button"
-                    onClick={(e) => setPrivacyAt({ x: e.clientX, y: e.clientY })}
-                    className="underline decoration-dotted underline-offset-2 hover:text-white/70"
-                  >
-                    {viewers.length > 0 ? `смотрят ${viewers.length} — кто именно` : "зрителей пока нет"}
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={(e) => setPrivacyAt({ x: e.clientX, y: e.clientY })}
+                  className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-white/10 bg-white/[0.04] px-2 py-[3px] leading-none text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
+                >
+                  {viewers.length > 0 ? `Зрителей: ${viewers.length} · кто именно` : "Зрителей пока нет"}
+                </button>
               ) : (
-                viewers.length > 0
-                  ? ` · смотрят (${viewers.length}): ${viewers.map((v) => v.userName).join(", ")}`
-                  : " · зрителей пока нет"
+                <span className="inline-flex max-w-full items-center truncate rounded-full border border-white/10 bg-white/[0.04] px-2 py-[3px] leading-none text-white/55">
+                  {viewers.length > 0
+                    ? `Зрителей: ${viewers.length} · ${viewers.map((v) => v.userName).join(", ")}`
+                    : "Зрителей пока нет"}
+                </span>
               )}
             </span>
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {/* SCREEN-PRIVATE-LIVE: правый щелчок по картинке делает то же самое,
                 но кнопка нужна — иначе о возможности никто не догадается. */}
             {active.isLocal && (
@@ -500,6 +580,21 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
                 <Icon name="gear" />
               </button>
             )}
+            {/* FIX-SHARECAM: камера рядом с остальными кнопками показа. */}
+            <button
+              type="button"
+              onClick={toggleCameraWithConfirm}
+              disabled={!voice.isConnected || cameraBusy}
+              title={!voice.isConnected ? "Сначала подключитесь к голосовому каналу" : voice.isCameraOn ? "Выкл. камеру" : "Вкл. камеру"}
+              aria-label="Камера"
+              className={`w-8 h-8 rounded-lg inline-flex items-center justify-center transition-colors disabled:opacity-40 ${voice.isCameraOn ? "bg-white/15 text-white" : "text-white/55 hover:text-white hover:bg-white/[0.06]"}`}
+            >
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={cameraBusy ? "animate-pulse" : undefined}>
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" />
+                {!voice.isCameraOn && !cameraBusy && <line x1="2" y1="3" x2="22" y2="21" />}
+              </svg>
+            </button>
             <button type="button" onClick={() => setMode("mini")} title="Свернуть в мини-окно" className="w-8 h-8 rounded-lg text-white/55 hover:text-white hover:bg-white/[0.06] inline-flex items-center justify-center"><Icon name="mini" /></button>
             <button type="button" onClick={stopOrExit} title={canStop ? "Остановить демонстрацию" : "Прекратить просмотр"} className="w-8 h-8 rounded-lg text-red-300 hover:bg-red-500/15 inline-flex items-center justify-center"><Icon name={canStop ? "stop" : "exit"} /></button>
           </div>
@@ -515,7 +610,11 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
               autoPlay
               muted
               playsInline
-              className={`absolute inset-0 w-full h-full object-contain transition-[filter] duration-300 ${awaitingConsent ? "blur-2xl scale-105" : ""}`}
+              /* FIX-CAMMAIN: своя камера в главном окне тоже зеркальная, как в
+                 окошке -- иначе при переключении картинка "переворачивалась". */
+              className={`absolute inset-0 w-full h-full object-contain transition-[filter] duration-300 ${
+                awaitingConsent && !mainCamera ? "blur-2xl scale-105" : ""
+              } ${mainCamera?.isLocal ? "scale-x-[-1]" : ""}`}
             />
             {consentOverlay}
             <AnimatePresence>
@@ -529,12 +628,53 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
             </AnimatePresence>
             <div className="absolute left-3 bottom-3 flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-black/65 text-[10px] text-white/70">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-              {active.isLocal
+              {/* FIX-CAMMAIN: подпись говорит, что сейчас в главном окне и как вернуть экран. */}
+              {mainCamera
+                ? `Камера: ${mainCamera.userName} — нажмите плитку экрана, чтобы вернуться к показу`
+                : active.isLocal
                 ? voice.isScreenPrivate
                   ? "Приватный показ · правый клик — настройки"
                   : "Экран доступен участникам · правый клик — настройки"
                 : "Экран доступен участникам"}
             </div>
+            {/* FIX-SHARECAMBOX: окошки камер поверх показа. Кнопка камеры в шапке
+                была, а самой картинки в окне демонстрации никто не выводил:
+                включивший камеру не видел ни себя, ни собеседников и не мог
+                понять, идёт ли видео вообще. Полоса справа сверху, а не в боковой
+                колонке: колонка скрыта на узких окнах, а камера нужна всегда. */}
+            {(voice.cameraShares.length > 0 || voice.isCameraOn) && (
+              <div className="absolute right-3 top-3 z-[8] flex w-[168px] max-h-[calc(100%-24px)] flex-col gap-2 overflow-y-auto">
+                <div className="rounded-md bg-black/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">Камеры</div>
+                {voice.cameraShares.map((camera) => (
+                  <CameraTile
+                    key={camera.socketId}
+                    camera={camera}
+                    active={camera.socketId === mainCameraId}
+                    /* Повторное нажатие возвращает экран: отдельной кнопки
+                       "назад" для этого не нужно. */
+                    onSelect={() =>
+                      setMainCameraId(camera.socketId === mainCameraId ? null : camera.socketId)
+                    }
+                  />
+                ))}
+                {/* FIX-CAMMAIN: пока в главном окне камера, экран показывается
+                    плиткой здесь же -- вернуться к нему можно одним нажатием, не
+                    ища боковую колонку, которой на узком окне вообще нет. */}
+                {mainCamera && (
+                  <ShareTile
+                    share={active}
+                    active={false}
+                    blurred={false}
+                    onSelect={() => setMainCameraId(null)}
+                  />
+                )}
+                {voice.cameraShares.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-white/15 bg-black/60 px-2 py-3 text-center text-[10px] text-white/50">
+                    Камера включается…
+                  </div>
+                )}
+              </div>
+            )}
           </main>
 
           <aside className="hidden lg:flex w-56 xl:w-64 shrink-0 flex-col gap-2 min-h-0">
@@ -616,6 +756,47 @@ function ShareTile({ share, active, blurred, onSelect }: { share: ScreenShare; a
     <button type="button" onClick={onSelect} className={`relative w-full aspect-video overflow-hidden rounded-lg border text-left transition-colors ${active ? "border-violet-400 dark:border-cyan-400 bg-violet-500/10 dark:bg-cyan-400/10" : "border-white/10 bg-black hover:border-white/25"}`}>
       <video ref={attachVideo} autoPlay muted playsInline className={`absolute inset-0 w-full h-full object-cover ${blurred ? "blur-md scale-110" : ""}`} />
       <span className="absolute inset-x-0 bottom-0 px-2 py-1 bg-black/70 text-[9px] text-white/75 truncate">{share.isLocal ? "Ваш экран" : share.userName}</span>
+    </button>
+  );
+}
+
+/**
+ * FIX-SHARECAMBOX: одно окошко камеры в полосе поверх демонстрации.
+ *
+ * Звук выключен всегда, включая чужие камеры: голос идёт отдельным
+ * потоком голосового канала, и второй источник того же звука давал бы эхо.
+ * Свою картинку отражаем по горизонтали — человек ждёт зеркала, а не
+ * вида со стороны; чужую — нет.
+ */
+function CameraTile({
+  camera,
+  active,
+  onSelect,
+}: {
+  camera: CameraShare;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const attachVideo = useAttachStream(camera.stream);
+  return (
+    /* FIX-CAMMAIN: окошко -- кнопка. Рамка показывает, чья камера сейчас в
+       главном окне, поэтому нажатие видно результатом, а не только подсказкой. */
+    <button
+      type="button"
+      onClick={onSelect}
+      title={active ? "Вернуться к показу экрана" : `Показать камеру: ${camera.userName}`}
+      className={`relative w-full aspect-video overflow-hidden rounded-lg border text-left shadow-lg transition-colors ${
+        active ? "border-violet-400 dark:border-cyan-400" : "border-white/12 hover:border-white/30"
+      } bg-black`}
+    >
+      <video
+        ref={attachVideo}
+        autoPlay
+        muted
+        playsInline
+        className={`absolute inset-0 w-full h-full object-cover ${camera.isLocal ? "scale-x-[-1]" : ""}`}
+      />
+      <span className="absolute inset-x-0 bottom-0 px-1.5 py-0.5 bg-black/70 text-[9px] text-white/75 truncate">{camera.userName}</span>
     </button>
   );
 }

@@ -6,6 +6,7 @@ import { hasPremium } from "@/lib/premium";
 import { getIO } from "@/lib/socketEmit";
 import { sanitizeText } from "@/lib/sanitize";
 import { checkBan } from "@/lib/banCheck";
+import { resolveProfileBanner } from "@/lib/profileBannerFallback"; // FIX-BANNERWEB
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -55,6 +56,9 @@ export async function GET() {
   }
 
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  /* FIX-BANNERWEB: настройки показывают тот же фон, что и профиль, и заодно
+     переносят прежнее значение из профиля сообщества на пользователя. */
+  user.profileBanner = await resolveProfileBanner(userId, (user.profileBanner as string | null) ?? null);
   return NextResponse.json(user);
 }
 
@@ -117,7 +121,10 @@ export async function PATCH(req: Request) {
       // Раньше принимался любой URL → SSRF/утечка (запрос к внешнему ресурсу при
       // рендере <img>/background) и потенциальная CSS-инъекция.
       const b = body.profileBanner.trim();
-      if (b.startsWith("/uploads/") && b.length <= 300 && !b.includes("..")) {
+      // FIX-BGCROP: к пути добавляются параметры рамки (?fx=&fy=&z=), поэтому
+      // предел длины поднят с 300 до 400 знаков — иначе сохранение фона с
+      // выбранной областью отвергалось как «некорректный баннер».
+      if (b.startsWith("/uploads/") && b.length <= 400 && !b.includes("..")) {
         data.profileBanner = b;
       } else {
         return NextResponse.json({ error: "Некорректный баннер" }, { status: 400 });

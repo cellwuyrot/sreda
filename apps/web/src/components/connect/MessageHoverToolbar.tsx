@@ -19,7 +19,10 @@ export type ToolbarAttachment = { url: string; name?: string; mime?: string };
 
 export type ToolbarMessage = {
   id: string;
-  content: string;
+  /* FIX-DM-COPY: текста может не быть вовсе. Тип обещал строку, но в личные
+     сообщения с одним вложениением с сервера приходит null — и обращение к
+     .trim() при отрисовке валило всю переписку. Теперь это видно в типе. */
+  content: string | null;
   attachments?: ToolbarAttachment[];
 };
 
@@ -230,8 +233,14 @@ export default function MessageHoverToolbar({
 
   const firstImage = message.attachments?.find((a) => (a.mime || "").startsWith("image/"));
 
+  /* FIX-DM-COPY: единственное место, где текст приводится к строке. Ниже три
+     места брали message.content напрямую, и одно из них (проверка «есть ли что
+     копировать») выполнялось при каждой отрисовке — на сообщении без текста
+     вылетала вся лента. */
+  const contentText = typeof message.content === "string" ? message.content : "";
+
   const handleCopyText = async () => {
-    flash((await copyTextToClipboard(message.content)) ? "Скопировано" : "Ошибка");
+    flash((await copyTextToClipboard(contentText)) ? "Скопировано" : "Ошибка");
   };
 
   const handleCopyImage = async () => {
@@ -241,7 +250,7 @@ export default function MessageHoverToolbar({
 
   const handleSendToBoard = () => {
     sendMessageToBoard({
-      content: message.content,
+      content: contentText,
       messageId: message.id,
       authorName: boardContext?.authorName,
       channelName: boardContext?.channelName,
@@ -280,10 +289,10 @@ export default function MessageHoverToolbar({
           <button type="button" onClick={toggleReactions} title="Добавить реакцию" aria-label="Добавить реакцию">
             {I.smile}
           </button>
-          {reactionOpen && <div className={`absolute right-0 z-50 rounded-xl border border-[var(--cn-border)] bg-[var(--cn-sidebar)] p-1.5 shadow-xl ${reactionUp ? "bottom-full mb-1" : "top-full mt-1"}`}><TriozEmojiGrid compact groupEmojis={groupEmojis} onSelect={(emoji) => { onReact(emoji); setReactionOpen(false); }}/></div>}
+          {reactionOpen && <div className={`tz-react-pop absolute z-50 rounded-xl border border-[var(--cn-border)] bg-[var(--cn-sidebar)] p-1.5 shadow-xl ${reactionUp ? "bottom-full mb-1" : "top-full mt-1"}`}><TriozEmojiGrid compact groupEmojis={groupEmojis} onSelect={(emoji) => { onReact(emoji); setReactionOpen(false); }}/></div>}
         </div>
       )}
-      {message.content.trim().length > 0 && (
+      {contentText.trim().length > 0 && (
         <button type="button" onClick={handleCopyText} title="Копировать текст" aria-label="Копировать текст">
           {I.copy}
         </button>

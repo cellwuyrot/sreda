@@ -8,6 +8,8 @@ import { InfoIcon, QuestionIcon, ChatIcon, FileIcon } from "@/components/ui/Conn
 import BlockIcon, { BLOCK_ICON_POOL, blockIconKeyForName, isBlockIconKey } from "./BlockIcons";
 import { MembersList, type MemberListEntry } from "./GroupDialogs";
 import { COLLAPSED_WIDTH, CollapsedStrip, PanelChevron, VIEW_TITLE, usePanelView } from "./panelCollapse";
+import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-CHATCOL
+import { useDragOrder } from "./useDragOrder"; // FIX-DRAGORDER
 import InfoTooltip from "@/components/ui/InfoTooltip";
 
 /* FIX-PANELVIEW3: три состояния по кругу — участники → разделы → скрыто.
@@ -100,13 +102,33 @@ export default function SectionsPanel({
 
   const [createParent, setCreateParent] = useState<string | null | undefined>(undefined);
   const [settingsBlock, setSettingsBlock] = useState<Channel | null>(null);
+  /* FIX-DRAGORDER: разделы переставляются перетаскиванием плиток; порядок
+     сохраняет тот же PUT /api/channels/reorder, что и колонка каналов. */
+  const commitOrder = async (ids: string[]) => {
+    await fetch("/api/channels/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelIds: ids, groupId }),
+    }).catch(() => {});
+    onRefresh();
+  };
+  const drag = useDragOrder({ enabled: canManage, onReorder: commitOrder });
   // undefined = closed, null = new top-level block, string = new list item under block id
 
   // Top-level "разделы" = non-voice channels that aren't the general chat and have no parent.
   // Order by sortOrder first (мэйн-сообщество наследует порядок услуг из админки),
   // then fall back to alphabetical for groups that never set an explicit order.
   const rawBlocks = channels
-    .filter((c) => c.type !== "VOICE" && c.type !== "APPEALS" && !c.parentId && c.id !== generalChannelId)
+    /* FIX-CHATCOL: обычный и улучшенный чат — жители левой колонки, а не плитки
+       раздела. Раньше любой созданный в главной группе текстовый чат попадал в
+       «Разделы». Исключение — чаты услуг («… — Обсуждение», «… — Вопросы»):
+       они часть блока услуги и остаются здесь. */
+    .filter((c) => {
+      if (c.type === "VOICE" || c.type === "APPEALS") return false;
+      if (c.parentId || c.id === generalChannelId) return false;
+      if ((c.type === "TEXT" || c.type === "FEED") && !isServiceLinkedChannel(c)) return false;
+      return true;
+    })
     .sort((a, b) => {
       const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
       if (so !== 0) return so;
@@ -183,14 +205,10 @@ export default function SectionsPanel({
           </span>
           <PanelChevron collapsed={collapsed} />
         </button>
-        {canManage && view === "sections" && (
-          <button
-            onClick={() => setCreateParent(null)}
-            className="text-xs font-medium text-accent border border-[var(--cn-border)] rounded-lg px-2.5 py-1 hover:bg-[var(--cn-hover)] transition-colors"
-          >
-            ＋ блок
-          </button>
-        )}
+        {/* FIX-PLUSBLOCK: кнопка «＋ блок» убрана — блоки-разделы заводятся в
+            Админ ▸ Услуги. Вторая точка создания плодила разделы без услуги:
+            они висели в списке, а сверка с админкой про них не знала. Пункты внутри
+            блока добавляются по-прежнему здесь. */}
       </div>
       )}
 
@@ -229,7 +247,8 @@ export default function SectionsPanel({
           return (
             <div
               key={block.id}
-              className="rounded-xl border transition-colors group/block min-w-0 overflow-hidden" /* MOBILE-TILES */
+              {...drag.itemProps(block.id, blocks.map((b) => b.id))}
+              className={`rounded-xl border transition-colors group/block min-w-0 overflow-hidden${drag.itemClass(block.id)}`} /* MOBILE-TILES */
               style={{
                 borderColor: active ? "var(--cn-accent)" : "var(--cn-border)",
                 background: "linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0))",
@@ -263,7 +282,9 @@ export default function SectionsPanel({
                     </span>
                   )}
                   {/* Gear icon — admin only */}
-                  {canManage && (onDeleteChannel || onToggleHideChannel) && (
+                  {/* FIX-BLOCKDEL: шестерёнка есть у любого раздела: в ней и
+                      настройки, и удаление. */}
+                  {canManage && (
                     <button
                         onClick={(e) => { e.stopPropagation(); setSettingsBlock(block); }}
                         className="w-6 h-6 flex items-center justify-center rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition-all flex-none"
@@ -341,6 +362,7 @@ export default function SectionsPanel({
           kids={autoKidsOf(settingsBlock.id)}
           onClose={() => setSettingsBlock(null)}
           onRefresh={onRefresh}
+          onDelete={onDeleteChannel}
         />
       )}
 
@@ -359,11 +381,14 @@ export default function SectionsPanel({
 
 /* ── Create block / list modal (admin only) ── */
 
+/* FIX-BLOCKTYPES: у пункта блока три смысла — новости, вопрос-ответ и чат
+   (обычный либо улучшенный). «База знаний» убрана: это отдельный модуль
+   сообщества со своим экраном, а не форма пункта раздела. */
 const FORM_TYPES: { v: string; label: string }[] = [
-  { v: "TEXT", label: "Открытый чат" },
+  { v: "TEXT", label: "Чат" },
+  { v: "FEED", label: "Улучшенный чат" }, // FIX-FEED
   { v: "NEWS", label: "Новости" },
   { v: "QA", label: "Вопрос-ответ" },
-  { v: "WIKI", label: "База знаний" },
 ];
 
 function BlockModal({
@@ -496,12 +521,14 @@ function BlockModal({
 
 /* ── Block settings modal (admin): rename, pick icon from pool, toggle & retype sub-items ── */
 function BlockSettingsModal({
-  block, kids, onClose, onRefresh,
+  block, kids, onClose, onRefresh, onDelete,
 }: {
   block: Channel;
   kids: Channel[];
   onClose: () => void;
   onRefresh: () => void;
+  /** FIX-BLOCKDEL: удаление раздела целиком — кроме разделов услуг. */
+  onDelete?: (channelId: string) => void;
 }) {
   const [name, setName] = useState(block.name);
   const [icon, setIcon] = useState<string | null>(
@@ -623,17 +650,36 @@ function BlockSettingsModal({
                     <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                   </button>
                 </div>
-                <div className="mt-2">
-                  <select
-                    value={(it as { type?: string }).type || "TEXT"}
-                    onChange={(e) => setItems((arr) => arr.map((x) => x.id === it.id ? { ...x, type: e.target.value } : x))}
-                    className="text-[11px] rounded-lg px-2 py-1 border bg-transparent"
-                    style={{ color: "var(--cn-text)", borderColor: "var(--cn-border)" }}
-                  >
-                    {FORM_TYPES.map((ft) => (
-                      <option key={ft.v} value={ft.v} style={{ color: "#000" }}>{ft.label}</option>
-                    ))}
-                  </select>
+                {/* FIX-BLOCKTYPES: у пункта две настройки, и обе здесь: чем он является
+                    и кто в нём пишет. Право на ответ раньше задавалось только при
+                    создании — потом поменять его было негде. */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1 text-[11px]" style={{ color: "var(--cn-muted)" }}>
+                    Вид
+                    <select
+                      value={(it as { type?: string }).type || "TEXT"}
+                      onChange={(e) => setItems((arr) => arr.map((x) => x.id === it.id ? { ...x, type: e.target.value } : x))}
+                      className="text-[11px] rounded-lg px-2 py-1 border bg-transparent"
+                      style={{ color: "var(--cn-text)", borderColor: "var(--cn-border)" }}
+                    >
+                      {FORM_TYPES.map((ft) => (
+                        <option key={ft.v} value={ft.v} style={{ color: "#000" }}>{ft.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px]" style={{ color: "var(--cn-muted)" }}>
+                    Пишут
+                    <select
+                      value={it.access}
+                      onChange={(e) => setItems((arr) => arr.map((x) => x.id === it.id ? { ...x, access: e.target.value as Access } : x))}
+                      className="text-[11px] rounded-lg px-2 py-1 border bg-transparent"
+                      style={{ color: "var(--cn-text)", borderColor: "var(--cn-border)" }}
+                    >
+                      <option value="ALL" style={{ color: "#000" }}>Все участники</option>
+                      <option value="MOD" style={{ color: "#000" }}>Модераторы и админы</option>
+                      <option value="ADMIN" style={{ color: "#000" }}>Только админы</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             ))}
@@ -642,6 +688,31 @@ function BlockSettingsModal({
       )}
 
       {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+
+      {/* FIX-BLOCKDEL: раздел удаляется там же, где настраивается. Разделы
+          услуг исключены: их состав задаётся в Админ ▸ Услуги, и сверка
+          вернула бы удалённое обратно. */}
+      {onDelete && !isServiceLinkedChannel(block) && (
+        <button
+          type="button"
+          disabled={saving}
+          onClick={async () => {
+            const warn = kids.length > 0
+              ? `Удалить раздел «${block.name}» и ${kids.length} его пунктов? Действие необратимо.`
+              : `Удалить раздел «${block.name}»? Действие необратимо.`;
+            if (!window.confirm(warn)) return;
+            setSaving(true);
+            for (const k of kids) {
+              await fetch(`/api/channels/${k.id}`, { method: "DELETE" }).catch(() => {});
+            }
+            onDelete(block.id);
+            onClose();
+          }}
+          className="w-full mb-3 px-4 py-2 rounded-xl border border-red-500/40 text-red-500 text-sm font-medium hover:bg-red-500/10 transition-colors disabled:opacity-50"
+        >
+          Удалить раздел
+        </button>
+      )}
 
       <div className="flex gap-2 justify-end">
         <button

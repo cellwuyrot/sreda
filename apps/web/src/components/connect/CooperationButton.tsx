@@ -47,7 +47,7 @@ export default function CooperationButton() {
       const res = await fetch("/api/appeals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: `Сотрудничество: ${selected.title}`.slice(0, 120), body, category: "COOPERATION" }),
+        body: JSON.stringify({ subject: `Сотрудничество: ${selected.title}`.slice(0, 120), body, category: "COOPERATION", serviceId: selected.id }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) { setError(data?.error || "Не удалось отправить заявку"); return; }

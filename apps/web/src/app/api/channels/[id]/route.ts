@@ -163,6 +163,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  /* FIX-CHANDEL: канал услуги удаляется как любой другой: запрет, стоявший
+     здесь раньше, лечил симптом — возвращала каналы сверка с Админ ▸ Услуги,
+     и исправлена она там же (lib/mainCommunity). */
+
   await prisma.channel.delete({ where: { id } });
 
   const io = getIO();

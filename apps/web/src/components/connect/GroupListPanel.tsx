@@ -12,6 +12,7 @@
 // - раскладка хранится на сервере (/api/groups/layout) — общая для веба и десктопа.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { io } from "socket.io-client"; // FIX-VOICEBADGE
 import { CastleIcon } from "@/components/ui/ConnectIcons";
 import { FolderIcon, LinkIcon, PlusIcon } from "@/components/ui/ConnectIconsExtra";
 
@@ -108,6 +109,20 @@ function GroupAvatar(props: { icon: string | null; name: string; isMain?: boolea
   return fallback;
 }
 
+/* FIX-VOICEBADGE: стилизованный рупор — один и тот же знак и у строки сообщества,
+   и в плашке внизу, чтобы связь между ними читалась без подписей. */
+function MegaphoneIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 11v2a1 1 0 0 0 1 1h2l4 3V7L6 10H4a1 1 0 0 0-1 1z" />
+      <path d="M14 8.5a4 4 0 0 1 0 7" />
+      <path d="M17 6a7 7 0 0 1 0 12" />
+    </svg>
+  );
+}
+
+type VoiceGroups = Record<string, { count: number; channelIds: string[] }>;
+
 export default function GroupListPanel(props: GroupListPanelProps) {
   const { groups, selectedGroup, onSelectGroup, onCreateGroup, onJoinGroup, groupUnread = {} } = props;
 
@@ -116,6 +131,31 @@ export default function GroupListPanel(props: GroupListPanelProps) {
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  /* FIX-VOICEBADGE: список сообществ не знал, что где-то говорят: присутствие жило
+     только в колонке каналов открытого сообщества. Сводный запрос отдаёт только свои
+     сообщества, так что скрытое от человека нигде не всплывает. */
+  const [voiceGroups, setVoiceGroups] = useState<VoiceGroups>({});
+
+  useEffect(() => {
+    const sock = io({ path: "/api/socketio", transports: ["websocket", "polling"] });
+    const ask = () => { if (sock.connected) sock.emit("get-all-voice-users"); };
+    sock.on("all-voice-groups", (payload: VoiceGroups) => setVoiceGroups(payload ?? {}));
+    sock.on("connect", ask);
+    sock.io.on("reconnect", ask);
+    /* 15 с: плашка справочная, секундная точность ей не нужна. */
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") ask();
+    }, 15000);
+    const onVisible = () => { if (document.visibilityState === "visible") ask(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      sock.disconnect();
+    };
+  }, []);
+
+  const voiceTotal = Object.values(voiceGroups).reduce((sum, v) => sum + v.count, 0);
 
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -452,6 +492,16 @@ export default function GroupListPanel(props: GroupListPanelProps) {
                 {g._count.members} участников · {g._count.channels} каналов
               </span>
             </span>
+            {/* FIX-VOICEBADGE: кто-то в голосовом канале этого сообщества */}
+            {(voiceGroups[g.id]?.count ?? 0) > 0 && (
+              <span
+                title={"В голосовом канале: " + voiceGroups[g.id]?.count}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, padding: "1px 6px", borderRadius: 9, fontSize: 10, fontWeight: 700, color: "#22c55e", background: "rgba(34,197,94,0.14)" }}
+              >
+                <MegaphoneIcon size={12} />
+                {voiceGroups[g.id]?.count}
+              </span>
+            )}
             {/* FIX-NTF2: число непрочитанных; тултип — в каких чатах; красный — есть упоминание */}
             {(groupUnread[g.id]?.count ?? 0) > 0 && (
               <span
@@ -604,6 +654,35 @@ export default function GroupListPanel(props: GroupListPanelProps) {
           </>
         )}
       </div>
+
+      {/* FIX-VOICEBADGE: мини-окно слева снизу — где именно сейчас говорят. Клик по
+          сообществу сразу переключает туда — иначе подсказка сообщала бы о
+          разговоре и оставляла искать его руками. */}
+      {voiceTotal > 0 && (
+        <div style={{ margin: "0 8px 6px", padding: "7px 9px", borderRadius: 10, border: "1px solid rgba(34,197,94,0.35)", background: "rgba(34,197,94,0.10)", display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#22c55e" }}>
+            <MegaphoneIcon size={13} />
+            В голосовых каналах: {voiceTotal}
+          </span>
+          {Object.entries(voiceGroups).map(([gid, info]) => {
+            const g = groupById.get(gid);
+            if (!g || info.count === 0) return null;
+            return (
+              <button
+                key={gid}
+                type="button"
+                onClick={() => onSelectGroup(gid)}
+                style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: 0, border: "none", background: "transparent", color: "inherit", cursor: "pointer", fontSize: 11, textAlign: "left" }}
+                title={"Открыть " + g.name}
+              >
+                <GroupAvatar icon={g.icon} name={g.name} small />
+                <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                <span style={{ opacity: 0.75 }}>{info.count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div style={footerStyle}>
         <button type="button" style={footerBtnStyle} onClick={onCreateGroup}>

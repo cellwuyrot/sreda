@@ -1143,13 +1143,26 @@ app.prepare().then(() => {
       });
       const allowedGroups = new Set(memberships.map((m) => m.groupId));
       const result: Record<string, VoiceUser[]> = {};
+      /* FIX-VOICEBADGE: списку сообществ нужна сводка «в каком сообществе сейчас
+         кто-то говорит». Собираем её в том же проходе: группа канала уже
+         посчитана, и второй круг запросов не нужен. Видно только свои сообщества —
+         фильтр allowedGroups тот же. */
+      const byGroup: Record<string, { count: number; channelIds: string[] }> = {};
       for (const [chId, room] of voiceRooms) {
         const groupId = await getChannelGroupId(chId);
         if (groupId && allowedGroups.has(groupId)) {
-          result[chId] = Array.from(room.values());
+          const users = Array.from(room.values());
+          result[chId] = users;
+          if (users.length > 0) {
+            const entry = byGroup[groupId] ?? { count: 0, channelIds: [] };
+            entry.count += users.length;
+            entry.channelIds.push(chId);
+            byGroup[groupId] = entry;
+          }
         }
       }
       socket.emit("all-voice-users", result);
+      socket.emit("all-voice-groups", byGroup);
     });
 
     // WebRTC signaling: relay only between sockets that share a voice room.

@@ -17,6 +17,7 @@ import NavRail from "@/components/connect/NavRail";
 import { NavSection } from "@/components/connect/NavRail";
 import GroupListPanel from "@/components/connect/GroupListPanel";
 import ChannelSidebar from "@/components/connect/ChannelSidebar";
+import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
 import MessageArea from "@/components/connect/MessageArea";
 import { applyChatAppearance, loadChatAppearance } from "@/lib/chatAppearance";
 import { applyPremiumSkin, loadPremiumSkin, PREMIUM_SKIN_EVENT } from "@/lib/premiumSkin"; // PREMIUM-SKIN
@@ -255,6 +256,8 @@ function ConnectPageInner() {
       if (key !== "dm") setDmFriendId(null);
       if (key !== "communities") { setSelectedChannel(null); }
       if (key === "communities") { setSelectedGroup(null); setMobileView("groups"); }
+      // FIX-RAILSHARE: то же самое для нижней навигации и свайпа на телефоне.
+      setVoiceViewFocused(false);
     },
     [],
   );
@@ -349,7 +352,7 @@ function ConnectPageInner() {
         const pendingDeepLink = !!deepLinkRef.current?.channel && deepLinkRef.current?.group === data.id;
         // Правила ещё не приняты → показываем гейт правил, канал не открываем.
         // Условие точно совпадает с веткой рендера GroupRulesGate ниже.
-        const rulesGated = !!data.rules && !data.rulesAccepted && data.myRole === "MEMBER";
+        const rulesGated = !data.isMain && !!data.rules && !data.rulesAccepted && data.myRole === "MEMBER";
         const firstText = data.channels.find((c) => c.type === "TEXT");
         setSelectedChannel(!pendingDeepLink && !rulesGated && firstText ? firstText.id : null);
       }
@@ -680,6 +683,17 @@ function ConnectPageInner() {
     setMobileView("chat");
   };
 
+  /* FIX-BACKTRAP: выход из группы — состоянием, а не историей браузера.
+     Внутри сообщества адрес не меняется (/connect переписывается через
+     replaceState), поэтому «назад» уводило на прошлую СТРАНИЦУ — в настройки, —
+     а они возвращали в /connect, который снова открывал ту же группу. Круг,
+     из которого не выбраться в список сообществ. */
+  const exitGroup = useCallback(() => {
+    setSelectedChannel(null);
+    setSelectedGroup(null);
+    setMobileView("groups");
+  }, []);
+
   const handleMessageFriend = (friendId: string) => {
     setDmFriendId(friendId);
     setActiveSection("dm");
@@ -725,6 +739,22 @@ function ConnectPageInner() {
   }, [anyScreenShare]);
 
   const handleChannelClick = (channel: Channel) => {
+    /* FIX-RULESGATE: пока правила группы не приняты, участник не попадает
+       ни в текстовый канал, ни в голосовой. Раньше экран с правилами
+       показывался только до первого клика по списку каналов, и его можно
+       было обойти вручную или ссылкой. Главная группа TZ Connect —
+       исключение: в неё вступают автоматически при регистрации. */
+    if (
+      groupDetail &&
+      !groupDetail.isMain &&
+      !!groupDetail.rules &&
+      !groupDetail.rulesAccepted &&
+      groupDetail.myRole === "MEMBER"
+    ) {
+      setSelectedChannel(null);
+      setMobileView("chat");
+      return;
+    }
     if (channel.type === "VOICE") {
       voice.joinVoice(channel.id, channel.name);
     } else {
@@ -875,7 +905,13 @@ function ConnectPageInner() {
   // Block-based layout for the main community: general chat + voice + section blocks
   const isBlockMode = !!groupDetail?.isMain || !!groupDetail?.sectionsEnabled;
   const generalChannelId = isBlockMode && groupDetail
-    ? (groupDetail.channels.find((c) => c.type === "TEXT" && !c.parentId)?.id ?? null)
+    /* FIX-GENERAL: общий чат — только СВОЙ канал сообщества. Канал услуги,
+       попавший на его место, становился закреплённой строкой без удаления.
+       FIX-SRVLINK: проверяем общим признаком — одного serviceId мало, у старых
+       каналов услуг он пуст, и именно они занимали место общего чата. */
+    ? (groupDetail.channels.find(
+        (c) => c.type === "TEXT" && !c.parentId && !isServiceLinkedChannel(c),
+      )?.id ?? null)
     : null;
 
   return (
@@ -903,6 +939,10 @@ function ConnectPageInner() {
           setActiveSection(section);
           if (section !== "dm") setDmFriendId(null);
           if (section !== "communities") setSelectedChannel(null);
+          /* FIX-RAILSHARE: человек перешёл в другой раздел — показ экрана
+             убирается в плашку и не накрывает то, куда он шёл. Вернуться к
+             трансляции — плашкой или щелчком по голосовому каналу. */
+          setVoiceViewFocused(false);
         }}
         myProfileUser={myProfileUser}
         userName={session.user.name ?? ""}
@@ -1001,15 +1041,18 @@ function ConnectPageInner() {
                       <AppealsPanel channelId={selectedChannel} channelName={selectedChannelData.name} currentUserId={userId} canModerate={!!canManage} onBack={() => setShowChannelsDrawer(true)} />
                     ) : (
                       <>
-                        {/* Активные опросы: на десктопе это отдельная колонка (COL 4),
-                            на мобильном показываем компактным блоком над чатом. */}
-                        {!isBlockMode && <PollsPanel channelId={selectedChannel} currentUserId={userId} />}
+                        {/* FIX-POLLBLOCK: опрос живёт в самой переписке — обычным блоком
+                            шириной как сообщение, а не отдельной правой колонкой во всю ширину
+                            (та колонка — COL 4 — убрана). Показывается и в блочном режиме:
+                            в главной группе опрос создать было можно, а виден он не был. */}
+                        <PollsPanel channelId={selectedChannel} currentUserId={userId} variant="chat" />
                         <MessageArea
                           channelId={selectedChannel}
                           channelName={selectedChannelData.name}
                           channelIcon={selectedChannelData.icon}
                           channelType={selectedChannelData.type}
                           postAccess={selectedChannelData.postAccess}
+                          serviceId={selectedChannelData.serviceId} /* FIX-SRVDOC */
                           currentUserId={userId}
                           currentUserName={session.user.name ?? ""}
                           currentUserRole={userRole}
@@ -1178,6 +1221,7 @@ function ConnectPageInner() {
                 /* Sub-nav: channels inside selected group */
                 <ChannelSidebar
                   groupDetail={groupDetail}
+                  onBack={exitGroup} /* FIX-BACKTRAP */
                   selectedChannel={selectedChannel}
                   unreadCounts={unreadCounts}
                   mentionChannels={mentionChannels}
@@ -1258,6 +1302,7 @@ function ConnectPageInner() {
                   channelIcon={selectedChannelData.icon}
                   channelType={selectedChannelData.type}
                   postAccess={selectedChannelData.postAccess}
+                  serviceId={selectedChannelData.serviceId} /* FIX-SRVDOC */
                   currentUserId={userId}
                   currentUserName={session.user.name ?? ""}
                   currentUserRole={userRole}
@@ -1271,7 +1316,7 @@ function ConnectPageInner() {
                 )
               ) : selectedGroup && groupReady && groupDetail ? (
                 <div className="flex-1 flex items-center justify-center overflow-y-auto">
-                  {groupDetail.rules && !groupDetail.rulesAccepted && groupDetail.myRole === "MEMBER" ? (
+                  {!groupDetail.isMain && groupDetail.rules && !groupDetail.rulesAccepted && groupDetail.myRole === "MEMBER" ? (
                     <GroupRulesGate group={groupDetail} onAccept={async () => {
                       await fetch(`/api/groups/${groupDetail.id}/accept-rules`, { method: "POST" });
                       setGroupDetail({ ...groupDetail, rulesAccepted: true });
@@ -1341,14 +1386,15 @@ function ConnectPageInner() {
                 members={groupDetail.members}
                 membersTotal={groupDetail.membersTotal}
                 canSeeMembers={!hideMembersForMain}
+                canManage={!!canManage} /* FIX-MODDRAG */
+                onRefresh={() => { if (selectedGroup) fetchGroupDetail(selectedGroup); }}
                 onSelect={(ch) => handleChannelClick(ch as unknown as Channel)}
               />
             )}
 
-            {/* COL 4 — active polls (regular groups) */}
-            {!isBlockMode && selectedGroup && selectedChannel && (
-              <PollsPanel channelId={selectedChannel} currentUserId={userId} />
-            )}
+            {/* FIX-POLLBLOCK: здесь была COL 4 — отдельная колонка с опросами справа.
+                Опрос — часть разговора, поэтому он теперь блок в ленте (выше, над
+                MessageArea), а отдельной полосы под него больше нет. */}
 
           </>
         )}
