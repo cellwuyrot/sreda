@@ -71,6 +71,12 @@ export interface DesktopVpnState {
   error: string | null;
   /** Чем поднят туннель, если поднят: `wireguard` | `amneziawg`, иначе null. */
   backend: "wireguard" | "amneziawg" | null;
+  /**
+   * VPN-EMBEDDED: туннель поднят встроенным в приложение клиентом, то есть
+   * стороннее ПО скачивать не потребовалось. Нет в старых сборках оболочки —
+   * поэтому поле необязательное.
+   */
+  embedded?: boolean;
 }
 
 /** VPN-ONECLICK: часть моста, управляющая туннелем прямо из окна приложения. */
