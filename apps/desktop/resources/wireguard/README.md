@@ -9,9 +9,22 @@
 
 | Каталог | Файлы |
 |---|---|
-| `win32/` | `wireguard.exe`, `wg.exe` |
-| `darwin/` | `wireguard-go`, `wg` |
-| `linux/` | `wireguard-go`, `wg` |
+| `win32/` | `wireguard-go.exe`, `wintun.dll` |
+| `darwin/` | `wireguard-go` |
+| `linux/` | `wireguard-go` |
+
+Важно про Windows: нужен именно `wireguard-go.exe`, а НЕ официальный
+`wireguard.exe`. Официальный не умеет поднимать туннель сам: он просит службу-
+менеджер WireGuard (без неё — «The specified service does not exist as an
+installed service») и на любой непонятный аргумент открывает своё окно.
+
+Где взять:
+
+- `wireguard-go.exe` — собрать из исходников (готовых бинарников под Windows
+  проект не выкладывает): `go build -o wireguard-go.exe golang.zx2c4.com/wireguard/...`
+  — точная команда есть в `build-desktop.bat`.
+- `wintun.dll` — `https://www.wintun.net/builds/wintun-0.14.1.zip`, файл `bin\amd64\wintun.dll`
+  (подписанный распространяемый драйвер тех же авторов).
 
 Сами файлы в git не хранятся: три платформы — это десятки мегабайт в истории
 навсегда, а заменить их потом нельзя без такого же роста.
