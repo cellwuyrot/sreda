@@ -477,6 +477,49 @@ export function ifaceDownCommands(
  * задаётся закрытый ключ. Проверять его существование через `existsSync`
  * нельзя (каналы там не видны как файлы) — только подключением.
  */
+/**
+ * Маршрут-исключение до точки подключения (нужен только в Windows).
+ *
+ * Зачем. В режиме «весь трафик» мы забираем всё двумя половинами
+ * `0.0.0.0/1` и `128.0.0.0/1`. Под это правило попадают и пакеты САМОГО
+ * клиента к VPN-узлу: он начинает отправлять их в туннель, который сам же и
+ * поднимает. Получается замыкание, рукопожатия нет, туннель «включён» и не
+ * работает. В Linux от этого спасает метка (fwmark), в macOS и здесь —
+ * отдельный узкий маршрут до адреса узла через прежний шлюз.
+ *
+ * Индекс интерфейса, а не имя: имя физического адаптера может быть любым
+ * («Ethernet», «Беспроводная сеть»), а индекс однозначен.
+ */
+export function excludeRouteCommand(endpointIp: string, gateway: string, interfaceIndex: number): string[] {
+  return [
+    "netsh", "interface", "ipv4", "add", "route", `${endpointIp}/32`,
+    `interface=${interfaceIndex}`, `nexthop=${gateway}`, "store=active",
+  ];
+}
+
+/** Снятие маршрута-исключения при выключении. */
+export function excludeRouteDeleteCommand(endpointIp: string, interfaceIndex: number): string[] {
+  return [
+    "netsh", "interface", "ipv4", "delete", "route", `${endpointIp}/32`,
+    `interface=${interfaceIndex}`, "store=active",
+  ];
+}
+
+/**
+ * Разбор ответа «шлюз индекс» о текущем маршруте по умолчанию.
+ *
+ * Вынесено в чистую функцию, потому что разбор вывода системной утилиты —
+ * самое хрупкое место: пустой ответ должен давать `null`, а не «шлюз 0.0.0.0».
+ */
+export function parseDefaultRoute(output: string): { gateway: string; interfaceIndex: number } | null {
+  const match = /(\d{1,3}(?:\.\d{1,3}){3})\s+(\d+)/.exec(output.trim());
+  if (!match || !match[1] || !match[2]) return null;
+  if (match[1] === "0.0.0.0") return null;
+  const interfaceIndex = Number(match[2]);
+  if (!Number.isFinite(interfaceIndex) || interfaceIndex <= 0) return null;
+  return { gateway: match[1], interfaceIndex };
+}
+
 export function uapiSocketPath(platform: NodeJS.Platform, iface: string = TUNNEL_NAME): string {
   if (platform === "win32") {
     return `\\\\.\\pipe\\ProtectedPrefix\\Administrators\\WireGuard\\${iface}`;

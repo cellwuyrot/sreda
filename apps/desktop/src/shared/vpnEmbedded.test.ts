@@ -25,6 +25,9 @@ import {
   routesEverything,
   uapiSetRequest,
   uapiSocketPath,
+  excludeRouteCommand,
+  excludeRouteDeleteCommand,
+  parseDefaultRoute,
 } from "./vpnEmbedded";
 
 /** Реальные 32-байтные ключи: короткие заглушки здесь не пройдут — и это верно. */
@@ -205,5 +208,33 @@ describe("раскладка встроенного клиента", () => {
     expect(ipv4Mask(32)).toBe("255.255.255.255");
     expect(ipv4Mask(24)).toBe("255.255.255.0");
     expect(ipv4Mask(0)).toBe("0.0.0.0");
+  });
+});
+
+describe("маршрут-исключение до VPN-узла (Windows)", () => {
+  it("ведёт трафик до узла через прежний шлюз, а не в туннель", () => {
+    expect(excludeRouteCommand("203.0.113.10", "192.168.1.1", 12)).toEqual([
+      "netsh", "interface", "ipv4", "add", "route", "203.0.113.10/32",
+      "interface=12", "nexthop=192.168.1.1", "store=active",
+    ]);
+  });
+
+  it("снимается тем же адресом и интерфейсом", () => {
+    expect(excludeRouteDeleteCommand("203.0.113.10", 12)).toEqual([
+      "netsh", "interface", "ipv4", "delete", "route", "203.0.113.10/32",
+      "interface=12", "store=active",
+    ]);
+  });
+
+  it("читает шлюз и индекс из ответа системы", () => {
+    expect(parseDefaultRoute(" 192.168.1.1 14 \r\n")).toEqual({
+      gateway: "192.168.1.1",
+      interfaceIndex: 14,
+    });
+  });
+
+  it("на пустой или нулевой ответ не выдумывает шлюз", () => {
+    expect(parseDefaultRoute("")).toBeNull();
+    expect(parseDefaultRoute("0.0.0.0 5")).toBeNull();
   });
 });
