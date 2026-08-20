@@ -178,8 +178,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   // E2EE
   const [myPrivateKey, setMyPrivateKey] = useState<CryptoKey | null>(null);
   const [peerPublicKey, setPeerPublicKey] = useState<JsonWebKey | null>(null);
-  const [chatMode, setChatMode] = useState<"open" | "secure">("open");
-  const e2eeEnabled = chatMode === "secure";
   /* FIX-E2EEBTN: на аккаунте лежит ключ другого устройства. Тогда собеседник
      шифрует на тот ключ, и здесь читать его нечем — об этом надо сказать
      прямо, а не прятать кнопку. */
@@ -243,11 +241,19 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     setVaultUnlocked(false);
   }, [selectedConvId]);
   const otherUser = selectedConv?.other ?? null;
-  // Variant A: разделяем защищённые (E2EE) и открытые сообщения по вкладкам.
-  const visibleMessages = useMemo(
-    () => messages.filter((mm) => (chatMode === "secure" ? !!mm._encrypted : !mm._encrypted)),
-    [messages, chatMode],
-  );
+  /* FIX-E2EECHAT: защищённая переписка — ОТДЕЛЬНЫЙ разговор, а не режим внутри обычного.
+
+     Было (Variant A): одна переписка, в ней вперемешку открытые и шифрованные сообщения, а
+     кнопка в шапке лишь фильтровала ленту. Со стороны это выглядело так, будто половина
+     разговора пропадает по нажатию, а собеседник мог сидеть в другом режиме и не видеть
+     ответов вовсе.
+
+     Стало: у защищённого разговора своя строка в списке (kind = SECURE). Шифруется всё,
+     всегда и у обоих: режима как состояния больше нет, а значит нет и расхождения между
+     собеседниками. Фильтр ленты убран: в разговоре видно всё, что в нём есть. */
+  const isSecureConv = !!selectedConv?.secure;
+  const e2eeEnabled = isSecureConv;
+  const visibleMessages = messages;
   const otherId = otherUser?.id ?? null;
   const e2eeReady = !!(myPrivateKey && peerPublicKey);
 
@@ -1535,6 +1541,33 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     [currentUserId, showToast],
   );
 
+  /* FIX-E2EECHAT: открыть защищённый разговор с тем же человеком (завести, если его ещё нет)
+     или вернуться из него в обычную переписку. Оба направления — один запрос: сервер сам
+     ищет разговор по виду и паре участников и заводит его один на обоих. */
+  const openCompanionChat = useCallback(
+    async (secure: boolean) => {
+      if (!otherId) return;
+      try {
+        const res = await fetch("/api/dm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ userId: otherId, secure }),
+        });
+        if (!res.ok) {
+          showToast(secure ? "Не удалось открыть защищённый чат" : "Не удалось открыть переписку");
+          return;
+        }
+        const { id } = await res.json();
+        await loadConversations();
+        setSelectedConvId(id);
+      } catch {
+        showToast("Сеть недоступна — попробуйте ещё раз");
+      }
+    },
+    [otherId, loadConversations, showToast],
+  );
+
   // ── FIX-VAULT: «Сейф» — избранная переписка с самим собой ──────────────────
   const openVault = useCallback(async () => {
     try {
@@ -1711,7 +1744,9 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             )}
             <DMMessageHeader
               other={otherUser.id === currentUserId ? { ...otherUser, name: "Сейф" } : otherUser}
-              subtitle={businessSubtitle}
+              /* FIX-E2EECHAT: человек должен видеть, в каком из двух разговоров он пишет:
+                 имя собеседника в обоих одно и то же. */
+              subtitle={isSecureConv ? "Защищённый чат • сквозное шифрование" : businessSubtitle}
               e2eeReady={e2eeReady}
               /* FIX-E2EEBTN: в деловом разговоре шифрования нет намеренно (его читает
                  вся администрация по роли), там кнопки быть не должно. В личной
@@ -1729,6 +1764,13 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                 /* FIX-E2EEBTN: пока ключа собеседника нет, нажатие не переключает режим,
                    а запрашивает ключ заново и объясняет причину. Молча включить
                    защиту нельзя: шифровать было бы не на чей ключ. */
+                /* FIX-E2EECHAT: из защищённого чата кнопка возвращает в обычный, из обычного —
+                   открывает защищённый. Переход между двумя разговорами человеку виден и совпадает
+                   с тем, что видит собеседник. */
+                if (isSecureConv) {
+                  void openCompanionChat(false);
+                  return;
+                }
                 if (!e2eeReady) {
                   if (otherId) fetchPeerKey(otherId);
                   showToast(
@@ -1738,7 +1780,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                   );
                   return;
                 }
-                setChatMode((mm) => (mm === "secure" ? "open" : "secure"));
+                void openCompanionChat(true);
               }}
               onTogglePinned={() => {
                 setShowPinned((v) => !v);
