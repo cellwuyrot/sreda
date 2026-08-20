@@ -19,9 +19,14 @@
  *   npm run vendor:client -- --allow-missing   # пропустить (для dev-сборок без туннеля)
  *
  * Ожидаемые имена в каталоге-источнике (совпадают с embeddedClientName()):
- *   win32  — wireguard.exe, wg.exe
- *   darwin — wireguard-go, wg
- *   linux  — wireguard-go, wg
+ *   win32  — wireguard-go.exe, wintun.dll
+ *   darwin — wireguard-go
+ *   linux  — wireguard-go
+ *
+ * Утилита `wg` в списке больше не нужна: туннель настраивается через UAPI нашим
+ * же кодом. На Windows вместо официального `wireguard.exe` берётся
+ * `wireguard-go.exe`: первый умеет только ставить СЛУЖБУ WireGuard и открывать
+ * СВОЁ ОКНО, а нам нужен обычный процесс внутри своего приложения.
  */
 
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -31,11 +36,14 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, "..");
 
-/** Что нужно каждой платформе. Первое имя — сам туннель, второе — утилита настройки. */
+/**
+ * Что нужно каждой платформе: сам клиент и — только в Windows — драйвер
+ * сетевого устройства, без которого клиент не создаст интерфейс.
+ */
 const LAYOUT = {
-  win32: ["wireguard.exe", "wg.exe"],
-  darwin: ["wireguard-go", "wg"],
-  linux: ["wireguard-go", "wg"],
+  win32: ["wireguard-go.exe", "wintun.dll"],
+  darwin: ["wireguard-go"],
+  linux: ["wireguard-go"],
 };
 
 const args = process.argv.slice(2);

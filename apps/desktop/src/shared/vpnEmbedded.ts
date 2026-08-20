@@ -9,10 +9,20 @@
  * выглядит так, будто своего VPN в приложении нет.
  *
  * Теперь клиент — часть сборки. Приложение носит с собой бинарник
- * пользовательской реализации WireGuard (`wireguard-go` / `amneziawg-go` на
- * Linux и macOS, служба `wireguard.exe` на Windows) в своих ресурсах и
- * настраивает туннель САМО, по протоколу UAPI, не вызывая `wg`/`wg-quick`.
- * Скачивать пользователю нечего.
+ * пользовательской реализации WireGuard (`wireguard-go` / `amneziawg-go`) на
+ * ВСЕХ трёх системах и настраивает туннель САМО, по протоколу UAPI, не вызывая
+ * ни `wg`/`wg-quick`, ни `wireguard.exe`. Скачивать пользователю нечего.
+ *
+ * Почему на Windows тоже своя реализация, а не официальный `wireguard.exe`.
+ * Первая версия носила в ресурсах именно его и ставила туннель командой
+ * `/installtunnelservice`. Это оказалось привязкой к чужому продукту: команда
+ * создаёт в системе службу `WireGuardTunnel$trioz` (видимую в списке служб),
+ * работает только вместе со службой-менеджером WireGuard — без неё отвечает
+ * «The specified service does not exist as an installed service», — а при любом
+ * непонятном ей аргументе этот файл просто ОТКРЫВАЕТ ОКНО WireGuard. Своё
+ * приложение не должно ни ставить чужих служб, ни открывать чужих окон:
+ * `wireguard-go.exe` — обычный процесс без служб, сетевое устройство он создаёт
+ * через `wintun.dll` из тех же ресурсов.
  *
  * Здесь — только чистые функции: разбор профиля, сборка UAPI-запроса, список
  * команд настройки интерфейса. Ни одного побочного эффекта: всё, что ломается
@@ -35,21 +45,24 @@ export const ROUTE_MARK = 51820;
 export const EMBEDDED_DIR = "wireguard";
 
 /**
+ * Драйвер сетевого устройства для Windows. Лежит рядом с клиентом в ресурсах:
+ * `wireguard-go.exe` подгружает его сам и без него не создаст интерфейс.
+ * Библиотека распространяемая и подписана WireGuard LLC — своей сборки не
+ * требует, но и в git её держать незачем (см. scripts/vendor-wireguard.mjs).
+ */
+export const WINTUN_DLL = "wintun.dll";
+
+/**
  * Имя встроенного бинарника клиента для платформы и стека.
  *
- * Windows: `wireguard.exe` — официальная служба туннеля. Она лежит в ресурсах
- * приложения, поэтому «установленный WireGuard» больше не нужен: службу ставит
- * наш собственный файл.
- *
- * Linux/macOS: пользовательская реализация на Go. Она не требует ни модуля
- * ядра, ни пакета `wireguard-tools`, а туннель настраивается через UAPI-сокет
- * — то есть без `wg` и `wg-quick`.
+ * Везде одна и та же пользовательская реализация на Go, только с расширением
+ * `.exe` на Windows. Она не требует ни модуля ядра, ни пакета
+ * `wireguard-tools`, ни служб: туннель настраивается через UAPI — то есть без
+ * `wg`, `wg-quick` и `wireguard.exe`.
  */
 export function embeddedClientName(platform: NodeJS.Platform, backend: VpnBackend): string {
-  if (platform === "win32") {
-    return backend === "amneziawg" ? "amneziawg.exe" : "wireguard.exe";
-  }
-  return backend === "amneziawg" ? "amneziawg-go" : "wireguard-go";
+  const base = backend === "amneziawg" ? "amneziawg-go" : "wireguard-go";
+  return platform === "win32" ? `${base}.exe` : base;
 }
 
 /* ────────────────────────── Разбор профиля ────────────────────────── */
@@ -194,7 +207,7 @@ export function base64KeyToHex(key: string): string {
 }
 
 /**
- * UAPI-запрос `set=1` для встроенного клиента.
+ * UAPI-запрос `set=1` для ��строенного клиента.
  *
  * Порядок строк в UAPI значим: параметры устройства идут до первого
  * `public_key=`, а всё после него относится к этому пиру. Поэтому маскировка и
@@ -259,6 +272,18 @@ export function routesEverything(parsed: ParsedWgConfig): boolean {
 /** Адрес IPv6, если в строке есть двоеточие: `ip` требует разных семейств. */
 function isV6(cidr: string): boolean {
   return cidr.includes(":");
+}
+
+/**
+ * Маска IPv4 из длины префикса: `32` → `255.255.255.255`.
+ *
+ * Нужна только Windows: `netsh` принимает маску, а не длину префикса, тогда как
+ * в профиле адрес записан как `10.8.0.7/32`.
+ */
+export function ipv4Mask(prefix: number): string {
+  const bits = Math.max(0, Math.min(32, Math.trunc(prefix)));
+  const value = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return [24, 16, 8, 0].map((shift) => (value >>> shift) & 0xff).join(".");
 }
 
 /** Хост точки подключения без порта (для обходного маршрута в macOS). */
@@ -348,6 +373,58 @@ export function ifaceUpCommands(
     return commands;
   }
 
+  if (platform === "win32") {
+    /* Здесь роль `ip`/`ifconfig` играет штатный `netsh` — он есть в любой
+       Windows, ставить ничего не нужно. `store=active` означает «до
+       перезагрузки»: настройки исчезнувшего интерфейса не должны оставаться в
+       реестре и всплывать при следующем запуске системы. */
+    for (const address of parsed.addresses) {
+      const [ip, prefix] = address.split("/");
+      if (!ip) continue;
+      if (isV6(address)) {
+        commands.push(["netsh", "interface", "ipv6", "set", "address", `interface=${iface}`, `address=${address}`, "store=active"]);
+      } else {
+        const mask = ipv4Mask(prefix === undefined ? 32 : Number(prefix));
+        commands.push([
+          "netsh", "interface", "ipv4", "set", "address",
+          `name=${iface}`, "source=static", `address=${ip}`, `mask=${mask}`, "store=active",
+        ]);
+      }
+    }
+    if (parsed.mtu) {
+      commands.push(["netsh", "interface", "ipv4", "set", "subinterface", iface, `mtu=${parsed.mtu}`, "store=active"]);
+    }
+    /* DNS туннеля: без него в режиме «весь трафик» имена продолжали бы
+       разрешаться прежним сервером — это утечка того, куда человек ходит. */
+    parsed.dns.filter((server) => !isV6(server)).forEach((server, index) => {
+      commands.push(
+        index === 0
+          ? ["netsh", "interface", "ipv4", "set", "dnsservers", `name=${iface}`, "static", server, "primary", "validate=no"]
+          : ["netsh", "interface", "ipv4", "add", "dnsservers", `name=${iface}`, server, `index=${index + 1}`, "validate=no"],
+      );
+    });
+
+    if (routeAll) {
+      /* Как и в macOS: две половины адресного пространства вместо маршрута по
+         умолчанию. Они точнее `0.0.0.0/0`, поэтому забирают весь трафик, но
+         системный шлюз остаётся на месте — и пакеты самого туннеля уходят
+         через него, а не в себя же. Отдельная метка (fwmark) в Windows не
+         нужна именно поэтому. */
+      commands.push(["netsh", "interface", "ipv4", "add", "route", "0.0.0.0/1", `interface=${iface}`, "store=active"]);
+      commands.push(["netsh", "interface", "ipv4", "add", "route", "128.0.0.0/1", `interface=${iface}`, "store=active"]);
+    }
+    for (const peer of parsed.peers) {
+      for (const cidr of peer.allowedIps) {
+        if (cidr === "0.0.0.0/0" || cidr === "::/0") continue;
+        commands.push([
+          "netsh", "interface", isV6(cidr) ? "ipv6" : "ipv4", "add", "route",
+          cidr, `interface=${iface}`, "store=active",
+        ]);
+      }
+    }
+    return commands;
+  }
+
   return commands;
 }
 
@@ -378,15 +455,31 @@ export function ifaceDownCommands(
       ["ifconfig", iface, "down"],
     ];
   }
+  if (platform === "win32") {
+    /* Сам интерфейс исчезает вместе с процессом клиента (Wintun удаляет
+       адаптер), а вот маршруты половин надо снять явно: иначе после
+       выключения система продолжит слать трафик в исчезнувший интерфейс —
+       сеть «есть», но не работает. */
+    return [
+      ["netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/1", `interface=${iface}`, "store=active"],
+      ["netsh", "interface", "ipv4", "delete", "route", "128.0.0.0/1", `interface=${iface}`, "store=active"],
+    ];
+  }
   return [];
 }
 
 /**
- * Путь UAPI-сокета встроенного клиента. Каталог задан самой реализацией
- * WireGuard (её же ожидают и сторонние утилиты), поэтому он не настраивается.
+ * Адрес UAPI встроенного клиента. Задан самой реализацией WireGuard, поэтому не
+ * настраивается.
+ *
+ * В Windows это не файл, а именованный канал в защищённом префиксе: доступ к
+ * нему есть только у администраторов, что и требуется — через этот канал
+ * задаётся закрытый ключ. Проверять его существование через `existsSync`
+ * нельзя (каналы там не видны как файлы) — только подключением.
  */
 export function uapiSocketPath(platform: NodeJS.Platform, iface: string = TUNNEL_NAME): string {
-  return platform === "darwin"
-    ? `/var/run/wireguard/${iface}.sock`
-    : `/var/run/wireguard/${iface}.sock`;
+  if (platform === "win32") {
+    return `\\\\.\\pipe\\ProtectedPrefix\\Administrators\\WireGuard\\${iface}`;
+  }
+  return `/var/run/wireguard/${iface}.sock`;
 }
