@@ -16,6 +16,11 @@ files:
   - dist/**/*
   - static/**/*
   - resources/**/*
+  # VPN-EMBEDDED: бинарники клиента в asar НЕ нужны — они кладутся рядом с ним
+  # через extraResources (см. ниже). Без этого исключения каждая сборка тащила
+  # бы внутрь архива клиенты всех трёх платформ: лишние десятки мегабайт в
+  # установщике, из которых на данной ОС не запускается ни один.
+  - "!resources/wireguard/**"
   - package.json
 
 # VPN-EMBEDDED: встроенный клиент туннеля.
@@ -29,11 +34,14 @@ files:
 # навсегда): их раскладывает scripts/vendor-wireguard.mjs на шаге
 # `npm run vendor:client` внутри `npm run build`. Если каталог платформы пуст,
 # сборка соберётся, но туннель в ней честно скажет, что клиента нет.
-extraResources:
-  - from: resources/wireguard/${os}
-    to: wireguard
-    filter:
-      - "**/*"
+#
+# ВАЖНО: путь задаётся в каждой платформенной секции ЛИТЕРАЛЬНО и НЕ через
+# макрос ${os}. Макрос раскрывается в `win`/`mac`/`linux`, а каталоги названы
+# по `process.platform` (`win32`/`darwin`/`linux`) — так их ищет src/main/vpn.ts
+# в режиме разработки, и так их раскладывает scripts/vendor-wireguard.mjs.
+# Из-за этого рассогласования electron-builder копировал из несуществующей
+# папки resources/wireguard/win, молча ничего не находил, и установщик
+# собирался БЕЗ клиента — ровно то, на что жаловалось приложение.
 
 extraMetadata:
   main: dist/main/index.js
@@ -47,11 +55,21 @@ protocols:
 mac:
   category: public.app-category.social-networking
   icon: build/icon.png
+  extraResources:
+    - from: resources/wireguard/darwin
+      to: wireguard
+      filter:
+        - "**/*"
   target:
     - dmg
     - zip
 
 win:
+  extraResources:
+    - from: resources/wireguard/win32
+      to: wireguard
+      filter:
+        - "**/*"
   # .ico отдельно не держим: electron-builder делает его из png сам, а лишняя
   # копия картинки в git означала бы старый логотип при следующей смене.
   icon: build/icon.png
@@ -86,6 +104,11 @@ nsisWeb:
 linux:
   icon: build/icon.png
   category: Network
+  extraResources:
+    - from: resources/wireguard/linux
+      to: wireguard
+      filter:
+        - "**/*"
   target:
     - AppImage
     - deb
