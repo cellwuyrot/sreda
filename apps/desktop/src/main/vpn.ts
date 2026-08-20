@@ -13,8 +13,16 @@
  *   • Linux/macOS — встроенный `wireguard-go` / `amneziawg-go`. Настройка идёт не
  *     через `wg`/`wg-quick` (это часть сторонних wireguard-tools), а по UAPI —
  *     собственным кодом в `vpnHelper.ts`.
- *   • Windows — встроенный `wireguard.exe` ставит службу туннеля из нашего
- *     каталога ресурсов; установленное в системе приложение не требуется.
+ *   • Windows — точно так же: `wireguard-go.exe` + `wintun.dll` из ресурсов, адреса́,
+ *     маршруты и DNS — штатным `netsh`.
+ *
+ * Почему на Windows НЕ используется официальный `wireguard.exe`. Сначала он и
+ * был взят в ресурсы — и кнопка включения падала с «The specified service does not
+ * exist as an installed service», а иногда вместо туннеля открывалось ОКНО WireGuard.
+ * Причина не в правах: `wireguard.exe /installtunnelservice` — не автономный
+ * туннель, а запрос к службе-менеджеру, которая появляется только при установке
+ * стороннего продукта; любой непонятный ему аргумент он понимает как «покажи окно».
+ * `wireguard-go.exe` — обычный дочерний процесс без служб и без окон.
  *
  * Системный клиент остался только как ЗАПАСНОЙ вариант для разработчика (в дереве
  * исходников бинарников нет, их раскладывает шаг сборки). В собранном
@@ -253,7 +261,7 @@ function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): v
   const tick = async () => {
     if (current.state !== "connecting" && current.state !== "on") return;
     const result =
-      mode === "embedded" && process.platform !== "win32"
+      mode === "embedded"
         ? await embeddedHandshake()
         : await systemHandshake(backend);
     if (current.state !== "connecting" && current.state !== "on") return;
@@ -345,13 +353,11 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     await tearDownQuietly();
     confPath = writeConfFile(config);
 
-    if (embedded && process.platform === "win32") {
-      /* Windows: службу туннеля ставит наш собственный бинарник из ресурсов. */
-      activeExe = embedded;
-      activeMode = "embedded";
-      await runElevated(embedded, tunnelUpArgs(process.platform, confPath));
-    } else if (embedded) {
-      /* Linux/macOS: свой работник запускает встроенный клиент и настраивает его сам. */
+    if (embedded) {
+      /* Все три системы одинаково: свой работник запускает встроенный клиент и
+         настраивает его сам по UAPI. Windows больше не исключение: раньше там
+         ставилась служба через `wireguard.exe /installtunnelservice` — и именно она
+         требовала службу-менеджер WireGuard и открывала его окно. */
       activeExe = embedded;
       activeMode = "embedded";
       await runHelperElevated(["up", confPath, embedded]);
@@ -426,13 +432,6 @@ async function tearDownQuietly(): Promise<void> {
 async function tearDown(): Promise<void> {
   const dir = vpnDir();
   const path = confPath || join(dir, TUNNEL_CONF_FILE);
-
-  if (process.platform === "win32") {
-    const exe = activeExe || embeddedClientPath(current.backend ?? "wireguard") || (await resolveSystemExe(current.backend ?? "wireguard"));
-    if (!exe) return;
-    await runElevated(exe, tunnelDownArgs(process.platform, path));
-    return;
-  }
 
   if (activeMode === "system") {
     if (!activeExe || !existsSync(path)) return;
