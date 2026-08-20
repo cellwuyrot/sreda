@@ -23,12 +23,21 @@
 import { spawn, spawnSync } from "node:child_process";
 import { lookup } from "node:dns/promises";
 import { connect } from "node:net";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import { TUNNEL_NAME } from "../shared/vpnPlan";
 import {
   WINTUN_DLL,
+  wintunSearchDirs,
   endpointHost,
   excludeRouteCommand,
   excludeRouteDeleteCommand,
@@ -88,13 +97,34 @@ function canConnect(path: string): Promise<boolean> {
  * поднимает сетевое устройство. Без ожидания настройка улетела бы в пустоту, и
  * туннель поднялся бы без ключей — то есть молча не работал.
  */
-async function waitForUapi(path: string, timeoutMs: number): Promise<void> {
+async function waitForUapi(
+  path: string,
+  timeoutMs: number,
+  logPath: string,
+  exited: () => number | null,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await canConnect(path)) return;
+    /* FIX-WINTUN: если клиент уже умер, ждать дальше бессмысленно — причина
+       написана в его журнале, и человеку нужно показать именно её. */
+    const code = exited();
+    if (code !== null) {
+      const tail = clientLogTail(logPath);
+      fail(
+        `Встроенный клиент не смог создать сетевой адаптер (код ${code}).` +
+          (tail ? ` Клиент сообщает: ${tail}` : "") +
+          ` Полный журнал: ${logPath}`,
+      );
+    }
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  fail("Встроенный клиент не успел поднять сетевое устройство");
+  const tail = clientLogTail(logPath);
+  fail(
+    "Встроенный клиент не успел поднять сетевое устройство." +
+      (tail ? ` Клиент сообщает: ${tail}` : "") +
+      ` Полный журнал: ${logPath}`,
+  );
 }
 
 /** Отправить UAPI-запрос и вернуть ответ целиком. */
@@ -145,6 +175,85 @@ async function waitForHandshake(path: string, timeoutMs: number): Promise<void> 
     "Туннель поднят, но VPN-узел не ответил на рукопожатие. " +
       "Проверьте доступность сервера и актуальность профиля подключения.",
   );
+}
+
+/**
+ * FIX-WINTUN: журнал встроенного клиента.
+ *
+ * Раньше вывод клиента уходил в `stdio: "ignore"`, и любая его беда выглядела
+ * одинаково: «клиент не успел поднять сетевое устройство». Причина же почти
+ * всегда конкретна и написана самим клиентом в первой строке: не загрузилась
+ * `wintun.dll`, нет прав администратора, адаптер занят прежним процессом.
+ * Теперь вывод пишется рядом с профилем и попадает в текст ошибки.
+ */
+export const CLIENT_LOG = `${TUNNEL_NAME}-client.log`;
+
+/** Последние строки журнала клиента — для внятного сообщения об ошибке. */
+function clientLogTail(logPath: string, lines = 6): string {
+  try {
+    return readFileSync(logPath, "utf8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .slice(-lines)
+      .join("; ");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * FIX-WINTUN: подложить клиенту библиотеку сетевого устройства.
+ *
+ * Возвращает каталог, который нужно добавить в PATH дочернего процесса, или
+ * пустую строку, если ничего добавлять не нужно (библиотека уже рядом с
+ * клиентом). Копировать пытаемся в папку клиента — так надёжнее всего, ведь
+ * именно её Windows просматривает первой; если копирование не удалось (папка
+ * установки только для чтения), обходимся PATH.
+ */
+function ensureWintun(clientDir: string): string {
+  if (existsSync(join(clientDir, WINTUN_DLL))) return "";
+
+  for (const dir of wintunSearchDirs(process.env)) {
+    const candidate = join(dir, WINTUN_DLL);
+    if (!existsSync(candidate)) continue;
+    try {
+      copyFileSync(candidate, join(clientDir, WINTUN_DLL));
+      return "";
+    } catch {
+      return dir;
+    }
+  }
+
+  fail(
+    "Сетевой драйвер Wintun не найден: ни в ресурсах приложения, ни в системе. " +
+      "Переустановите приложение или укажите путь к wintun.dll в переменной TRIOZ_WINTUN_DIR.",
+  );
+}
+
+/**
+ * FIX-WINTUN: дождаться, пока адаптер появится в сетевом стеке Windows.
+ *
+ * UAPI клиента открывается чуть раньше, чем система регистрирует адаптер под
+ * своим именем, а `netsh` умеет работать только с уже зарегистрированным
+ * именем. Без ожидания первый же `netsh set address` падал с «интерфейс не
+ * найден» — и туннель оставался без адреса, то есть без связи.
+ */
+function waitForAdapter(iface: string, timeoutMs: number): boolean {
+  const deadline = Date.now() + timeoutMs;
+  const script = `if (Get-NetAdapter -Name '${iface}' -ErrorAction SilentlyContinue) { "yes" }`;
+  while (Date.now() < deadline) {
+    const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+      timeout: 20_000,
+      windowsHide: true,
+    });
+    if ((result.stdout || "").includes("yes")) return true;
+    const wait = Date.now() + 400;
+    while (Date.now() < wait) {
+      /* короткая пауза без таймеров: работник живёт ровно один сценарий */
+    }
+  }
+  return false;
 }
 
 /** Файл с параметрами маршрута-исключения — чтобы снять его при выключении. */
@@ -208,13 +317,13 @@ async function up(confPath: string, clientPath: string): Promise<void> {
   const socketPath = uapiSocketPath(process.platform);
   const clientDir = dirname(clientPath);
 
+  let extraPathDir = "";
   if (process.platform === "win32") {
-    /* Сетевое устройство в Windows создаёт wintun.dll рядом с клиентом.
-       Проверяем её отдельно: без неё клиент падает с системной ошибкой
-       загрузки библиотеки, которая ничего не говорит ни человеку, ни нам. */
-    if (!existsSync(join(clientDir, WINTUN_DLL))) {
-      fail("Встроенный сетевой драйвер не найден в ресурсах приложения");
-    }
+    /* Сетевое устройство в Windows создаёт wintun.dll, которую загружает сам
+       клиент. Если её нет рядом с клиентом — ищем установленную в системе и
+       подкладываем: иначе клиент падает на загрузке библиотеки, а человек
+       видит лишь «адаптер не создан». */
+    extraPathDir = ensureWintun(clientDir);
   } else {
     /* Каталог сокетов обычно создаёт сам клиент, но на чистой системе его
        может не быть, а без каталога клиент молча не поднимает UAPI. */
@@ -232,19 +341,54 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
   /* Клиент отвязывается от нашего процесса: он обязан пережить и этого
      работника, и перезапуск окна приложения. */
+  const logPath = join(dirname(confPath), CLIENT_LOG);
+  const logFd = openSync(logPath, "w");
   const child = spawn(clientPath, [TUNNEL_NAME], {
     detached: true,
-    stdio: "ignore",
-    /* Рабочая папка — рядом с клиентом: именно там Windows ищет wintun.dll. */
+    /* FIX-WINTUN: вывод клиента — в журнал, а не в пустоту: это единственный
+       источник причины, когда адаптер не создаётся. */
+    stdio: ["ignore", logFd, logFd],
+    /* Рабочая папка — рядом с клиентом. */
     cwd: clientDir,
-    env: { ...process.env, WG_PROCESS_FOREGROUND: "0" },
+    env: {
+      ...process.env,
+      /* Клиент не должен уходить в фон сам: тогда наш PID указывал бы на уже
+         завершившийся процесс-родитель, и выключение туннеля никого не снимало. */
+      WG_PROCESS_FOREGROUND: "1",
+      /* Подробный журнал — он и объясняет отказы создания адаптера. */
+      LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+      ...(extraPathDir
+        ? { PATH: `${extraPathDir};${process.env.PATH ?? ""}` }
+        : {}),
+    },
+  });
+
+  /* Ранняя смерть клиента — самый частый случай: нет прав, нет библиотеки,
+     адаптер занят. Запоминаем код выхода, чтобы не ждать зря 20 секунд. */
+  let exitCode: number | null = null;
+  child.on("exit", (code) => {
+    exitCode = code ?? 0;
+  });
+  child.on("error", () => {
+    exitCode = -1;
   });
   child.unref();
   if (typeof child.pid === "number") {
     writeFileSync(pidPath, `${child.pid}\n`, { mode: 0o600 });
   }
 
-  await waitForUapi(socketPath, 20_000);
+  await waitForUapi(socketPath, 20_000, logPath, () => exitCode);
+
+  /* Адаптер должен быть виден системе под своим именем — только тогда с ним
+     заработает `netsh`, то есть только тогда туннель получит адрес. */
+  if (process.platform === "win32" && !waitForAdapter(TUNNEL_NAME, 15_000)) {
+    const tail = clientLogTail(logPath);
+    fail(
+      `Сетевой адаптер «${TUNNEL_NAME}» не появился в системе.` +
+        (tail ? ` Клиент сообщает: ${tail}` : "") +
+        ` Полный журнал: ${logPath}`,
+    );
+  }
 
   const routeAll = routesEverything(parsed);
   let response: string;
@@ -290,8 +434,10 @@ async function up(confPath: string, clientPath: string): Promise<void> {
     runTool(command, critical);
   }
 
-  /* Главное: об успехе сообщаем только после реального рукопожатия с узлом. */
-  await waitForHandshake(socketPath, 15_000);
+  /* Главное: об успехе сообщаем только после реального рукопожатия с узлом.
+     Инициатива здесь наша: keepalive в настройках заставляет клиента послать
+     первый пакет сам, не дожидаясь пользовательского трафика. */
+  await waitForHandshake(socketPath, 20_000);
 
   process.stdout.write("ok\n");
 }

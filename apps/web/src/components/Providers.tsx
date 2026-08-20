@@ -8,6 +8,7 @@ import { HeartbeatProvider } from "./HeartbeatProvider";
 import { DesktopActivityBridge } from "./DesktopActivityBridge"; // FIX-ACT
 import { DesktopNavigationBridge } from "./DesktopNavigationBridge"; // FIX-NAV1
 import { AndroidShellGuard } from "./AndroidShellGuard"; // ANDROID-LOCK
+import { IdleAnimationGuard } from "./IdleAnimationGuard"; // PERF-GPU
 import { VoiceProvider } from "@/contexts/VoiceContext";
 import VoiceOverlayBridge from "@/components/voice/VoiceOverlayBridge"; // FIX-OVL
 import VoiceMiniWidget from "@/components/voice/VoiceMiniWidget";
@@ -106,6 +107,7 @@ export default function Providers({ children }: { children: ReactNode }) {
           <DesktopActivityBridge />{/* FIX-ACT */}
           <DesktopNavigationBridge />{/* FIX-NAV1: мягкая навигация из десктоп-оболочки без перезагрузки */}
           <AndroidShellGuard />{/* ANDROID-LOCK: в Android-оболочке глушим переходы вне /connect */}
+          <IdleAnimationGuard />{/* PERF-GPU: скрытое окно не должно грузить видеокарту */}
           <VoiceProvider>
             {/* CALL: личные звонки — вызов может прийти на любой странице, поэтому провайдер глобальный */}
             <CallProvider>

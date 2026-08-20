@@ -1405,3 +1405,29 @@ html[data-tz-skin-font="on"] kbd {
   font-style: italic;
   letter-spacing: 0.1px;
 }
+
+/* PERF-GPU: пока окно скрыто (свёрнуто, перекрыто, другая вкладка) — никакие
+   анимации не должны идти. В десктоп-оболочке Chromium не тормозит скрытое
+   окно сам (backgroundThrottling: false нужен накладке звонка), поэтому каждый
+   мерцающий элемент продолжал заказывать кадры видеокарте — отсюда постоянная
+   загрузка GPU в диспетчере задач. Состояние выставляет IdleAnimationGuard. */
+html[data-tz-idle] *,
+html[data-tz-idle] *::before,
+html[data-tz-idle] *::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+/* Размытие — самый дорогой для видеокарты эффект: слой с backdrop-filter
+   пересчитывается при любом изменении под ним. Скрытому окну он не нужен. */
+html[data-tz-idle] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* PERF-GPU: системное «уменьшить движение» — бесконечные анимации выключены
+   совсем, а короткие переходы остаются: без них интерфейс теряет понятность. */
+html[data-tz-still] *,
+html[data-tz-still] *::before,
+html[data-tz-still] *::after {
+  animation-iteration-count: 1 !important;
+  animation-duration: 0.01ms !important;
+}
