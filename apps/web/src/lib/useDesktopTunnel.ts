@@ -1,5 +1,5 @@
 "use client";
-
+​
 /**
  * VPN-EMBEDDED: один источник истины для выключателя туннеля.
  *
@@ -13,15 +13,15 @@
  * покидать устройство. Наружу уезжает только публичный, а готовый профиль живёт
  * ровно до того, как уедет в оболочку по IPC.
  */
-
+​
 import { useCallback, useEffect, useMemo, useState } from "react";
-
+​
 import { getDesktopApi, type DesktopVpnState } from "@/lib/desktop";
 import { buildWireGuardConfig, generateWireGuardKeyPair } from "@/lib/wgKeys";
-
+​
 /** Режим маршрутизации: весь трафик или только сервисы проекта. */
 export type TunnelRouting = "ALL" | "SERVICES";
-
+​
 /** Форма ответа `/api/vpn/me`, в той части, которая нужна выключателю. */
 interface AccessState {
   entitled: boolean;
@@ -29,7 +29,7 @@ interface AccessState {
   nodeReady: boolean;
   routing: TunnelRouting;
 }
-
+​
 export interface DesktopTunnel {
   /** Запущено ли приложение в оболочке со встроенным клиентом. */
   available: boolean;
@@ -43,7 +43,7 @@ export interface DesktopTunnel {
   /** Переключить туннель. Возвращает `false`, если переключать было нечем. */
   toggle: () => Promise<boolean>;
 }
-
+​
 /**
  * Состояние и переключение встроенного туннеля.
  *
@@ -56,7 +56,7 @@ export function useDesktopTunnel(): DesktopTunnel {
   const [access, setAccess] = useState<AccessState | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-
+​
   /* Туннель мог быть поднят до загрузки страницы (перезагрузка окна,
      обновление), поэтому сначала спрашиваем, а потом слушаем. */
   useEffect(() => {
@@ -76,7 +76,7 @@ export function useDesktopTunnel(): DesktopTunnel {
       off();
     };
   }, [bridge]);
-
+​
   /* Право на туннель считает сервер, а не признак Premium в интерфейсе: подписка
      «только VPN» тоже даёт доступ. Спрашиваем только в оболочке: в браузере
      выключателя нет, и лишний запрос никому не нужен. */
@@ -103,12 +103,21 @@ export function useDesktopTunnel(): DesktopTunnel {
       cancelled = true;
     };
   }, [bridge]);
-
+​
   const on = state?.state === "on";
   const transitioning = state?.state === "connecting" || state?.state === "disconnecting";
   const entitled = !!access?.entitled && !!access.serviceEnabled && !!access.nodeReady;
   const canToggle = !!bridge && !pending && !transitioning && (on || entitled);
-
+​
+  /* Режим маршрутизации разворачиваем в простое значение ЗДЕСЬ, а не внутри
+     toggle. Причина не в красоте: обращение к `access?.routing` из тела
+     useCallback React Compiler видит как зависимость от всего объекта `access`,
+     и список зависимостей перестаёт совпадать с выведенным — сборка падает на
+     правиле react-hooks/preserve-manual-memoization. Строка вместо объекта
+     заодно означает, что перезапрос доступа с тем же режимом не пересоздаёт
+     обработчик. */
+  const routing: TunnelRouting = access?.routing ?? "ALL";
+​
   const toggle = useCallback(async (): Promise<boolean> => {
     if (!bridge || pending || transitioning) return false;
     setPending(true);
@@ -119,14 +128,14 @@ export function useDesktopTunnel(): DesktopTunnel {
         return true;
       }
       if (!entitled) return false;
-
+​
       /* Профиль всегда свежий: ключ мог быть перевыпущен на другом устройстве,
          и старый молча не работал бы. */
       const pair = generateWireGuardKeyPair();
       const res = await fetch("/api/vpn/me", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicKey: pair.publicKey, routing: access?.routing ?? "ALL" }),
+        body: JSON.stringify({ publicKey: pair.publicKey, routing }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.peer) {
@@ -155,8 +164,8 @@ export function useDesktopTunnel(): DesktopTunnel {
     } finally {
       setPending(false);
     }
-  }, [bridge, pending, transitioning, on, entitled, access?.routing]);
-
+  }, [bridge, pending, transitioning, on, entitled, routing]);
+​
   return {
     available: !!bridge,
     state,
@@ -167,3 +176,4 @@ export function useDesktopTunnel(): DesktopTunnel {
     toggle,
   };
 }
+​
