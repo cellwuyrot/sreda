@@ -258,14 +258,18 @@ async function systemHandshake(backend: VpnBackend): Promise<"fresh" | "silent" 
 
 function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): void {
   stopStatusPolling();
+  /* Сколько проверок подряд не увидели связи. Раньше "unknown" (клиент
+     не ответил, умер, UAPI недоступен) считалось успехом — именно поэтому в окне
+     горело «Соединение активно», пока трафик шёл мимо туннеля. */
+  let misses = 0;
   const tick = async () => {
     if (current.state !== "connecting" && current.state !== "on") return;
     const result =
-      mode === "embedded"
-        ? await embeddedHandshake()
-        : await systemHandshake(backend);
+      mode === "embedded" ? await embeddedHandshake() : await systemHandshake(backend);
     if (current.state !== "connecting" && current.state !== "on") return;
-    if (result === "fresh" || result === "unknown") {
+
+    if (result === "fresh") {
+      misses = 0;
       if (current.state !== "on") {
         emit({
           state: "on",
@@ -275,11 +279,27 @@ function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): v
           embedded: mode === "embedded",
         });
       }
+      return;
     }
-    // "silent" на раннем этапе — норма (первое рукопожатие идёт до ~5 c).
+
+    /* Ни "silent", ни "unknown" больше НЕ включают зелёное состояние: первые
+       секунды тишины — норма, но если связи нет дольше, человек обязан это
+       видеть, а не доверять зелёной кнопке. */
+    misses += 1;
+    if (misses < 4) return;
+    emit({
+      state: "error",
+      since: null,
+      error:
+        "Туннель поднят, но связи с VPN-узлом нет: трафик идёт без защиты. " +
+        "Переключите сервер или повторите подключение.",
+      backend,
+      embedded: mode === "embedded",
+    });
+    stopStatusPolling();
   };
   void tick();
-  statusTimer = setInterval(() => void tick(), 15_000);
+  statusTimer = setInterval(() => void tick(), 5_000);
 }
 
 function stopStatusPolling(): void {
