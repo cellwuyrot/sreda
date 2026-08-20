@@ -40,8 +40,17 @@ export async function GET(req: Request) {
     const isStaff = isStaffRole(session.user.role);
     const staffQueue = kind === "BUSINESS" && isStaff;
 
+    /* FIX-E2EECHAT: защищённые разговоры выдаются вместе с личной перепиской, как
+       отдельные строки списка. Именно в этом смысл исправления: защищённая переписка
+       должна быть видна рядом с обычной, а не скрываться за переключателем внутри неё.
+       В деловой очереди их нет и быть не может: заявку читает администрация по роли. */
+    const kindFilter =
+      kind === "PERSONAL" ? { kind: { in: ["PERSONAL", "SECURE"] } } : { kind };
+
     const conversations = await prisma.directConversation.findMany({
-      where: staffQueue ? { kind } : { kind, OR: [{ user1Id: userId }, { user2Id: userId }] },
+      where: staffQueue
+        ? { kind }
+        : { ...kindFilter, OR: [{ user1Id: userId }, { user2Id: userId }] },
       include: {
         user1: { select: { id: true, name: true, username: true, avatar: true, role: true, lastSeen: true, customStatus: true, statusEmoji: true, activityStatus: true, activityUpdatedAt: true, avatarGlowEnabled: true, avatarGlowColors: true } }, // FIX-ACT: + activity*
         user2: { select: { id: true, name: true, username: true, avatar: true, role: true, lastSeen: true, customStatus: true, statusEmoji: true, activityStatus: true, activityUpdatedAt: true, avatarGlowEnabled: true, avatarGlowColors: true } }, // FIX-ACT: + activity*
@@ -132,7 +141,17 @@ export async function GET(req: Request) {
          (lastMessageAt, свежие сверху) — см. DMConversationList. Порядок запроса ниже
          уже такой же, поэтому клиент пересортировкой ничего не ломает. createdAt
          передаём как запасную отметку для переписок без сообщений. */
-      return { id: c.id, other, lastMessage, lastMessageAt: c.lastMessageAt, createdAt: c.createdAt };
+      /* FIX-E2EECHAT: строка списка должна знать, защищённый ли это разговор: от этого
+         зависит и пометка, и то, что текст последнего сообщения там не показывают (в базе
+         шифртекст, расшифровать его сервер не может и не должен). */
+      return {
+        id: c.id,
+        other,
+        lastMessage,
+        lastMessageAt: c.lastMessageAt,
+        createdAt: c.createdAt,
+        secure: c.kind === "SECURE",
+      };
     });
 
     return NextResponse.json(result);
@@ -149,7 +168,11 @@ export async function POST(req: NextRequest) {
   const banned = await checkBan(session.user.id);
   if (banned) return banned;
 
-  const { username, userId: targetUserId, isFavorite } = await req.json();
+  const { username, userId: targetUserId, isFavorite, secure } = await req.json();
+  /* FIX-E2EECHAT: защищённый разговор заводится тем же маршрутом и по тем же
+     правилам (дружба, чёрный список), отличается только видом записи. Себе защищённый
+     чат не нужен: для заметок есть Сейф с паролем. */
+  const wantSecure = secure === true && !isFavorite;
   if (!username && !targetUserId) return NextResponse.json({ error: "Username or userId required" }, { status: 400 });
 
   const target = targetUserId
@@ -206,18 +229,19 @@ export async function POST(req: NextRequest) {
      Уникальность личной пары осталась в базе частичным индексом
      (WHERE kind = 'PERSONAL'), поэтому одновременная попытка двоих открыть одну
      переписку по-прежнему упрётся в базу: проигравший перечитывает готовую. */
+  const wantedKind = wantSecure ? "SECURE" : "PERSONAL";
   let conversation = await prisma.directConversation.findFirst({
-    where: { user1Id: u1, user2Id: u2, kind: "PERSONAL" },
+    where: { user1Id: u1, user2Id: u2, kind: wantedKind },
   });
 
   if (!conversation) {
     try {
       conversation = await prisma.directConversation.create({
-        data: { user1Id: u1, user2Id: u2, kind: "PERSONAL" },
+        data: { user1Id: u1, user2Id: u2, kind: wantedKind },
       });
     } catch {
       conversation = await prisma.directConversation.findFirst({
-        where: { user1Id: u1, user2Id: u2, kind: "PERSONAL" },
+        where: { user1Id: u1, user2Id: u2, kind: wantedKind },
       });
       if (!conversation) {
         return NextResponse.json({ error: "Не удалось открыть переписку" }, { status: 500 });
@@ -225,5 +249,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ id: conversation.id, targetUser: target.id });
+  return NextResponse.json({
+    id: conversation.id,
+    targetUser: target.id,
+    secure: conversation.kind === "SECURE",
+  });
 }

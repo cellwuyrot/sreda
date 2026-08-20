@@ -56,8 +56,13 @@ import { parseDocuments } from "@/lib/businessPayment"; // FIX-SRVDOC
  * событий из общего пакета, а модуль остаётся проверяемым без сборки пакета.
  */
 
-/** Виды диалогов. Значение хранится строкой — см. схему DirectConversation. */
-export const CONVERSATION_KINDS = ["PERSONAL", "BUSINESS"] as const;
+/** Виды диалогов. Значение хранится строкой — см. схему DirectConversation.
+ *
+ * SECURE — защищённая переписка с тем же человеком: ОТДЕЛЬНЫЙ разговор, а не
+ * режим внутри обычного. Раньше шифрованные и открытые сообщения лежали в одной
+ * переписке и разделялись только фильтром на клиенте — то есть фактически всё было
+ * вперемешку, и переписка терялась при переключении режима. */
+export const CONVERSATION_KINDS = ["PERSONAL", "BUSINESS", "SECURE"] as const;
 export type ConversationKind = (typeof CONVERSATION_KINDS)[number];
 
 export function isConversationKind(value: unknown): value is ConversationKind {

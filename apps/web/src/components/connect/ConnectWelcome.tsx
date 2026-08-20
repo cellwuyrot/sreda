@@ -445,8 +445,28 @@ function SpaceScene({
       c2d.restore();
     }
 
-    function frame() {
-      t += 0.016;
+    /* PERF-ANIM: цена этой сцены — целое ядро процессора, и платилась она круглосуточно.
+
+       Здесь каждый кадр заново рисуется всё небо: звёзды, кометы, созвездия и город
+       — сотни отдельных штрихов с тенями (shadowBlur), а тени в canvas считаются на CPU.
+       При 60 кадрах в секунду это и есть та самая загрузка в диспетчере задач.
+
+       В браузере беду частично прятал сам Chromium: у скрытого окна он останавливает
+       requestAnimationFrame. Но в нашем приложении троттлинг фона выключен намеренно
+       (mainWindow.ts, FIX-OVL-THROTTLE — иначе засыпает оверлей голосового канала), и
+       потому свернутое окно продолжало рисовать космос в полную силу. Поэтому цикл
+       управляет собой сам: 30 кадров в секунду вместо 60 (для медленного мерцания
+       звёзд разницы не видно) и полная остановка, когда окно не видно или не в фокусе.
+       При «уменьшить анимацию» в ОС сцена рисуется один раз и застывает. */
+    const FRAME_MS = 1000 / 30;
+    /* Шаг времени удвоен, чтобы скорость сцены не зависела от частоты кадров. */
+    const T_STEP = 0.032;
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let lastDraw = 0;
+
+    function draw() {
       c2d.clearRect(0, 0, W, H);
       const ox = px.get() * 22,
         oy = py.get() * 22;
@@ -460,17 +480,46 @@ function SpaceScene({
       }
       drawConstellations(ox, oy);
       drawCity(ox);
+    }
 
+    function frame(now: number) {
+      raf = requestAnimationFrame(frame);
+      if (now - lastDraw < FRAME_MS) return;
+      lastDraw = now;
+      t += T_STEP;
+      draw();
+    }
+
+    function startLoop() {
+      if (raf || reduceMotion) return;
+      lastDraw = 0;
       raf = requestAnimationFrame(frame);
     }
+
+    function stopLoop() {
+      if (!raf) return;
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+
+    /* Окно не в фокусе — тоже повод остановиться: человек играет или работает в
+       другой программе, а звёзды мерцают ему за счёт его же процессора. */
+    const onVisibility = () => (document.hidden ? stopLoop() : startLoop());
 
     const ro = new ResizeObserver(resize);
     if (cv.parentElement) ro.observe(cv.parentElement);
     resize();
     generate();
-    frame();
+    if (reduceMotion) draw();
+    else startLoop();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", stopLoop);
+    window.addEventListener("focus", startLoop);
     return () => {
-      cancelAnimationFrame(raf);
+      stopLoop();
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", stopLoop);
+      window.removeEventListener("focus", startLoop);
       ro.disconnect();
     };
   }, [px, py, theme]);
@@ -529,14 +578,40 @@ function MythicEarth({ px, py }: { px: { get: () => number }; py: { get: () => n
   const tx = useSpring(useMotionValue(0));
   const ty = useSpring(useMotionValue(0));
   useEffect(() => {
+    /* PERF-ANIM: цикл следит за мышью — и раньше крутился вечно, даже когда мышь
+       неподвижна и выставлять было нечего. Теперь он засыпает после секунды без
+       изменений и просыпается от движения курсора. */
     let raf = 0;
-    const loop = () => {
-      tx.set(px.get() * 10);
-      ty.set(py.get() * 10);
-      raf = requestAnimationFrame(loop);
+    let idleFrames = 0;
+    let prevX = Number.NaN;
+    let prevY = Number.NaN;
+    const step = () => {
+      const x = px.get() * 10;
+      const y = py.get() * 10;
+      idleFrames = x === prevX && y === prevY ? idleFrames + 1 : 0;
+      prevX = x;
+      prevY = y;
+      tx.set(x);
+      ty.set(y);
+      if (idleFrames > 60 || document.hidden) {
+        raf = 0;
+        return;
+      }
+      raf = requestAnimationFrame(step);
     };
-    loop();
-    return () => cancelAnimationFrame(raf);
+    const wake = () => {
+      if (raf || document.hidden) return;
+      idleFrames = 0;
+      raf = requestAnimationFrame(step);
+    };
+    wake();
+    window.addEventListener("pointermove", wake, { passive: true });
+    document.addEventListener("visibilitychange", wake);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", wake);
+      document.removeEventListener("visibilitychange", wake);
+    };
   }, [px, py, tx, ty]);
 
   const SZ = 320,

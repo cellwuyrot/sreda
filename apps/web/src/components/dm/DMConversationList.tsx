@@ -399,7 +399,22 @@ export default function DMConversationList({
                       </span>
                     )}
                   </p>
-                  {conv.lastMessage ? (
+                  {/* FIX-VAULTPW: Список диалогов лежит СНАРУЖИ Сейфа и виден всем, кто
+                      смотрит на экран, включая тех, кто пароля не знает. Строка превью сводила
+                      всю затею на нет: замок спрашивал пароль, а последнюю заметку было видно
+                      без него. Поэтому текст здесь не показывается вовсе — и после разблокировки
+                      тоже: разблокировка открывает Сейф, а не выкладывает его содержимое в сторонний
+                      список. То же с защищённым чатом: там в базе лежит шифртекст, и показывать
+                      «e2ee:…» как текст сообщения бессмысленно. */}
+                  {isVault || conv.secure ? (
+                    <p className="text-xs truncate text-neutral-400 italic">
+                      {conv.lastMessage
+                        ? isVault
+                          ? "Скрыто — откройте по паролю"
+                          : "Зашифрованное сообщение"
+                        : "Нет сообщений"}
+                    </p>
+                  ) : conv.lastMessage ? (
                     <p className={`text-xs truncate ${hasUnread ? "text-neutral-700 dark:text-gray-200 font-medium" : "text-neutral-400"}`}>
                       {conv.lastMessage.userId === currentUserId ? "Вы: " : ""}
                       {conv.lastMessage.content}
