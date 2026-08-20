@@ -42,6 +42,7 @@ import {
   excludeRouteCommand,
   excludeRouteDeleteCommand,
   ifaceDownCommands,
+  ifaceRouteCommands,
   ifaceUpCommands,
   isUsableConfig,
   parseDefaultRoute,
@@ -59,6 +60,26 @@ function fail(message: string): never {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 }
+
+/**
+ * FIX-NOROUTE: аварийная уборка при любом неудавшемся подъёме.
+ *
+ * Неудавшееся подключение не имеет права оставлять после себя ни маршрутов,
+ * ни адаптера, ни живого клиента: именно так человек оставался без интернета
+ * после одной неудачной попытки. Уборка повешена на выход процесса, а не на
+ * try/catch, потому что отказ сообщается через fail() из любой точки сценария.
+ */
+let rollbackDir: string | null = null;
+let tunnelReady = false;
+
+process.on("exit", (code) => {
+  if (code === 0 || tunnelReady || rollbackDir === null) return;
+  try {
+    down(rollbackDir, true);
+  } catch {
+    /* уборка «по возможности»: терять причину отказа из-за неё нельзя */
+  }
+});
 
 /** Запуск штатной утилиты ОС. `required: false` — неуспех допустим (уборка). */
 function runTool(command: string[], required: boolean): void {
@@ -313,6 +334,8 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
   const pidPath = join(dirname(confPath), PID_FILE);
   killPrevious(pidPath);
+  /* С этой строки любой выход с ошибкой обязан вернуть сеть как было. */
+  rollbackDir = dirname(confPath);
 
   const socketPath = uapiSocketPath(process.platform);
   const clientDir = dirname(clientPath);
@@ -423,9 +446,11 @@ async function up(confPath: string, clientPath: string): Promise<void> {
     });
   }
 
+  /* Адрес и MTU — сразу: без адреса интерфейс не работает вовсе. Маршруты и
+     DNS здесь сознательно НЕ ставятся — см. ниже. */
   for (const command of ifaceUpCommands(process.platform, parsed)) {
-    /* В Windows обязательны ВСЕ шаги, включая маршруты и DNS: тихо провалившийся
-       `netsh add route` давал ровно тот случай «включено, а трафик идёт напрямую». */
+    /* В Windows обязательны ВСЕ шаги: тихо провалившийся `netsh set address`
+       давал ровно тот случай «включено, а трафик идёт напрямую». */
     const critical =
       process.platform === "win32" ||
       command.includes("address") ||
@@ -434,16 +459,26 @@ async function up(confPath: string, clientPath: string): Promise<void> {
     runTool(command, critical);
   }
 
-  /* Главное: об успехе сообщаем только после реального рукопожатия с узлом.
-     Инициатива здесь наша: keepalive в настройках заставляет клиента послать
-     первый пакет сам, не дожидаясь пользовательского трафика. */
+  /* FIX-NOROUTE: сначала реальное рукопожатие с узлом — и только потом перевод
+     трафика в туннель. Раньше порядок был обратный, и молчание узла
+     оборачивалось полным отсутствием интернета на всём компьютере: маршруты
+     уже вели в туннель, а туннель никуда не вёл. Инициатива здесь наша:
+     keepalive в настройках заставляет клиента послать первый пакет сам, не
+     дожидаясь пользовательского трафика. */
   await waitForHandshake(socketPath, 20_000);
 
+  for (const command of ifaceRouteCommands(process.platform, parsed)) {
+    runTool(command, process.platform === "win32");
+  }
+
+  /* Туннель работает: аварийная уборка больше не нужна — дальше маршруты
+     снимает обычное выключение. */
+  tunnelReady = true;
   process.stdout.write("ok\n");
 }
 
 /** Снять туннель: убить клиента и убрать за ним правила маршрутизации. */
-function down(confDir: string): void {
+function down(confDir: string, quiet = false): void {
   for (const command of ifaceDownCommands(process.platform)) runTool(command, false);
   /* Маршрут-исключение указывает на ФИЗИЧЕСКИЙ интерфейс и потому не исчезает
      вместе с туннелем — снимаем его по записанным при подъёме данным. */
@@ -463,7 +498,7 @@ function down(confDir: string): void {
   } catch {
     /* сокет исчезает вместе с клиентом */
   }
-  process.stdout.write("ok\n");
+  if (!quiet) process.stdout.write("ok\n");
 }
 
 async function main(): Promise<void> {
