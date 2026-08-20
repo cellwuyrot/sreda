@@ -35,7 +35,7 @@
 
 import { app } from "electron";
 import { execFile } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -61,6 +61,20 @@ import {
   parseWgConfig,
   uapiSocketPath,
 } from "../shared/vpnEmbedded";
+import {
+  AGENT_FILE,
+  isAgentAlive,
+  newRequestId,
+  parseHeartbeat,
+  parseReport,
+  parseStatus,
+  REQUEST_FILE,
+  reportVerdict,
+  serviceDir,
+  STATUS_FILE,
+  TUNNEL_FILE,
+  type TunnelAction,
+} from "../shared/tunnelService";
 
 const run = promisify(execFile);
 
@@ -70,7 +84,7 @@ let current: VpnStatePayload = { state: "off", since: null, error: null, backend
 /** Куда записан профиль, пока туннель поднят (для снятия и удаления). */
 let confPath = "";
 /** Способ, которым туннель реально поднят — нужен для симметричного снятия. */
-let activeMode: "embedded" | "system" | null = null;
+let activeMode: "embedded" | "system" | "service" | null = null;
 /** Путь к использованному бинарнику (встроенному или системному). */
 let activeExe = "";
 let statusTimer: ReturnType<typeof setInterval> | null = null;
@@ -256,7 +270,72 @@ async function systemHandshake(backend: VpnBackend): Promise<"fresh" | "silent" 
   }
 }
 
-function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): void {
+/* ──────────── SERVICE-TUNNEL: связь с постоянным компонентом ─────────── */
+
+function serviceFile(name: string): string {
+  return join(serviceDir(process.platform, process.env), name);
+}
+
+function readServiceFile(name: string): string | null {
+  try {
+    return readFileSync(serviceFile(name), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Есть ли в системе живой служебный компонент. Если его нет (старая сборка,
+ * задание удалили вручную, компонент не запустился) — работаем прежним путём,
+ * через разовое повышение прав, чтобы не остаться вообще без VPN.
+ */
+function serviceAvailable(): boolean {
+  const raw = readServiceFile(AGENT_FILE);
+  if (raw === null) return false;
+  return isAgentAlive(parseHeartbeat(raw), Date.now());
+}
+
+/**
+ * Отдать заявку компоненту и дождаться результата. Окна повышения прав здесь
+ * нет и быть не может: адаптер создаёт тот, кто уже работает с правами системы.
+ */
+async function serviceSend(action: TunnelAction, config: string): Promise<void> {
+  const id = newRequestId();
+  writeFileSync(serviceFile(REQUEST_FILE), JSON.stringify({ id, action, config }), { mode: 0o600 });
+
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const raw = readServiceFile(STATUS_FILE);
+    const status = raw === null ? null : parseStatus(raw);
+    /* Чужой идентификатор — это ответ на прошлую заявку, его нельзя принимать
+       за свой: иначе кнопка «включить» мгновенно позеленела бы по старому
+       результату. */
+    if (!status || status.id !== id) continue;
+    if (status.state === "ok") return;
+    if (status.state === "error") {
+      throw new Error(status.error || "Служебный компонент не смог поднять туннель");
+    }
+  }
+  throw new Error(
+    "Служебный компонент VPN не отвечает. Перезапустите компьютер или переустановите приложение.",
+  );
+}
+
+/**
+ * Состояние туннеля в служебном режиме. Спрашивать клиента напрямую нельзя:
+ * его канал управления принадлежит системе и обычному пользователю закрыт —
+ * поэтому время рукопожатия отдаёт сам компонент.
+ */
+function serviceHandshake(): "fresh" | "silent" | "unknown" {
+  const raw = readServiceFile(TUNNEL_FILE);
+  return reportVerdict(raw === null ? null : parseReport(raw), Date.now(), HANDSHAKE_FRESH_SECONDS);
+}
+
+function startStatusPolling(
+  backend: VpnBackend,
+  mode: "embedded" | "system" | "service",
+): void {
   stopStatusPolling();
   /* Сколько проверок подряд не увидели связи. Раньше "unknown" (клиент
      не ответил, умер, UAPI недоступен) считалось успехом — именно поэтому в окне
@@ -265,7 +344,11 @@ function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): v
   const tick = async () => {
     if (current.state !== "connecting" && current.state !== "on") return;
     const result =
-      mode === "embedded" ? await embeddedHandshake() : await systemHandshake(backend);
+      mode === "service"
+        ? serviceHandshake()
+        : mode === "embedded"
+          ? await embeddedHandshake()
+          : await systemHandshake(backend);
     if (current.state !== "connecting" && current.state !== "on") return;
 
     if (result === "fresh") {
@@ -276,7 +359,7 @@ function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): v
           since: current.since ?? new Date().toISOString(),
           error: null,
           backend,
-          embedded: mode === "embedded",
+          embedded: mode !== "system",
         });
       }
       return;
@@ -294,7 +377,7 @@ function startStatusPolling(backend: VpnBackend, mode: "embedded" | "system"): v
         "Туннель поднят, но связи с VPN-узлом нет: трафик идёт без защиты. " +
         "Переключите сервер или повторите подключение.",
       backend,
-      embedded: mode === "embedded",
+      embedded: mode !== "system",
     });
     stopStatusPolling();
   };
@@ -373,11 +456,19 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     await tearDownQuietly();
     confPath = writeConfFile(config);
 
-    if (embedded) {
-      /* Все три системы одинаково: свой работник запускает встроенный клиент и
-         настраивает его сам по UAPI. Windows больше не исключение: раньше там
-         ставилась служба через `wireguard.exe /installtunnelservice` — и именно она
-         требовала службу-менеджер WireGuard и открывала его окно. */
+    if (serviceAvailable()) {
+      /* Обычный путь в установленном приложении. Права администратора спрошены
+         один раз, установщиком, поэтому здесь окна UAC нет вообще, а адаптер
+         «trioz» появляется в сетевых подключениях как обычное сетевое
+         устройство. Заявка несёт только текст профиля: путь к программе
+         компонент выбирает сам, иначе любой пользователь машины получил бы
+         запуск своего кода с правами системы. */
+      activeExe = embedded || "";
+      activeMode = "service";
+      await serviceSend("up", config);
+    } else if (embedded) {
+      /* Запасной путь: сборка без служебного компонента. Тогда работник
+         запускается через разовое повышение прав — как до этой правки. */
       activeExe = embedded;
       activeMode = "embedded";
       await runHelperElevated(["up", confPath, embedded]);
@@ -406,7 +497,7 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
       since: new Date().toISOString(),
       error: null,
       backend,
-      embedded: activeMode === "embedded",
+      embedded: activeMode !== "system",
     });
     startStatusPolling(backend, activeMode);
     return current;
@@ -452,6 +543,14 @@ async function tearDownQuietly(): Promise<void> {
 async function tearDown(): Promise<void> {
   const dir = vpnDir();
   const path = confPath || join(dir, TUNNEL_CONF_FILE);
+
+  /* Если туннель поднимал компонент, снимать его должен он же: у приложения
+     нет прав ни убить процесс клиента, ни убрать маршруты. Пустой activeMode —
+     это перезапуск приложения при живом туннеле, и там тоже нужен компонент. */
+  if (activeMode === "service" || (activeMode === null && serviceAvailable())) {
+    await serviceSend("down", "");
+    return;
+  }
 
   if (activeMode === "system") {
     if (!activeExe || !existsSync(path)) return;
