@@ -75,6 +75,13 @@ export interface Conversation {
   createdAt?: string | null;
   unread?: number;
   business?: BusinessInfo;
+  /**
+   * FIX-E2EECHAT: защищённая (E2EE) переписка — отдельный разговор с тем же человеком.
+   *
+   * Шифрование здесь — свойство переписки, а не переключатель в шапке: в таком
+   * разговоре шифруется всё и всегда, и смешать открытое с зашифрованным негде.
+   */
+  secure?: boolean;
 }
 
 export interface DMReplyTo {
