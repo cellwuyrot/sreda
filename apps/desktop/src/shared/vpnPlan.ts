@@ -44,6 +44,14 @@ export interface VpnStatePayload {
   error: string | null;
   /** Чем реально подняли туннель, если он поднят; иначе null. */
   backend: VpnBackend | null;
+  /**
+   * VPN-EMBEDDED: поднят ли туннель ВСТРОЕННЫМ в приложение клиентом.
+   *
+   * Нужно ровно для одного: показать в интерфейсе, что скачивать и ставить
+   * ничего не требуется. Поле необязательное, чтобы старые сборки оболочки,
+   * которые его не присылают, продолжали работать со свежей веб-частью.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -155,6 +163,20 @@ export interface ElevatedInvocation {
   args: string[];
 }
 
+/** Дополнительные настройки запуска с повышением прав. */
+export interface ElevatedOptions {
+  /**
+   * Переменные окружения, которые обязаны дойти до процесса под правами.
+   *
+   * Своё окружение такой процесс НЕ наследует: pkexec его вычищает по
+   * соображениям безопасности, UAC и osascript запускают процесс из другого
+   * сеанса. Поэтому переменные приходится вписывать в саму команду — без этого
+   * `ELECTRON_RUN_AS_NODE` не дошёл бы, и наш же бинарник открыл бы окно
+   * приложения от root вместо запуска сценария.
+   */
+  env?: Record<string, string>;
+}
+
 /** Экранирование одинарных кавычек для одинарно-кавыченной строки PowerShell. */
 function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -174,15 +196,22 @@ export function elevatedInvocation(
   platform: NodeJS.Platform,
   exe: string,
   args: string[],
+  options: ElevatedOptions = {},
 ): ElevatedInvocation {
+  const envPairs = Object.entries(options.env ?? {});
+
   if (platform === "win32") {
     /* Start-Process -Verb RunAs поднимает окно UAC; -Wait + $p.ExitCode
-       пробрасывают код возврата, иначе успех и провал выглядели бы одинаково.
+       пробрасывают код возврата, иначе ус��ех и провал выглядели бы одинаково.
        ArgumentList — список одинарно-кавыченных строк через запятую. */
     const argList = args.map(psQuote).join(",");
     const startArgs = args.length ? ` -ArgumentList ${argList}` : "";
+    /* Start-Process наследует окружение текущего процесса PowerShell, поэтому
+       достаточно выставить переменные перед вызовом. */
+    const envPrefix = envPairs.map(([k, v]) => `$env:${k}=${psQuote(v)};`).join("");
     const script =
       `$ErrorActionPreference='Stop';` +
+      envPrefix +
       `$p = Start-Process -FilePath ${psQuote(exe)}${startArgs} ` +
       `-Verb RunAs -WindowStyle Hidden -PassThru -Wait; exit $p.ExitCode`;
     return {
@@ -195,12 +224,18 @@ export function elevatedInvocation(
     /* osascript просит пароль администратора системным окном. Команда сначала
        собирается как POSIX-shell строка (аргументы в одинарных кавычках), затем
        вся строка экранируется для двойных кавычек AppleScript. */
-    const command = [exe, ...args].map(shQuote).join(" ");
+    const envPrefix = envPairs.map(([k, v]) => `${k}=${shQuote(v)}`);
+    const command = [...envPrefix, ...[exe, ...args].map(shQuote)].join(" ");
     const script = `do shell script "${osaQuote(command)}" with administrator privileges`;
     return { file: "osascript", args: ["-e", script] };
   }
 
-  // Linux: pkexec принимает argv напрямую (без shell), поэтому кавычек не нужно.
+  /* Linux: pkexec принимает argv напрямую (без shell), поэтому кавычек не нужно.
+     Но окружение он вычищает, так что переменные передаём через `env`. */
+  if (envPairs.length) {
+    const assignments = envPairs.map(([k, v]) => `${k}=${v}`);
+    return { file: "pkexec", args: ["env", ...assignments, exe, ...args] };
+  }
   return { file: "pkexec", args: [exe, ...args] };
 }
 

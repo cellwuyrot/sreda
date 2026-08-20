@@ -198,7 +198,7 @@ export default function ConnectionMenu({
 
   return (
     <div className="relative" ref={boxRef}>
-      <PremiumMark isPremium={isPremium} onClick={() => setOpen((v) => !v)} size={size} />
+      <PremiumMark isPremium={isPremium} onClick={() => setOpen((v) => !v)} size={size} asToggle={false} />
       {/* Крошечная метка состояния: «включено или нет» видно без открытия плашки. */}
       {peer && (
         <span

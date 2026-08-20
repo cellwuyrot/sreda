@@ -429,6 +429,45 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   /* Всё для включения на месте: право есть, сервис включён, узел готов. */
   const ready = !!state?.entitled && !!state.serviceEnabled && state.nodeReady;
 
+  /* ── VPN-EMBEDDED: один выключатель ──
+     Раньше включение и выключение были двумя разными кнопками внизу окна.
+     Теперь действие одно и живёт в одном месте, чтобы круглая кнопка и значок TZ
+     не могли разошестись в поведении. */
+  const togglePower = useCallback(async () => {
+    if (active || tunnelOn) {
+      await disconnectTunnel();
+      return;
+    }
+    await connect(routing);
+  }, [active, tunnelOn, disconnectTunnel, connect, routing]);
+
+  /* Кнопку глушим только тогда, когда нажатие точно ничего не даст: нет оболочки
+     (в браузере туннеля нет), идёт переходное состояние, либо узел неполон. */
+  const powerReady =
+    canTunnel && ready && !busy && !tunnelConnecting && !tunnelDisconnecting && (active || !nodeIncomplete);
+
+  const powerLabel = active
+    ? "Выключить защищённое соединение"
+    : tunnelConnecting
+    ? "Подключаем…"
+    : tunnelDisconnecting
+    ? "Выключаем…"
+    : "Включить защищённое соединение";
+
+  /* Почему нажать нельзя — говорим вслух: неактивный круг без объяснения
+     неотличим от поломки. */
+  const powerHint = tunnelConnecting
+    ? "Подключаем…"
+    : tunnelDisconnecting
+    ? "Выключаем…"
+    : busy
+    ? "Выполняем…"
+    : !canTunnel
+    ? "Включение доступно в приложении TZ.Connect"
+    : !ready
+    ? "Подготавливаем доступ…"
+    : "Сервер не готов принять подключение";
+
   /* NETLINK-2: ответ читается только через эти переменные. Прямое обращение к
      вложенным полям уже один раз уронило весь мессенджер, когда сервер ответил
      старой формой без traffic. Окно о соединении не вправе ронять клиент. */
