@@ -354,7 +354,6 @@ export function ifaceUpCommands(
   parsed: ParsedWgConfig,
   iface: string = TUNNEL_NAME,
 ): string[][] {
-  const routeAll = routesEverything(parsed);
   const commands: string[][] = [];
 
   if (platform === "linux") {
@@ -363,7 +362,74 @@ export function ifaceUpCommands(
     }
     if (parsed.mtu) commands.push(["ip", "link", "set", "mtu", String(parsed.mtu), "dev", iface]);
     commands.push(["ip", "link", "set", iface, "up"]);
+    return commands;
+  }
 
+  if (platform === "darwin") {
+    for (const address of parsed.addresses) {
+      const ip = address.split("/")[0] ?? address;
+      commands.push(
+        isV6(address)
+          ? ["ifconfig", iface, "inet6", address, "alias"]
+          : ["ifconfig", iface, "inet", ip, ip, "alias"],
+      );
+    }
+    if (parsed.mtu) commands.push(["ifconfig", iface, "mtu", String(parsed.mtu)]);
+    commands.push(["ifconfig", iface, "up"]);
+    return commands;
+  }
+
+  if (platform === "win32") {
+    /* Здесь роль `ip`/`ifconfig` играет штатный `netsh` — он есть в любой
+       Windows, ставить ничего не нужно. `store=active` означает «до
+       перезагрузки»: настройки исчезнувшего интерфейса не должны оставаться в
+       реестре и всплывать при следующем запуске системы. */
+    for (const address of parsed.addresses) {
+      const [ip, prefix] = address.split("/");
+      if (!ip) continue;
+      if (isV6(address)) {
+        commands.push(["netsh", "interface", "ipv6", "set", "address", `interface=${iface}`, `address=${address}`, "store=active"]);
+      } else {
+        const mask = ipv4Mask(prefix === undefined ? 32 : Number(prefix));
+        commands.push([
+          "netsh", "interface", "ipv4", "set", "address",
+          `name=${iface}`, "source=static", `address=${ip}`, `mask=${mask}`, "store=active",
+        ]);
+      }
+    }
+    if (parsed.mtu) {
+      commands.push(["netsh", "interface", "ipv4", "set", "subinterface", iface, `mtu=${parsed.mtu}`, "store=active"]);
+    }
+    return commands;
+  }
+
+  return commands;
+}
+
+/**
+ * FIX-NOROUTE: маршруты и DNS туннеля — ОТДЕЛЬНО от подъёма интерфейса.
+ *
+ * Разделение сделано ради порядка действий, а не ради красоты. Пока эти
+ * команды шли вместе с настройкой адреса, системная маршрутизация менялась до
+ * того, как становилось известно, ответил ли узел вообще. Если не отвечал,
+ * весь трафик уже был завёрнут в мёртвый туннель: интернета нет ни в
+ * приложении, ни в браузере, ни в играх — и человек оставался без сети, не
+ * понимая причины. Теперь маршруты ставятся только после рукопожатия, и
+ * самый плохой исход — «подключиться не удалось» при живом интернете.
+ *
+ * DNS тут же, а не в подъёме, по той же причине: сервер имён из профиля
+ * доступен только внутри туннеля, и назначенный раньше срока он ломал разбор
+ * имён ещё до появления связи.
+ */
+export function ifaceRouteCommands(
+  platform: NodeJS.Platform,
+  parsed: ParsedWgConfig,
+  iface: string = TUNNEL_NAME,
+): string[][] {
+  const routeAll = routesEverything(parsed);
+  const commands: string[][] = [];
+
+  if (platform === "linux") {
     if (routeAll) {
       /* Маршрут по умолчанию — в отдельной таблице, а не в main: так его видно
          только помеченным пакетам, и мы не затираем системный шлюз. Правило
@@ -385,17 +451,6 @@ export function ifaceUpCommands(
   }
 
   if (platform === "darwin") {
-    for (const address of parsed.addresses) {
-      const ip = address.split("/")[0] ?? address;
-      commands.push(
-        isV6(address)
-          ? ["ifconfig", iface, "inet6", address, "alias"]
-          : ["ifconfig", iface, "inet", ip, ip, "alias"],
-      );
-    }
-    if (parsed.mtu) commands.push(["ifconfig", iface, "mtu", String(parsed.mtu)]);
-    commands.push(["ifconfig", iface, "up"]);
-
     if (routeAll) {
       /* В macOS нет fwmark, поэтому от петли спасает точечный маршрут до самой
          точки подключения через прежний шлюз, а весь остальной трафик уходит в
@@ -421,26 +476,6 @@ export function ifaceUpCommands(
   }
 
   if (platform === "win32") {
-    /* Здесь роль `ip`/`ifconfig` играет штатный `netsh` — он есть в любой
-       Windows, ставить ничего не нужно. `store=active` означает «до
-       перезагрузки»: настройки исчезнувшего интерфейса не должны оставаться в
-       реестре и всплывать при следующем запуске системы. */
-    for (const address of parsed.addresses) {
-      const [ip, prefix] = address.split("/");
-      if (!ip) continue;
-      if (isV6(address)) {
-        commands.push(["netsh", "interface", "ipv6", "set", "address", `interface=${iface}`, `address=${address}`, "store=active"]);
-      } else {
-        const mask = ipv4Mask(prefix === undefined ? 32 : Number(prefix));
-        commands.push([
-          "netsh", "interface", "ipv4", "set", "address",
-          `name=${iface}`, "source=static", `address=${ip}`, `mask=${mask}`, "store=active",
-        ]);
-      }
-    }
-    if (parsed.mtu) {
-      commands.push(["netsh", "interface", "ipv4", "set", "subinterface", iface, `mtu=${parsed.mtu}`, "store=active"]);
-    }
     /* DNS туннеля: без него в режиме «весь трафик» имена продолжали бы
        разрешаться прежним сервером — это утечка того, куда человек ходит. */
     parsed.dns.filter((server) => !isV6(server)).forEach((server, index) => {
@@ -510,6 +545,9 @@ export function ifaceDownCommands(
     return [
       ["netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/1", `interface=${iface}`, "store=active"],
       ["netsh", "interface", "ipv4", "delete", "route", "128.0.0.0/1", `interface=${iface}`, "store=active"],
+      /* FIX-NOROUTE: и DNS. Если адаптер почему-то остался в системе, статический
+         сервер имён из профиля продолжал бы отвечать тишиной на любой запрос. */
+      ["netsh", "interface", "ipv4", "set", "dnsservers", `name=${iface}`, "dhcp", "validate=no"],
     ];
   }
   return [];
