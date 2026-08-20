@@ -18,6 +18,23 @@ files:
   - resources/**/*
   - package.json
 
+# VPN-EMBEDDED: встроенный клиент туннеля.
+#
+# Кладём его через extraResources, а не через `files`, потому что `files`
+# упаковывается в app.asar — а из архива нельзя ни запустить программу, ни
+# выставить ей право на запуск. extraResources кладёт файлы в
+# `process.resourcesPath/wireguard`, откуда их и берёт src/main/vpn.ts.
+#
+# Сами бинарники не лежат в git (это десятки мегабайт на три платформы, и
+# навсегда): их раскладывает scripts/vendor-wireguard.mjs на шаге
+# `npm run vendor:client` внутри `npm run build`. Если каталог платформы пуст,
+# сборка соберётся, но туннель в ней честно скажет, что клиента нет.
+extraResources:
+  - from: resources/wireguard/${os}
+    to: wireguard
+    filter:
+      - "**/*"
+
 extraMetadata:
   main: dist/main/index.js
 
