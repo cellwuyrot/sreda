@@ -21,6 +21,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { lookup } from "node:dns/promises";
 import { connect } from "node:net";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -28,9 +29,14 @@ import { dirname, join } from "node:path";
 import { TUNNEL_NAME } from "../shared/vpnPlan";
 import {
   WINTUN_DLL,
+  endpointHost,
+  excludeRouteCommand,
+  excludeRouteDeleteCommand,
   ifaceDownCommands,
   ifaceUpCommands,
   isUsableConfig,
+  parseDefaultRoute,
+  parseUapiHandshake,
   parseWgConfig,
   routesEverything,
   uapiSetRequest,
@@ -117,6 +123,56 @@ function assertUapiOk(response: string): void {
   fail(`Встроенный клиент отклонил настройки подключения (код ${match[1]})`);
 }
 
+/**
+ * Дождаться РЕАЛЬНОГО рукопожатия с узлом.
+ *
+ * Без этой проверки работник сообщал «ok» сразу после настройки интерфейса —
+ * ещё до того, как стало известно, ответил ли сервер вообще. Именно так
+ * появлялось самое вредное состояние: в окне «Соединение активно», а трафик идёт
+ * мимо туннеля, и внешние проверки показывают прежний адрес.
+ */
+async function waitForHandshake(path: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if (parseUapiHandshake(await uapiRequest(path, "get=1\n\n")) > 0) return;
+    } catch {
+      /* клиент занят — спросим ещё раз */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  fail(
+    "Туннель поднят, но VPN-узел не ответил на рукопожатие. " +
+      "Проверьте доступность сервера и актуальность профиля подключения.",
+  );
+}
+
+/** Файл с параметрами маршрута-исключения — чтобы снять его при выключении. */
+export const EXCLUDE_FILE = `${TUNNEL_NAME}.exclude`;
+
+/** Адрес узла: маршрут в Windows задаётся только IP, имя не подходит. */
+async function resolveEndpointIp(endpoint: string): Promise<string> {
+  const host = endpointHost(endpoint);
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return host;
+  const { address } = await lookup(host, { family: 4 });
+  return address;
+}
+
+/** Текущий шлюз и интерфейс выхода в сеть до подъёма туннеля. */
+function findDefaultRoute(): { gateway: string; interfaceIndex: number } | null {
+  const script =
+    "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | " +
+    "Where-Object { $_.NextHop -ne '0.0.0.0' } | Sort-Object RouteMetric | Select-Object -First 1; " +
+    'if ($r) { "$($r.NextHop) $($r.InterfaceIndex)" }';
+  const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    timeout: 20_000,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) return null;
+  return parseDefaultRoute(result.stdout || "");
+}
+
 /** Снять прежний клиент, если он ещё жив (после аварийного выхода). */
 function killPrevious(pidPath: string): void {
   if (!existsSync(pidPath)) return;
@@ -201,12 +257,41 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
   /* Адрес и маршруты — обязательные шаги: без них туннель поднят, но трафик
      в него не пойдёт — самый неприятный вид поломки: «включено» и не работает. */
+  /* Windows, режим «весь трафик»: СНАЧАЛА узкий маршрут до самого VPN-узла
+     через прежний шлюз, и только потом — две половины в туннель. В обратном
+     порядке клиент начинает отправлять рукопожатие в самого себя. */
+  if (process.platform === "win32" && routeAll) {
+    const endpoint = parsed.peers.find((peer) => peer.endpoint)?.endpoint;
+    if (!endpoint) fail("В профиле подключения нет адреса сервера");
+    let endpointIp = "";
+    try {
+      endpointIp = await resolveEndpointIp(endpoint);
+    } catch {
+      fail("Не удалось определить адрес VPN-узла по его имени");
+    }
+    const gate = findDefaultRoute();
+    if (!gate) {
+      fail("Не удалось определить основной шлюз системы: без него туннель замкнётся сам на себя");
+    }
+    runTool(excludeRouteCommand(endpointIp, gate.gateway, gate.interfaceIndex), true);
+    writeFileSync(join(dirname(confPath), EXCLUDE_FILE), `${endpointIp} ${gate.interfaceIndex}\n`, {
+      mode: 0o600,
+    });
+  }
+
   for (const command of ifaceUpCommands(process.platform, parsed)) {
-    /* Добавление маршрута, который уже есть, — не ошибка с точки зрения цели,
-       поэтому жёстко требуем только назначение адреса и подьём интерфейса. */
-    const critical = command.includes("address") || command.includes("inet") || command.includes("up");
+    /* В Windows обязательны ВСЕ шаги, включая маршруты и DNS: тихо провалившийся
+       `netsh add route` давал ровно тот случай «включено, а трафик идёт напрямую». */
+    const critical =
+      process.platform === "win32" ||
+      command.includes("address") ||
+      command.includes("inet") ||
+      command.includes("up");
     runTool(command, critical);
   }
+
+  /* Главное: об успехе сообщаем только после реального рукопожатия с узлом. */
+  await waitForHandshake(socketPath, 15_000);
 
   process.stdout.write("ok\n");
 }
@@ -214,6 +299,18 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 /** Снять туннель: убить клиента и убрать за ним правила маршрутизации. */
 function down(confDir: string): void {
   for (const command of ifaceDownCommands(process.platform)) runTool(command, false);
+  /* Маршрут-исключение указывает на ФИЗИЧЕСКИЙ интерфейс и потому не исчезает
+     вместе с туннелем — снимаем его по записанным при подъёме данным. */
+  const excludePath = join(confDir, EXCLUDE_FILE);
+  if (existsSync(excludePath)) {
+    const [ip, index] = readFileSync(excludePath, "utf8").trim().split(/\s+/);
+    if (ip && index) runTool(excludeRouteDeleteCommand(ip, Number(index)), false);
+    try {
+      rmSync(excludePath, { force: true });
+    } catch {
+      /* файл мог исчезнуть раньше — цель достигнута */
+    }
+  }
   killPrevious(join(confDir, PID_FILE));
   try {
     rmSync(uapiSocketPath(process.platform), { force: true });
