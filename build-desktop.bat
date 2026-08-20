@@ -51,6 +51,9 @@ if errorlevel 1 goto no_node
 where npm >nul 2>nul
 if errorlevel 1 goto no_node
 for /f "delims=" %%V in ('node -v') do echo      node          : %%V
+if not exist "apps\desktop\src\main\tunnelAgent.ts" goto old_tree
+if not exist "apps\desktop\build\installer.nsh" goto old_tree
+echo      sluzhebnyy komponent tunnelya : est
 echo [1/9] ok, ROOT=%CD% >> "%LOG%"
 echo [2/9] app-builder
 if exist "%APPBUILDER_DIR%\app-builder.exe" goto appbuilder_ok
@@ -184,6 +187,7 @@ echo [9/9] Sborka installyatora - electron-builder
 call npm run dist -w apps/desktop -- -c.npmRebuild=false
 if errorlevel 1 goto fail
 if not exist "apps\desktop\release" goto fail
+if not exist "apps\desktop\dist\main\tunnelAgent.js" goto no_service_in_build
 echo [9/9] ok >> "%LOG%"
 if "%BUILD_WITH_CLIENT%"=="0" goto done_noclient
 if not exist "apps\desktop\release\win-unpacked\resources\wireguard\wireguard-go.exe" goto no_client_in_build
@@ -207,6 +211,19 @@ goto done
 echo V sobrannom prilozhenii net klienta ili drayvera:
 echo apps\desktop\release\win-unpacked\resources\wireguard
 echo Proverte extraResources v apps\desktop\electron-builder.yml
+goto fail
+:old_tree
+echo V etoy papke staraya versiya proekta: net sluzhebnogo komponenta tunnelya.
+echo Nuzhny faily:
+echo   apps\desktop\src\main\tunnelAgent.ts
+echo   apps\desktop\build\installer.nsh
+echo Raspakuyte svezhiy arhiv proekta i zapustite sborku iz nego.
+goto fail
+:no_service_in_build
+echo Komponent tunnelya ne skompilirovan: apps\desktop\dist\main\tunnelAgent.js
+echo Bez nego adapter trioz ne sozdaetsya bez prav administratora,
+echo i kazhdoe vklyuchenie budet prosit povysheniya prav.
+echo Proverte shag tsc v skripte build paketa apps/desktop.
 goto fail
 :no_root
 echo Ne nayden proekt ryadom s etim failom.
