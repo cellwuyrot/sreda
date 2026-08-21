@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
-import { buildWireGuardConfig, generateWireGuardKeyPair } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
+import { deviceKeyPair, forgetDeviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
+import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
 import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
@@ -248,7 +249,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
    * (ошибка либо узел ещё не сообщил параметры); текст ошибки уже выставлен.
    */
   const enroll = useCallback(async (mode: VpnRouting): Promise<string | null> => {
-    const pair = generateWireGuardKeyPair();
+    /* FIX-KEYSTICK: тот же ключ устройства, что и у выключателя в панели. Иначе
+       два места выдавали разные ключи и вытесняли друг друга на узле. */
+    const pair = deviceKeyPair();
     const res = await fetch("/api/vpn/me", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -395,6 +398,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         setError(data?.error || "Не удалось отключить доступ");
         return;
       }
+      /* FIX-KEYSTICK: запись пира удалена на сервере — держать её ключ на устройстве
+         больше незачем: следующее включение честно выдаст новую пару. */
+      forgetDeviceKeyPair();
       setError("");
       await refresh();
     } catch {

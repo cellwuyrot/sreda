@@ -670,7 +670,8 @@ export default function AdminVpnPage() {
                         <p className="mt-1 text-[11px] text-neutral-400">
                           Точка подключения: {node.endpoint ?? "не задана"}
                           {" · "}
-                          {node.transport === "OBFUSCATED" ? "устойчивый к блокировкам" : "обычный"}
+                          {/* FIX-NOAWG: тип всегда обычный — другого больше не выдаётся. */}
+                          {"обычный"}
                         </p>
                         {node.obfuscationMissing && (
                           <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
