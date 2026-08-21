@@ -21,9 +21,11 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { createSocket } from "node:dgram";
 import { lookup } from "node:dns/promises";
 import { connect } from "node:net";
 import {
+  appendFileSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -143,6 +145,10 @@ function runTool(command: string[], required: boolean): boolean {
      единственная важная часть сообщения была нечитаемой. */
   const result = spawnSync(file, args, { timeout: 20_000 });
   const text = `${decodeConsole(result.stdout)} ${decodeConsole(result.stderr)}`.replace(/\s+/g, " ").trim();
+  /* FIX-SETUPLOG: в журнал попадает КАЖДЫЙ шаг, а не только упавший. Разбор
+     этой поломки занял часы ровно потому, что успешные шаги были невидимы, и
+     нельзя было понять, что и в каком порядке реально применилось. */
+  logSetup(`${file} ${args.join(" ")} -> код ${result.status ?? "?"}${text ? ` | ${text}` : ""}`);
   if (!result.error && result.status === 0) return true;
   const lower = text.toLowerCase();
   if (HARMLESS_TOOL_ERRORS.some((phrase) => lower.includes(phrase))) return true;
@@ -179,6 +185,11 @@ function isCriticalStep(command: string[]): boolean {
   }
   if (command.includes("ipv6")) return false;
   if (command.includes("dnsservers")) return false;
+  /* FIX-DAD: тонкая настройка интерфейса — необязательный шаг. На системах, где
+     этих параметров нет, отказ не должен отбирать рабочий туннель. */
+  if (command.some((part) => part.startsWith("dadtransmits") || part.startsWith("routerdiscovery"))) {
+    return false;
+  }
   return true;
 }
 
@@ -311,22 +322,68 @@ async function waitForHandshake(path: string, timeoutMs: number): Promise<void> 
  * Возвращает флаг, а не падает сама: решение об откате принимает вызывающая
  * сторона — ей есть что убирать.
  */
-async function waitForTraffic(path: string, timeoutMs: number): Promise<boolean> {
-  /* Стартовое значение: к этому моменту рукопожатие уже было, и его
-     байты уже учтены. Сравнивать надо с ним, а не с нулём, иначе
-     одно рукопожатие сойдёт за рабочий туннель. */
-  let baseline = -1;
+async function readRx(path: string): Promise<number> {
+  try {
+    return parseUapiTransfer(await uapiRequest(path, "get=1\n\n")).rx;
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * FIX-PROBE: собственный пробный запрос внутрь туннеля.
+ *
+ * Пассивное ожидание чужого трафика оказалось негодным способом: пока человек
+ * не откроет сайт, из туннеля может не прийти ни байта, и рабочее подключение
+ * выглядело бы сломанным. Поэтому спрашиваем сами — короткий запрос к серверу
+ * имён из профиля. Он доступен только внутри туннеля, поэтому ответ на него и
+ * есть то самое доказательство: данные ходят в обе стороны.
+ *
+ * Ошибки намеренно проглатываются: это проба, а не работа.
+ */
+function probeThroughTunnel(server: string): void {
+  try {
+    const socket = createSocket(server.includes(":") ? "udp6" : "udp4");
+    /* Минимальный запрос DNS: заголовок, имя `ya.ru`, тип A. */
+    const query = Buffer.from([
+      0x7a, 0x69, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x02, 0x79, 0x61, 0x02, 0x72, 0x75, 0x00, 0x00, 0x01, 0x00, 0x01,
+    ]);
+    const close = () => {
+      try {
+        socket.close();
+      } catch {
+        /* уже закрыт */
+      }
+    };
+    socket.on("error", close);
+    socket.on("message", close);
+    socket.send(query, 53, server, () => setTimeout(close, 2_000));
+  } catch {
+    /* проба не обязана удаться */
+  }
+}
+
+async function waitForTraffic(
+  path: string,
+  timeoutMs: number,
+  baseline: number,
+  probeServers: string[],
+): Promise<boolean> {
+  const start = baseline >= 0 ? baseline : await readRx(path);
   const deadline = Date.now() + timeoutMs;
+  let tick = 0;
   while (Date.now() < deadline) {
-    try {
-      const { rx } = parseUapiTransfer(await uapiRequest(path, "get=1\n\n"));
-      if (baseline < 0) baseline = rx;
-      else if (rx > baseline) return true;
-    } catch {
-      /* клиент занят — спросим ещё раз */
+    const rx = await readRx(path);
+    if (rx > start) return true;
+    /* Раз в полторы секунды подталкиваем туннель своим запросом. */
+    if (tick % 3 === 0) {
+      for (const server of probeServers.slice(0, 2)) probeThroughTunnel(server);
     }
+    tick += 1;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
+  logSetup(`проверка трафика не прошла: принято байт как было (${start})`);
   return false;
 }
 
@@ -340,6 +397,25 @@ async function waitForTraffic(path: string, timeoutMs: number): Promise<boolean>
  * Теперь вывод пишется рядом с профилем и попадает в текст ошибки.
  */
 export const CLIENT_LOG = `${TUNNEL_NAME}-client.log`;
+
+/**
+ * FIX-SETUPLOG: журнал шагов настройки сети — рядом с журналом клиента.
+ *
+ * Журнал клиента рассказывает про шифрование и рукопожатие, но ничего не знает
+ * про адрес, маршруты и серверы имён — а ломается чаще всего именно это.
+ */
+export const SETUP_LOG = `${TUNNEL_NAME}-setup.log`;
+
+let setupLogPath = "";
+
+function logSetup(line: string): void {
+  if (!setupLogPath) return;
+  try {
+    appendFileSync(setupLogPath, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    /* журнал не имеет права ломать подключение */
+  }
+}
 
 /** Последние строки журнала клиента — для внятного сообщения об ошибке. */
 function clientLogTail(logPath: string, lines = 6): string {
@@ -493,6 +569,14 @@ async function up(confPath: string, clientPath: string): Promise<void> {
   /* С этой строки любой выход с ошибкой обязан вернуть сеть как было. */
   rollbackDir = dirname(confPath);
 
+  /* FIX-SETUPLOG: с этого места каждый шаг настройки сети пишется в журнал. */
+  setupLogPath = join(dirname(confPath), SETUP_LOG);
+  try {
+    writeFileSync(setupLogPath, "", { mode: 0o600 });
+  } catch {
+    /* журнал не имеет права ломать подключение */
+  }
+
   const socketPath = uapiSocketPath(process.platform);
   const clientDir = dirname(clientPath);
 
@@ -615,9 +699,23 @@ async function up(confPath: string, clientPath: string): Promise<void> {
      трафика в туннель. Раньше порядок был обратный, и молчание узла
      оборачивалось полным отсутствием интернета на всём компьютере: маршруты
      уже вели в туннель, а туннель никуда не вёл. Инициатива здесь наша:
-     keepalive в настройках заставляет клиента послать первый пакет сам, не
+     keepalive в настройках заставляет клиента послать первый пакет сам, н��
      дожидаясь пользовательского трафика. */
   await waitForHandshake(socketPath, 20_000);
+
+  /* FIX-TRAFFIC2: отсчёт принятых байт снимается ДО переключения маршрутов.
+     Раньше он снимался после — и настоящий ответ, пришедший в первые
+     миллисекунды после рукопожатия, попадал в исходное значение и не
+     засчитывался как трафик. Рабочий туннель мог быть объявлен сломанным. */
+  const trafficBaseline = await readRx(socketPath);
+
+  /* FIX-DAD: адресу нужно мгновение, чтобы стать рабочим. С отключённой
+     проверкой занятости ожидание короткое, но пропускать его нельзя:
+     маршруты, поставленные на ещё проверяемый (Tentative) адрес, Windows для
+     отправки не использует. */
+  if (process.platform === "win32") {
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
 
   for (const command of ifaceRouteCommands(process.platform, parsed)) {
     /* FIX-NETSH6: рукопожатие уже состоялось — туннель живой. Ронять его из-за
@@ -634,12 +732,13 @@ async function up(confPath: string, clientPath: string): Promise<void> {
      без возможности даже открыть приложение, чтобы выключить VPN. Откат
      полный — `down` снимает маршруты, DNS, маршрут-исключение и самого
      клиента, то есть состояние сети возвращается к допусковому. */
-  if (!(await waitForTraffic(socketPath, 12_000))) {
+  if (!(await waitForTraffic(socketPath, 25_000, trafficBaseline, parsed.dns))) {
     down(dirname(confPath), true);
     fail(
       "Узел ответил на рукопожатие, но обратный трафик через туннель не пошёл. " +
         "Маршруты и серверы имён возвращены на место — обычный интернет работает. " +
-        `Подробности в журнале клиента: ${logPath}`,
+        `Что именно применялось: ${join(dirname(confPath), SETUP_LOG)}. ` +
+        `Журнал клиента: ${logPath}`,
     );
   }
 
