@@ -17,7 +17,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getDesktopApi, type DesktopVpnState } from "@/lib/desktop";
-import { buildWireGuardConfig, generateWireGuardKeyPair } from "@/lib/wgKeys";
+import { deviceKeyPair } from "@/lib/wgIdentity";
+import { buildWireGuardConfig } from "@/lib/wgKeys";
 
 /** Режим маршрутизации: весь трафик или только сервисы проекта. */
 export type TunnelRouting = "ALL" | "SERVICES";
@@ -129,9 +130,11 @@ export function useDesktopTunnel(): DesktopTunnel {
       }
       if (!entitled) return false;
 
-      /* Профиль всегда свежий: ключ мог быть перевыпущен на другом устройстве,
-         и старый молча не работал бы. */
-      const pair = generateWireGuardKeyPair();
+      /* FIX-KEYSTICK: ключ у устройства ОДИН и тот же от включения к включению.
+         Прежде здесь создавалась новая пара на каждое нажатие, сервер
+         перезаписывал запись пира, а агент на узле удалял прежний ключ — вместе
+         с уже работающим соединением. Подробности в lib/wgIdentity.ts. */
+      const pair = deviceKeyPair();
       const res = await fetch("/api/vpn/me", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

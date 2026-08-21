@@ -405,16 +405,17 @@ describe("nodeTunnel", () => {
   });
 
   /**
-   * ИНВАРИАНТ: параметры обфускации попадают в профиль только когда режим
-   * объявлен в панели. Иначе обновление на узле молча меняло бы то, что выдаётся
-   * клиентам, — а профиль с этими строками обычный WireGuard не прочитает.
+   * ИНВАРИАНТ (FIX-NOAWG): параметры маскировки не попадают в профиль НИКОГДА —
+   * даже если в базе осталась пометка OBFUSCATED от прежних версий и узел даже
+   * прислал параметры. Профиль с такими строками обычный узел отбрасывает молча,
+   * и пользователь видит только «узел не ответил на рукопожатие».
    */
-  it("ИНВАРИАНТ: параметры прикладываются только к объявленному режиму", () => {
+  it("ИНВАРИАНТ: параметры маскировки никогда не уезжают клиенту", () => {
     const obfuscation = JSON.stringify({ Jc: 4 });
     expect(nodeTunnel({ endpointHost: "", lastReport: report, transport: "PLAIN", obfuscation }).obfuscation).toBeNull();
-    expect(nodeTunnel({ endpointHost: "", lastReport: report, transport: "OBFUSCATED", obfuscation }).obfuscation).toEqual({
-      Jc: 4,
-    });
+    expect(
+      nodeTunnel({ endpointHost: "", lastReport: report, transport: "OBFUSCATED", obfuscation }).obfuscation,
+    ).toBeNull();
   });
 });
 
