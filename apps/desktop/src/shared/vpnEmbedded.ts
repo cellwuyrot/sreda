@@ -285,7 +285,7 @@ export function isUsableConfig(parsed: ParsedWgConfig): boolean {
  * Это ровно то место, где встроенный клиент заменяет `wg`: утилита переводила
  * ключи сама, а теперь перевод наш. Ключ WireGuard — всегда 32 байта; всё
  * остальное означает битый профиль, и лучше упасть здесь, чем поднять туннель
- * с мусорным ключом и полчаса искать, почему нет рукопожатия.
+ * с мусорным клю��ом и полчаса искать, почему нет рукопожатия.
  */
 export function base64KeyToHex(key: string): string {
   const raw = Buffer.from(key, "base64");
@@ -431,6 +431,43 @@ export function endpointHost(endpoint: string): string {
 }
 
 /**
+ * FIX-ONLINK: подсеть туннеля для адреса вида `10.8.0.2/32`.
+ *
+ * Профиль выдаёт адрес одиночной маской `/32`. В Linux этого хватает: маршрут
+ * до узла создаёт сам `wg`. В Windows не хватает — у интерфейса не остаётся
+ * НИ ОДНОЙ своей подсети, а значит нет и ближайшего узла, через который
+ * отправлять. Внешне это выглядело так: адрес `10.8.0.2` выдан, маршруты в
+ * туннель стоят, а `ping 10.8.0.1` — сто процентов потерь, потому что до
+ * второго конца туннеля попросту нет маршрута.
+ *
+ * Поэтому подсеть считаем сами: из префикса профиля, если он уже не `/32`, и
+ * из `/24` в противном случае — узлы этого проекта всегда выдают адреса из
+ * `10.8.0.0/24`. Маршрут ставится на сам интерфейс, чужой сети не трогает.
+ */
+export function tunnelSubnetCidr(parsed: ParsedWgConfig): string | null {
+  for (const address of parsed.addresses) {
+    if (isV6(address)) continue;
+    const [ip, prefixText] = address.split("/");
+    if (!ip) continue;
+    const octets = ip.split(".").map((part) => Number(part));
+    if (octets.length !== 4 || octets.some((part) => !Number.isFinite(part))) continue;
+    const prefix = prefixText === undefined ? 32 : Number(prefixText);
+    const bits = Number.isFinite(prefix) && prefix > 0 && prefix < 32 ? Math.trunc(prefix) : 24;
+    const value =
+      (((octets[0] ?? 0) << 24) |
+        ((octets[1] ?? 0) << 16) |
+        ((octets[2] ?? 0) << 8) |
+        (octets[3] ?? 0)) >>>
+      0;
+    const mask = (0xffffffff << (32 - bits)) >>> 0;
+    const network = (value & mask) >>> 0;
+    const base = [24, 16, 8, 0].map((shift) => (network >>> shift) & 0xff).join(".");
+    return `${base}/${bits}`;
+  }
+  return null;
+}
+
+/**
  * Команды, поднимающие интерфейс после запуска встроенного клиента: адрес,
  * MTU, маршруты. Это работа, которую раньше делал `wg-quick`; теперь её делаем
  * мы, потому что `wg-quick` — часть сторонних `wireguard-tools`.
@@ -474,6 +511,22 @@ export function ifaceUpCommands(
        Windows, ставить ничего не нужно. `store=active` означает «до
        перезагрузки»: настройки исчезнувшего интерфейса не должны оставаться в
        реестре и всплывать при следующем запуске системы. */
+
+    /* FIX-DAD: отключаем проверку занятости адреса и поиск маршрутизаторов.
+
+       Windows по умолчанию проверяет каждый новый адрес на занятость соседями
+       (DAD, три попытки) и держит его в состоянии Tentative до конца проверки.
+       Отправлять с проверяемого адреса система НЕ БУДЕТ. В туннеле «точка —
+       точка» соседей нет вовсе, проверять нечего, а секунды теряются ровно
+       там, где мы ставим маршруты: замер показал адрес в состоянии Tentative
+       через секунду после рукопожатия, то есть именно в момент переключения
+       трафика. Итог выглядел как «маршруты есть, а трафик не идёт».
+
+       Поиск маршрутизаторов выключаем по той же причине: в туннеле объявлять
+       маршруты некому, а RouterDiscovery умеет подменять MTU и шлюз. */
+    commands.push(["netsh", "interface", "ipv4", "set", "interface", `interface=${iface}`, "dadtransmits=0", "routerdiscovery=disabled", "store=active"]);
+    commands.push(["netsh", "interface", "ipv6", "set", "interface", `interface=${iface}`, "dadtransmits=0", "routerdiscovery=disabled", "store=active"]);
+
     for (const address of parsed.addresses) {
       const [ip, prefix] = address.split("/");
       if (!ip) continue;
@@ -614,6 +667,15 @@ export function ifaceRouteCommands(
           : ["netsh", "interface", "ipv6", "add", "dnsservers", `name=${iface}`, server, `index=${index + 1}`, "validate=no"],
       );
     });
+
+    /* FIX-ONLINK: своя подсеть у интерфейса — до маршрутов в туннель. Без неё
+       у адаптера нет ближайшего узла, и второй конец туннеля (`10.8.0.1`)
+       недостижим: маршруты половин ведут в интерфейс, которому некому
+       передать пакет. */
+    const subnet = tunnelSubnetCidr(parsed);
+    if (subnet) {
+      commands.push(["netsh", "interface", "ipv4", "add", "route", subnet, `interface=${iface}`, "store=active"]);
+    }
 
     if (routeAll) {
       /* Как и в macOS: две половины адресного пространства вместо маршрута по
