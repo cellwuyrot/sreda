@@ -1,44 +1,48 @@
 #!/usr/bin/env bash
 # =============================================================================
-# TrioZ / TZ.Connect - FIX-VPNSCRIPT: установка VPN-узла (AmneziaWG) одной командой.
+# TrioZ / TZ.Connect - FIX-VPNSCRIPT + FIX-NOAWG: установка VPN-узла одной командой.
 #
-# Скрипт ставит обфусцированный WireGuard (инструмент awg), поднимает интерфейс,
-# настраивает NAT и службу агента. Всё, что можно вычислить, вычисляется само:
-# внешний интерфейс, адрес сервера, домен главного сервера, параметры маскировки.
-# Руками нужно дать только токен агента из панели.
+# Скрипт ставит обычный WireGuard (инструмент wg), поднимает интерфейс, настраивает
+# NAT и службу агента. Всё, что можно вычислить, вычисляется само: внешний
+# интерфейс, адрес сервера, домен главного сервера. Руками нужно дать только
+# токен агента из панели.
 #
 #   Админ > Серверы > добавить узел (Дочерний, назначение Соединение) > токен
 #
 # Запуск:
 #   sudo ./deploy/vpn-node.sh --token=ТОКЕН
-#   sudo ./deploy/vpn-node.sh --token=ТОКЕН --host=trioz.ru --port=443
+#   sudo ./deploy/vpn-node.sh --token=ТОКЕН --host=vpn.example.ru --port=51820
 #   sudo ./deploy/vpn-node.sh --status          диагностика, ничего не меняет
-#   sudo ./deploy/vpn-node.sh --token=ТОКЕН --renew-params   новые параметры маскировки
+#   sudo ./deploy/vpn-node.sh --purge-awg       только снести остатки маскировки
 #
 # Скрипт идемпотентен. Приватный ключ узла переиспользуется, поэтому публичный
-# ключ и выданные адреса пиров не меняются. Параметры маскировки тоже сохраняются:
-# их смена требует перевыпуска всех профилей, поэтому только по --renew-params.
+# ключ и выданные адреса пиров не меняются.
 #
-# Порт по умолчанию 443/udp, а не 51820: 51820 узнаваем и часто режется в гостевых
-# и мобильных сетях, а UDP 443 проходит почти везде и не конфликтует с nginx,
-# который занимает TCP 443.
+# FIX-NOAWG: почему здесь больше нет AmneziaWG (инструмент awg, интерфейс awg0).
+# Прежняя версия поднимала маскированный интерфейс И оставляла рядом обычный wg0.
+# На живом узле это кончилось так: awg-quick@awg0 падал каждую попытку
+# («awg0' already exists», тот же адрес 10.8.0.1/24, что у поднятого wg0),
+# служба висела в failed с 19 августа, ничего не слушало объявленный порт 443 —
+# а панель при этом показывала узел «устойчивым к блокировкам» и выдавала
+# клиентам профили со строками Jc/S1/H1. Обычный WireGuard такие профили
+# отбрасывает молча: рукопожатия нет, ошибки нет, объяснить нечем.
+# Один работающий интерфейс лучше двух, из которых один мёртв.
 # =============================================================================
 set -euo pipefail
 
 TOKEN="${TOKEN:-}"
 HOST="${HOST:-}"
-PORT="${PORT:-443}"
+PORT="${PORT:-51820}"
 MAIN_URL="${MAIN_URL:-}"
-IFACE="${IFACE:-awg0}"
+IFACE="${IFACE:-wg0}"
 REPO="${REPO:-/var/www/trioz}"
 ETH="${ETH:-}"
 SUBNET="10.8.0"
-CONF_DIR="/etc/amnezia/amneziawg"
+CONF_DIR="/etc/wireguard"
 KEY_PATH="/etc/wireguard/trioz-private.key"
 UNIT="/etc/systemd/system/trioz-vpn-agent.service"
 SYSCTL="/etc/sysctl.d/99-trioz-vpn.conf"
 MODE="install"
-RENEW_PARAMS=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -48,8 +52,8 @@ for arg in "$@"; do
     --main=*) MAIN_URL="${arg#*=}" ;;
     --iface=*) IFACE="${arg#*=}" ;;
     --repo=*) REPO="${arg#*=}" ;;
-    --renew-params) RENEW_PARAMS=1 ;;
     --status) MODE="status" ;;
+    --purge-awg) MODE="purge" ;;
     -h|--help) MODE="help" ;;
     *) echo "Неизвестный аргумент: $arg" >&2; exit 1 ;;
   esac
@@ -62,11 +66,45 @@ info() { printf '   %s\n' "$*"; }
 die()  { printf '\nОШИБКА: %s\n' "$*" >&2; exit 1; }
 
 if [ "$MODE" = "help" ]; then
-  sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
 [ "$(id -u)" = "0" ] || die "запускать надо от root (sudo)"
+
+# -- FIX-NOAWG: снос маскированного интерфейса -------------------------------
+# Выполняется ВСЕГДА, а не только по флагу: пока на машине жив мёртвый awg0,
+# каждый диагностический вывод показывает две правды одновременно, и разобраться
+# в них нельзя. Юнит именно маскируется (mask), а не просто отключается: иначе
+# он вернётся при следующем обновлении пакета.
+purge_awg() {
+  say "Удаление остатков маскировки (awg)"
+  for unit in $(systemctl list-units --all --plain --no-legend 'awg-quick@*' 2>/dev/null | awk '{print $1}'); do
+    systemctl disable --now "$unit" >/dev/null 2>&1 || true
+    systemctl reset-failed "$unit" >/dev/null 2>&1 || true
+    systemctl mask "$unit" >/dev/null 2>&1 || true
+    info "юнит $unit остановлен и замаскирован"
+  done
+  systemctl mask 'awg-quick@awg0.service' >/dev/null 2>&1 || true
+  for dev in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -E '^awg' || true); do
+    ip link del "$dev" 2>/dev/null || true
+    info "интерфейс $dev удалён"
+  done
+  if [ -d /etc/amnezia ]; then
+    mv /etc/amnezia "/etc/amnezia.disabled.$(date +%s)" 2>/dev/null || true
+    info "конфиги /etc/amnezia отложены в сторону (не удалены)"
+  fi
+  # Правила NAT/MSS, оставленные PostUp прежнего интерфейса, иначе висят вечно.
+  if [ -n "${ETH:-}" ]; then
+    iptables -t nat -D POSTROUTING -s "$SUBNET.0/24" -o "$ETH" -j MASQUERADE 2>/dev/null || true
+  fi
+  info "готово: на узле остаётся один интерфейс — $IFACE"
+}
+
+if [ "$MODE" = "purge" ]; then
+  purge_awg
+  exit 0
+fi
 
 # -- Автоопределение сети ----------------------------------------------------
 ROUTE="$(ip route get 1.1.1.1 2>/dev/null || true)"
@@ -85,13 +123,36 @@ fi
 [ -n "$MAIN_URL" ] || MAIN_URL="https://$HOST"
 [ -n "$HOST" ] || die "не удалось определить точку подключения, укажите --host=..."
 
+# FIX-ENDPOINTDNS: точка подключения обязана РАЗРЕШАТЬСЯ в адрес.
+#
+# На живом узле в переменной стояло vpn1.trioz.ru, у которого нет ни одной
+# записи в DNS. Агент честно сообщал этот адрес главному серверу, тот подставлял
+# его в профили, и подключение зависело от того, задан ли адрес руками в карточке
+# узла. Стоило его очистить — переставало работать у всех, причём молча.
+# Непроверяемое имя лучше заменить на адрес, который точно работает.
+if ! getent hosts "$HOST" >/dev/null 2>&1; then
+  if [ -n "$PUBIP" ]; then
+    info "ВНИМАНИЕ: имя $HOST не разрешается в адрес - беру внешний адрес узла $PUBIP"
+    info "Если имя нужно, создайте A-запись $HOST -> $PUBIP и запустите скрипт снова."
+    HOST="$PUBIP"
+  else
+    die "точка подключения $HOST не разрешается в адрес, а внешний адрес не определён"
+  fi
+fi
+
 # -- Диагностика -------------------------------------------------------------
 if [ "$MODE" = "status" ]; then
   say "Служба агента"
   systemctl is-active trioz-vpn-agent || true
   systemctl show trioz-vpn-agent -p Environment | tr ' ' '\n' | sed 's/^Environment=//' | grep -v '^$' || true
   say "Интерфейс $IFACE"
-  awg show "$IFACE" 2>/dev/null || echo "интерфейс не поднят"
+  wg show "$IFACE" 2>/dev/null || echo "интерфейс не поднят"
+  say "Остатки маскировки (должно быть пусто)"
+  ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -E '^awg' || echo "интерфейсов awg нет"
+  systemctl is-enabled 'awg-quick@awg0' 2>/dev/null || echo "юнит awg-quick@awg0 не активен"
+  say "Точка подключения"
+  info "объявляется: $HOST:$PORT"
+  info "разрешается в: $(getent hosts "$HOST" | awk '{print $1}' | head -1)"
   say "Переадресация и NAT"
   info "ip_forward = $(sysctl -n net.ipv4.ip_forward)"
   info "MASQUERADE = $(iptables -t nat -S POSTROUTING | grep -c "$SUBNET.0/24" || true)"
@@ -102,80 +163,43 @@ if [ "$MODE" = "status" ]; then
   exit 0
 fi
 
+purge_awg
+
 # -- 1. Пакеты ---------------------------------------------------------------
 export DEBIAN_FRONTEND=noninteractive
 
-if ! command -v awg >/dev/null 2>&1; then
-  say "Установка AmneziaWG"
+if ! command -v wg >/dev/null 2>&1; then
+  say "Установка WireGuard"
   apt-get update -qq
-  apt-get install -y -qq software-properties-common ca-certificates >/dev/null
-  if ! grep -Rqs amnezia /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
-    add-apt-repository -y ppa:amnezia/ppa >/dev/null
-  fi
-  apt-get update -qq
-  apt-get install -y -qq "linux-headers-$(uname -r)" >/dev/null || info "заголовки ядра не встали - проверьте вручную"
-  apt-get install -y -qq amneziawg amneziawg-tools >/dev/null
+  apt-get install -y -qq wireguard wireguard-tools >/dev/null
 else
-  info "AmneziaWG уже установлен"
+  info "WireGuard уже установлен"
 fi
 apt-get install -y -qq iptables-persistent >/dev/null 2>&1 || true
-
-modprobe amneziawg 2>/dev/null || true
-lsmod | grep -q amneziawg || info "модуль ядра не загружен - возможно, нужна перезагрузка после сборки DKMS"
-command -v awg >/dev/null 2>&1 || die "инструмент awg не найден после установки"
+command -v wg >/dev/null 2>&1 || die "инструмент wg не найден после установки"
 
 # -- 2. Ключ узла ------------------------------------------------------------
-mkdir -p /etc/wireguard "$CONF_DIR"
-chmod 700 /etc/wireguard "$CONF_DIR"
+mkdir -p "$CONF_DIR"
+chmod 700 "$CONF_DIR"
 if [ ! -s "$KEY_PATH" ]; then
   say "Создание ключа узла"
-  ( umask 077; awg genkey > "$KEY_PATH" )
+  ( umask 077; wg genkey > "$KEY_PATH" )
 else
   info "ключ узла уже есть - переиспользуем, выданные профили остаются действительными"
 fi
 chmod 600 "$KEY_PATH"
 
-# -- 3. Параметры маскировки -------------------------------------------------
-# Границы те же, что проверяет сервер (NUMERIC_BOUNDS в apps/web/src/lib/vpn.ts).
-read_param() { sed -n "s/^$1 *= *//p" "$CONF" 2>/dev/null | head -1; }
-
-if [ -f "$CONF" ] && [ "$RENEW_PARAMS" = "0" ] && [ -n "$(read_param Jc)" ]; then
-  JC="$(read_param Jc)"; JMIN="$(read_param Jmin)"; JMAX="$(read_param Jmax)"
-  S1="$(read_param S1)"; S2="$(read_param S2)"
-  H1="$(read_param H1)"; H2="$(read_param H2)"; H3="$(read_param H3)"; H4="$(read_param H4)"
-  info "параметры маскировки сохранены из текущего конфига"
-else
-  say "Генерация параметров маскировки"
-  JC=$(( RANDOM % 4 + 3 ))
-  JMIN=$(( RANDOM % 20 + 30 ))
-  JMAX=$(( JMIN + 20 + RANDOM % 20 ))
-  S1=$(( RANDOM % 16 + 12 ))
-  S2=$(( RANDOM % 16 + 20 ))
-  H1=$(( 1000000 + RANDOM * 30 ))
-  H2=$(( H1 + 1000000 + RANDOM * 20 ))
-  H3=$(( H2 + 1000000 + RANDOM * 20 ))
-  H4=$(( H3 + 1000000 + RANDOM * 20 ))
-  [ "$RENEW_PARAMS" = "1" ] && info "ПАРАМЕТРЫ ОБНОВЛЕНЫ: всем пользователям нужен новый файл подключения"
-fi
-
-# -- 4. Конфиг интерфейса ----------------------------------------------------
+# -- 3. Конфиг интерфейса ----------------------------------------------------
+# Блоков [Peer] здесь нет намеренно: пиров ведёт агент через `wg set`, по списку
+# из панели. Файл описывает только сам интерфейс.
 say "Конфиг $CONF"
 cat > "$CONF" <<EOF
 # Создан deploy/vpn-node.sh - правки вручную переживут только до следующего запуска.
 [Interface]
 Address = $SUBNET.1/24
 ListenPort = $PORT
-Jc = $JC
-Jmin = $JMIN
-Jmax = $JMAX
-S1 = $S1
-S2 = $S2
-H1 = $H1
-H2 = $H2
-H3 = $H3
-H4 = $H4
 # Приватный ключ хранится отдельным файлом с правами 600, а не внутри конфига.
-PostUp = awg set %i private-key $KEY_PATH
+PostUp = wg set %i private-key $KEY_PATH
 PostUp = iptables -t nat -A POSTROUTING -s $SUBNET.0/24 -o $ETH -j MASQUERADE
 PostUp = iptables -t mangle -A FORWARD -i %i -o $ETH -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 PostDown = iptables -t nat -D POSTROUTING -s $SUBNET.0/24 -o $ETH -j MASQUERADE
@@ -183,7 +207,7 @@ PostDown = iptables -t mangle -D FORWARD -i %i -o $ETH -p tcp --tcp-flags SYN,RS
 EOF
 chmod 600 "$CONF"
 
-# -- 5. Переадресация и старый интерфейс -------------------------------------
+# -- 4. Настройки ядра -------------------------------------------------------
 # FIX-NETTUNE: настройки ядра шлюза.
 #
 # ip_forward обязателен — без него узел вообще не пересылает пакеты.
@@ -213,16 +237,23 @@ SYSCTL_EOF
 # отчёте ниже.
 sysctl -q --system >/dev/null 2>&1 || sysctl -q -p "$SYSCTL" >/dev/null 2>&1 || true
 
-if [ "$IFACE" != "wg0" ]; then
-  systemctl disable --now wg-quick@wg0 >/dev/null 2>&1 || true
-  if ip link show wg0 >/dev/null 2>&1; then ip link del wg0 || true; fi
-  iptables -t mangle -D FORWARD -i wg0 -o "$ETH" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+# -- 5. Поднятие интерфейса --------------------------------------------------
+# Интерфейс перезапускается только если он ещё не поднят ИЛИ порт разошёлся с
+# требуемым: перезапуск рвёт живые соединения всех клиентов, и делать его "на
+# всякий случай" при каждом запуске скрипта нельзя.
+say "Интерфейс $IFACE"
+RUNNING_PORT="$(wg show "$IFACE" listen-port 2>/dev/null || true)"
+if [ -z "$RUNNING_PORT" ]; then
+  wg-quick up "$IFACE"
+  info "интерфейс поднят"
+elif [ "$RUNNING_PORT" != "$PORT" ]; then
+  info "порт сменился ($RUNNING_PORT -> $PORT): перезапуск интерфейса, клиентам нужен новый профиль"
+  wg-quick down "$IFACE" >/dev/null 2>&1 || true
+  wg-quick up "$IFACE"
+else
+  info "интерфейс уже поднят на порту $PORT - не трогаем, соединения клиентов целы"
 fi
-
-say "Поднятие интерфейса $IFACE"
-awg-quick down "$IFACE" >/dev/null 2>&1 || true
-awg-quick up "$IFACE"
-systemctl enable "awg-quick@$IFACE" >/dev/null 2>&1 || true
+systemctl enable "wg-quick@$IFACE" >/dev/null 2>&1 || true
 
 # -- 6. Входящий порт и сохранение правил ------------------------------------
 iptables -C INPUT -p udp --dport "$PORT" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p udp --dport "$PORT" -j ACCEPT
@@ -245,7 +276,7 @@ if [ -n "$TOKEN" ]; then
   cat > "$UNIT" <<EOF
 [Unit]
 Description=TrioZ VPN agent
-After=network-online.target awg-quick@$IFACE.service
+After=network-online.target wg-quick@$IFACE.service
 Wants=network-online.target
 
 [Service]
@@ -256,7 +287,7 @@ Environment=TRIOZ_MAIN_URL=$MAIN_URL
 Environment=TRIOZ_AGENT_TOKEN=$TOKEN
 Environment=WG_ENDPOINT_HOST=$HOST
 Environment=WG_INTERFACE=$IFACE
-Environment=WG_TOOL=awg
+Environment=WG_TOOL=wg
 Environment=WG_CONF_PATH=$CONF
 Environment=WG_PRIVATE_KEY_PATH=$KEY_PATH
 Environment=WG_PORT=$PORT
@@ -265,9 +296,9 @@ RestartSec=5
 
 # FIX-HARDEN: агенту нужны ровно две вещи — менять сетевые настройки и читать
 # свой конфиг. Всё остальное у процесса, работающего от root, отбирается.
-# Зачем это нужно: агент выполняет внешние программы (wg/awg/iptables) и
-# разбирает ответ главного сервера. Если когда-нибудь в этой цепочке найдётся
-# дыра, ограничения ниже определят разницу между «испорчена сеть» и «машина
+# Зачем это нужно: агент выполняет внешние программы (wg/iptables) и разбирает
+# ответ главного сервера. Если когда-нибудь в этой цепочке найдётся дыра,
+# ограничения ниже определят разницу между «испорчена сеть» и «машина
 # полностью чужая».
 NoNewPrivileges=yes
 # Права на сеть оставлены, всё прочее из набора root вычеркнуто.
@@ -276,7 +307,7 @@ AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 # Файловая система только для чтения, кроме явно перечисленного ниже.
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/etc/wireguard /etc/amnezia /run
+ReadWritePaths=/etc/wireguard /run
 PrivateTmp=yes
 # Ключ узла и токен агента лежат в файлах: доступ к устройствам не нужен.
 PrivateDevices=yes
@@ -310,16 +341,16 @@ else
 fi
 
 # -- 8. Итог -----------------------------------------------------------------
-PUBKEY="$(awg show "$IFACE" public-key 2>/dev/null || echo '-')"
+PUBKEY="$(wg show "$IFACE" public-key 2>/dev/null || echo '-')"
 say "Готово"
 info "Точка подключения:   $HOST:$PORT"
 info "Главный сервер:      $MAIN_URL"
 info "Интерфейс:           $IFACE  (подсеть $SUBNET.0/24, выход через $ETH)"
 info "Публичный ключ узла: $PUBKEY"
-info "Маскировка:          Jc=$JC Jmin=$JMIN Jmax=$JMAX S1=$S1 S2=$S2 H1=$H1 H2=$H2 H3=$H3 H4=$H4"
+info "Тип подключения:     обычный WireGuard (другого больше нет)"
 echo
 info "Осталось в панели:"
-info "1. Админ > Серверы: у узла точка подключения $HOST:$PORT и тип «Устойчивое к блокировкам»."
+info "1. Админ > Серверы: у узла точка подключения $HOST:$PORT."
 info "2. Админ > Надёжное соединение: сервис включён, режим «Весь трафик», лимит 0."
-info "3. Пользователю: /connect > включить соединение и сразу скачать файл подключения."
+info "3. Пользователю: /connect > включить соединение."
 info "Диагностика в любой момент: $0 --status"

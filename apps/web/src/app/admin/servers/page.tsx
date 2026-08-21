@@ -37,12 +37,12 @@ import InfoTooltip from "@/components/ui/InfoTooltip";
  * позже нельзя даже администратору: потерянный токен только перевыпускается.
  */
 
-/* VPN-TRANSPORT: подписи для администратора. Протокол намеренно не назван —
-   в интерфейсе есть только «что это даёт», а не «как называется». */
-const TRANSPORT_OPTIONS: { value: string; label: string }[] = [
-  { value: "PLAIN", label: "Обычное подключение" },
-  { value: "OBFUSCATED", label: "Устойчивое к блокировкам" },
-];
+/* FIX-NOAWG: выбора типа подключения больше нет.
+
+   Режим «устойчивое к блокировкам» убран целиком: включать его было нечем —
+   маскированный интерфейс на узле не поднимался, а кнопка в панели обещала
+   обратное и выдавала клиентам профили, которые узел отбрасывает молча.
+   Кнопка, которая ломает всем подключение, хуже отсутствующей кнопки. */
 
 const KINDS: { value: string; label: string }[] = [
   { value: "APP", label: "Приложение" },
@@ -344,14 +344,9 @@ export default function AdminServersPage() {
                       <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
                         Точка подключения: {node.endpointHost || "не задана — берётся из отчёта узла"}
                       </p>
+                      {/* FIX-NOAWG: тип один и менять его негде — обычный WireGuard. */}
                       <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
-                        Тип подключения:{" "}
-                        {TRANSPORT_OPTIONS.find((t) => t.value === node.transport)?.label ?? node.transport}
-                        {node.transport === "OBFUSCATED" && !node.hasObfuscation && (
-                          <span className="text-amber-600 dark:text-amber-400">
-                            {" "}· узел ещё не сообщил параметры
-                          </span>
-                        )}
+                        Тип подключения: обычное подключение
                       </p>
                       <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
                         Внешние адреса: {node.publicIps || "не заданы (общий выход узла)"}
@@ -391,20 +386,6 @@ export default function AdminServersPage() {
                     >
                       {node.enabled ? "Отключить" : "Включить"}
                     </button>
-                    {node.kind === "VPN" && (
-                      <button
-                        type="button"
-                        disabled={busyId === node.id}
-                        onClick={() =>
-                          void patch(node.id, {
-                            transport: node.transport === "OBFUSCATED" ? "PLAIN" : "OBFUSCATED",
-                          })
-                        }
-                        className="text-neutral-600 hover:underline dark:text-gray-300 disabled:opacity-50"
-                      >
-                        {node.transport === "OBFUSCATED" ? "Сделать обычным" : "Сделать устойчивым"}
-                      </button>
-                    )}
                     {node.kind === "VPN" && (
                       <button
                         type="button"
@@ -620,18 +601,6 @@ export default function AdminServersPage() {
               </select>
               <InfoTooltip text="Работают три назначения. Соединение: по нему выбирается узел для нового доступа и ему уходит список подключений. Хранилище: на такой узел уезжают загруженные файлы, после того как в его карточке заданы адрес и ключ доступа. Сборка: агенту с этим назначением разрешено брать задачи сборки приложений. Медиа и вычисления — пометки для учёта, ни на что не влияют." />
             </div>
-            {/* VPN-TRANSPORT: тип подключения виден только здесь. В интерфейсе
-                пользователя он не отображается и в профиле никак не подписан. */}
-            {form.kind === "VPN" && (
-              <select
-                value={form.transport}
-                onChange={(e) => setForm({ ...form, transport: e.target.value })}
-                aria-label="Тип подключения"
-                className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-white/10 dark:bg-neutral-800 dark:text-white"
-              >
-                {TRANSPORT_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            )}
             <Input placeholder="Регион (необязательно)" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
             <Input placeholder="Заметка (необязательно)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </div>

@@ -199,7 +199,18 @@ function runHelper(args: string[]): Promise<{ ok: boolean; error: string }> {
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      const message = stderr.trim();
+      /* FIX-SKIPNOISE: в сообщение для человека попадает только причина отказа.
+
+         Работник пишет в тот же поток служебные строки вида
+         «[trioz] шаг пропущен: netsh … delete route …» — это шум уборки: удаляем
+         маршруты, которых могло и не быть. Прежде они целиком уезжали в окно
+         вместе с ошибкой и выглядели как причина — а причина была совсем другой.
+         В журнале процесса эти строки остаются: для разбора они полезны. */
+      const message = stderr
+        .split(/\r?\n/)
+        .filter((line) => !line.trimStart().startsWith("[trioz] шаг пропущен:"))
+        .join("\n")
+        .trim();
       if (code === 0) return done(true, "");
       done(false, message || `работник завершился с кодом ${code}`);
     });
