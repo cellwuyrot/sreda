@@ -21,7 +21,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 
@@ -31,6 +31,7 @@ import {
   chainFillCommands,
   exitRules,
   parseDump,
+  mssCommands,
   parseInterfaceParams,
   peerChanges,
   rulesSignature,
@@ -98,6 +99,9 @@ const CONFIG = {
   /** Адрес, по которому клиенты видят этот узел (домен или IP). */
   endpointHost: process.env.WG_ENDPOINT_HOST || "",
   privateKeyPath: process.env.WG_PRIVATE_KEY_PATH || "/etc/wireguard/trioz-private.key",
+  /* FIX-MSS: MTU туннельного интерфейса узла. Нужен только для подгонки MSS:
+     сам интерфейс агент не поднимает и MTU ему не меняет. */
+  mtu: Number(process.env.WG_MTU || 1420),
   intervalMs: Number(process.env.TRIOZ_REPORT_INTERVAL_MS || 60_000),
 };
 
@@ -156,9 +160,19 @@ async function ensurePrivateKey() {
   log("приватного ключа нет — создаём новый:", CONFIG.privateKeyPath);
   const { stdout } = await wg(["genkey"]);
   const key = stdout.trim();
-  mkdirSync(dirname(CONFIG.privateKeyPath), { recursive: true });
-  writeFileSync(CONFIG.privateKeyPath, `${key}\n`, { mode: 0o600 });
-  chmodSync(CONFIG.privateKeyPath, 0o600);
+  mkdirSync(dirname(CONFIG.privateKeyPath), { recursive: true, mode: 0o700 });
+
+  /* FIX-ATOMIC: запись во временный файл и переименование вместо прямой записи.
+     Прямая запись создаёт окно, в котором файл уже существует, но пуст или
+     обрезан. Если в этот момент узел перезагрузится, агент при следующем
+     запуске увидит файл на месте, прочтёт пустоту и уедет в отказ — а восстановить
+     ключ уже невозможно: все клиенты помнят СТАРЫЙ публичный ключ узла.
+     Права выставляются ДО переименования, чтобы ключ ни одного мгновения не
+     лежал в итоговом пути с широкими правами. */
+  const tmpPath = `${CONFIG.privateKeyPath}.tmp`;
+  writeFileSync(tmpPath, `${key}\n`, { mode: 0o600 });
+  chmodSync(tmpPath, 0o600);
+  renameSync(tmpPath, CONFIG.privateKeyPath);
   return key;
 }
 
@@ -226,15 +240,24 @@ async function applyPeers(desired) {
 /** Подпись применённого набора: не трогаем iptables, если ничего не изменилось. */
 let appliedExitSignature = "";
 
-/** Выполнить набор команд iptables, уважая пометки «можно молча не получиться». */
+/**
+ * Выполнить набор команд iptables, уважая пометки «можно молча не получиться».
+ *
+ * FIX-MSS6: команда с пометкой `ipv6` уезжает в `ip6tables`. Отдельные две
+ * программы — не наша выдумка, а устройство Linux: правила IPv4 на IPv6-трафик
+ * не действуют вообще. Именно поэтому подгонка размера пакета раньше работала
+ * лишь для части сайтов: IPv6-соединения продолжали виснуть на больших
+ * ответах, и со стороны это выглядело как «интернет через VPN тормозит».
+ */
 async function iptablesBatch(commands) {
   for (const command of commands) {
     const attempts = command.repeat ?? 1;
+    const tool = command.ipv6 ? "ip6tables" : "iptables";
     for (let i = 0; i < attempts; i++) {
       try {
-        await run("iptables", command.args);
+        await run(tool, command.args);
       } catch {
-        if (!command.ignoreError) throw new Error(`iptables ${command.args.join(" ")}`);
+        if (!command.ignoreError) throw new Error(`${tool} ${command.args.join(" ")}`);
         break;
       }
     }
@@ -255,6 +278,22 @@ async function applyExitRules(peers) {
 
 /* ─────────────────────────────── Отчёт ─────────────────────────────── */
 
+/**
+ * FIX-MSS: подгонка MSS на узле.
+ *
+ * Применяется один раз за жизнь процесса: правила не зависят от списка пиров,
+ * а дёргать iptables каждую минуту ради неизменного набора — та самая тихая
+ * работа впустую, из-за которой растёт загрузка и пухнет журнал.
+ */
+let mssApplied = false;
+
+async function applyMss() {
+  if (mssApplied) return;
+  await iptablesBatch(mssCommands(CONFIG.iface, CONFIG.mtu));
+  mssApplied = true;
+  log(`размер пакета: MSS подогнан под MTU ${CONFIG.mtu}`);
+}
+
 async function report(publicKey) {
   const peers = await currentPeers().catch(() => new Map());
 
@@ -264,10 +303,14 @@ async function report(publicKey) {
     if (info.handshakeUnix > 0) handshakes.push({ publicKey: key, atMs: info.handshakeUnix * 1000 });
   }
 
+  /* FIX-TELEMETRY: в отчёте больше нет ни версии агента, ни времени работы.
+     Обоих полей никто не использовал для работы сервиса, зато они отвечают на
+     два вопроса, полезные только атакующему: что именно тут запущено и когда это
+     в последний раз обновляли. Версия при живом 401 показывала ещё и то, что узел
+     жив, до любой проверки токена. Адреса пиров и их endpoint тут не было и не
+     будет: это адреса людей. */
   const body = {
     report: {
-      version: VERSION,
-      uptimeSeconds: Math.round(process.uptime()),
       peers: peers.size,
       wgPublicKey: publicKey,
       endpoint: CONFIG.endpointHost ? `${CONFIG.endpointHost}:${CONFIG.port}` : "",
@@ -307,6 +350,9 @@ async function tick(publicKey) {
     await applyExitRules(peers).catch((err) =>
       log("не удалось применить внешние адреса:", err instanceof Error ? err.message : err),
     );
+    await applyMss().catch((err) =>
+      log("не удалось подогнать размер пакета:", err instanceof Error ? err.message : err),
+    );
   }
   return Number(answer?.nextReportInMs) || CONFIG.intervalMs;
 }
@@ -325,7 +371,10 @@ async function main() {
 
   const privateKey = await ensurePrivateKey();
   const publicKey = await derivePublicKey(privateKey);
-  log(`узел готов: интерфейс ${CONFIG.iface}, публичный ключ ${publicKey}`);
+  /* FIX-LOGKEY: в журнал идёт лишь начало публичного ключа. Он не секретен, но
+     однозначно определяет узел, а журналы уезжают в сборщики и выдачи
+     поддержки; для сверки с панелью восьми символов достаточно. */
+  log(`узел готов (агент ${VERSION}): интерфейс ${CONFIG.iface}, публичный ключ ${publicKey.slice(0, 8)}…`);
 
   let stopping = false;
   for (const signal of ["SIGINT", "SIGTERM"]) {
