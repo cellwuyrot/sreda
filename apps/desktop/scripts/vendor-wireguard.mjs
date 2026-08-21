@@ -46,6 +46,21 @@ const LAYOUT = {
   linux: ["wireguard-go"],
 };
 
+/**
+ * FIX-BACKEND: клиент устойчивого к блокировкам режима (AmneziaWG).
+ *
+ * Он нужен ТОЛЬКО для узлов с маскировкой, поэтому его отсутствие не должно
+ * ронять сборку. Но и молчать нельзя: раньше этот файл не копировался вообще,
+ * и профиль с параметрами маскировки поднимался обычным клиентом. Узел такое
+ * рукопожатие молча отбрасывает — со стороны это выглядело как «туннель поднят,
+ * а узел не ответил», хотя сервер был жив и профиль верен.
+ */
+const OPTIONAL_LAYOUT = {
+  win32: ["amneziawg-go.exe"],
+  darwin: ["amneziawg-go"],
+  linux: ["amneziawg-go"],
+};
+
 const args = process.argv.slice(2);
 const allowMissing = args.includes("--allow-missing");
 const onlyPlatform = (() => {
@@ -105,6 +120,19 @@ function vendor(platform) {
     const to = join(outDir, file);
     copyFileSync(from, to);
     /* Право на запуск теряется при копировании через архивы и CI-артефакты. */
+    if (platform !== "win32") chmodSync(to, 0o755);
+    log(`${platform}/${file} ← ${from}`);
+  }
+
+  /* FIX-BACKEND: необязательные бинарники — по возможности и вслух. */
+  for (const file of OPTIONAL_LAYOUT[platform] || []) {
+    const from = findSource(platform, file);
+    if (!from) {
+      log(`нет ${platform}/${file}: узлы с маскировкой в этой сборке работать не будут`);
+      continue;
+    }
+    const to = join(outDir, file);
+    copyFileSync(from, to);
     if (platform !== "win32") chmodSync(to, 0o755);
     log(`${platform}/${file} ← ${from}`);
   }

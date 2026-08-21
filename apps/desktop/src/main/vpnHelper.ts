@@ -81,15 +81,69 @@ process.on("exit", (code) => {
   }
 });
 
-/** Запуск штатной утилиты ОС. `required: false` — неуспех допустим (уборка). */
-function runTool(command: string[], required: boolean): void {
+/**
+ * Отказы, которые отказами не являются: настройка уже стоит ровно такая, какую
+ * мы просим. Повторный `add route` после неудачной попытки — обычное дело.
+ */
+const HARMLESS_TOOL_ERRORS = [
+  "already exists",
+  "object already",
+  "уже существует",
+  "element not found",
+  "элемент не найден",
+];
+
+/**
+ * Запуск штатной утилиты ОС. `required: false` — неуспех допустим.
+ *
+ * FIX-NETSHDIAG: `netsh` пишет причину отказа в СТАНДАРТНЫЙ ВЫВОД, а не в поток
+ * ошибок. Раньше читался только `stderr` — он всегда пуст, поэтому любая беда
+ * выглядела одинаково: «неизвестная ошибка», без имени команды и без кода
+ * возврата. Разобраться по такому сообщению нельзя ни пользователю, ни нам.
+ * Теперь в текст попадают сама команда, ответ утилиты и код выхода.
+ */
+function runTool(command: string[], required: boolean): boolean {
   const [file, ...args] = command;
-  if (!file) return;
+  if (!file) return true;
   const result = spawnSync(file, args, { encoding: "utf8", timeout: 20_000 });
-  if (required && (result.error || result.status !== 0)) {
-    const detail = (result.stderr || result.error?.message || "").trim();
-    fail(`Не удалось настроить сетевой интерфейс (${file}): ${detail || "неизвестная ошибка"}`);
+  const text = `${result.stdout ?? ""} ${result.stderr ?? ""}`.replace(/\s+/g, " ").trim();
+  if (!result.error && result.status === 0) return true;
+  const lower = text.toLowerCase();
+  if (HARMLESS_TOOL_ERRORS.some((phrase) => lower.includes(phrase))) return true;
+
+  const shown = `${file} ${args.join(" ")}`.trim();
+  const detail = text || result.error?.message || `код возврата ${result.status ?? "?"}`;
+  if (!required) {
+    /* Необязательный шаг: пишем в журнал и идём дальше. Ронять рабочий туннель
+       из-за него нельзя — см. isCriticalStep. */
+    process.stderr.write(`[trioz] шаг пропущен: ${shown} -> ${detail}\n`);
+    return false;
   }
+  fail(`Не удалось настроить сетевой интерфейс: ${shown} -> ${detail}`);
+  return false;
+}
+
+/**
+ * FIX-NETSH6: какие шаги настройки действительно обязательны.
+ *
+ * Прежде в Windows обязательными считались ВСЕ шаги подряд. Из-за этого
+ * подключение падало на настройке IPv6 у людей, у которых стек IPv6 отключён
+ * (реестр `DisabledComponents`, «оптимизаторы», корпоративные политики) или
+ * выключен на самом адаптере: `netsh interface ipv6 …` там отвечает отказом,
+ * причём в стандартный вывод — то есть с пустым `stderr`. Ровно это и давало
+ * «Не удалось настроить сетевой интерфейс (netsh): неизвестная ошибка».
+ *
+ * Отсутствие IPv6 не создаёт утечки: если стека нет, утекать по нему нечему.
+ * Поэтому шаги IPv6 и назначение сервера имён — необязательные (с записью в
+ * журнал), а обязательны только адрес IPv4 и маршруты IPv4.
+ */
+function isCriticalStep(command: string[]): boolean {
+  if (process.platform !== "win32") {
+    return command.includes("address") || command.includes("inet") || command.includes("up");
+  }
+  if (command.includes("ipv6")) return false;
+  if (command.includes("dnsservers")) return false;
+  return true;
 }
 
 /**
@@ -271,7 +325,7 @@ function waitForAdapter(iface: string, timeoutMs: number): boolean {
     if ((result.stdout || "").includes("yes")) return true;
     const wait = Date.now() + 400;
     while (Date.now() < wait) {
-      /* короткая пауза без таймеров: работник живёт ровно один сценарий */
+      /* коро��кая пауза без таймеров: работник живёт ровно один сценарий */
     }
   }
   return false;
@@ -331,6 +385,30 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
   const parsed = parseWgConfig(readFileSync(confPath, "utf8"));
   if (!isUsableConfig(parsed)) fail("Профиль подключения неполон: нет ключа, адреса или сервера");
+
+  /**
+   * FIX-BACKEND: протокол клиента обязан совпадать с протоколом профиля.
+   *
+   * В профиле с параметрами маскировки (Jc/S1/H1 и прочие) служебные пакеты
+   * выглядят иначе, чем в обычном WireGuard. Обычный клиент отправляет
+   * рукопожатие старого вида, узел с маскировкой его молча отбрасывает — и со стороны
+   * это выглядит ровно как «туннель поднят, а узел не ответил на рукопожатие»:
+   * проверять тут нечего, сервер жив и профиль верен, несовпадают только версии
+   * протокола. Говорим об этом сразу и прямо, а не ждём 20 секунд впустую.
+   */
+  const profileNeedsAwg = Object.keys(parsed.extra).length > 0;
+  const clientIsAwg = /amnezia/i.test(clientPath);
+  if (profileNeedsAwg && !clientIsAwg) {
+    fail(
+      "Профиль выдан для устойчивого к блокировкам режима (AmneziaWG), а в сборке есть только " +
+        "клиент обычного WireGuard. Соберите приложение с amneziawg-go либо переведите узел в обычный режим.",
+    );
+  }
+  if (!profileNeedsAwg && clientIsAwg) {
+    /* Обратный случай безопасен: без параметров amneziawg-go ведёт себя как обычный
+       WireGuard, но в журнале это должно быть видно. */
+    process.stderr.write("[trioz] профиль без маскировки поднимается клиентом AmneziaWG\n");
+  }
 
   const pidPath = join(dirname(confPath), PID_FILE);
   killPrevious(pidPath);
@@ -449,14 +527,10 @@ async function up(confPath: string, clientPath: string): Promise<void> {
   /* Адрес и MTU — сразу: без адреса интерфейс не работает вовсе. Маршруты и
      DNS здесь сознательно НЕ ставятся — см. ниже. */
   for (const command of ifaceUpCommands(process.platform, parsed)) {
-    /* В Windows обязательны ВСЕ шаги: тихо провалившийся `netsh set address`
-       давал ровно тот случай «включено, а трафик идёт напрямую». */
-    const critical =
-      process.platform === "win32" ||
-      command.includes("address") ||
-      command.includes("inet") ||
-      command.includes("up");
-    runTool(command, critical);
+    /* Адрес IPv4 — единственный шаг, без которого туннель бессмыслен: тихо
+       провалившийся `netsh set address` давал «включено, а трафик напрямую».
+       Шаги IPv6 такого веса не имеют — см. isCriticalStep (FIX-NETSH6). */
+    runTool(command, isCriticalStep(command));
   }
 
   /* FIX-NOROUTE: сначала реальное рукопожатие с узлом — и только потом перевод
@@ -468,7 +542,10 @@ async function up(confPath: string, clientPath: string): Promise<void> {
   await waitForHandshake(socketPath, 20_000);
 
   for (const command of ifaceRouteCommands(process.platform, parsed)) {
-    runTool(command, process.platform === "win32");
+    /* FIX-NETSH6: рукопожатие уже состоялось — туннель живой. Ронять его из-за
+       отказа на второстепенном шаге (IPv6, сервер имён) — значит отобрать у
+       человека работающее подключение ради чистоты журнала. */
+    runTool(command, isCriticalStep(command));
   }
 
   /* Туннель работает: аварийная уборка больше не нужна — дальше маршруты
