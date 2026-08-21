@@ -13,9 +13,19 @@
 !macro customInstall
   DetailPrint "Настройка служебного компонента VPN..."
 
-  ; Каталог обмена заявками. При SetShellVarContext all $APPDATA = C:\ProgramData.
+  ; FIX-SVC-ACL: два разных каталога вместо одного общего.
+  ;
+  ;   tunnel   — состояние: отметка компонента, результат, сводка о туннеле и
+  ;                сам профиль. Пишет туда только система, обычный
+  ;                пользователь только читает. Иначе состояние туннеля можно
+  ;                подделать (показать «защищено» при мёртвом туннеле), а
+  ;                профиль с приватным ключом — прочитать другим
+  ;                пользователем машины.
+  ;   requests — ровно один файл request.json. Здесь запись пользователю нужна:
+  ;                без неё кнопка включения потребовала бы UAC каждый раз.
   SetShellVarContext all
   CreateDirectory "$APPDATA\TrioZ\tunnel"
+  CreateDirectory "$APPDATA\TrioZ\requests"
 
   ; Пускатель компонента лежит в папке установки, куда пишет только
   ; администратор: его запускает SYSTEM, и право правки у обычного
@@ -30,7 +40,12 @@
   ; на русской Windows имя другое, и icacls молча не сработал бы.
   FileOpen $0 "$PLUGINSDIR\trioz-service.bat" w
   FileWrite $0 "@echo off$\r$\n"
-  FileWrite $0 "icacls $\"$APPDATA\TrioZ\tunnel$\" /grant *S-1-5-32-545:(OI)(CI)M$\r$\n"
+  ; FIX-SVC-ACL: с каталога состояния снимаем наследование и оставляем полные
+  ; права только SYSTEM (*S-1-5-18) и администраторам (*S-1-5-32-544); группе
+  ; «Пользователи» (*S-1-5-32-545) — только чтение: приложению нужно видеть
+  ; отметку и результат, но не править их.
+  FileWrite $0 "icacls $\"$APPDATA\TrioZ\tunnel$\" /inheritance:r /grant *S-1-5-18:(OI)(CI)F /grant *S-1-5-32-544:(OI)(CI)F /grant *S-1-5-32-545:(OI)(CI)RX$\r$\n"
+  FileWrite $0 "icacls $\"$APPDATA\TrioZ\requests$\" /grant *S-1-5-32-545:(OI)(CI)M$\r$\n"
   FileWrite $0 "schtasks /End /TN $\"TriozTunnelAgent$\"$\r$\n"
   FileWrite $0 "schtasks /Delete /TN $\"TriozTunnelAgent$\" /F$\r$\n"
   FileWrite $0 "schtasks /Create /F /TN $\"TriozTunnelAgent$\" /SC ONSTART /RL HIGHEST /RU SYSTEM /TR $\"\$\"$INSTDIR\resources\tunnel-agent.cmd\$\"$\"$\r$\n"

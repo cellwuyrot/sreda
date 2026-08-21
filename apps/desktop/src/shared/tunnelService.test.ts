@@ -12,7 +12,13 @@ import {
   parseStatus,
   reportVerdict,
   serviceDir,
+  serviceRequestDir,
+  isNonce,
+  newNonce,
 } from "./tunnelService";
+
+/** Разовое число нужного вида: 32 шестнадцатиричные цифры. */
+const NONCE = "0123456789abcdef0123456789abcdef";
 
 const CONFIG = [
   "[Interface]",
@@ -34,6 +40,30 @@ describe("serviceDir", () => {
 
   it("падает на стандартный путь, если переменной нет", () => {
     expect(serviceDir("win32", {})).toBe("C:\\ProgramData\\TrioZ\\tunnel");
+  });
+});
+
+describe("serviceRequestDir", () => {
+  it("держит заявки ОТДЕЛЬНО от состояния", () => {
+    /* Разделение каталогов — не косметика: в один пишет любой пользователь
+       машины, во втором лежит состояние туннеля и сам профиль. Пока это был
+       один каталог, состояние можно было подделать. */
+    expect(serviceRequestDir("win32", { ProgramData: "D:\\PD" })).toBe("D:\\PD\\TrioZ\\requests");
+    expect(serviceRequestDir("win32", {})).not.toBe(serviceDir("win32", {}));
+  });
+});
+
+describe("isNonce", () => {
+  it("принимает только свой формат", () => {
+    expect(isNonce(NONCE)).toBe(true);
+    expect(isNonce(newNonce())).toBe(true);
+    expect(isNonce("")).toBe(false);
+    expect(isNonce("ZZZZ")).toBe(false);
+    expect(isNonce(NONCE.slice(0, 31))).toBe(false);
+  });
+
+  it("даёт разные значения", () => {
+    expect(newNonce()).not.toBe(newNonce());
   });
 });
 
@@ -63,34 +93,44 @@ describe("isSafeConfigText", () => {
 
 describe("parseRequest", () => {
   it("разбирает заявку на поднятие", () => {
-    const request = parseRequest(JSON.stringify({ id: "r-1234", action: "up", config: CONFIG }));
+    const request = parseRequest(JSON.stringify({ id: "r-1234", action: "up", config: CONFIG, nonce: NONCE }));
     expect(request?.action).toBe("up");
     expect(request?.config).toContain("[Peer]");
   });
 
   it("разбирает заявку на снятие без профиля", () => {
-    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "down" }))).toEqual({
+    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "down", nonce: NONCE }))).toEqual({
       id: "r-1234",
       action: "down",
       config: "",
+      nonce: NONCE,
     });
   });
 
   it("отвергает мусор и посторонние действия", () => {
     expect(parseRequest("не json")).toBeNull();
     expect(parseRequest("[]")).toBeNull();
-    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "exec" }))).toBeNull();
-    expect(parseRequest(JSON.stringify({ id: "..\\..\\x", action: "down" }))).toBeNull();
-    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "up", config: "[Interface]" }))).toBeNull();
+    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "exec", nonce: NONCE }))).toBeNull();
+    expect(parseRequest(JSON.stringify({ id: "..\\..\\x", action: "down", nonce: NONCE }))).toBeNull();
+    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "up", config: "[Interface]", nonce: NONCE }))).toBeNull();
+  });
+
+  it("FIX-SVC-NONCE: без разового числа заявка не заявка", () => {
+    /* Каталог заявок открыт на запись всем, поэтому сам факт наличия файла
+       ничего не доказывает. Значение знает только тот, кто смог прочитать
+       отметку служебного компонента, и оно сгорает после одного раза. */
+    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "down" }))).toBeNull();
+    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "down", nonce: "" }))).toBeNull();
+    expect(parseRequest(JSON.stringify({ id: "r-1234", action: "down", nonce: "../x" }))).toBeNull();
   });
 
   it("не переносит путь к программе из заявки", () => {
     /* Иначе это прямой подъём прав до SYSTEM для любого местного пользователя. */
     const request = parseRequest(
-      JSON.stringify({ id: "r-1234", action: "up", config: CONFIG, client: "C:\\evil.exe" }),
+      JSON.stringify({ id: "r-1234", action: "up", config: CONFIG, nonce: NONCE, client: "C:\\evil.exe" }),
     );
     expect(request).not.toBeNull();
-    expect(Object.keys(request as object)).toEqual(["id", "action", "config"]);
+    expect(Object.keys(request as object)).toEqual(["id", "action", "config", "nonce"]);
   });
 });
 
@@ -107,7 +147,10 @@ describe("isAgentAlive", () => {
   });
 
   it("разбирает файл отметки", () => {
-    expect(parseHeartbeat('{"pid":42,"at":7}')).toEqual({ pid: 42, at: 7 });
+    /* Старый компонент не знает про разовое число — разбор не падает, но значение
+       пустое, и приложение честно просит переустановку вместо тихого отказа. */
+    expect(parseHeartbeat('{"pid":42,"at":7}')).toEqual({ pid: 42, at: 7, nonce: "" });
+    expect(parseHeartbeat(`{"pid":42,"at":7,"nonce":"${NONCE}"}`)?.nonce).toBe(NONCE);
     expect(parseHeartbeat("{}")).toBeNull();
   });
 });
@@ -147,6 +190,6 @@ describe("reportVerdict", () => {
 describe("newRequestId", () => {
   it("даёт идентификатор, пригодный для проверки", () => {
     const id = newRequestId(() => 0.5);
-    expect(parseRequest(JSON.stringify({ id, action: "down" }))?.id).toBe(id);
+    expect(parseRequest(JSON.stringify({ id, action: "down", nonce: NONCE }))?.id).toBe(id);
   });
 });

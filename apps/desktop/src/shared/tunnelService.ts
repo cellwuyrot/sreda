@@ -31,6 +31,8 @@
  * ошибкоопасное (пути, файлы, процессы) живёт в `main/tunnelAgent.ts`.
  */
 
+import { randomBytes } from "node:crypto";
+
 /** Имя задания планировщика, под которым живёт служебный компонент. */
 export const AGENT_TASK_NAME = "TriozTunnelAgent";
 
@@ -62,6 +64,17 @@ export type TunnelRequest = {
   action: TunnelAction;
   /** Текст профиля; для "down" — пустая строка. */
   config: string;
+  /**
+   * FIX-SVC-NONCE: разовое число текущего такта компонента.
+   *
+   * Зачем. Заявка — обычный файл, и её можно было скопировать и подложить
+   * снова через месяц — компонент честно поднял бы туннель по старому
+   * профилю, потому что отличить повтор от нового обращения было нечем.
+   * Компонент публикует свежее значение в своей отметке и меняет его после
+   * КАЖДОЙ выполненной заявки, так что старая заявка больше не годится
+   * никогда. Это не секрет и не подпись — только защита от повтора.
+   */
+  nonce: string;
 };
 
 export type RequestState = "running" | "ok" | "error";
@@ -73,7 +86,12 @@ export type TunnelStatus = {
   at: number;
 };
 
-export type AgentHeartbeat = { pid: number; at: number };
+export type AgentHeartbeat = {
+  pid: number;
+  at: number;
+  /** FIX-SVC-NONCE: значение, которое обязана предъявить следующая заявка. */
+  nonce: string;
+};
 
 export type TunnelReport = {
   /** Время последнего рукопожатия в секундах epoch; 0 — рукопожатия не было. */
@@ -94,6 +112,40 @@ export function serviceDir(
     return `${base}\\TrioZ\\tunnel`;
   }
   return "/var/lib/trioz/tunnel";
+}
+
+/**
+ * FIX-SVC-ACL: каталог СОСТОЯНИЯ — туда пишет только компонент (SYSTEM).
+ *
+ * Здесь живут отметка компонента, результат заявки, сводка о туннеле и сам
+ * профиль. Раньше всё это лежало в одном каталоге с заявками, открытом на
+ * запись всем пользователям машины, и из этого следовало два плохих следствия:
+ * состояние туннеля можно было подделать (показать «защищено» при мёртвом
+ * туннеле), а профиль с приватным ключом мог прочитать другой пользователь
+ * того же компьютера (режим 0o600 в Windows ничего не значит — там права
+ * решают ACL).
+ */
+export function serviceStateDir(
+  platform: string,
+  env: Record<string, string | undefined>,
+): string {
+  return serviceDir(platform, env);
+}
+
+/**
+ * FIX-SVC-ACL: каталог ЗАЯВОК — единственное место, открытое на запись обычному
+ * пользователю. В нём лежит ровно один файл — `request.json`, и больше ничего
+ * ценного там появиться не может.
+ */
+export function serviceRequestDir(
+  platform: string,
+  env: Record<string, string | undefined>,
+): string {
+  if (platform === "win32") {
+    const base = env["ProgramData"] || "C:\\ProgramData";
+    return `${base}\\TrioZ\\requests`;
+  }
+  return "/var/lib/trioz/requests";
 }
 
 /*
@@ -119,6 +171,19 @@ export function isRequestId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9-]{4,64}$/.test(value);
 }
 
+/** FIX-SVC-NONCE: разовое число такта — 32 шестнадцатеричных символа. */
+export function isNonce(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
+}
+
+/**
+ * Новое разовое число. Источник случайности — системный: значение должно быть
+ * непредсказуемым, иначе защита от повтора превращается в формальность.
+ */
+export function newNonce(): string {
+  return randomBytes(16).toString("hex");
+}
+
 function asObject(raw: string): Record<string, unknown> | null {
   try {
     const value: unknown = JSON.parse(raw);
@@ -138,11 +203,15 @@ export function parseRequest(raw: string): TunnelRequest | null {
   const value = asObject(raw);
   if (!value) return null;
   if (!isRequestId(value["id"])) return null;
+  /* FIX-SVC-NONCE: без разового числа заявка не рассматривается вовсе: самое
+     совпадение со значением текущего такта проверяет компонент. */
+  if (!isNonce(value["nonce"])) return null;
+  const nonce = value["nonce"];
   const action = value["action"];
   if (action !== "up" && action !== "down") return null;
-  if (action === "down") return { id: value["id"], action, config: "" };
+  if (action === "down") return { id: value["id"], action, config: "", nonce };
   if (!isSafeConfigText(value["config"])) return null;
-  return { id: value["id"], action, config: value["config"] };
+  return { id: value["id"], action, config: value["config"], nonce };
 }
 
 export function parseHeartbeat(raw: string): AgentHeartbeat | null {
@@ -151,7 +220,11 @@ export function parseHeartbeat(raw: string): AgentHeartbeat | null {
   const pid = value["pid"];
   const at = value["at"];
   if (typeof pid !== "number" || typeof at !== "number") return null;
-  return { pid, at };
+  const nonce = value["nonce"];
+  /* Отметка без разового числа — это компонент прежней версии. Он жив,
+     но заявку ему отправить не получится — приложение честно сообщит об этом
+     и предложит переустановку, а не будет молча ждать две минуты. */
+  return { pid, at, nonce: isNonce(nonce) ? nonce : "" };
 }
 
 /** Жив ли служебный компонент по его отметке. */

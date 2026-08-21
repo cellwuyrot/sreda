@@ -15,6 +15,10 @@ import {
   chainAttachCommands,
   chainFillCommands,
   exitRules,
+  isPeerCidr,
+  MSS_CHAIN,
+  mssCommands,
+  mssValue,
   normalizeAllowed,
   parseDump,
   parseInterfaceParams,
@@ -265,5 +269,95 @@ describe("chainFillCommands", () => {
     for (const command of chainFillCommands([{ src: "10.8.0.2", exitIp: "203.0.113.7" }])) {
       expect(command.args.join(" ")).not.toContain("POSTROUTING");
     }
+  });
+});
+
+describe("FIX-PEERRANGE: служебные адреса подсети нельзя выдать пиру", () => {
+  const KEY = `${"A".repeat(43)}=`;
+
+  it("адрес самого узла (.1) отбрасывается", () => {
+    /* С таким allowed-ips пир мог бы отвечать за сервер имён всего узла:
+       тихая подмена DNS для всех клиентов сразу. */
+    expect(isPeerCidr("10.8.0.1/32")).toBe(false);
+    expect(acceptPeers([{ publicKey: KEY, allowedIp: "10.8.0.1/32" }])).toHaveLength(0);
+  });
+
+  it("адрес сети (.0) и широковещательный (.255) отбрасываются", () => {
+    expect(isPeerCidr("10.8.0.0/32")).toBe(false);
+    expect(isPeerCidr("10.8.0.255/32")).toBe(false);
+  });
+
+  it("границы рабочего диапазона остались рабочими", () => {
+    expect(isPeerCidr("10.8.0.2/32")).toBe(true);
+    expect(isPeerCidr("10.8.0.254/32")).toBe(true);
+  });
+
+  it("чужая подсеть и широкие маршруты отбрасываются", () => {
+    expect(isPeerCidr("192.168.1.5/32")).toBe(false);
+    expect(isPeerCidr("0.0.0.0/0")).toBe(false);
+    expect(isPeerCidr("10.8.0.0/24")).toBe(false);
+  });
+});
+
+describe("FIX-MSS6: подгонка размера пакета для IPv4 и IPv6", () => {
+  it("MSS считается от MTU и зажат в границы", () => {
+    expect(mssValue(1420)).toBe(1380);
+    expect(mssValue(1280)).toBe(1240);
+    expect(mssValue(9000)).toBe(1380);
+    expect(mssValue(100)).toBe(536);
+    expect(mssValue("мусор")).toBe(1240);
+  });
+
+  it("правила есть для обоих протоколов", () => {
+    /* Без IPv6-части подгонка работала только для части сайтов. */
+    const commands = mssCommands("wg0", 1420);
+    expect(commands.some((c) => !c.ipv6)).toBe(true);
+    expect(commands.some((c) => c.ipv6)).toBe(true);
+  });
+
+  it("для IPv6 запас на 20 байт больше: его заголовок тяжелее", () => {
+    const commands = mssCommands("wg0", 1420);
+    const value = (ipv6) => {
+      const command = commands.find((c) => Boolean(c.ipv6) === ipv6 && c.args.includes("--set-mss"));
+      return Number(command.args[command.args.indexOf("--set-mss") + 1]);
+    };
+    expect(value(false)).toBe(1380);
+    expect(value(true)).toBe(1360);
+  });
+
+  it("ИНВАРИАНТ: своя цепочка ставится ПЕРВОЙ в FORWARD", () => {
+    /* Та же ошибка, что была с SNAT: в конце цепочки правило может не
+       сработать вовсе, если раньше есть завершающий переход. */
+    for (const ipv6 of [false, true]) {
+      const attach = mssCommands("wg0", 1420).find(
+        (c) => Boolean(c.ipv6) === ipv6 && c.args.includes("-I"),
+      );
+      expect(attach.args).toEqual(["-t", "mangle", "-I", "FORWARD", "1", "-j", MSS_CHAIN]);
+    }
+  });
+
+  it("правила ставятся в обе стороны и только на начало соединения", () => {
+    const text = JSON.stringify(mssCommands("wg0", 1420));
+    expect(text).toContain('"-o","wg0"');
+    expect(text).toContain('"-i","wg0"');
+    expect(text).toContain("SYN,RST");
+  });
+
+  it("ИНВАРИАНТ: отсутствие IPv6 на узле не валит агент", () => {
+    /* На узле без ip6tables любая из этих команд отвалится — и агент ушёл бы
+       в бесконечный перезапуск, уводя за собой весь туннель. */
+    expect(
+      mssCommands("wg0", 1420)
+        .filter((c) => c.ipv6)
+        .every((c) => c.ignoreError === true),
+    ).toBe(true);
+  });
+
+  it("старые привязки снимаются, цепочка чистится", () => {
+    /* Иначе после нескольких перезапусков одно и то же правило копится в
+       FORWARD десятками штук и тратит процессор на каждом пакете. */
+    const commands = mssCommands("wg0", 1420);
+    expect(commands.some((c) => c.args.includes("-F") && !c.ipv6)).toBe(true);
+    expect(commands.some((c) => c.args.includes("-D") && c.repeat === 4)).toBe(true);
   });
 });

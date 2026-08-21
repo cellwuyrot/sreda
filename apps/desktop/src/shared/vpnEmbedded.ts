@@ -61,6 +61,47 @@ export const WINTUN_DLL = "wintun.dll";
 export const DEFAULT_KEEPALIVE_SECONDS = 25;
 
 /**
+ * FIX-MTU: безопасный MTU туннеля.
+ *
+ * Почему это вообще важно. WireGuard добавляет к каждому пакету свои 60 байт
+ * (20 IPv4 + 8 UDP + 32 служебных), и если внутренний пакет вышел больше
+ * путевого MTU, его придётся фрагментировать или отбросить. Со стороны это
+ * самый неприятный из возможных отказов: рукопожатие есть, пинг идёт, мелкие
+ * запросы работают, а страницы и видео виснут навсегда — и выглядит это как
+ * «интернет тормозит», а не как ошибка VPN.
+ *
+ * 1280 — нижняя граница IPv6 и одновременно значение, которое проходит везде:
+ * через мобильные сети, PPPoE, двойной NAT и туннели провайдера. Ставить
+ * больше ради процента пропускной способности не стоит: цена ошибки —
+ * молчащие соединения, которые потом невозможно найти.
+ */
+export const SAFE_TUNNEL_MTU = 1280;
+
+/** Выше этого значения туннель не поднимаем никогда: 1500 − 60 служебных. */
+export const MAX_TUNNEL_MTU = 1420;
+
+/** Ниже этого IPv6 вообще не работает, а IPv4 начинает рвать TLS-рукопожатия. */
+export const MIN_TUNNEL_MTU = 1280;
+
+/**
+ * MTU, с которым поднимаем интерфейс.
+ *
+ * Значение из профиля уважаем, но зажимаем в разумные границы, а при его
+ * отсутствии берём безопасное. До этого MTU вообще не выставлялся, если его не
+ * было в профиле, и туннель получал системные 1500 — то есть гарантированную
+ * фрагментацию на любом реальном канале.
+ */
+export function safeMtu(parsed: ParsedWgConfig): number {
+  const wanted = parsed.mtu && parsed.mtu > 0 ? parsed.mtu : SAFE_TUNNEL_MTU;
+  return Math.max(MIN_TUNNEL_MTU, Math.min(MAX_TUNNEL_MTU, Math.trunc(wanted)));
+}
+
+/** Есть ли у туннеля свой IPv6: от этого зависит, маршрутизуем мы v6 или глушим. */
+export function hasV6Tunnel(parsed: ParsedWgConfig): boolean {
+  return parsed.addresses.some((address) => address.includes(":"));
+}
+
+/**
  * FIX-WINTUN: где ещё в Windows может лежать `wintun.dll`, кроме ресурсов
  * приложения.
  *
@@ -360,7 +401,8 @@ export function ifaceUpCommands(
     for (const address of parsed.addresses) {
       commands.push(["ip", isV6(address) ? "-6" : "-4", "address", "add", address, "dev", iface]);
     }
-    if (parsed.mtu) commands.push(["ip", "link", "set", "mtu", String(parsed.mtu), "dev", iface]);
+    /* FIX-MTU: MTU выставляется ВСЕГДА, а не только когда он есть в профиле. */
+    commands.push(["ip", "link", "set", "mtu", String(safeMtu(parsed)), "dev", iface]);
     commands.push(["ip", "link", "set", iface, "up"]);
     return commands;
   }
@@ -374,7 +416,7 @@ export function ifaceUpCommands(
           : ["ifconfig", iface, "inet", ip, ip, "alias"],
       );
     }
-    if (parsed.mtu) commands.push(["ifconfig", iface, "mtu", String(parsed.mtu)]);
+    commands.push(["ifconfig", iface, "mtu", String(safeMtu(parsed))]);
     commands.push(["ifconfig", iface, "up"]);
     return commands;
   }
@@ -397,9 +439,11 @@ export function ifaceUpCommands(
         ]);
       }
     }
-    if (parsed.mtu) {
-      commands.push(["netsh", "interface", "ipv4", "set", "subinterface", iface, `mtu=${parsed.mtu}`, "store=active"]);
-    }
+    const mtu = safeMtu(parsed);
+    commands.push(["netsh", "interface", "ipv4", "set", "subinterface", iface, `mtu=${mtu}`, "store=active"]);
+    /* Тот же предел для IPv6: без него стек v6 продолжал бы считать себя вправе
+       шлать пакеты по 1500 байт. */
+    commands.push(["netsh", "interface", "ipv6", "set", "subinterface", iface, `mtu=${mtu}`, "store=active"]);
     return commands;
   }
 
@@ -438,6 +482,25 @@ export function ifaceRouteCommands(
       commands.push(["ip", "-4", "route", "add", "0.0.0.0/0", "dev", iface, "table", String(ROUTE_MARK)]);
       commands.push(["ip", "-4", "rule", "add", "not", "fwmark", String(ROUTE_MARK), "table", String(ROUTE_MARK)]);
       commands.push(["ip", "-4", "rule", "add", "table", "main", "suppress_prefixlength", "0"]);
+
+      /* FIX-V6LEAK: режим «весь трафик» до этого забирал только IPv4. На любом
+         канале с IPv6 (а это почти все мобильные и половина домашних) браузер
+         предпочитает v6 — и весь трафик к крупным сайтам шёл МИМО туннеля,
+         вместе с настоящим адресом человека. Проверка анонимности при этом
+         честно показывала «VPN не обнаружен».
+
+         Есть v6 внутри туннеля — маршрутизуем его так же, как v4. Нет — выбираем
+         ОТКЛЮЧИТЬ v6 на время работы туннеля, а не оставить как есть: лучше
+         сайт без v6 (браузер сам перейдёт на v4 за миллисекунды), чем тихая
+         утечка адреса. Маршруты снимаются при выключении (ifaceDownCommands). */
+      if (hasV6Tunnel(parsed)) {
+        commands.push(["ip", "-6", "route", "add", "::/0", "dev", iface, "table", String(ROUTE_MARK)]);
+        commands.push(["ip", "-6", "rule", "add", "not", "fwmark", String(ROUTE_MARK), "table", String(ROUTE_MARK)]);
+        commands.push(["ip", "-6", "rule", "add", "table", "main", "suppress_prefixlength", "0"]);
+      } else {
+        commands.push(["ip", "-6", "route", "add", "blackhole", "::/1"]);
+        commands.push(["ip", "-6", "route", "add", "blackhole", "8000::/1"]);
+      }
     }
     /* Частичный режим («только сервисы»): подсети из профиля — обычными
        маршрутами. Маршрут по умолчанию здесь не нужен, метка тоже. */
@@ -465,6 +528,13 @@ export function ifaceRouteCommands(
       }
       commands.push(["route", "-q", "-n", "add", "-inet", "0.0.0.0/1", "-interface", iface]);
       commands.push(["route", "-q", "-n", "add", "-inet", "128.0.0.0/1", "-interface", iface]);
+      /* FIX-V6LEAK: те же две половины для v6 — в туннель или в петлю (lo0),
+         если v6 в туннеле нет. В петлю — именно потому, что в macOS нет
+         «blackhole» для маршрутов, а отключать v6 целиком через networksetup
+         значило бы менять настройки системы, переживающие перезагрузку. */
+      const v6Target = hasV6Tunnel(parsed) ? iface : "lo0";
+      commands.push(["route", "-q", "-n", "add", "-inet6", "::/1", "-interface", v6Target]);
+      commands.push(["route", "-q", "-n", "add", "-inet6", "8000::/1", "-interface", v6Target]);
     }
     for (const peer of parsed.peers) {
       for (const cidr of peer.allowedIps) {
@@ -486,6 +556,17 @@ export function ifaceRouteCommands(
       );
     });
 
+    /* FIX-DNS6: серверы имён IPv6 тем же порядком. Раньше они просто
+       отбрасывались фильтром, и при живом v6 имена продолжал разрешать
+       сервер провайдера — та самая утечка DNS, только по другому семейству. */
+    parsed.dns.filter((server) => isV6(server)).forEach((server, index) => {
+      commands.push(
+        index === 0
+          ? ["netsh", "interface", "ipv6", "set", "dnsservers", `name=${iface}`, "static", server, "primary", "validate=no"]
+          : ["netsh", "interface", "ipv6", "add", "dnsservers", `name=${iface}`, server, `index=${index + 1}`, "validate=no"],
+      );
+    });
+
     if (routeAll) {
       /* Как и в macOS: две половины адресного пространства вместо маршрута по
          умолчанию. Они точнее `0.0.0.0/0`, поэтому забирают весь трафик, но
@@ -494,6 +575,11 @@ export function ifaceRouteCommands(
          нужна именно поэтому. */
       commands.push(["netsh", "interface", "ipv4", "add", "route", "0.0.0.0/1", `interface=${iface}`, "store=active"]);
       commands.push(["netsh", "interface", "ipv4", "add", "route", "128.0.0.0/1", `interface=${iface}`, "store=active"]);
+      /* FIX-V6LEAK: v6 тоже забирается целиком. Если внутри туннеля v6 нет,
+         пакеты уходят в интерфейс без v6-адреса и просто отбрасываются — это и
+         есть защита от утечки: браузер быстро перейдёт на v4. */
+      commands.push(["netsh", "interface", "ipv6", "add", "route", "::/1", `interface=${iface}`, "store=active"]);
+      commands.push(["netsh", "interface", "ipv6", "add", "route", "8000::/1", `interface=${iface}`, "store=active"]);
     }
     for (const peer of parsed.peers) {
       for (const cidr of peer.allowedIps) {
@@ -527,6 +613,14 @@ export function ifaceDownCommands(
       ["ip", "-4", "rule", "del", "table", "main", "suppress_prefixlength", "0"],
       ["ip", "-4", "rule", "del", "not", "fwmark", String(ROUTE_MARK), "table", String(ROUTE_MARK)],
       ["ip", "-4", "route", "flush", "table", String(ROUTE_MARK)],
+      /* FIX-V6LEAK: снимаем и v6 — и маршрутизацию в туннель, и глушилки. Забытый
+         blackhole оставил бы машину без IPv6 ПОСЛЕ выключения VPN — ровно такая
+         же поломка сети, как оставшиеся маршруты половин. */
+      ["ip", "-6", "rule", "del", "table", "main", "suppress_prefixlength", "0"],
+      ["ip", "-6", "rule", "del", "not", "fwmark", String(ROUTE_MARK), "table", String(ROUTE_MARK)],
+      ["ip", "-6", "route", "flush", "table", String(ROUTE_MARK)],
+      ["ip", "-6", "route", "del", "blackhole", "::/1"],
+      ["ip", "-6", "route", "del", "blackhole", "8000::/1"],
       ["ip", "link", "del", "dev", iface],
     ];
   }
@@ -534,6 +628,8 @@ export function ifaceDownCommands(
     return [
       ["route", "-q", "-n", "delete", "-inet", "0.0.0.0/1"],
       ["route", "-q", "-n", "delete", "-inet", "128.0.0.0/1"],
+      ["route", "-q", "-n", "delete", "-inet6", "::/1"],
+      ["route", "-q", "-n", "delete", "-inet6", "8000::/1"],
       ["ifconfig", iface, "down"],
     ];
   }
@@ -545,9 +641,16 @@ export function ifaceDownCommands(
     return [
       ["netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/1", `interface=${iface}`, "store=active"],
       ["netsh", "interface", "ipv4", "delete", "route", "128.0.0.0/1", `interface=${iface}`, "store=active"],
+      /* FIX-V6LEAK: те же две половины для v6. Забытый маршрут в исчезнувший адаптер оставил бы
+         машину без IPv6 ПОСЛЕ выключения VPN — тот же сценарий «интернет есть,
+         но не работает», что и с половинами v4. */
+      ["netsh", "interface", "ipv6", "delete", "route", "::/1", `interface=${iface}`, "store=active"],
+      ["netsh", "interface", "ipv6", "delete", "route", "8000::/1", `interface=${iface}`, "store=active"],
       /* FIX-NOROUTE: и DNS. Если адаптер почему-то остался в системе, статический
          сервер имён из профиля продолжал бы отвечать тишиной на любой запрос. */
       ["netsh", "interface", "ipv4", "set", "dnsservers", `name=${iface}`, "dhcp", "validate=no"],
+      /* FIX-DNS6: и серверы имён IPv6 — иначе они остались бы прописаны на интерфейсе. */
+      ["netsh", "interface", "ipv6", "set", "dnsservers", `name=${iface}`, "dhcp", "validate=no"],
     ];
   }
   return [];
