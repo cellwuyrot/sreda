@@ -156,7 +156,8 @@ export async function POST(req: Request) {
       kind,
       url: cleanUrl(body?.url),
       endpointHost: normalizeWgEndpoint(body?.endpointHost),
-      transport: isTransport(body?.transport) ? body.transport : "PLAIN",
+      // FIX-NOAWG: тип подключения теперь только обычный — выбирать нечего.
+      transport: "PLAIN",
       region: typeof body?.region === "string" ? sanitizeText(body.region).trim().slice(0, 60) : "",
       note: typeof body?.note === "string" ? sanitizeText(body.note).trim().slice(0, 300) : "",
       tokenHash: issued?.tokenHash ?? null,
@@ -215,11 +216,10 @@ export async function PATCH(req: Request) {
      схему и подставляет стандартный порт, поэтому вставленная ссылка тоже
      превратится в рабочее значение, а не в пустое поле. */
   if (body?.endpointHost !== undefined) data.endpointHost = normalizeWgEndpoint(body.endpointHost);
-  /* VPN-TRANSPORT: тип подключения — решение администратора, а не узла. Узел
-     сообщает, чем он управляет интерфейсом, но включать особый режим по одному
-     отчёту нельзя: тогда обновление на узле молча меняло бы то, что выдаётся
-     клиентам. */
-  if (isTransport(body?.transport)) data.transport = body.transport;
+  /* FIX-NOAWG: режим маскировки убран. Обращения со старого интерфейса или сторонние
+     запросы не отклоняются ошибкой, а приводятся к обычному типу: так любая
+     правка карточки заодно лечит узлы, помеченные «устойчивыми» раньше. */
+  if (isTransport(body?.transport)) data.transport = "PLAIN";
   if (typeof body?.region === "string") data.region = sanitizeText(body.region).trim().slice(0, 60);
   if (typeof body?.note === "string") data.note = sanitizeText(body.note).trim().slice(0, 300);
   if (typeof body?.enabled === "boolean") data.enabled = body.enabled;

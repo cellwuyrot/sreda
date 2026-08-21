@@ -85,6 +85,38 @@ process.on("exit", (code) => {
  * Отказы, которые отказами не являются: настройка уже стоит ровно такая, какую
  * мы просим. Повторный `add route` после неудачной попытки — обычное дело.
  */
+/**
+ * FIX-OEM: верхняя половина кодовой страницы 866 — того, в чём говорят системные
+ * утилиты Windows (netsh, route). Нужна ровно для того, чтобы в журнале и в
+ * сообщении об ошибке был текст, а не «□□□□□□□ □□ □□□□□□».
+ *
+ * Именно в таком виде пользователь и получал главную улику: строки
+ * «[trioz] шаг пропущен: netsh … -> ������� �� ������» вместо «Элемент не найден».
+ * Декодер зашит таблицей, а не вызовом `chcp`: менять кодовую страницу консоли
+ * из-под служебного процесса ненадёжно и побочно влияет на всё окружение.
+ */
+const CP866_HIGH =
+  "АБВГДЕЖЗИЙКЛМНОП" +
+  "РСТУФХЦЧШЩЪЫЬЭЮЯ" +
+  "абвгдежзийклмноп" +
+  "░▒▓│┤╡╢╖╕╣║╗╝╜╛┐" +
+  "└┴┬├─┼╞╟╚╔╩╦╠═╬╧" +
+  "╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀" +
+  "рстуфхцчшщъыьэюя" +
+  "ЁёЄєЇїЎў°∙·√№¤■ ";
+
+/** Вывод системной утилиты в читаемом виде. */
+export function decodeConsole(chunk: Buffer | string | null | undefined, platform = process.platform): string {
+  if (chunk === null || chunk === undefined) return "";
+  if (typeof chunk === "string") return chunk;
+  if (platform !== "win32") return chunk.toString("utf8");
+  let out = "";
+  for (const byte of chunk) {
+    out += byte < 0x80 ? String.fromCharCode(byte) : (CP866_HIGH[byte - 0x80] ?? "?");
+  }
+  return out;
+}
+
 const HARMLESS_TOOL_ERRORS = [
   "already exists",
   "object already",
@@ -105,8 +137,11 @@ const HARMLESS_TOOL_ERRORS = [
 function runTool(command: string[], required: boolean): boolean {
   const [file, ...args] = command;
   if (!file) return true;
-  const result = spawnSync(file, args, { encoding: "utf8", timeout: 20_000 });
-  const text = `${result.stdout ?? ""} ${result.stderr ?? ""}`.replace(/\s+/g, " ").trim();
+  /* FIX-OEM: без явного encoding получаем байты и сами переводим их из консольной
+     кодовой страницы. С encoding: "utf8" ответ netsh превращался в мусор, и
+     единственная важная часть сообщения была нечитаемой. */
+  const result = spawnSync(file, args, { timeout: 20_000 });
+  const text = `${decodeConsole(result.stdout)} ${decodeConsole(result.stderr)}`.replace(/\s+/g, " ").trim();
   if (!result.error && result.status === 0) return true;
   const lower = text.toLowerCase();
   if (HARMLESS_TOOL_ERRORS.some((phrase) => lower.includes(phrase))) return true;
@@ -325,7 +360,7 @@ function waitForAdapter(iface: string, timeoutMs: number): boolean {
     if ((result.stdout || "").includes("yes")) return true;
     const wait = Date.now() + 400;
     while (Date.now() < wait) {
-      /* коро��кая пауза без таймеров: работник живёт ровно один сценарий */
+      /* коро����кая пауза без таймеров: работник живёт ровно один сценарий */
     }
   }
   return false;

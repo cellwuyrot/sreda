@@ -131,9 +131,10 @@ export async function GET() {
         region: node.region,
         endpoint: wg.endpoint,
         transport: node.transport,
-        /* Узел объявлен устойчивым, но параметров ещё не прислал — профиль
-           соберётся без них, то есть как обычный. Это стоит показать. */
-        obfuscationMissing: node.transport === "OBFUSCATED" && !wg.obfuscation,
+        /* FIX-NOAWG: предупреждать больше не о чем — всем выдаётся обычное
+           подключение независимо от пометок в базе. Поле оставлено в ответе,
+           чтобы старая верстка панели не сломалась на его отсутствии. */
+        obfuscationMissing: false,
         peers,
         capacity: settings.maxPeersPerNode,
         /* NETLINK: загруженность узла двумя цифрами: сколько устройств от потолка
