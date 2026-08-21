@@ -71,6 +71,7 @@ import {
   REQUEST_FILE,
   reportVerdict,
   serviceDir,
+  serviceRequestDir,
   STATUS_FILE,
   TUNNEL_FILE,
   type TunnelAction,
@@ -301,7 +302,35 @@ function serviceAvailable(): boolean {
  */
 async function serviceSend(action: TunnelAction, config: string): Promise<void> {
   const id = newRequestId();
-  writeFileSync(serviceFile(REQUEST_FILE), JSON.stringify({ id, action, config }), { mode: 0o600 });
+
+  /* FIX-SVC-NONCE: разовое число берётся из свежей отметки компонента. Заявка без
+     него не будет выполнена, и ждать две минуты вхолостую незачем. */
+  const beat = readServiceFile(AGENT_FILE);
+  const heartbeat = beat === null ? null : parseHeartbeat(beat);
+  if (!heartbeat || !isAgentAlive(heartbeat, Date.now())) {
+    throw new Error(
+      "Служебный компонент VPN не отвечает. Перезапустите компьютер или переустановите приложение.",
+    );
+  }
+  if (!heartbeat.nonce) {
+    throw new Error(
+      "Служебный компонент устарел: переустановите приложение, чтобы обновить его.",
+    );
+  }
+
+  /* Заявка кладётся в ОТДЕЛЬНЫЙ каталог: каталог состояния теперь закрыт на
+     запись всем, кроме системы (FIX-SVC-ACL). */
+  const requestDir = serviceRequestDir(process.platform, process.env);
+  try {
+    mkdirSync(requestDir, { recursive: true });
+  } catch {
+    /* каталог создаёт установщик; если его нет — запись ниже скажет о этом */
+  }
+  writeFileSync(
+    join(requestDir, REQUEST_FILE),
+    JSON.stringify({ id, action, config, nonce: heartbeat.nonce }),
+    { mode: 0o600 },
+  );
 
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
