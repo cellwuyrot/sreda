@@ -41,6 +41,14 @@ import { TUNNEL_NAME, type VpnBackend } from "./vpnPlan";
  */
 export const ROUTE_MARK = 51820;
 
+/**
+ * Индекс петлевого интерфейса Windows («Loopback Pseudo-Interface 1»). Он
+ * одинаков во всех версиях системы и потому задан числом: маршрут, ведущий
+ * сюда, гарантированно никуда не уходит. Используется как отсутствующий в
+ * `netsh` blackhole — см. FIX-V6WIN.
+ */
+export const WIN_LOOPBACK_INDEX = 1;
+
 /** Имя каталога с встроенными бинарниками внутри ресурсов приложения. */
 export const EMBEDDED_DIR = "wireguard";
 
@@ -121,7 +129,7 @@ export function wintunSearchDirs(env: Record<string, string | undefined>): strin
   const programFiles = env.ProgramFiles || "C:\\Program Files";
   const programFilesX86 = env["ProgramFiles(x86)"];
   const systemRoot = env.SystemRoot || "C:\\Windows";
-  /* Официальный архив wintun распаковывается как `wintun/bin/<арх>/wintun.dll`. */
+  /* Официальный арх��в wintun распаковывается как `wintun/bin/<арх>/wintun.dll`. */
   push(`${programFiles}\\Wintun\\bin\\amd64`);
   push(`${programFiles}\\Wintun\\bin\\arm64`);
   push(`${programFiles}\\Wintun`);
@@ -288,7 +296,7 @@ export function base64KeyToHex(key: string): string {
 /**
  * UAPI-запрос `set=1` для ��строенного клиента.
  *
- * Порядок строк в UAPI значим: параметры устройства идут до первого
+ * Порядок строк в UAPI зн��чим: параметры устройства идут до первого
  * `public_key=`, а всё после него относится к этому пиру. Поэтому маскировка и
  * `fwmark` пишутся первыми, а `replace_peers` — до пиров.
  *
@@ -323,7 +331,24 @@ export function uapiSetRequest(parsed: ParsedWgConfig, routeAll: boolean, platfo
         : DEFAULT_KEEPALIVE_SECONDS;
     lines.push(`persistent_keepalive_interval=${keepalive}`);
     lines.push("replace_allowed_ips=true");
-    for (const cidr of peer.allowedIps) lines.push(`allowed_ip=${cidr}`);
+    /* FIX-V6ALLOWED: если у туннеля НЕТ своего адреса IPv6, семейство v6 из
+       разрешённых адресов вырезается.
+
+       Причина найдена по журналу ядра узла: `Packet has unallowed src IP
+       (fe80::…)`. Windows отправляет служебные пакеты канального уровня в
+       любой поднятый адаптер, и адрес источника у них — локальный `fe80::`,
+       потому что глобального v6 у туннеля нет. Разрешение `::/0` заставляло
+       клиента шифровать этот мусор и отправлять его узлу, а узел обязан такие
+       пакеты отбрасывать: заявленный пир владеет только `10.8.0.2/32`. Со
+       стороны человека это выглядело как «туннель поднят, трафика нет».
+
+       Вырезать безопасно: без собственного адреса v6 туннель всё равно не
+       может нести это семейство. */
+    const v6Usable = hasV6Tunnel(parsed);
+    for (const cidr of peer.allowedIps) {
+      if (!v6Usable && isV6(cidr)) continue;
+      lines.push(`allowed_ip=${cidr}`);
+    }
   }
 
   /* UAPI-запрос завершается ПУСТОЙ строкой — без неё клиент ждёт продолжения. */
@@ -346,6 +371,29 @@ export function parseUapiHandshake(response: string): number {
     if (Number.isFinite(seconds) && seconds > max) max = seconds;
   }
   return max;
+}
+
+/**
+ * Принято и отправлено байт по ответу UAPI `get=1` — суммарно по всем пирам.
+ *
+ * Нужно, чтобы отличить «туннель поднят» от «туннель работает». Рукопожатие
+ * состоялось ещё не значит, что данные идут: оно живёт в шифровальной части и
+ * не зависит ни от маршрутов, ни от разрешённых адресов. Признак настоящей
+ * связи — растущий счётчик ПРИНЯТЫХ байт.
+ */
+export function parseUapiTransfer(response: string): { rx: number; tx: number } {
+  let rx = 0;
+  let tx = 0;
+  for (const line of response.split(/\r?\n/)) {
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    const value = Number(line.slice(eq + 1).trim());
+    if (!Number.isFinite(value)) continue;
+    if (key === "rx_bytes") rx += value;
+    else if (key === "tx_bytes") tx += value;
+  }
+  return { rx, tx };
 }
 
 /** Идёт ли через туннель весь трафик (в профиле есть маршрут по умолчанию). */
@@ -575,11 +623,20 @@ export function ifaceRouteCommands(
          нужна именно поэтому. */
       commands.push(["netsh", "interface", "ipv4", "add", "route", "0.0.0.0/1", `interface=${iface}`, "store=active"]);
       commands.push(["netsh", "interface", "ipv4", "add", "route", "128.0.0.0/1", `interface=${iface}`, "store=active"]);
-      /* FIX-V6LEAK: v6 тоже забирается целиком. Если внутри туннеля v6 нет,
-         пакеты уходят в интерфейс без v6-адреса и просто отбрасываются — это и
-         есть защита от утечки: браузер быстро перейдёт на v4. */
-      commands.push(["netsh", "interface", "ipv6", "add", "route", "::/1", `interface=${iface}`, "store=active"]);
-      commands.push(["netsh", "interface", "ipv6", "add", "route", "8000::/1", `interface=${iface}`, "store=active"]);
+      /* FIX-V6WIN: v6 тоже забирается целиком, но КУДА — зависит от того, есть
+         ли v6 внутри туннеля.
+
+         Раньше обе половины всегда указывали на туннель. При туннеле без
+         v6-адреса это давало худший из исходов: система считала, что путь для
+         IPv6 есть, отдавала пакеты в адаптер, а уйти они не могли. Приложения,
+         предпочитающие v6 (а это почти всё современное), ждали таймаута на
+         каждом соединении — то самое «интернет пропал». Теперь, как и в macOS,
+         при туннеле без v6 обе половины уводятся в петлю: отказ приходит
+         мгновенно, и система сразу переходит на v4. Утечки при этом нет —
+         наружу через провайдера v6-трафик не идёт. */
+      const v6Target = hasV6Tunnel(parsed) ? `interface=${iface}` : `interface=${WIN_LOOPBACK_INDEX}`;
+      commands.push(["netsh", "interface", "ipv6", "add", "route", "::/1", v6Target, "store=active"]);
+      commands.push(["netsh", "interface", "ipv6", "add", "route", "8000::/1", v6Target, "store=active"]);
     }
     for (const peer of parsed.peers) {
       for (const cidr of peer.allowedIps) {
@@ -646,6 +703,12 @@ export function ifaceDownCommands(
          но не работает», что и с половинами v4. */
       ["netsh", "interface", "ipv6", "delete", "route", "::/1", `interface=${iface}`, "store=active"],
       ["netsh", "interface", "ipv6", "delete", "route", "8000::/1", `interface=${iface}`, "store=active"],
+      /* FIX-V6WIN: половины могли уйти в петлю (туннель без v6) — снимаем и их.
+         Забытый маршрут в петлю оставил бы машину без IPv6 ПОСЛЕ выключения
+         VPN, то есть ровно ту поломку, от которой мы уходим. Обе команды
+         допускают неуспех: лишняя из них просто не найдёт, что удалять. */
+      ["netsh", "interface", "ipv6", "delete", "route", "::/1", `interface=${WIN_LOOPBACK_INDEX}`, "store=active"],
+      ["netsh", "interface", "ipv6", "delete", "route", "8000::/1", `interface=${WIN_LOOPBACK_INDEX}`, "store=active"],
       /* FIX-NOROUTE: и DNS. Если адаптер почему-то остался в системе, статический
          сервер имён из профиля продолжал бы отвечать тишиной на любой запрос. */
       ["netsh", "interface", "ipv4", "set", "dnsservers", `name=${iface}`, "dhcp", "validate=no"],
