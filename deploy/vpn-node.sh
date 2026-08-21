@@ -184,8 +184,34 @@ EOF
 chmod 600 "$CONF"
 
 # -- 5. Переадресация и старый интерфейс -------------------------------------
-printf 'net.ipv4.ip_forward = 1\n' > "$SYSCTL"
-sysctl -q --system
+# FIX-NETTUNE: настройки ядра шлюза.
+#
+# ip_forward обязателен — без него узел вообще не пересылает пакеты.
+# rp_filter в свободном режиме (2), а не строгом: при закреплённом внешнем
+# адресе ответ приходит на общий адрес, и строгая проверка обратного пути молча
+# его отбрасывает — снаружи это выглядит как «часть клиентов не работает».
+# tcp_mtu_probing спасает там, где фаервол по пути вырезает ICMP: ядро само
+# ищет рабочий размер пакета вместо бесконечных повторов.
+# fq + bbr заметно держат скорость при потерях: обычный контроль перегрузок
+# принимает любую потерю за перегрузку и режет полосу на мобильных сетях в разы.
+# Запас таблицы соединений: при её переполнении узел начинает терять пакеты
+# выборочно и молча.
+cat > "$SYSCTL" <<'SYSCTL_EOF'
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+net.ipv4.conf.all.rp_filter = 2
+net.ipv4.tcp_mtu_probing = 1
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.netfilter.nf_conntrack_max = 262144
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+SYSCTL_EOF
+# Часть значений есть не на всех ядрах (bbr, conntrack). Ошибка по одной строке
+# не должна валить установку целиком — поэтому вывод глушится, а итог виден в
+# отчёте ниже.
+sysctl -q --system >/dev/null 2>&1 || sysctl -q -p "$SYSCTL" >/dev/null 2>&1 || true
 
 if [ "$IFACE" != "wg0" ]; then
   systemctl disable --now wg-quick@wg0 >/dev/null 2>&1 || true
@@ -236,6 +262,34 @@ Environment=WG_PRIVATE_KEY_PATH=$KEY_PATH
 Environment=WG_PORT=$PORT
 Restart=always
 RestartSec=5
+
+# FIX-HARDEN: агенту нужны ровно две вещи — менять сетевые настройки и читать
+# свой конфиг. Всё остальное у процесса, работающего от root, отбирается.
+# Зачем это нужно: агент выполняет внешние программы (wg/awg/iptables) и
+# разбирает ответ главного сервера. Если когда-нибудь в этой цепочке найдётся
+# дыра, ограничения ниже определят разницу между «испорчена сеть» и «машина
+# полностью чужая».
+NoNewPrivileges=yes
+# Права на сеть оставлены, всё прочее из набора root вычеркнуто.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+# Файловая система только для чтения, кроме явно перечисленного ниже.
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/wireguard /etc/amnezia /run
+PrivateTmp=yes
+# Ключ узла и токен агента лежат в файлах: доступ к устройствам не нужен.
+PrivateDevices=yes
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
