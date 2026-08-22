@@ -204,8 +204,12 @@ export function elevatedInvocation(
     /* Start-Process -Verb RunAs поднимает окно UAC; -Wait + $p.ExitCode
        пробрасывают код возврата, иначе ус��ех и провал выглядели бы одинаково.
        ArgumentList — список одинарно-кавыченных строк через запятую. */
-    const argList = args.map(psQuote).join(",");
-    const startArgs = args.length ? ` -ArgumentList ${argList}` : "";
+    /* PowerShell reliably passes Start-Process arguments when they are an
+       explicit array literal. Without @(...), some versions parse the command
+       as a FilePath-only launch; wireguard.exe then starts with no arguments
+       and prints its Usage text instead of installing the tunnel service. */
+    const argList = args.map(psQuote).join(", ");
+    const startArgs = args.length ? ` -ArgumentList @(${argList})` : "";
     /* Start-Process наследует окружение текущего процесса PowerShell, поэтому
        достаточно выставить переменные перед вызовом. */
     const envPrefix = envPairs.map(([k, v]) => `$env:${k}=${psQuote(v)};`).join("");
