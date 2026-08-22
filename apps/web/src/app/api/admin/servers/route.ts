@@ -219,7 +219,7 @@ export async function PATCH(req: Request) {
   /* FIX-NOAWG: режим маскировки убран. Обращения со старого интерфейса или сторонние
      запросы не отклоняются ошибкой, а приводятся к обычному типу: так любая
      правка карточки заодно лечит узлы, помеченные «устойчивыми» раньше. */
-  if (isTransport(body?.transport)) data.transport = "PLAIN";
+  if (isTransport(body?.transport)) data.transport = body.transport;
   if (typeof body?.region === "string") data.region = sanitizeText(body.region).trim().slice(0, 60);
   if (typeof body?.note === "string") data.note = sanitizeText(body.note).trim().slice(0, 300);
   if (typeof body?.enabled === "boolean") data.enabled = body.enabled;
