@@ -70,6 +70,37 @@ function readObfuscation(value: unknown): string | null {
   return JSON.stringify(out);
 }
 
+/* FIX-PEERWAIT: как часто VPN-узел спрашивает сайт о своих пирах.
+
+   Пять секунд вместо минуты. Причина найдена на живом узле, по двум журналам
+   одного и того же включения:
+
+     02:47:50  клиент: Sending handshake initiation   (молчание)
+     02:47:56  клиент: Sending handshake initiation   (молчание)
+     02:48:01  клиент: Sending handshake initiation   (молчание)
+     02:48:06  клиент: Sending handshake initiation   (молчание)
+     02:48:08  узел:   пиры обновлены: +1 / -1, всего 1
+     02:48:11  клиент: Received handshake response
+
+   Приложение регистрировало ключ и сразу поднимало туннель, а узел узнавал о
+   пире только со следующим отчётом — то есть с задержкой до минуты. WireGuard
+   на неизвестный ключ не отвечает ВООБЩЕ: ни отказа, ни ошибки, просто тишина.
+   Все двадцать секунд до отчёта рукопожатия уходили в пустоту, а трафик,
+   который Windows успевала отдать в адаптер, клиент выбрасывал за отсутствием
+   сеанса — на узле это было видно как `transfer: 916 B received, 124 B sent`,
+   где 124 байта это ровно ответ на рукопожатие плюс один контрольный пакет.
+
+   Поле `nextReportInMs` агент читал и раньше (apps/vpn/src/index.mjs), но
+   значение здесь было прибито к минуте, поэтому ускоряться ему было нечем.
+
+   Почему это не нагрузка: отчёт — один запрос на узел, двенадцать в минуту
+   вместо одного. Ускорение касается только VPN-узлов: остальным торопиться
+   некуда, у них нет пиров, которые кто-то ждёт прямо сейчас. */
+const VPN_REPORT_INTERVAL_MS = Math.max(
+  1_000,
+  Number(process.env.VPN_REPORT_INTERVAL_MS) || 5_000,
+);
+
 export async function POST(req: Request) {
   const node = await findNodeByToken(req.headers.get("authorization"));
   if (!node) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -228,6 +259,6 @@ export async function POST(req: Request) {
     /** Полный список пиров для VPN-узла (null — узел не VPN). */
     peers: vpnPeers,
     /** Через сколько миллисекунд ждать следующий отчёт. */
-    nextReportInMs: 60_000,
+    nextReportInMs: node.kind === "VPN" ? VPN_REPORT_INTERVAL_MS : 60_000,
   });
 }

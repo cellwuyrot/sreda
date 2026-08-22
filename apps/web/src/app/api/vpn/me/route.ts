@@ -212,7 +212,17 @@ export async function GET() {
     where: { userId: session.user.id },
     include: {
       node: {
-        select: { name: true, region: true, lastReport: true, endpointHost: true, transport: true, obfuscation: true },
+        /* FIX-PEERWAIT: `lastSeenAt` нужен, чтобы ответить на вопрос «узел уже
+           знает об этом пире?». Без ответа клиент поднимал туннель в пустоту. */
+        select: {
+          name: true,
+          region: true,
+          lastReport: true,
+          lastSeenAt: true,
+          endpointHost: true,
+          transport: true,
+          obfuscation: true,
+        },
       },
     },
   });
@@ -252,6 +262,21 @@ export async function GET() {
     });
   }
 
+  /* FIX-PEERWAIT: узнал ли УЗЕЛ об этом пире, а не только база сайта.
+
+     Узел работает «на вытягивание»: он получает список пиров в ответе на свой
+     отчёт и тут же приводит интерфейс к нему. Значит отчёт, пришедший ПОЗЖЕ
+     последнего изменения записи, означает, что пир на узле уже стоит. Обратное
+     сравнение — отчёт старше записи — означает, что ключ ещё едет, и включать
+     туннель рано: WireGuard на неизвестный ключ молчит, и клиент отправит
+     рукопожатия в пустоту (см. FIX-PEERWAIT в api/servers/report/route.ts).
+
+     Отдельного поля «применено» здесь нет намеренно: `lastSeenAt` обновляется
+     тем же запросом, который отдаёт узлу пиров, поэтому оно уже является этой
+     отметкой. Лишний столбец пришлось бы поддерживать в согласии с ним. */
+  const peerApplied =
+    !!peer.node.lastSeenAt && peer.node.lastSeenAt.getTime() > peer.updatedAt.getTime();
+
   return NextResponse.json({
     serviceEnabled: settings.enabled,
     entitled,
@@ -259,6 +284,8 @@ export async function GET() {
     plan,
     traffic,
     servers,
+    /** Узел уже знает об этом пире — туннель можно поднимать. */
+    peerApplied,
     peer: { ...peerView(peer, peer.node, nodeTunnel(peer.node), settings), nodeId: peer.nodeId },
   });
 }
