@@ -69,7 +69,7 @@ function runWithInput(file, args, input) {
  * автоматический: если на машине есть `awg`, значит интерфейс поднят им.
  * Переменная `WG_TOOL` оставлена для случая, когда на узле стоят оба.
  */
-let WG_TOOL = process.env.WG_TOOL || "";
+let WG_TOOL = process.env.WG_TOOL || "awg";
 
 async function detectTool() {
   if (WG_TOOL) return WG_TOOL;
@@ -94,11 +94,11 @@ async function wg(args, options) {
 const CONFIG = {
   mainUrl: (process.env.TRIOZ_MAIN_URL || "").replace(/\/+$/, ""),
   token: process.env.TRIOZ_AGENT_TOKEN || "",
-  iface: process.env.WG_INTERFACE || "wg0",
+  iface: process.env.WG_INTERFACE || "awg0",
   port: Number(process.env.WG_PORT || 51820),
   /** Адрес, по которому клиенты видят этот узел (домен или IP). */
   endpointHost: process.env.WG_ENDPOINT_HOST || "",
-  privateKeyPath: process.env.WG_PRIVATE_KEY_PATH || "/etc/wireguard/trioz-private.key",
+  privateKeyPath: process.env.WG_PRIVATE_KEY_PATH || "/etc/amneziawg/trioz-private.key",
   /* FIX-MSS: MTU туннельного интерфейса узла. Нужен только для подгонки MSS:
      сам интерфейс агент не поднимает и MTU ему не меняет. */
   mtu: Number(process.env.WG_MTU || 1420),
@@ -123,8 +123,12 @@ const PARAM_KEYS = new Set([
 ]);
 
 function readInterfaceParams() {
-  const path = process.env.WG_CONF_PATH || `/etc/amnezia/amneziawg/${CONFIG.iface}.conf`;
-  const fallback = `/etc/wireguard/${CONFIG.iface}.conf`;
+  const path = process.env.WG_CONF_PATH || `/etc/amneziawg/${CONFIG.iface}.conf`;
+  /* FIX-AWG-ONLY: путь /etc/amnezia/amneziawg сохранён вторым вариантом — так
+     каталог называют сборки Amnezia, и узлы, поставленные их установщиком,
+     продолжают читаться. Обычный /etc/wireguard больше не проверяется: на узле
+     его нет, а его наличие означало бы, что старый WireGuard вернулся. */
+  const fallback = `/etc/amnezia/amneziawg/${CONFIG.iface}.conf`;
   let text = "";
   for (const candidate of [path, fallback]) {
     try {
