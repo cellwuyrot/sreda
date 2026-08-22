@@ -11,7 +11,7 @@
 ; даёт задание, которое никогда не запускается. В .bat текст пишется буквально.
 
 !macro customInstall
-  DetailPrint "VPN: используется официальный WireGuard for Windows"
+  DetailPrint "VPN: используется встроенный клиент AmneziaWG"
   ; Старый служебный компонент TrioZ больше не устанавливается: Windows-туннель
   ; поднимает официальный wireguard.exe через /installtunnelservice.
 !macroend
@@ -42,6 +42,7 @@
   ; не исчезает, если клиент был снят аварийно. Удаляем по InstanceId — имя
   ; адаптера могло быть переименовано системой (trioz, trioz 2 и так далее).
   FileWrite $0 "powershell -NoProfile -ExecutionPolicy Bypass -Command $\"Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Where-Object { $$_.FriendlyName -match 'Wintun|TrioZ|trioz' } | ForEach-Object { pnputil /remove-device $$_.InstanceId }$\"$\r$\n"
+  FileWrite $0 "sc delete AmneziaWGTunnel$$trioz$\r$\n"
   FileWrite $0 "sc delete WireGuardTunnel$$trioz$\r$\n"
   FileWrite $0 "ipconfig /flushdns$\r$\n"
   FileClose $0
