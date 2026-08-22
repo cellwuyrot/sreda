@@ -502,26 +502,59 @@ function ensureWintun(clientDir: string): string {
  * именем. Без ожидания первый же `netsh set address` падал с «интерфейс не
  * найден» — и туннель оставался без адреса, то есть без связи.
  */
-function waitForAdapter(iface: string, timeoutMs: number): boolean {
+type WindowsAdapter = { name: string; interfaceIndex: number; interfaceAlias: string };
+
+function psString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * FIX-FULLTUN-WIN: найти именно тот Wintun-адаптер, который только что создал
+ * wireguard-go, и вернуть его актуальный ifIndex.
+ *
+ * Имя интерфейса и индекс в Windows — не одно и то же. После пересоздания
+ * Wintun индекс меняется (например, стал 45), а старые маршруты/команды могли
+ * попадать в другой интерфейс или в запись по имени. Для full-tunnel это
+ * критично: маршруты 0.0.0.0/1 и 128.0.0.0/1 должны указывать на реальный
+ * WireGuard-адаптер, иначе handshake есть, а интернет не идёт.
+ */
+function waitForAdapter(iface: string, timeoutMs: number): WindowsAdapter | null {
   const deadline = Date.now() + timeoutMs;
-  const script = `if (Get-NetAdapter -Name '${iface}' -ErrorAction SilentlyContinue) { "yes" }`;
+  const wanted = psString(iface);
+  const script =
+    `$a = Get-NetAdapter -Name ${wanted} -ErrorAction SilentlyContinue | ` +
+    "Sort-Object ifIndex -Descending | Select-Object -First 1; " +
+    "if (-not $a) { $a = Get-NetAdapter -ErrorAction SilentlyContinue | " +
+    `Where-Object { $_.InterfaceDescription -match 'Wintun|WireGuard' -and $_.Name -eq ${wanted} } | ` +
+    "Sort-Object ifIndex -Descending | Select-Object -First 1 }; " +
+    'if ($a) { "$($a.Name)|$($a.ifIndex)|$($a.InterfaceAlias)" }';
   while (Date.now() < deadline) {
     const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
       encoding: "utf8",
       timeout: 20_000,
       windowsHide: true,
     });
-    if ((result.stdout || "").includes("yes")) return true;
+    const line = (result.stdout || "").trim().split(/\r?\n/).find(Boolean);
+    if (line) {
+      const [name, indexText, alias] = line.split("|");
+      const interfaceIndex = Number(indexText);
+      if (name && Number.isFinite(interfaceIndex) && interfaceIndex > 0) {
+        const adapter = { name, interfaceIndex, interfaceAlias: alias || name };
+        logSetup(`Wintun адаптер найден: name=${adapter.name}, ifIndex=${adapter.interfaceIndex}, alias=${adapter.interfaceAlias}`);
+        return adapter;
+      }
+    }
     const wait = Date.now() + 400;
     while (Date.now() < wait) {
-      /* коро����кая пауза без таймеров: работник живёт ровно один сценарий */
+      /* короткая пауза без таймеров: работник живёт ровно один сценарий */
     }
   }
-  return false;
+  return null;
 }
 
 /** Файл с параметрами маршрута-исключения — чтобы снять его при выключении. */
 export const EXCLUDE_FILE = `${TUNNEL_NAME}.exclude`;
+export const IFACE_FILE = `${TUNNEL_NAME}.ifindex`;
 
 /** Адрес узла: маршрут в Windows задаётся только IP, имя не подходит. */
 async function resolveEndpointIp(endpoint: string): Promise<string> {
@@ -679,7 +712,8 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
   /* Адаптер должен быть виден системе под своим именем — только тогда с ним
      заработает `netsh`, то есть только тогда туннель получит адрес. */
-  if (process.platform === "win32" && !waitForAdapter(TUNNEL_NAME, 15_000)) {
+  const winAdapter = process.platform === "win32" ? waitForAdapter(TUNNEL_NAME, 15_000) : null;
+  if (process.platform === "win32" && !winAdapter) {
     const tail = clientLogTail(logPath);
     fail(
       `Сетевой адаптер «${TUNNEL_NAME}» не появился в системе.` +
@@ -716,6 +750,7 @@ async function up(confPath: string, clientPath: string): Promise<void> {
       fail("Не удалось определить основной шлюз системы: без него туннель замкнётся сам на себя");
     }
     runTool(excludeRouteCommand(endpointIp, gate.gateway, gate.interfaceIndex), true);
+    if (winAdapter) writeFileSync(join(dirname(confPath), IFACE_FILE), `${winAdapter.interfaceIndex}\n`, { mode: 0o600 });
     writeFileSync(join(dirname(confPath), EXCLUDE_FILE), `${endpointIp} ${gate.interfaceIndex}\n`, {
       mode: 0o600,
     });
@@ -723,7 +758,9 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
   /* Адрес и MTU — сразу: без адреса интерфейс не работает вовсе. Маршруты и
      DNS здесь сознательно НЕ ставятся — см. ниже. */
-  for (const command of ifaceUpCommands(process.platform, parsed)) {
+  const winIface = winAdapter ? String(winAdapter.interfaceIndex) : TUNNEL_NAME;
+
+  for (const command of ifaceUpCommands(process.platform, parsed, winIface)) {
     /* Адрес IPv4 — единственный шаг, без которого туннель бессмыслен: тихо
        провалившийся `netsh set address` давал «включено, а трафик напрямую».
        Шаги IPv6 такого веса не имеют — см. isCriticalStep (FIX-NETSH6). */
@@ -752,7 +789,7 @@ async function up(confPath: string, clientPath: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1_500));
   }
 
-  for (const command of ifaceRouteCommands(process.platform, parsed)) {
+  for (const command of ifaceRouteCommands(process.platform, parsed, winIface)) {
     /* FIX-NETSH6: рукопожатие уже состоялось — туннель живой. Ронять его из-за
        отказа на второстепенном шаге (IPv6, сервер имён) — значит отобрать у
        человека работающее подключение ради чистоты журнала. */
@@ -789,7 +826,13 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
 /** Снять туннель: убить клиента и убрать за ним правила маршрутизации. */
 function down(confDir: string, quiet = false): void {
-  for (const command of ifaceDownCommands(process.platform)) runTool(command, false);
+  const savedIndexPath = join(confDir, IFACE_FILE);
+  let downIface = TUNNEL_NAME;
+  if (process.platform === "win32" && existsSync(savedIndexPath)) {
+    const saved = readFileSync(savedIndexPath, "utf8").trim();
+    if (/^\d+$/.test(saved)) downIface = saved;
+  }
+  for (const command of ifaceDownCommands(process.platform, downIface)) runTool(command, false);
   /* Маршрут-исключение указывает на ФИЗИЧЕСКИЙ интерфейс и потому не исчезает
      вместе с туннелем — снимаем его по записанным при подъёме данным. */
   const excludePath = join(confDir, EXCLUDE_FILE);
@@ -801,6 +844,11 @@ function down(confDir: string, quiet = false): void {
     } catch {
       /* файл мог исчезнуть раньше — цель достигнута */
     }
+  }
+  try {
+    rmSync(savedIndexPath, { force: true });
+  } catch {
+    /* файл мог исчезнуть раньше */
   }
   killPrevious(join(confDir, PID_FILE));
   try {
