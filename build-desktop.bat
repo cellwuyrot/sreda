@@ -1,37 +1,20 @@
 @echo off
-rem ==========================================================================
-rem  TZ Connect - sborka Windows-installyatora (Electron).
-rem
-rem  Osobennosti etogo faila (vse - iz-za realnyh problem, ne dlya krasoty):
-rem   * NI ODNOY pustoy stroki. Pri peredache faila v pustye stroki popadali
-rem     nevidimye simvoly U+200B, i konsol pisala: "tAL" ne yavlyaetsya
-rem     vnutrenney ili vneshney komandoy. Pustyh strok net - problemy net.
-rem   * Koren proekta beretsya iz papki, gde lezhit SAM etot fail (%~dp0),
-rem     a ne iz zhestko propisannogo puti.
-rem   * Tolko ASCII, bez chcp - nezavisimo ot kodovoy stranicy konsoli.
-rem   * Bez mnogostrochnyh blokov v skobkah, kazhdyy vyzov cherez CALL,
-rem     proverka IF ERRORLEVEL, i lyuboy vyhod cherez PAUSE.
-rem ==========================================================================
 setlocal enableextensions
-title TZ Connect - sborka desktop
+title TZ Connect - build desktop
+set "ERR="
+set "HINT="
 set "LOG=%~dp0build-desktop.log"
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
-rem  Zapasnye puti - esli fail zapuskayut ne iz kornya proekta.
-if not exist "%ROOT%\apps\desktop\package.json" set "ROOT=D:\ttt\4\trioztest"
 if not exist "%ROOT%\apps\desktop\package.json" set "ROOT=%CD%"
 set "APPBUILDER_DIR=C:\appbuilder"
 set "CLIENT_ROOT=C:\triozclient"
-set "CLIENT_DIR=C:\triozclient\win32"
-set "WORK=C:\triozclient\work"
-set "WINTUN_VER=0.14.1"
-set "WG_GO_REPO=https://git.zx2c4.com/wireguard-go"
+set "CLIENT_DIR=%CLIENT_ROOT%\win32"
 set "USE_SYSTEM_APP_BUILDER=true"
 set "PATH=%APPBUILDER_DIR%;%PATH%"
 set "TRIOZ_CLIENT_SRC=%CLIENT_ROOT%"
 set "TRIOZ_CLIENT_PLATFORM=win32"
-set "WINTUN_OK=0"
-set "WGGO_OK=0"
+set "WG_OK=0"
 set "BUILD_WITH_CLIENT=0"
 set "ALLOW_NOCLIENT=0"
 if /i "%~1"=="noclient" set "ALLOW_NOCLIENT=1"
@@ -40,212 +23,112 @@ echo ==================================================
 echo  TZ Connect - sborka Windows-installyatora
 echo  Log: %LOG%
 echo ==================================================
-echo [1/9] Proverka okruzheniya
-if not exist "%ROOT%\package.json" goto no_root
-if not exist "%ROOT%\apps\desktop\package.json" goto no_root
-cd /d "%ROOT%"
-if errorlevel 1 goto no_root
-echo      koren proekta : %CD%
-where node >nul 2>nul
-if errorlevel 1 goto no_node
-where npm >nul 2>nul
-if errorlevel 1 goto no_node
-for /f "delims=" %%V in ('node -v') do echo      node          : %%V
-if not exist "apps\desktop\src\main\tunnelAgent.ts" goto old_tree
-if not exist "apps\desktop\build\installer.nsh" goto old_tree
-echo      sluzhebnyy komponent tunnelya : est
-echo [1/9] ok, ROOT=%CD% >> "%LOG%"
-echo [2/9] app-builder
-if exist "%APPBUILDER_DIR%\app-builder.exe" goto appbuilder_ok
-if not exist "%APPBUILDER_DIR%" mkdir "%APPBUILDER_DIR%"
-pushd "%APPBUILDER_DIR%"
-call npm pack app-builder-bin@5.0.0-alpha.10
-if errorlevel 1 goto appbuilder_fail
-for %%F in (app-builder-bin-*.tgz) do call tar -xf "%%F"
-if not exist "package\win\x64\app-builder.exe" goto appbuilder_fail
-copy /y "package\win\x64\app-builder.exe" "%APPBUILDER_DIR%\app-builder.exe" >nul
-popd
-:appbuilder_ok
-if not exist "%APPBUILDER_DIR%\app-builder.exe" goto appbuilder_fail
-echo      ok : %APPBUILDER_DIR%\app-builder.exe
-goto step_wintun
-:appbuilder_fail
-popd 2>nul
-echo      NE UDALOS podgotovit app-builder.exe
-goto fail
-:step_wintun
-echo [3/9] wintun.dll - drayver setevogo ustroystva
-if not exist "%CLIENT_DIR%" mkdir "%CLIENT_DIR%"
-if not exist "%WORK%" mkdir "%WORK%"
-if exist "%CLIENT_DIR%\wintun.dll" goto wintun_ok
-call curl -L --fail -o "%WORK%\wintun.zip" "https://www.wintun.net/builds/wintun-%WINTUN_VER%.zip"
-if errorlevel 1 goto wintun_skip
-if exist "%WORK%\wintun" rmdir /s /q "%WORK%\wintun"
-mkdir "%WORK%\wintun"
-call tar -xf "%WORK%\wintun.zip" -C "%WORK%\wintun"
-if errorlevel 1 goto wintun_skip
-if not exist "%WORK%\wintun\wintun\bin\amd64\wintun.dll" goto wintun_skip
-copy /y "%WORK%\wintun\wintun\bin\amd64\wintun.dll" "%CLIENT_DIR%\wintun.dll" >nul
-if not exist "%CLIENT_DIR%\wintun.dll" goto wintun_skip
-:wintun_ok
-set "WINTUN_OK=1"
-echo      ok : %CLIENT_DIR%\wintun.dll
-goto step_wggo
-:wintun_skip
-echo      PROPUSK: wintun.dll ne poluchen - net seti ili blokirovka.
-echo      Ruchnoy put: iz wintun-%WINTUN_VER%.zip fail bin\amd64\wintun.dll
-echo      polozhit v %CLIENT_DIR%\wintun.dll
-echo [3/9] wintun skipped >> "%LOG%"
-goto step_wggo
-:step_wggo
-echo [4/9] wireguard-go.exe - vstroennyy klient tunnelya
-if exist "%CLIENT_DIR%\wireguard-go.exe" goto wggo_ok
-where go >nul 2>nul
-if errorlevel 1 goto wggo_skip_go
-where git >nul 2>nul
-if errorlevel 1 goto wggo_skip_git
-if not exist "%WORK%\wireguard-go\go.mod" call git clone --depth 1 "%WG_GO_REPO%" "%WORK%\wireguard-go"
-if not exist "%WORK%\wireguard-go\go.mod" goto wggo_skip
-pushd "%WORK%\wireguard-go"
-set "GOOS=windows"
-set "GOARCH=amd64"
-set "CGO_ENABLED=0"
-call go build -trimpath -ldflags "-s -w" -o "%CLIENT_DIR%\wireguard-go.exe" .
-popd
-if not exist "%CLIENT_DIR%\wireguard-go.exe" goto wggo_skip
-:wggo_ok
-set "WGGO_OK=1"
-echo      ok : %CLIENT_DIR%\wireguard-go.exe
-goto step_deps
-:wggo_skip_go
-echo      PROPUSK: ne nayden Go. Ustanovite Go 1.21+ s https://go.dev/dl/
-goto wggo_skip
-:wggo_skip_git
-echo      PROPUSK: ne nayden git. Ustanovite Git for Windows.
-goto wggo_skip
-:wggo_skip
-echo      Sborka prodolzhitsya, no BEZ vstroennogo klienta tunnelya.
-echo [4/9] wireguard-go skipped >> "%LOG%"
-goto step_deps
-:step_deps
-echo      itog po klientu: wireguard-go.exe=%WGGO_OK% wintun.dll=%WINTUN_OK% (1 = est)
-echo [5/9] Zavisimosti - npm install --ignore-scripts
-if exist node_modules rmdir /s /q node_modules
-call npm install --ignore-scripts
-if errorlevel 1 goto fail
-echo [5/9] ok >> "%LOG%"
-echo [6/9] Electron - skripty byli otklyucheny, stavim vruchnuyu
-call node node_modules\electron\install.js
-if errorlevel 1 goto fail
-echo [6/9] ok >> "%LOG%"
-echo [7/9] Obshchiy kod - packages/shared
-call npm run build:shared
-if errorlevel 1 goto fail
-echo [7/9] ok >> "%LOG%"
-echo [8/9] Ukladka vstroennogo klienta v resursy
-if not "%WINTUN_OK%%WGGO_OK%"=="11" goto vendor_soft
-call npm run vendor:client:strict -w apps/desktop
-if errorlevel 1 goto fail
-if not exist "apps\desktop\resources\wireguard\win32\wireguard-go.exe" goto vendor_bad
-if not exist "apps\desktop\resources\wireguard\win32\wintun.dll" goto vendor_bad
-echo      ok : klient i drayver v resources\wireguard\win32
-set "BUILD_WITH_CLIENT=1"
-goto step_dist
-:vendor_soft
-if "%ALLOW_NOCLIENT%"=="0" goto need_client
-call npm run vendor:client -w apps/desktop
-if errorlevel 1 goto fail
-echo      VNIMANIE: sborka budet BEZ tunnelya - net wireguard-go.exe ili wintun.dll.
-set "BUILD_WITH_CLIENT=0"
-goto step_dist
-:need_client
+rem [1/8] environment
+echo [1/8] Proverka okruzheniya
+if not exist "%ROOT%\package.json" set "HINT=root"
+if not exist "%ROOT%\package.json" set "ERR=[1/8] ryadom so skriptom net package.json"
+if "%ERR%"=="" if not exist "%ROOT%\apps\desktop\package.json" set "HINT=root"
+if "%ERR%"=="" if not exist "%ROOT%\apps\desktop\package.json" set "ERR=[1/8] net apps\desktop\package.json"
+if "%ERR%"=="" cd /d "%ROOT%"
+if "%ERR%"=="" echo      koren proekta : %CD%
+if "%ERR%"=="" where node >nul 2>nul
+if "%ERR%"=="" if errorlevel 1 set "HINT=node"
+if "%ERR%"=="" if errorlevel 1 set "ERR=[1/8] ne nayden node v PATH"
+if "%ERR%"=="" where npm >nul 2>nul
+if "%ERR%"=="" if errorlevel 1 set "HINT=node"
+if "%ERR%"=="" if errorlevel 1 set "ERR=[1/8] ne nayden npm v PATH"
+if "%ERR%"=="" for /f "delims=" %%V in ('node -v') do echo      node          : %%V
+if "%ERR%"=="" if not exist "apps\desktop\build\installer.nsh" set "HINT=tree"
+if "%ERR%"=="" if not exist "apps\desktop\build\installer.nsh" set "ERR=[1/8] net apps\desktop\build\installer.nsh"
+if "%ERR%"=="" echo [1/8] ok, ROOT=%CD% >> "%LOG%"
+rem [2/8] app-builder
+if "%ERR%"=="" echo [2/8] app-builder
+if "%ERR%"=="" if not exist "%APPBUILDER_DIR%" mkdir "%APPBUILDER_DIR%"
+if "%ERR%"=="" if not exist "%APPBUILDER_DIR%\app-builder.exe" cd /d "%APPBUILDER_DIR%"
+if "%ERR%"=="" if not exist "%APPBUILDER_DIR%\app-builder.exe" call npm pack app-builder-bin@5.0.0-alpha.10
+if "%ERR%"=="" if not exist "%APPBUILDER_DIR%\app-builder.exe" for %%F in (app-builder-bin-*.tgz) do call tar -xf "%%F"
+if "%ERR%"=="" if not exist "%APPBUILDER_DIR%\app-builder.exe" if exist "package\win\x64\app-builder.exe" copy /y "package\win\x64\app-builder.exe" "%APPBUILDER_DIR%\app-builder.exe" >nul
+if "%ERR%"=="" cd /d "%ROOT%"
+if "%ERR%"=="" if not exist "%APPBUILDER_DIR%\app-builder.exe" set "ERR=[2/8] ne udalos podgotovit app-builder.exe"
+if "%ERR%"=="" echo      ok : %APPBUILDER_DIR%\app-builder.exe
+if "%ERR%"=="" echo [2/8] ok >> "%LOG%"
+rem [3/8] official WireGuard for Windows
+if "%ERR%"=="" echo [3/8] wireguard.exe - official WireGuard for Windows
+if "%ERR%"=="" if not exist "%CLIENT_DIR%" mkdir "%CLIENT_DIR%"
+if "%ERR%"=="" if exist "%CLIENT_DIR%\wireguard.exe" set "WG_OK=1"
+if "%ERR%"=="" if "%WG_OK%"=="0" if exist "%ProgramFiles%\WireGuard\wireguard.exe" copy /y "%ProgramFiles%\WireGuard\wireguard.exe" "%CLIENT_DIR%\wireguard.exe" >nul
+if "%ERR%"=="" if exist "%CLIENT_DIR%\wireguard.exe" set "WG_OK=1"
+if "%WG_OK%"=="1" echo      ok : %CLIENT_DIR%\wireguard.exe
+if "%WG_OK%"=="1" echo [3/8] ok >> "%LOG%"
+if "%ERR%"=="" if "%WG_OK%"=="0" echo      NET: %CLIENT_DIR%\wireguard.exe
+if "%ERR%"=="" if "%WG_OK%"=="0" echo      Ustanovite WireGuard for Windows ili polozhite wireguard.exe v %CLIENT_DIR%
+if "%ERR%"=="" if "%WG_OK%"=="0" if "%ALLOW_NOCLIENT%"=="0" set "HINT=client"
+if "%ERR%"=="" if "%WG_OK%"=="0" if "%ALLOW_NOCLIENT%"=="0" set "ERR=[3/8] net wireguard.exe"
+rem [4/8] dependencies
+if "%ERR%"=="" echo [4/8] Zavisimosti - npm install --ignore-scripts
+if "%ERR%"=="" echo      samyy dolgiy shag: 5-20 minut
+if "%ERR%"=="" echo [4/8] start npm install >> "%LOG%"
+if "%ERR%"=="" if exist node_modules rmdir /s /q node_modules
+if "%ERR%"=="" call npm install --ignore-scripts
+if "%ERR%"=="" if errorlevel 1 set "ERR=[4/8] npm install zavershilsya oshibkoy"
+if "%ERR%"=="" echo [4/8] ok >> "%LOG%"
+rem [5/8] electron
+if "%ERR%"=="" echo [5/8] Electron
+set "EL_DIR="
+if "%ERR%"=="" if exist "node_modules\electron\package.json" set "EL_DIR=node_modules\electron"
+if "%ERR%"=="" if "%EL_DIR%"=="" if exist "apps\desktop\node_modules\electron\package.json" set "EL_DIR=apps\desktop\node_modules\electron"
+if "%ERR%"=="" if "%EL_DIR%"=="" call npm install --ignore-scripts -w apps/desktop
+if "%ERR%"=="" if "%EL_DIR%"=="" if exist "node_modules\electron\package.json" set "EL_DIR=node_modules\electron"
+if "%ERR%"=="" if "%EL_DIR%"=="" if exist "apps\desktop\node_modules\electron\package.json" set "EL_DIR=apps\desktop\node_modules\electron"
+if "%ERR%"=="" if "%EL_DIR%"=="" set "HINT=electron"
+if "%ERR%"=="" if "%EL_DIR%"=="" set "ERR=[5/8] paket electron ne ustanovlen npm"
+if "%ERR%"=="" echo      paket electron : %EL_DIR%
+if "%ERR%"=="" if not exist "%EL_DIR%\dist\electron.exe" if exist "%EL_DIR%\install.js" call node "%EL_DIR%\install.js"
+if "%ERR%"=="" if not exist "%EL_DIR%\dist\electron.exe" call npm rebuild electron --foreground-scripts
+if "%ERR%"=="" if not exist "%EL_DIR%\dist\electron.exe" call npm rebuild electron -w apps/desktop --foreground-scripts
+if "%ERR%"=="" if not exist "%EL_DIR%\dist\electron.exe" set "HINT=electron"
+if "%ERR%"=="" if not exist "%EL_DIR%\dist\electron.exe" set "ERR=[5/8] Electron ne skachalsya: net dist\electron.exe"
+if "%ERR%"=="" echo [5/8] ok >> "%LOG%"
+rem [6/8] shared
+if "%ERR%"=="" echo [6/8] Obshchiy kod - packages/shared
+if "%ERR%"=="" call npm run build:shared
+if "%ERR%"=="" if errorlevel 1 set "ERR=[6/8] ne sobralsya packages/shared"
+if "%ERR%"=="" echo [6/8] ok >> "%LOG%"
+rem [7/8] vendor client
+if "%ERR%"=="" echo [7/8] Ukladka wireguard.exe v resursy
+if "%ERR%"=="" if "%WG_OK%"=="1" call npm run vendor:client:strict -w apps/desktop
+if "%ERR%"=="" if "%WG_OK%"=="0" call npm run vendor:client -w apps/desktop
+if "%ERR%"=="" if errorlevel 1 set "ERR=[7/8] ne udalos ulozhit wireguard.exe v resursy"
+if "%ERR%"=="" if "%WG_OK%"=="1" if not exist "apps\desktop\resources\wireguard\win32\wireguard.exe" set "ERR=[7/8] wireguard.exe ne popal v resources\wireguard\win32"
+if "%ERR%"=="" if "%WG_OK%"=="1" set "BUILD_WITH_CLIENT=1"
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" echo      ok : resources\wireguard\win32\wireguard.exe
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="0" echo      VNIMANIE: sborka budet BEZ VPN klienta.
+if "%ERR%"=="" echo [7/8] ok >> "%LOG%"
+rem [8/8] installer
+if "%ERR%"=="" echo [8/8] Sborka installyatora - electron-builder
+if "%ERR%"=="" call npm run dist -w apps/desktop -- -c.npmRebuild=false
+if "%ERR%"=="" if errorlevel 1 set "ERR=[8/8] electron-builder zavershilsya oshibkoy"
+if "%ERR%"=="" if not exist "apps\desktop\release" set "ERR=[8/8] net papki apps\desktop\release"
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" if not exist "apps\desktop\release\win-unpacked\resources\wireguard\wireguard.exe" set "ERR=[8/8] v sborke net wireguard.exe"
+if "%ERR%"=="" echo [8/8] ok >> "%LOG%"
+rem result
 echo ==================================================
-echo  STOP: net vstroennogo klienta tunnelya.
-echo  Imenno poetomu prilozhenie govorit:
-echo  "Vstroennyy klient otsutstvuet v etoy sborke".
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" echo  GOTOVO. Installyator sobran, official WireGuard vnutri.
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="0" echo  Installyator sobran, NO BEZ VPN klienta. Publikovat nelzya.
+if "%ERR%"=="" dir apps\desktop\release\*.exe
+if "%ERR%"=="" echo GOTOVO >> "%LOG%"
+if not "%ERR%"=="" echo  OSHIBKA SBORKI: %ERR%
+if not "%ERR%"=="" echo OSHIBKA: %ERR% >> "%LOG%"
+if "%HINT%"=="root" echo  Polozhite build-desktop.bat v koren proekta.
+if "%HINT%"=="node" echo  Ustanovite Node.js 20+ i otkroyte okno zanovo.
+if "%HINT%"=="tree" echo  Raspakuyte svezhiy arhiv proekta.
+if "%HINT%"=="client" echo  Nuzhen %CLIENT_DIR%\wireguard.exe. Prosche vsego ustanovit WireGuard for Windows.
+if "%HINT%"=="client" echo  Skript sam skopiruet C:\Program Files\WireGuard\wireguard.exe pri sleduyuschem zapuske.
+if "%HINT%"=="electron" echo  Electron ne skachalsya. Proverte set/proxy/antivirus.
 echo ==================================================
-echo  Nuzhny DVA faila v %CLIENT_DIR% :
-if "%WGGO_OK%"=="0" echo    - wireguard-go.exe  (NET)
-if "%WGGO_OK%"=="1" echo    - wireguard-go.exe  (est)
-if "%WINTUN_OK%"=="0" echo    - wintun.dll        (NET)
-if "%WINTUN_OK%"=="1" echo    - wintun.dll        (est)
-echo  Chto sdelat:
-echo    1. Ustanovit Go: winget install --id GoLang.Go -e
-echo       ili installyator s https://go.dev/dl/
-echo    2. Ustanovit Git: winget install --id Git.Git -e
-echo    3. Zakryt i otkryt okno konsoli (chtoby obnovilsya PATH)
-echo    4. Zapustit etot skript snova - shagi 3 i 4 sdelayut vse sami
-echo  Esli nuzhen exe BEZ tunnelya (dlya proverki interfeisa):
-echo    build-desktop.bat noclient
-echo [8/9] stop: net klienta >> "%LOG%"
-goto fail
-:vendor_bad
-echo      Klient ne popal v resources\wireguard\win32.
-goto fail
-:step_dist
-echo [9/9] Sborka installyatora - electron-builder
-call npm run dist -w apps/desktop -- -c.npmRebuild=false
-if errorlevel 1 goto fail
-if not exist "apps\desktop\release" goto fail
-if not exist "apps\desktop\dist\main\tunnelAgent.js" goto no_service_in_build
-echo [9/9] ok >> "%LOG%"
-if "%BUILD_WITH_CLIENT%"=="0" goto done_noclient
-if not exist "apps\desktop\release\win-unpacked\resources\wireguard\wireguard-go.exe" goto no_client_in_build
-if not exist "apps\desktop\release\win-unpacked\resources\wireguard\wintun.dll" goto no_client_in_build
-echo ==================================================
-echo  GOTOVO. Installyator sobran, klient tunnelya vnutri.
-echo  Nikakie sluzhby i prilozheniya WireGuard ne nuzhny.
-echo ==================================================
-dir apps\desktop\release\*.exe
-goto done
-:done_noclient
-echo ==================================================
-echo  Installyator sobran, NO BEZ vstroennogo klienta.
-echo  Knopka vklyucheniya v takoy sborke skazhet:
-echo  "Vstroennyy klient otsutstvuet v etoy sborke".
-echo  Publikovat takuyu sborku nelzya - sdelayte shagi 3 i 4.
-echo ==================================================
-dir apps\desktop\release\*.exe
-goto done
-:no_client_in_build
-echo V sobrannom prilozhenii net klienta ili drayvera:
-echo apps\desktop\release\win-unpacked\resources\wireguard
-echo Proverte extraResources v apps\desktop\electron-builder.yml
-goto fail
-:old_tree
-echo V etoy papke staraya versiya proekta: net sluzhebnogo komponenta tunnelya.
-echo Nuzhny faily:
-echo   apps\desktop\src\main\tunnelAgent.ts
-echo   apps\desktop\build\installer.nsh
-echo Raspakuyte svezhiy arhiv proekta i zapustite sborku iz nego.
-goto fail
-:no_service_in_build
-echo Komponent tunnelya ne skompilirovan: apps\desktop\dist\main\tunnelAgent.js
-echo Bez nego adapter trioz ne sozdaetsya bez prav administratora,
-echo i kazhdoe vklyuchenie budet prosit povysheniya prav.
-echo Proverte shag tsc v skripte build paketa apps/desktop.
-goto fail
-:no_root
-echo Ne nayden proekt ryadom s etim failom.
-echo Polozhite build-desktop.bat v koren proekta - tuda, gde lezhat
-echo package.json i papka apps, i zapustite snova.
-echo Tekushchaya papka skripta: %~dp0
-goto fail
-:no_node
-echo Ne nayden node ili npm v PATH.
-echo Ustanovite Node.js 20+ - https://nodejs.org/ - i otkroyte okno zanovo.
-goto fail
-:fail
-echo ==================================================
-echo  OSHIBKA SBORKI. Smotrite soobshcheniya vyshe.
-echo  Kratkiy log: %LOG%
-echo ==================================================
+if "%TZ_NOPAUSE%"=="1" goto finish
 echo Nazhmite lyubuyu klavishu, chtoby zakryt okno...
 pause >nul
-endlocal
-exit /b 1
-:done
-echo Nazhmite lyubuyu klavishu, chtoby zakryt okno...
-pause >nul
-endlocal
-exit /b 0
+:finish
+if not "%ERR%"=="" endlocal & exit /b 1
+endlocal & exit /b 0
