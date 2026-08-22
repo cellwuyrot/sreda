@@ -121,6 +121,12 @@ export default function AdminServersPage() {
   const [freshToken, setFreshToken] = useState<{ name: string; token: string } | null>(null);
   const [form, setForm] = useState({ name: "", role: "CHILD", kind: "APP", url: "", endpointHost: "", transport: "PLAIN", region: "", note: "" });
   const [creating, setCreating] = useState(false);
+  /* NODE-KEY: вставка ключа узла. Отдельно от формы: адрес, публичный ключ,
+     токен и одиннадцать параметров маскировки имеют смысл только целиком. */
+  const [nodeKey, setNodeKey] = useState("");
+  const [nodeKeyName, setNodeKeyName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState("");
   /* STORAGE-PRIORITY: сколько файлов где лежит и куда пойдут новые. */
   const [files, setFiles] = useState<StorageStats | null>(null);
   const [moving, setMoving] = useState(false);
@@ -175,6 +181,39 @@ export default function AdminServersPage() {
       setError("Ошибка сети");
     } finally {
       setCreating(false);
+    }
+  };
+
+  /**
+   * NODE-KEY: одна вставка вместо шести полей и встречного переноса токена.
+   *
+   * Разбор и проверки живут на сервере: ключ содержит токен агента, и ему
+   * нечего делать в логике браузера дальше отправки формы.
+   */
+  const importNodeKey = async () => {
+    const key = nodeKey.trim();
+    if (!key) { setError("Вставьте ключ узла"); return; }
+    setImporting(true);
+    try {
+      const res = await fetch("/api/admin/servers/import-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, name: nodeKeyName.trim() || undefined }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) { setError(data?.error || "Не удалось добавить узел по ключу"); return; }
+      setError("");
+      /* Ключ из поля убираем сразу: в нём токен, и оставлять его висеть на экране незачем. */
+      setNodeKey("");
+      setNodeKeyName("");
+      setImported(
+        `${data?.created ? "Узел добавлен" : "Узел обновлён"}: ${data?.node?.name ?? "узел"} · ${data?.node?.endpointHost ?? ""} · маскировка включена`,
+      );
+      await load();
+    } catch {
+      setError("Ошибка сети");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -282,6 +321,48 @@ export default function AdminServersPage() {
             </button>
           </div>
         )}
+
+        {/* ── NODE-KEY: добавление VPN-узла по ключу ── */}
+        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
+            Добавить узел по ключу{" "}
+            <InfoTooltip
+              side="bottom"
+              text="На узле запустите deploy/awg-node.sh — он поставит AmneziaWG и напечатает строку TRIOZ-NODE-… В ней адрес узла, его публичный ключ, токен агента и набор параметров маскировки. Вставьте её сюда — больше ничего заполнять не надо."
+            />
+          </h2>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
+            Строка содержит токен агента — передавайте её только защищённым каналом.
+            Повторная вставка ключа того же адреса обновляет узел, а не создаёт второй.
+          </p>
+          {imported && (
+            <p className="mt-2 rounded-lg bg-green-500/10 px-3 py-2 text-xs text-green-600 dark:text-green-400">{imported}</p>
+          )}
+          <textarea
+            value={nodeKey}
+            onChange={(e) => setNodeKey(e.target.value)}
+            rows={3}
+            spellCheck={false}
+            placeholder="TRIOZ-NODE-…"
+            className="mt-3 w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-900 dark:text-white outline-none focus:border-neutral-400 dark:focus:border-white/30"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Input
+              value={nodeKeyName}
+              onChange={(e) => setNodeKeyName(e.target.value)}
+              placeholder="Название (необязательно)"
+              className="max-w-xs"
+            />
+            <button
+              type="button"
+              onClick={() => void importNodeKey()}
+              disabled={importing || !nodeKey.trim()}
+              className="rounded-lg bg-neutral-900 dark:bg-white px-3 py-2 text-sm font-medium text-white dark:text-neutral-900 disabled:opacity-50"
+            >
+              {importing ? "Добавляю…" : "Добавить узел"}
+            </button>
+          </div>
+        </section>
 
         {/* ── Главный сервер ── */}
         <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">

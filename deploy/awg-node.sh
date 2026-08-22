@@ -298,6 +298,41 @@ install_awg() {
 install_awg
 
 # ---------------------------------------------------------------------------
+# 2.1 Каталог конфигов, который читает именно эта сборка awg-quick
+# ---------------------------------------------------------------------------
+# Сборки amneziawg-tools расходятся в пути: упстрим берёт /etc/amneziawg,
+# а сборки Amnezia — /etc/amnezia/amneziawg. Зашитый путь давал ровно ту ошибку,
+# что конфиг записан, а awg-quick его "does not exist". Спрашиваем сам скрипт
+# awg-quick и связываем каталоги символической ссылкой, а не копией: две копии конфига
+# разъедутся при следующем запуске, и выяснять, какая из них живая, придётся потом.
+align_conf_dir() {
+  local quick want
+  quick="$(command -v awg-quick || true)"
+  [ -n "$quick" ] || return 0
+  want="$(grep -oE "/etc/[A-Za-z/]*amneziawg" "$quick" 2>/dev/null | head -1)"
+  [ -n "$want" ] || return 0
+  [ "$want" = "$CONF_DIR" ] && return 0
+  say "Каталог конфигов"
+  info "awg-quick читает $want"
+  if [ -d "$want" ] && [ ! -L "$want" ]; then
+    # Каталог уже есть и не ссылка — работаем в нём, чтобы не трогать чужие файлы.
+    if [ -d "$CONF_DIR" ] && [ ! -L "$CONF_DIR" ]; then
+      cp -a "$CONF_DIR/." "$want/" 2>/dev/null || true
+      rm -rf "$CONF_DIR"
+      ln -sfn "$want" "$CONF_DIR"
+    fi
+    CONF_DIR="$want"
+  else
+    mkdir -p "$CONF_DIR" "$(dirname "$want")"
+    ln -sfn "$CONF_DIR" "$want"
+    info "$want -> $CONF_DIR (символическая ссылка)"
+  fi
+  KEY_PATH="$CONF_DIR/trioz-private.key"
+  CONF="$CONF_DIR/$IFACE.conf"
+}
+align_conf_dir
+
+# ---------------------------------------------------------------------------
 # 3. Ключ узла
 # ---------------------------------------------------------------------------
 mkdir -p "$CONF_DIR" "$STATE_DIR"
