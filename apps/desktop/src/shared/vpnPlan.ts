@@ -14,7 +14,7 @@
  * Node. Поэтому «кнопка Вкл» реально работает здесь, а браузер лишь показывает,
  * что подключение живёт в приложении.
  */
-
+​
 /**
  * Имя туннеля. Одно на приложение: на аккаунт работает ровно одно подключение
  * (сервер заменяет ключ при перевыпуске), поэтому и второй интерфейс не нужен.
@@ -25,16 +25,16 @@
  * службы `WireGuardTunnel$trioz`.
  */
 export const TUNNEL_NAME = "trioz";
-
+​
 /** Имя файла профиля. wg-quick и wireguard.exe выводят имя туннеля из него. */
 export const TUNNEL_CONF_FILE = `${TUNNEL_NAME}.conf`;
-
+​
 /** Состояние подключения, как его видит и оболочка, и веб-часть. */
 export type VpnConnState = "off" | "connecting" | "on" | "disconnecting" | "error";
-
+​
 /** Каким стеком поднят туннель: обычный WireGuard или обфусцированный AmneziaWG. */
 export type VpnBackend = "wireguard" | "amneziawg";
-
+​
 /** То, что main-процесс шлёт в renderer при каждом изменении состояния. */
 export interface VpnStatePayload {
   state: VpnConnState;
@@ -53,7 +53,7 @@ export interface VpnStatePayload {
    */
   embedded?: boolean;
 }
-
+​
 /**
  * Ключи секции `[Interface]`, которых у обычного WireGuard не бывает: их
  * добавляет только AmneziaWG для маскировки трафика. Их присутствие в профиле —
@@ -70,7 +70,7 @@ const OBFUSCATION_KEYS = new Set([
   "H1", "H2", "H3", "H4",
   "I1", "I2", "I3", "I4", "I5",
 ]);
-
+​
 /**
  * Обфусцирован ли профиль. Разбираем построчно и смотрим только имя ключа слева
  * от `=`: искать подстроки в тексте нельзя — «S1» мелькнёт в base64 любого
@@ -87,14 +87,14 @@ export function isObfuscatedConfig(config: string): boolean {
   }
   return false;
 }
-
+​
 /** Один вариант бинарника, которым можно поднять туннель. */
 export interface TunnelBackendCandidate {
   /** Базовое имя исполняемого файла (без пути); путь ищет main-процесс. */
   exe: string;
   backend: VpnBackend;
 }
-
+​
 /**
  * Кандидаты-бинарники в порядке приоритета для платформы и типа профиля.
  *
@@ -117,7 +117,7 @@ export function tunnelBackendCandidates(
     ? [{ exe: "awg-quick", backend: "amneziawg" }]
     : [{ exe: "wg-quick", backend: "wireguard" }];
 }
-
+​
 /**
  * Аргументы поднятия туннеля (без самого бинарника).
  *
@@ -132,7 +132,7 @@ export function tunnelUpArgs(platform: NodeJS.Platform, confPath: string): strin
   if (platform === "win32") return ["/installtunnelservice", confPath];
   return ["up", confPath];
 }
-
+​
 /**
  * Аргументы снятия туннеля.
  *
@@ -149,7 +149,7 @@ export function tunnelDownArgs(
   if (platform === "win32") return ["/uninstalltunnelservice", name];
   return ["down", confPath];
 }
-
+​
 /**
  * ELEVATE: как запустить `exe args…` с повышением прав на конкретной платформе.
  *
@@ -162,7 +162,7 @@ export interface ElevatedInvocation {
   file: string;
   args: string[];
 }
-
+​
 /** Дополнительные настройки запуска с повышением прав. */
 export interface ElevatedOptions {
   /**
@@ -176,22 +176,22 @@ export interface ElevatedOptions {
    */
   env?: Record<string, string>;
 }
-
+​
 /** Экранирование одинарных кавычек для одинарно-кавыченной строки PowerShell. */
 function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
-
+​
 /** Экранирование для строки внутри двойных кавычек AppleScript (`do shell script`). */
 function osaQuote(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
-
+​
 /** Одинарно-кавыченный аргумент POSIX-shell (для строки внутри osascript). */
 function shQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
-
+​
 export function elevatedInvocation(
   platform: NodeJS.Platform,
   exe: string,
@@ -199,17 +199,20 @@ export function elevatedInvocation(
   options: ElevatedOptions = {},
 ): ElevatedInvocation {
   const envPairs = Object.entries(options.env ?? {});
-
+​
   if (platform === "win32") {
     /* Start-Process -Verb RunAs поднимает окно UAC; -Wait + $p.ExitCode
-       пробрасывают код возврата, иначе ус��ех и провал выглядели бы одинаково.
-       ArgumentList — список одинарно-кавыченных строк через запятую. */
-    /* PowerShell reliably passes Start-Process arguments when they are an
-       explicit array literal. Without @(...), some versions parse the command
-       as a FilePath-only launch; wireguard.exe then starts with no arguments
-       and prints its Usage text instead of installing the tunnel service. */
-    const argList = args.map(psQuote).join(", ");
-    const startArgs = args.length ? ` -ArgumentList @(${argList})` : "";
+       пробрасывают код возврата, иначе успех и провал выглядели бы одинаково.
+​
+       ВАЖНО про -ArgumentList. PowerShell НЕ добавляет кавычки вокруг
+       элементов массива, содержащих пробелы: массив просто склеивается
+       пробелами. Путь профиля лежит в каталоге с пробелом
+       ("...\\TrioZ Connect\\vpn\\trioz.conf"), поэтому wireguard.exe получал
+       ЛИШНИЕ аргументы, считал вызов неверным и печатал свой текст
+       "Использование: ...". Поэтому список собираем как ОДНУ строку, в которой
+       каждый аргумент уже обёрнут в двойные кавычки. */
+    const quotedArgs = args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(" ");
+    const startArgs = args.length ? ` -ArgumentList ${psQuote(quotedArgs)}` : "";
     /* Start-Process наследует окружение текущего процесса PowerShell, поэтому
        достаточно выставить переменные перед вызовом. */
     const envPrefix = envPairs.map(([k, v]) => `$env:${k}=${psQuote(v)};`).join("");
@@ -223,7 +226,7 @@ export function elevatedInvocation(
       args: ["-NoProfile", "-NonInteractive", "-Command", script],
     };
   }
-
+​
   if (platform === "darwin") {
     /* osascript просит пароль администратора системным окном. Команда сначала
        собирается как POSIX-shell строка (аргументы в одинарных кавычках), затем
@@ -233,7 +236,7 @@ export function elevatedInvocation(
     const script = `do shell script "${osaQuote(command)}" with administrator privileges`;
     return { file: "osascript", args: ["-e", script] };
   }
-
+​
   /* Linux: pkexec принимает argv напрямую (без shell), поэтому кавычек не нужно.
      Но окружение он вычищает, так что переменные передаём через `env`. */
   if (envPairs.length) {
@@ -242,7 +245,7 @@ export function elevatedInvocation(
   }
   return { file: "pkexec", args: [exe, ...args] };
 }
-
+​
 /**
  * STATUS: аргументы к `wg`/`awg` для чтения времени последнего рукопожатия.
  *
@@ -259,7 +262,7 @@ export function handshakeQuery(
   const exe = platform === "win32" ? `${tool}.exe` : tool;
   return { exe, args: ["show", name, "latest-handshakes"] };
 }
-
+​
 /**
  * Максимальное время последнего рукопожатия (в секундах Unix) из вывода
  * `wg show … latest-handshakes`. Возвращает 0, если рукопожатий ещё не было или
@@ -275,7 +278,8 @@ export function parseLatestHandshake(output: string): number {
   }
   return max;
 }
-
+​
 /** Рукопожатие «свежее», если было не давнее этого окна (сек). Совпадает с
  *  порогом «туннель активен» в веб-части (3 минуты). */
 export const HANDSHAKE_FRESH_SECONDS = 180;
+​
