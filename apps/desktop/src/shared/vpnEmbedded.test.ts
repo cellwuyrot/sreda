@@ -237,10 +237,9 @@ describe("настройка интерфейса", () => {
 describe("раскладка встроенного клиента", () => {
   it("имена файлов совпадают с тем, что кладёт vendor-wireguard.mjs", () => {
     /* Расхождение здесь даёт сборку, в которой клиент есть, но «не найден». */
-    /* На Windows именно `wireguard-go.exe`, а НЕ официальный `wireguard.exe`:
-       тот ставит службу и открывает своё окно. */
-    expect(embeddedClientName("win32", "wireguard")).toBe("wireguard-go.exe");
-    expect(embeddedClientName("win32", "amneziawg")).toBe("amneziawg-go.exe");
+    /* На Windows используем официальный клиент wireguard-windows. */
+    expect(embeddedClientName("win32", "wireguard")).toBe("wireguard.exe");
+    expect(embeddedClientName("win32", "amneziawg")).toBe("amneziawg.exe");
     expect(embeddedClientName("linux", "wireguard")).toBe("wireguard-go");
     expect(embeddedClientName("darwin", "wireguard")).toBe("wireguard-go");
   });
