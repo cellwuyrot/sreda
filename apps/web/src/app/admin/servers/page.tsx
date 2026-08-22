@@ -425,9 +425,21 @@ export default function AdminServersPage() {
                       <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
                         Точка подключения: {node.endpointHost || "не задана — берётся из отчёта узла"}
                       </p>
-                      {/* FIX-NOAWG: тип один и менять его негде — обычный WireGuard. */}
+                      {/* FIX-AWG-ONLY: тип берём из записи узла, а не из зашитого текста.
+                          Прежняя строка осталась от версии без маскировки и врала на узле,
+                          где маскировка включена: администратор видел не то, что в базе. */}
                       <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
-                        Тип подключения: обычное подключение
+                        Тип подключения:{" "}
+                        {node.transport === "OBFUSCATED" ? (
+                          <span className="text-green-600 dark:text-green-400">
+                            AmneziaWG с маскировкой
+                            {node.hasObfuscation ? "" : " · параметры не заданы"}
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400">
+                            без маскировки — добавьте узел заново по ключу
+                          </span>
+                        )}
                       </p>
                       <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
                         Внешние адреса: {node.publicIps || "не заданы (общий выход узла)"}

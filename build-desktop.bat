@@ -1,6 +1,19 @@
 @echo off
 setlocal enableextensions
-title TZ Connect - build desktop
+title TZ Connect - build desktop (AmneziaWG)
+rem ==========================================================================
+rem  FIX-AWG-ONLY: sborka kladet v installyator TOLKO klient AmneziaWG.
+rem
+rem  Pochemu: uzly proekta podnimayut tolko AmneziaWG. Obychnyy wireguard.exe
+rem  profil s parametrami maskirovki podnimaet BEZ oshibki, no uzel takie
+rem  pakety otbrasyvaet - snaruzhi eto vyglyadit kak "tunnel est, interneta net".
+rem  Poetomu klient odin i on obyazatelen.
+rem
+rem  Gde vzyat amneziawg.exe:
+rem    1) ustanovite AmneziaWG for Windows (amneziawg-windows-client) -
+rem       skript sam skopiruet exe iz Program Files;
+rem    2) libo polozhite amneziawg.exe v C:\triozclient\win32 vruchnuyu.
+rem ==========================================================================
 set "ERR="
 set "HINT="
 set "LOG=%~dp0build-desktop.log"
@@ -10,6 +23,7 @@ if not exist "%ROOT%\apps\desktop\package.json" set "ROOT=%CD%"
 set "APPBUILDER_DIR=C:\appbuilder"
 set "CLIENT_ROOT=C:\triozclient"
 set "CLIENT_DIR=%CLIENT_ROOT%\win32"
+set "CLIENT_EXE=amneziawg.exe"
 set "USE_SYSTEM_APP_BUILDER=true"
 set "PATH=%APPBUILDER_DIR%;%PATH%"
 set "TRIOZ_CLIENT_SRC=%CLIENT_ROOT%"
@@ -21,6 +35,7 @@ if /i "%~1"=="noclient" set "ALLOW_NOCLIENT=1"
 echo TZ Connect build %DATE% %TIME% > "%LOG%"
 echo ==================================================
 echo  TZ Connect - sborka Windows-installyatora
+echo  VPN klient: AmneziaWG (%CLIENT_EXE%)
 echo  Log: %LOG%
 echo ==================================================
 rem [1/8] environment
@@ -52,18 +67,24 @@ if "%ERR%"=="" cd /d "%ROOT%"
 if "%ERR%"=="" if not exist "%APPBUILDER_DIR%\app-builder.exe" set "ERR=[2/8] ne udalos podgotovit app-builder.exe"
 if "%ERR%"=="" echo      ok : %APPBUILDER_DIR%\app-builder.exe
 if "%ERR%"=="" echo [2/8] ok >> "%LOG%"
-rem [3/8] official WireGuard for Windows
-if "%ERR%"=="" echo [3/8] wireguard.exe - official WireGuard for Windows
+rem [3/8] AmneziaWG client
+if "%ERR%"=="" echo [3/8] %CLIENT_EXE% - klient AmneziaWG dlya Windows
 if "%ERR%"=="" if not exist "%CLIENT_DIR%" mkdir "%CLIENT_DIR%"
-if "%ERR%"=="" if exist "%CLIENT_DIR%\wireguard.exe" set "WG_OK=1"
-if "%ERR%"=="" if "%WG_OK%"=="0" if exist "%ProgramFiles%\WireGuard\wireguard.exe" copy /y "%ProgramFiles%\WireGuard\wireguard.exe" "%CLIENT_DIR%\wireguard.exe" >nul
-if "%ERR%"=="" if exist "%CLIENT_DIR%\wireguard.exe" set "WG_OK=1"
-if "%WG_OK%"=="1" echo      ok : %CLIENT_DIR%\wireguard.exe
+if "%ERR%"=="" if exist "%CLIENT_DIR%\%CLIENT_EXE%" set "WG_OK=1"
+rem Ishchem uzhe ustanovlennyy klient v tipichnyh mestah ustanovki.
+if "%ERR%"=="" if "%WG_OK%"=="0" if exist "%ProgramFiles%\AmneziaWG\%CLIENT_EXE%" copy /y "%ProgramFiles%\AmneziaWG\%CLIENT_EXE%" "%CLIENT_DIR%\%CLIENT_EXE%" >nul
+if "%ERR%"=="" if "%WG_OK%"=="0" if exist "%ProgramFiles%\Amnezia\AmneziaWG\%CLIENT_EXE%" copy /y "%ProgramFiles%\Amnezia\AmneziaWG\%CLIENT_EXE%" "%CLIENT_DIR%\%CLIENT_EXE%" >nul
+if "%ERR%"=="" if "%WG_OK%"=="0" if exist "%ProgramFiles(x86)%\AmneziaWG\%CLIENT_EXE%" copy /y "%ProgramFiles(x86)%\AmneziaWG\%CLIENT_EXE%" "%CLIENT_DIR%\%CLIENT_EXE%" >nul
+if "%ERR%"=="" if "%WG_OK%"=="0" if exist "%LOCALAPPDATA%\Programs\AmneziaWG\%CLIENT_EXE%" copy /y "%LOCALAPPDATA%\Programs\AmneziaWG\%CLIENT_EXE%" "%CLIENT_DIR%\%CLIENT_EXE%" >nul
+rem Zapasnoy variant: exe polozhili v koren C:\triozclient bez podkataloga.
+if "%ERR%"=="" if "%WG_OK%"=="0" if exist "%CLIENT_ROOT%\%CLIENT_EXE%" copy /y "%CLIENT_ROOT%\%CLIENT_EXE%" "%CLIENT_DIR%\%CLIENT_EXE%" >nul
+if "%ERR%"=="" if exist "%CLIENT_DIR%\%CLIENT_EXE%" set "WG_OK=1"
+if "%WG_OK%"=="1" echo      ok : %CLIENT_DIR%\%CLIENT_EXE%
 if "%WG_OK%"=="1" echo [3/8] ok >> "%LOG%"
-if "%ERR%"=="" if "%WG_OK%"=="0" echo      NET: %CLIENT_DIR%\wireguard.exe
-if "%ERR%"=="" if "%WG_OK%"=="0" echo      Ustanovite WireGuard for Windows ili polozhite wireguard.exe v %CLIENT_DIR%
+if "%ERR%"=="" if "%WG_OK%"=="0" echo      NET: %CLIENT_DIR%\%CLIENT_EXE%
+if "%ERR%"=="" if "%WG_OK%"=="0" echo      Ustanovite AmneziaWG for Windows ili polozhite %CLIENT_EXE% v %CLIENT_DIR%
 if "%ERR%"=="" if "%WG_OK%"=="0" if "%ALLOW_NOCLIENT%"=="0" set "HINT=client"
-if "%ERR%"=="" if "%WG_OK%"=="0" if "%ALLOW_NOCLIENT%"=="0" set "ERR=[3/8] net wireguard.exe"
+if "%ERR%"=="" if "%WG_OK%"=="0" if "%ALLOW_NOCLIENT%"=="0" set "ERR=[3/8] net %CLIENT_EXE%"
 rem [4/8] dependencies
 if "%ERR%"=="" echo [4/8] Zavisimosti - npm install --ignore-scripts
 if "%ERR%"=="" echo      samyy dolgiy shag: 5-20 minut
@@ -95,13 +116,13 @@ if "%ERR%"=="" call npm run build:shared
 if "%ERR%"=="" if errorlevel 1 set "ERR=[6/8] ne sobralsya packages/shared"
 if "%ERR%"=="" echo [6/8] ok >> "%LOG%"
 rem [7/8] vendor client
-if "%ERR%"=="" echo [7/8] Ukladka wireguard.exe v resursy
+if "%ERR%"=="" echo [7/8] Ukladka %CLIENT_EXE% v resursy
 if "%ERR%"=="" if "%WG_OK%"=="1" call npm run vendor:client:strict -w apps/desktop
 if "%ERR%"=="" if "%WG_OK%"=="0" call npm run vendor:client -w apps/desktop
-if "%ERR%"=="" if errorlevel 1 set "ERR=[7/8] ne udalos ulozhit wireguard.exe v resursy"
-if "%ERR%"=="" if "%WG_OK%"=="1" if not exist "apps\desktop\resources\wireguard\win32\wireguard.exe" set "ERR=[7/8] wireguard.exe ne popal v resources\wireguard\win32"
+if "%ERR%"=="" if errorlevel 1 set "ERR=[7/8] ne udalos ulozhit %CLIENT_EXE% v resursy"
+if "%ERR%"=="" if "%WG_OK%"=="1" if not exist "apps\desktop\resources\wireguard\win32\%CLIENT_EXE%" set "ERR=[7/8] %CLIENT_EXE% ne popal v resources\wireguard\win32"
 if "%ERR%"=="" if "%WG_OK%"=="1" set "BUILD_WITH_CLIENT=1"
-if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" echo      ok : resources\wireguard\win32\wireguard.exe
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" echo      ok : resources\wireguard\win32\%CLIENT_EXE%
 if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="0" echo      VNIMANIE: sborka budet BEZ VPN klienta.
 if "%ERR%"=="" echo [7/8] ok >> "%LOG%"
 rem [8/8] installer
@@ -109,11 +130,11 @@ if "%ERR%"=="" echo [8/8] Sborka installyatora - electron-builder
 if "%ERR%"=="" call npm run dist -w apps/desktop -- -c.npmRebuild=false
 if "%ERR%"=="" if errorlevel 1 set "ERR=[8/8] electron-builder zavershilsya oshibkoy"
 if "%ERR%"=="" if not exist "apps\desktop\release" set "ERR=[8/8] net papki apps\desktop\release"
-if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" if not exist "apps\desktop\release\win-unpacked\resources\wireguard\wireguard.exe" set "ERR=[8/8] v sborke net wireguard.exe"
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" if not exist "apps\desktop\release\win-unpacked\resources\wireguard\%CLIENT_EXE%" set "ERR=[8/8] v sborke net %CLIENT_EXE%"
 if "%ERR%"=="" echo [8/8] ok >> "%LOG%"
 rem result
 echo ==================================================
-if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" echo  GOTOVO. Installyator sobran, official WireGuard vnutri.
+if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="1" echo  GOTOVO. Installyator sobran, klient AmneziaWG vnutri.
 if "%ERR%"=="" if "%BUILD_WITH_CLIENT%"=="0" echo  Installyator sobran, NO BEZ VPN klienta. Publikovat nelzya.
 if "%ERR%"=="" dir apps\desktop\release\*.exe
 if "%ERR%"=="" echo GOTOVO >> "%LOG%"
@@ -122,8 +143,9 @@ if not "%ERR%"=="" echo OSHIBKA: %ERR% >> "%LOG%"
 if "%HINT%"=="root" echo  Polozhite build-desktop.bat v koren proekta.
 if "%HINT%"=="node" echo  Ustanovite Node.js 20+ i otkroyte okno zanovo.
 if "%HINT%"=="tree" echo  Raspakuyte svezhiy arhiv proekta.
-if "%HINT%"=="client" echo  Nuzhen %CLIENT_DIR%\wireguard.exe. Prosche vsego ustanovit WireGuard for Windows.
-if "%HINT%"=="client" echo  Skript sam skopiruet C:\Program Files\WireGuard\wireguard.exe pri sleduyuschem zapuske.
+if "%HINT%"=="client" echo  Nuzhen %CLIENT_DIR%\%CLIENT_EXE% - klient AmneziaWG dlya Windows.
+if "%HINT%"=="client" echo  Ustanovite AmneziaWG for Windows: skript sam skopiruet exe pri sleduyuschem zapuske.
+if "%HINT%"=="client" echo  Obychnyy wireguard.exe NE podhodit: uzly rabotayut tolko s maskirovkoy.
 if "%HINT%"=="electron" echo  Electron ne skachalsya. Proverte set/proxy/antivirus.
 echo ==================================================
 if "%TZ_NOPAUSE%"=="1" goto finish
