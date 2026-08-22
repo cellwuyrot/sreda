@@ -1,36 +1,19 @@
 /**
- * VPN-EMBEDDED: менеджер туннеля со ВСТРОЕННЫМ клиентом.
+ * VPN-WINDOWS-OFFICIAL: менеджер туннеля.
  *
- * Что было до. С `VPN-ONECLICK` кнопка включения перестала отдавать файл-профиль и
- * стала поднимать туннель сама — но только при условии, что человек уже скачал и
- * установил СТОРОННИЙ клиент (WireGuard или AmneziaWG). Оболочка искала его
- * по PATH и в Program Files, а не найдя — предлагала установить. То есть «своего
- * лаунчера» у проекта не было: был пульт к чужому приложению.
+ * Windows больше не использует самописный бэкенд `wireguard-go + Wintun + netsh`.
+ * Вместо него в ресурсы сборки кладётся официальный `wireguard.exe` из проекта
+ * wireguard-windows, а включение вызывает:
  *
- * Что теперь. Клиент лежит внутри сборки (`resources/wireguard`), и туннель
- * поднимает именно он:
+ *   wireguard.exe /installtunnelservice <путь к trioz.conf>
  *
- *   • Linux/macOS — встроенный `wireguard-go` / `amneziawg-go`. Настройка идёт не
- *     через `wg`/`wg-quick` (это часть сторонних wireguard-tools), а по UAPI —
- *     собственным кодом в `vpnHelper.ts`.
- *   • Windows — точно так же: `wireguard-go.exe` + `wintun.dll` из ресурсов, адреса́,
- *     маршруты и DNS — штатным `netsh`.
+ * Официальный клиент сам создаёт службу `WireGuardTunnel$trioz`, WireGuardNT-
+ * адаптер, назначает адреса/DNS, сохраняет маршрут до endpoint и применяет
+ * full-tunnel (`0.0.0.0/1`, `128.0.0.0/1`) тем способом, которым это делает
+ * WireGuard for Windows.
  *
- * Почему на Windows НЕ используется официальный `wireguard.exe`. Сначала он и
- * был взят в ресурсы — и кнопка включения падала с «The specified service does not
- * exist as an installed service», а иногда вместо туннеля открывалось ОКНО WireGuard.
- * Причина не в правах: `wireguard.exe /installtunnelservice` — не автономный
- * туннель, а запрос к службе-менеджеру, которая появляется только при установке
- * стороннего продукта; любой непонятный ему аргумент он понимает как «покажи окно».
- * `wireguard-go.exe` — обычный дочерний процесс без служб и без окон.
- *
- * Системный клиент остался только как ЗАПАСНОЙ вариант для разработчика (в дереве
- * исходников бинарников нет, их раскладывает шаг сборки). В собранном
- * приложении человеку ничего доставать не нужно.
- *
- * Вся ошибкоопасная арифметика (разбор профиля, UAPI, команды маршрутизации,
- * экранирование при повышении прав) живёт в чистых `shared/vpnPlan.ts` и
- * `shared/vpnEmbedded.ts` и закрыта тестами; здесь — только побочные эффекты.
+ * Linux/macOS пока остаются на прежнем встроенном helper (`wireguard-go` через
+ * UAPI), потому что wireguard-windows относится только к Windows.
  */
 
 import { app } from "electron";
@@ -291,9 +274,10 @@ function readServiceFile(name: string): string | null {
  * через разовое повышение прав, чтобы не остаться вообще без VPN.
  */
 function serviceAvailable(): boolean {
-  const raw = readServiceFile(AGENT_FILE);
-  if (raw === null) return false;
-  return isAgentAlive(parseHeartbeat(raw), Date.now());
+  /* Windows теперь использует официальный wireguard.exe /installtunnelservice.
+     Старый служебный компонент TrioZ с vpnHelper/wireguard-go больше не нужен
+     для WireGuardNT и намеренно отключён. */
+  return false;
 }
 
 /**
@@ -496,11 +480,19 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
       activeMode = "service";
       await serviceSend("up", config);
     } else if (embedded) {
-      /* Запасной путь: сборка без служебного компонента. Тогда работник
-         запускается через разовое повышение прав — как до этой правки. */
       activeExe = embedded;
-      activeMode = "embedded";
-      await runHelperElevated(["up", confPath, embedded]);
+      if (process.platform === "win32") {
+        /* На Windows больше не поднимаем wireguard-go + Wintun своим кодом.
+           Используем официальный wireguard-windows: /installtunnelservice сам
+           создаёт службу WireGuardTunnel$trioz, WireGuardNT-адаптер, адреса,
+           DNS, endpoint-exclude и full-tunnel маршруты. */
+        activeMode = "system";
+        await runElevated(embedded, tunnelUpArgs(process.platform, confPath));
+      } else {
+        /* Linux/macOS по-прежнему используют встроенный wireguard-go helper. */
+        activeMode = "embedded";
+        await runHelperElevated(["up", confPath, embedded]);
+      }
     } else {
       /* Запасной путь только для дерева исходников без вендоренных бинарников:
          в установленном приложении сюда не попадают. */
