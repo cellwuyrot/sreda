@@ -148,8 +148,9 @@ export function wintunSearchDirs(env: Record<string, string | undefined>): strin
  * `wg`, `wg-quick` и `wireguard.exe`.
  */
 export function embeddedClientName(platform: NodeJS.Platform, backend: VpnBackend): string {
+  if (platform === "win32") return backend === "amneziawg" ? "amneziawg.exe" : "wireguard.exe";
   const base = backend === "amneziawg" ? "amneziawg-go" : "wireguard-go";
-  return platform === "win32" ? `${base}.exe` : base;
+  return base;
 }
 
 /* ────────────────────────── Разбор профиля ────────────────────────── */
