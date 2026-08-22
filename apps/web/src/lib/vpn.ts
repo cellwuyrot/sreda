@@ -3,7 +3,7 @@ import { hasPremium } from "@/lib/premium";
 /* VPN-PLAN: отдельная подписка, которая даёт только туннель. */
 import { hasActiveVpnPlan } from "@/lib/vpnPlan";
 /* FIX-AWG: единая проверка параметров маскировки — и для панели, и для выдачи профиля. */
-import { awgProblem } from "@/lib/awgParams";
+import { AWG_LIMITS, awgProblem } from "@/lib/awgParams";
 
 /**
  * VPN-WG: серверная часть выдачи доступа к WireGuard.
@@ -375,15 +375,10 @@ export function isTransport(value: unknown): value is Transport {
 }
 
 /** Числовые параметры и их допустимые границы — по спецификации форка. */
-const NUMERIC_BOUNDS: Record<string, [number, number]> = {
-  Jc: [0, 10],
-  Jmin: [0, 1280],
-  Jmax: [0, 1280],
-  S1: [0, 64],
-  S2: [0, 64],
-  S3: [0, 64],
-  S4: [0, 32],
-};
+const NUMERIC_KEYS = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4"] as const;
+const NUMERIC_BOUNDS: Record<string, [number, number]> = Object.fromEntries(
+  NUMERIC_KEYS.map((key) => [key, [AWG_LIMITS[key].min, AWG_LIMITS[key].max]]),
+) as Record<string, [number, number]>;
 /** Заголовки: одно число или диапазон «x-y». */
 const HEADER_KEYS = ["H1", "H2", "H3", "H4"] as const;
 /** Пакеты-подписи: произвольные строки, отдаём как есть. */
