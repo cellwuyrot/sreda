@@ -31,6 +31,7 @@ import {
   isObfuscatedConfig,
   parseLatestHandshake,
   TUNNEL_CONF_FILE,
+  TUNNEL_NAME,
   tunnelBackendCandidates,
   tunnelDownArgs,
   tunnelUpArgs,
@@ -240,6 +241,66 @@ async function embeddedHandshake(): Promise<"fresh" | "silent" | "unknown"> {
   }
 }
 
+/**
+ * WINDOWS-STATUS: состояние туннеля у официального WireGuard for Windows.
+ *
+ * Почему не `wg show`: на Windows канал управления туннеля принадлежит
+ * службе и закрыт обычному пользователю, а самого `wg.exe` в сборке нет.
+ * Раньше это давало ЛОЖНУЮ ошибку «туннель поднят, но связи нет»: вызов
+ * `wg` просто не удавался, и проверка считала это отсутствием рукопожатия.
+ *
+ * Поэтому смотрим на то, что доступно без прав: жива ли служба
+ * `WireGuardTunnel$trioz` и поднят ли её адаптер. Служба сама останавливается,
+ * если профиль неверный или адаптер не создался.
+ */
+async function windowsServiceHandshake(): Promise<"fresh" | "silent" | "unknown"> {
+  try {
+    /* FIX-AWG-ONLY: имя службы зависит от клиента: форк AmneziaWG регистрирует
+       AmneziaWGTunnel$<имя>. Проверяем оба имени, а не одно: привязка к одному
+       имени давала бы ложное «туннель не поднят» на работающем туннеле — тот самый
+       сорт ошибки, из-за которой приложение раньше ругалось на исправный узел. */
+    const names = [`AmneziaWGTunnel$${TUNNEL_NAME}`, `WireGuardTunnel$${TUNNEL_NAME}`];
+    let running = false;
+    for (const name of names) {
+      try {
+        const { stdout } = await run("sc.exe", ["query", name], {
+          windowsHide: true,
+          timeout: 10_000,
+        });
+        if (/RUNNING/i.test(stdout)) {
+          running = true;
+          break;
+        }
+      } catch {
+        /* Службы с таким именем нет — пробуем следующее. */
+      }
+    }
+    if (!running) return "silent";
+  } catch {
+    return "silent";
+  }
+  /* Служба жива. Дополнительно убеждаемся, что адаптер в состоянии Up:
+     так ловится случай «служба есть, а сетевого устройства нет». */
+  try {
+    const { stdout } = await run(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `(Get-NetAdapter -Name '${TUNNEL_NAME}' -ErrorAction SilentlyContinue).Status`,
+      ],
+      { windowsHide: true, timeout: 15_000 },
+    );
+    if (/Up/i.test(stdout)) return "fresh";
+    if (stdout.trim() === "") return "unknown";
+    return "silent";
+  } catch {
+    /* Не смогли спросить адаптер, но служба работает — считаем туннель живым. */
+    return "fresh";
+  }
+}
+
 /** Состояние связи у системного клиента (запасной путь разработчика). */
 async function systemHandshake(backend: VpnBackend): Promise<"fresh" | "silent" | "unknown"> {
   const q = handshakeQuery(process.platform, backend);
@@ -361,7 +422,9 @@ function startStatusPolling(
         ? serviceHandshake()
         : mode === "embedded"
           ? await embeddedHandshake()
-          : await systemHandshake(backend);
+          : process.platform === "win32"
+            ? await windowsServiceHandshake()
+            : await systemHandshake(backend);
     if (current.state !== "connecting" && current.state !== "on") return;
 
     if (result === "fresh") {

@@ -19,14 +19,13 @@
  *   npm run vendor:client -- --allow-missing   # пропустить (для dev-сборок без туннеля)
  *
  * Ожидаемые имена в каталоге-источнике (совпадают с embeddedClientName()):
- *   win32  — wireguard.exe
- *   darwin — wireguard-go
- *   linux  — wireguard-go
+ *   win32  — amneziawg.exe   (сборка amneziawg-windows-client)
+ *   darwin — amneziawg-go
+ *   linux  — amneziawg-go
  *
- * Утилита `wg` в списке больше не нужна: туннель настраивается через UAPI нашим
- * же кодом. На Windows теперь берётся официальный `wireguard.exe` из проекта
- * wireguard-windows: он сам ставит службу WireGuardTunnel$<name> и применяет
- * корректную full-tunnel маршрутизацию через WireGuardNT.
+ * FIX-AWG-ONLY: обычный wireguard.exe больше не берётся. На Windows amneziawg.exe —
+ * тот же официальный клиент WireGuard с поддержкой маскировки: он ставит
+ * службу туннеля и применяет корректную full-tunnel маршрутизацию сам.
  */
 
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -41,25 +40,21 @@ const appDir = resolve(here, "..");
  * сетевого устройства, без которого клиент не создаст интерфейс.
  */
 const LAYOUT = {
-  win32: ["wireguard.exe"],
-  darwin: ["wireguard-go"],
-  linux: ["wireguard-go"],
-};
-
-/**
- * FIX-BACKEND: клиент устойчивого к блокировкам режима (AmneziaWG).
- *
- * Он нужен ТОЛЬКО для узлов с маскировкой, поэтому его отсутствие не должно
- * ронять сборку. Но и молчать нельзя: раньше этот файл не копировался вообще,
- * и профиль с параметрами маскировки поднимался обычным клиентом. Узел такое
- * рукопожатие молча отбрасывает — со стороны это выглядело как «туннель поднят,
- * а узел не ответил», хотя сервер был жив и профиль верен.
- */
-const OPTIONAL_LAYOUT = {
-  win32: ["amneziawg-go.exe"],
+  win32: ["amneziawg.exe"],
   darwin: ["amneziawg-go"],
   linux: ["amneziawg-go"],
 };
+
+/**
+ * FIX-AWG-ONLY: обычный WireGuard больше не укладывается в сборку.
+ *
+ * Необязательных бинарников тоже не осталось: раньше клиент маскировки был
+ * «по возможности», и сборка без него собиралась молча — а потом профиль с
+ * параметрами маскировки поднимался обычным клиентом, узел отбрасывал такие
+ * пакеты, и со стороны это выглядело как «туннель есть, интернета нет».
+ * Теперь клиент один и он обязателен.
+ */
+const OPTIONAL_LAYOUT = {};
 
 const args = process.argv.slice(2);
 const allowMissing = args.includes("--allow-missing");
