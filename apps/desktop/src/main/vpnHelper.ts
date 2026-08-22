@@ -52,6 +52,7 @@ import {
   parseUapiHandshake,
   parseWgConfig,
   routesEverything,
+  tunnelGatewayIp,
   uapiSetRequest,
   uapiSocketPath,
 } from "../shared/vpnEmbedded";
@@ -364,11 +365,42 @@ function probeThroughTunnel(server: string): void {
   }
 }
 
+/**
+ * FIX-PROBEGW: проба до второго конца туннеля — единственный адрес, который
+ * гарантированно идёт в туннель при ЛЮБОМ режиме маршрутизации.
+ *
+ * Ответ на эхо-запрос — самодостаточное доказательство: пакет ушёл внутрь
+ * туннеля, узел его расшифровал и ответил, ответ вернулся и был расшифрован.
+ *
+ * Код возврата `ping` в Windows ненадёжен: при полной потере пакетов он
+ * бывает нулёвым, поэтому смотрим на признак настоящего ответа — `TTL`.
+ */
+function pingProbe(target: string): boolean {
+  const command =
+    process.platform === "win32"
+      ? ["ping", "-n", "1", "-w", "1500", target]
+      : ["ping", "-c", "1", "-W", "2", target];
+  const [file, ...args] = command;
+  if (!file) return false;
+  try {
+    const result = spawnSync(file, args, { timeout: 5_000 });
+    const text = `${decodeConsole(result.stdout)} ${decodeConsole(result.stderr)}`
+      .replace(/\s+/g, " ")
+      .trim();
+    const answered = /ttl[=\s]*\d+/i.test(text);
+    logSetup(`проба ${file} ${args.join(" ")} -> код ${result.status ?? "?"} | ответ: ${answered ? "есть" : "нет"}`);
+    return answered;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForTraffic(
   path: string,
   timeoutMs: number,
   baseline: number,
   probeServers: string[],
+  gateway: string | null,
 ): Promise<boolean> {
   const start = baseline >= 0 ? baseline : await readRx(path);
   const deadline = Date.now() + timeoutMs;
@@ -379,6 +411,9 @@ async function waitForTraffic(
     /* Раз в полторы секунды подталкиваем туннель своим запросом. */
     if (tick % 3 === 0) {
       for (const server of probeServers.slice(0, 2)) probeThroughTunnel(server);
+      /* FIX-PROBEGW: главная проба — сам узел туннеля. Он внутри туннеля в обоих
+         режимах, в отличие от сервера имён. */
+      if (gateway && pingProbe(gateway)) return true;
     }
     tick += 1;
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -618,7 +653,7 @@ async function up(confPath: string, clientPath: string): Promise<void> {
       /* Клиент не должен уходить в фон сам: тогда наш PID указывал бы на уже
          завершившийся процесс-родитель, и выключение туннеля никого не снимало. */
       WG_PROCESS_FOREGROUND: "1",
-      /* Подробный журнал — он и объясняет отказы создания адаптера. */
+      /* Подробный журнал — о�� и объясняет отказы создания адаптера. */
       LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
       ...(extraPathDir
         ? { PATH: `${extraPathDir};${process.env.PATH ?? ""}` }
@@ -732,7 +767,11 @@ async function up(confPath: string, clientPath: string): Promise<void> {
      без возможности даже открыть приложение, чтобы выключить VPN. Откат
      полный — `down` снимает маршруты, DNS, маршрут-исключение и самого
      клиента, то есть состояние сети возвращается к допусковому. */
-  if (!(await waitForTraffic(socketPath, 25_000, trafficBaseline, parsed.dns))) {
+  /* FIX-PROBEGW: в режиме «только приложение» сервер имён из профиля в туннель НЕ
+     идёт, поэтому спрашивать его бессмысленно — проба уйдёт мимо и проверка
+     гарантированно соврёт. Спрашиваем узел туннеля. */
+  const gateway = tunnelGatewayIp(parsed);
+  if (!(await waitForTraffic(socketPath, 25_000, trafficBaseline, routeAll ? parsed.dns : [], gateway))) {
     down(dirname(confPath), true);
     fail(
       "Узел ответил на рукопожатие, но обратный трафик через туннель не пошёл. " +
