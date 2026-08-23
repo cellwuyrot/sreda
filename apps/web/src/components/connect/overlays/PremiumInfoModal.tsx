@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
-import { deviceKeyPair, forgetDeviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
+import { deviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
 import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
@@ -377,38 +377,12 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  /* Полный отзыв доступа: снять туннель и удалить пира на сервере. Нужен, когда
-     человек уходит с устройства насовсем; обычное «выключить» запись о доступе
-     не трогает, чтобы включить снова можно было одной кнопкой. */
-  const revoke = async () => {
-    setBusy(true);
-    try {
-      const bridge = getDesktopApi()?.vpn;
-      if (bridge) {
-        try {
-          const st = await bridge.down();
-          setTunnel(st);
-        } catch {
-          /* туннель мог быть уже снят — отзыву это не мешает */
-        }
-      }
-      const res = await fetch("/api/vpn/me", { method: "DELETE" });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error || "Не удалось отключить доступ");
-        return;
-      }
-      /* FIX-KEYSTICK: запись пира удалена на сервере — держать её ключ на устройстве
-         больше незачем: следующее включение честно выдаст новую пару. */
-      forgetDeviceKeyPair();
-      setError("");
-      await refresh();
-    } catch {
-      setError("Ошибка сети");
-    } finally {
-      setBusy(false);
-    }
-  };
+  /* FIX-AWG-ONLY: кнопка «Отключить и удалить доступ на этом аккаунте» убрана
+     вместе с функцией revoke. Она путала и вредила: обычное выключение и так
+     снимает туннель, а эта кнопка вдобавок удаляла пира на узле и ключ
+     устройства, после чего следующее включение требовало полной перевыдачи
+     доступа и легко ловило лимит запросов (10 в час). Сам эндпоинт
+     DELETE /api/vpn/me оставлен: он нужен админской отвязке и удалению аккаунта. */
 
   useEffect(() => {
     let cancelled = false;
@@ -722,17 +696,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           )
         )}
 
-        {/* Полный отзыв доступа — вторично: обычное «выключить» доступ не трогает. */}
-        {state?.peer && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void revoke()}
-            className="mt-3 w-full text-center text-[11px] text-neutral-400 underline-offset-2 transition hover:text-neutral-600 hover:underline disabled:opacity-50 dark:text-white/35 dark:hover:text-white/60"
-          >
-            Отключить и удалить доступ на этом аккаунте
-          </button>
-        )}
       </div>
     </div>
   );
