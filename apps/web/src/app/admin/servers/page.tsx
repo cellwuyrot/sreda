@@ -119,7 +119,7 @@ export default function AdminServersPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   /** Токен, выданный только что: живёт до перезагрузки списка. */
   const [freshToken, setFreshToken] = useState<{ name: string; token: string } | null>(null);
-  const [form, setForm] = useState({ name: "", role: "CHILD", kind: "APP", url: "", endpointHost: "", transport: "PLAIN", region: "", note: "" });
+  const [form, setForm] = useState({ name: "", role: "CHILD", kind: "APP", url: "", endpointHost: "", transport: "OBFUSCATED", region: "", note: "" });
   const [creating, setCreating] = useState(false);
   /* NODE-KEY: вставка ключа узла. Отдельно от формы: адрес, публичный ключ,
      токен и одиннадцать параметров маскировки имеют смысл только целиком. */
@@ -175,7 +175,7 @@ export default function AdminServersPage() {
       if (!res.ok) { setError(data?.error || "Не удалось добавить узел"); return; }
       setError("");
       if (data?.token) setFreshToken({ name: form.name.trim(), token: data.token });
-      setForm({ name: "", role: "CHILD", kind: "APP", url: "", endpointHost: "", transport: "PLAIN", region: "", note: "" });
+      setForm({ name: "", role: "CHILD", kind: "APP", url: "", endpointHost: "", transport: "OBFUSCATED", region: "", note: "" });
       await load();
     } catch {
       setError("Ошибка сети");
@@ -426,15 +426,16 @@ export default function AdminServersPage() {
                         Точка подключения: {node.endpointHost || "не задана — берётся из отчёта узла"}
                       </p>
                       <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
-                        Тип подключения:{" "}
-                        {node.transport === "OBFUSCATED" ? (
-                          <span className="text-green-600 dark:text-green-400">
-                            AmneziaWG с маскировкой
-                            {node.hasObfuscation ? "" : " · параметры не заданы"}
-                          </span>
+                        {/* FIX-AWG-ONLY: выбора типа подключения больше нет: узлы всегда
+                            маскированные. Важно другое — пришли ли с узла его параметры
+                            маскировки (Jc/S1/H1…). Без них клиент получит пустой профиль и
+                            увидит «туннель поднят, связи нет». */}
+                        Маскировка:{" "}
+                        {node.hasObfuscation ? (
+                          <span className="text-green-600 dark:text-green-400">параметры получены с узла</span>
                         ) : (
                           <span className="text-amber-600 dark:text-amber-400">
-                            без маскировки — добавьте узел заново по ключу
+                            параметров нет — вставьте ключ узла TRIOZ-NODE-… выше
                           </span>
                         )}
                       </p>
