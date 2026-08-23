@@ -757,7 +757,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function PremiumInfoModalexport default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }: { isPremium: boolean; onClose: () => void; onOpenSettings?: () => void }) {
+export default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }: { isPremium: boolean; onClose: () => void; onOpenSettings?: () => void }) {
   /* VPN-PLAN: раньше панель с тумблером открывалась только при isPremium,
      и подписчик «только VPN» видел витрину Premium — включить VPN было негде.
 
