@@ -32,8 +32,15 @@ export const TUNNEL_CONF_FILE = `${TUNNEL_NAME}.conf`;
 /** Состояние подключения, как его видит и оболочка, и веб-часть. */
 export type VpnConnState = "off" | "connecting" | "on" | "disconnecting" | "error";
 
-/** Каким стеком поднят туннель: обычный WireGuard или обфусцированный AmneziaWG. */
-export type VpnBackend = "wireguard" | "amneziawg";
+/**
+ * FIX-AWG-ONLY: стек всегда один — AmneziaWG.
+ *
+ * Значение "wireguard" убрано из типа, а не просто перестало использоваться:
+ * пока оно существовало, любая ветка кода могла тихо выбрать обычный
+ * WireGuard, а маскированный узел такое рукопожатие отбрасывает без всякой
+ * ошибки. Теперь такая ветка даже не скомпилируется.
+ */
+export type VpnBackend = "amneziawg";
 
 /** То, что main-процесс шлёт в renderer при каждом изменении состояния. */
 export interface VpnStatePayload {
@@ -54,39 +61,12 @@ export interface VpnStatePayload {
   embedded?: boolean;
 }
 
-/**
- * Ключи секции `[Interface]`, которых у обычного WireGuard не бывает: их
- * добавляет только AmneziaWG для маскировки трафика. Их присутствие в профиле —
- * единственный признак, по которому клиент понимает, что поднимать туннель надо
- * обфусцированным стеком (`awg-quick` / `amneziawg.exe`), а не обычным.
- *
- * Список совпадает с тем, что читает агент узла (`apps/vpn/src/index.mjs`,
- * `PARAM_KEYS`) и что вписывает в профиль веб-часть (`lib/wgKeys.ts`,
- * `EXTRA_ORDER`) — три места обязаны держать один набор.
- */
-const OBFUSCATION_KEYS = new Set([
-  "Jc", "Jmin", "Jmax",
-  "S1", "S2", "S3", "S4",
-  "H1", "H2", "H3", "H4",
-  "I1", "I2", "I3", "I4", "I5",
-]);
-
-/**
- * Обфусцирован ли профиль. Разбираем построчно и смотрим только имя ключа слева
- * от `=`: искать подстроки в тексте нельзя — «S1» мелькнёт в base64 любого
- * ключа, и обычный профиль ошибочно поехал бы на AmneziaWG.
- */
-export function isObfuscatedConfig(config: string): boolean {
-  for (const rawLine of config.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#") || line.startsWith("[")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    if (OBFUSCATION_KEYS.has(key)) return true;
-  }
-  return false;
-}
+/* FIX-AWG-ONLY: функция isObfuscatedConfig и набор OBFUSCATION_KEYS удалены.
+   Они служили ровно одному — выбору между обычным WireGuard и AmneziaWG по
+   содержимому профиля. Именно этот выбор и был поломкой: если панель по
+   любой причине выдавала профиль без Jc/S1/H1, клиент брал обычный стек и
+   молча не договаривался с узлом. Разбор профиля теперь живёт в
+   `vpnProfile.ts` и нужен только для проверки целостности. */
 
 /** Один вариант бинарника, которым можно поднять туннель. */
 export interface TunnelBackendCandidate {
@@ -103,20 +83,13 @@ export interface TunnelBackendCandidate {
  * честная ошибка «поставьте AmneziaWG», чем молчаливый обычный туннель вместо
  * маскированного.
  */
-export function tunnelBackendCandidates(
-  platform: NodeJS.Platform,
-  obfuscated: boolean,
-): TunnelBackendCandidate[] {
-  /* FIX-AWG-ONLY: обычный WireGuard из клиента убран. Он не «второй вариант
-     на случай чего-то»: узлы проекта поднимают только AmneziaWG, и попытка
-     подключиться к ним обычным клиентом заканчивается ровно тем, на что
-     жаловались, — рукопожатие проходит, трафик не идёт, ошибки нет. Один
-     работающий путь честнее двух, из которых один молча ломается.
-
-     Признак `obfuscated` оставлен в подписи: профиль без параметров маскировки
-     (все нули) AmneziaWG поднимает как обычный WireGuard сам, и отдельный
-     бинарник для этого не нужен. */
-  void obfuscated;
+export function tunnelBackendCandidates(platform: NodeJS.Platform): TunnelBackendCandidate[] {
+  /* FIX-AWG-ONLY: обычный WireGuard из клиента убран. Он не «второй вариант на
+     случай чего-то»: узлы проекта поднимают только AmneziaWG, и попытка
+     подключиться обычным клиентом заканчивается ровно тем, на что
+     жаловались: адаптер есть, трафика нет, ошибки нет. Аргумент obfuscated
+     убран совсем: профиль без параметров маскировки AmneziaWG поднимает как
+     обычный WireGuard сам, отдельный бинарник для этого не нужен. */
   if (platform === "win32") return [{ exe: "amneziawg.exe", backend: "amneziawg" }];
   // Linux и macOS: инструменты из amneziawg-tools.
   return [{ exe: "awg-quick", backend: "amneziawg" }];
@@ -262,7 +235,9 @@ export function handshakeQuery(
   backend: VpnBackend,
   name: string = TUNNEL_NAME,
 ): { exe: string; args: string[] } {
-  const tool = backend === "amneziawg" ? "awg" : "wg";
+  /* FIX-AWG-ONLY: состояние читается только инструментом awg. */
+  void backend;
+  const tool = "awg";
   const exe = platform === "win32" ? `${tool}.exe` : tool;
   return { exe, args: ["show", name, "latest-handshakes"] };
 }
