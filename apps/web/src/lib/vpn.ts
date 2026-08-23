@@ -367,11 +367,15 @@ export async function pickVpnNode(maxPeersPerNode?: number) {
  * узла они одинаковые. Отсюда и место хранения — карточка узла.
  */
 
-export const TRANSPORTS = ["PLAIN", "OBFUSCATED"] as const;
+/* FIX-AWG-ONLY: тип подключения больше не выбирается: узлы проекта всегда
+   маслируют трафик (AmneziaWG). Значение "PLAIN" убрано не для порядка:
+   именно оно было значением по умолчанию, и такой узел выдавал профиль без
+   Jc/S1/H1, а сервер молча отбрасывал рукопожатия такого клиента. */
+export const TRANSPORTS = ["OBFUSCATED"] as const;
 export type Transport = (typeof TRANSPORTS)[number];
 
 export function isTransport(value: unknown): value is Transport {
-  return value === "PLAIN" || value === "OBFUSCATED";
+  return value === "OBFUSCATED";
 }
 
 /** Числовые параметры и их допустимые границы — по спецификации форка. */
@@ -464,8 +468,8 @@ export function nodeTunnel(node: {
   return {
     publicKey: reported.publicKey,
     endpoint: normalizeWgEndpoint(node.endpointHost) || reported.endpoint,
-    /* FIX-AWG-ONLY: параметры маскировки выдаются, когда узел объявлен
-       маскированным.
+    /* FIX-AWG-ONLY: параметры маскировки выдаются всегда, когда узел их
+       прислал в отчёте.
 
        Раньше здесь стояла заглушка (FIX-NOAWG): маскировка не выдавалась
        никогда, потому что на узле не было работающего awg-интерфейса, и профиль
@@ -474,10 +478,11 @@ export function nodeTunnel(node: {
        заглушка стала прямо противоположной проблемой: маскированный узел
        получал обычные профили и молча отбрасывал рукопожатия.
 
-       Условие по transport обязательно: на обычном узле лишние строки в профиле
-       сломали бы подключение так же молча, только в другую сторону. */
-    obfuscation:
-      node.transport === "OBFUSCATED" ? parseObfuscation(node.obfuscation) : null,
+       Проверки по полю transport больше нет нарочно: узлы бывают только
+       маскированные, а старые записи с transport = "PLAIN" иначе навечно остались
+       бы без маскировки. Единственный критерий — прислал ли узел годные
+       параметры: негодные parseObfuscation отбросит сам. */
+    obfuscation: parseObfuscation(node.obfuscation),
   };
 }
 
