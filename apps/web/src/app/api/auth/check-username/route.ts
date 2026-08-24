@@ -13,7 +13,9 @@ import { rateLimit } from "@/lib/rateLimit";
 import { checkUsername, checkEmail } from "@/lib/registerValidation";
 
 export async function GET(req: NextRequest) {
-	const limited = rateLimit(req, "auth-check-username", { limit: 90, windowMs: 60 * 60 * 1000 });
+	/* rateLimit — асинхронная (счётчик живёт в Redis), без await здесь возвращался
+	   Promise, а не ответ — и лимит вообще не работал. */
+	const limited = await rateLimit(req, "auth-check-username", { limit: 90, windowMs: 60 * 60 * 1000 });
 	if (limited) return limited;
 
 	const url = new URL(req.url);
