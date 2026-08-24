@@ -385,8 +385,11 @@ export default function DesignPanel({ groupId, theme, onSaved }: Props) {
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 
+	/* Любая правка сразу включает оформление. Раньше можно было собрать тему,
+	   нажать «Сохранить» и не увидеть ничего: верхний тумблер оставался выключенным.
+	   Выключить тему по-прежнему можно — тем же тумблером или кнопкой сброса. */
 	const patch = (p: Partial<GroupTheme>) => {
-		setDraft((d) => ({ ...d, ...p, preset: "custom" }));
+		setDraft((d) => ({ ...d, ...p, preset: "custom", enabled: true }));
 		setSaved(false);
 	};
 
@@ -446,7 +449,7 @@ export default function DesignPanel({ groupId, theme, onSaved }: Props) {
 							type="button"
 							title={p.hint}
 							onClick={() => {
-								setDraft(p.build());
+								setDraft({ ...p.build(), enabled: true });
 								setSaved(false);
 							}}
 							className={`rounded-xl border p-2 text-left transition ${
