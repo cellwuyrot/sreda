@@ -29,6 +29,8 @@ export interface GroupDetail {
   icon: string | null;
   description: string;
   banner?: string | null;
+  /** GROUP-SKIN: оформление сообщества (JSON, см. lib/groupTheme.ts) */
+  theme?: string | null;
   myRole: string;
   channels: Channel[];
   /* Поля присутствия и подсветки аватара необязательные: страница передаёт их
