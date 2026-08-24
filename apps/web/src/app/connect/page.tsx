@@ -21,6 +21,7 @@ import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
 import MessageArea from "@/components/connect/MessageArea";
 import { applyChatAppearance, loadChatAppearance } from "@/lib/chatAppearance";
 import { applyPremiumSkin, loadPremiumSkin, PREMIUM_SKIN_EVENT } from "@/lib/premiumSkin"; // PREMIUM-SKIN
+import GroupThemeLayer from "@/components/connect/GroupThemeLayer"; // GROUP-SKIN
 import QAPanel from "@/components/connect/QAPanel";
 import AppealsPanel from "@/components/connect/AppealsPanel";
 import WikiPanel from "@/components/connect/WikiPanel";
@@ -918,6 +919,9 @@ function ConnectPageInner() {
     <MotionConfig reducedMotion={isMono ? "always" : "never"}>
     <>
     {!splashDone && !isMono && <ConnectSplash onDone={handleSplashDone} />}
+    {/* GROUP-SKIN: оформление выбранного сообщества и его частицы. Снимается само,
+        когда группа не выбрана или оформление выключено. */}
+    <GroupThemeLayer theme={selectedGroup ? groupDetail?.theme ?? null : null} />
     {/* FIX-DM-VH: на телефоне высота берётся из --tz-app-h, а не из h-dvh.
         В globals.css у .cn-main уже выстроен каскад 100vh → 100dvh → --tz-app-h
         именно потому, что Android WebView не пересчитывает dvh при появлении
