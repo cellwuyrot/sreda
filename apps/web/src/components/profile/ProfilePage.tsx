@@ -537,12 +537,18 @@ export default function ProfilePage({ username }: { username?: string }) {
               именем. Раньше аватар, имя, «Позвонить», «Видео» и «Подписаться»
               стояли в одной строке без переноса: на узком экране они сжимались,
               иконки налезали на текст и вёрстка ломалась. */}
-          <div className="-mt-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+          {/* FIX-PROFHEAD: аватар стоит на своёй строке, имя и ник — под ним во всю
+              ширину карточки. Раньше кружок 80×80 стоял в одной строке с именем,
+              и на узком экране длинное имя обрезалось многоточием вместо переноса. */}
+          <div className="-mt-10 flex flex-col gap-3">
             <GlowAvatar user={head} size={80} />
-            <div className="min-w-0 flex-1 sm:pb-1">
-              <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-white">{head.name}</h1>
-              <div className="text-sm text-neutral-500 dark:text-gray-400">@{head.username}</div>
-            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold leading-snug text-neutral-900 dark:text-white break-words">
+                  {head.name}
+                </h1>
+                <div className="text-sm text-neutral-500 dark:text-gray-400 break-all">@{head.username}</div>
+              </div>
 
             {/* CALL: звонок другу — только на чужой странице и только в приложении для телефона.
                 Кнопки действий в одной переносимой строке, чтобы ничего не наезжало. */}
@@ -564,6 +570,7 @@ export default function ProfilePage({ username }: { username?: string }) {
                 </button>
               </div>
             )}
+            </div>
           </div>
 
           {(head.customStatus || head.bio) && (
