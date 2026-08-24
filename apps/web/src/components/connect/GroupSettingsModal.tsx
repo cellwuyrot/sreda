@@ -12,6 +12,8 @@ import InvitesPanel from "@/components/connect/settings/InvitesPanel";
 import StatsPanel from "@/components/connect/settings/StatsPanel";
 import TimeoutButton from "@/components/connect/settings/TimeoutButton";
 import EmojiPanel from "@/components/connect/settings/EmojiPanel";
+/* GROUP-SKIN: инструменты дизайна группы. */
+import DesignPanel from "@/components/connect/settings/DesignPanel";
 import { CrownIcon, ShieldIcon } from "@/components/ui/ConnectIcons";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 /* Значок раздела — готовый смайл из набора TrioZ: своего рисовать не нужно. */
@@ -38,13 +40,14 @@ const ROLE_BADGE: Record<string, string> = {
 	MEMBER: "bg-neutral-500/10 text-neutral-500 dark:text-gray-400",
 };
 
-type SectionId = "overview" | "rules" | "emoji" | "censor" | "workspace" | "members" | "roles" | "bans" | "invites" | "reports" | "audit" | "danger";
+type SectionId = "overview" | "rules" | "emoji" | "censor" | "design" | "workspace" | "members" | "roles" | "bans" | "invites" | "reports" | "audit" | "danger";
 
 const SECTION_TITLE: Record<SectionId, string> = {
 	overview: "Обзор",
 	rules: "Правила",
 	emoji: "Эмодзи",
 	censor: "Цензура",
+	design: "Дизайн",
 	workspace: "Рабочая среда",
 	members: "Участники",
 	roles: "Роли",
@@ -521,6 +524,9 @@ export default function GroupSettingsModal({
 				...(!group.isMain && canManageWorkspace
 					? [{ id: "workspace" as const, label: "Рабочая среда", icon: <NavIcon path={<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>} /> }]
 					: []),
+				...(canManageWorkspace
+					? [{ id: "design" as const, label: "Дизайн", icon: <NavIcon path={<><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4A10 10 0 0 0 12 2z" /></>} /> }]
+					: []),
 			],
 		},
 		{
@@ -552,6 +558,15 @@ export default function GroupSettingsModal({
 
 	const renderSection = () => {
 		switch (section) {
+			case "design":
+				return (
+					<Section
+						title="Дизайн сообщества"
+						subtitle="Фон переписки и каналов, шрифт, баннер и частицы. Видят все участники."
+					>
+						<DesignPanel groupId={group.id} theme={group.theme ?? null} />
+					</Section>
+				);
 			case "overview":
 				return (
 					<>
