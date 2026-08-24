@@ -2,660 +2,877 @@
 
 /* GROUP-SKIN: редактор оформления сообщества (раздел «Дизайн»).
 
-   Доступен создателю и администраторам. Состояние правится локально и
-   отправляется одним PUT по кнопке: автосохранение на каждый ползунок завалило бы
-   сервер записями и спамом в журнале действий.
+   Слева вкладки с настройками, справа живое превью. Раньше все блоки шли одной
+   лентой на несколько экранов, а результат был виден только после сохранения и
+   закрытия окна.
 
-   Превью рисуется теми же функциями (`surfaceLayer`, `bannerCss`), что и боевой слой —
-   иначе картинка в настройках расходилась бы с реальным видом группы. */
+   Превью рисуется теми же функциями (surfaceLayer, bannerCss, fontStack), что и
+   боевой слой: иначе картинка в настройках расходилась бы с реальным видом. */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-	FIT_OPTIONS,
-	GROUP_FONTS,
-	GROUP_PRESETS,
-	PARTICLE_OPTIONS,
-	SURFACE_MODE_OPTIONS,
-	bannerCss,
-	defaultGroupTheme,
-	fontStack,
-	hexToRgba,
-	parseGroupTheme,
-	serializeGroupTheme,
-	surfaceLayer,
-	surfaceRepeat,
-	surfaceSize,
-	type GroupBannerCfg,
-	type GroupSurface,
-	type GroupTheme,
-	type SurfaceFit,
-	type SurfaceMode,
+  FIT_OPTIONS,
+  GROUP_FONTS,
+  GROUP_PRESETS,
+  GROUP_THEME_MAX_JSON,
+  PARTICLE_OPTIONS,
+  SURFACE_MODE_OPTIONS,
+  bannerCss,
+  defaultGroupTheme,
+  fontStack,
+  hexToRgba,
+  parseGroupTheme,
+  serializeGroupTheme,
+  surfaceLayer,
+  surfaceRepeat,
+  surfaceSize,
+  type GroupBannerCfg,
+  type GroupSurface,
+  type GroupTheme,
+  type SurfaceFit,
+  type SurfaceMode,
 } from "@/lib/groupTheme";
+import { fitBannerFile, fitErrorText, fitSurfaceFile } from "@/lib/bannerFit";
 import ParticleField from "../ParticleField";
 import { alertDialog } from "@/components/ui/ConfirmDialog";
 
 interface Props {
-	groupId: string;
-	/** Сырое значение `Group.theme` из карточки сообщества. */
-	theme: string | null | undefined;
-	/** Сообщить родителю о сохранённом оформлении, чтобы вид обновился без перезагрузки. */
-	onSaved?: (theme: string) => void;
+  groupId: string;
+  /** Сырое значение Group.theme из карточки сообщества. */
+  theme: string | null | undefined;
+  /** Сообщить родителю о сохранённом оформлении, чтобы вид обновился без перезагрузки. */
+  onSaved?: (theme: string) => void;
 }
 
-const LABEL = "text-[11px] uppercase tracking-wide text-white/40";
-const CARD = "rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-3";
-const BTN = "px-3 py-1.5 rounded-lg text-xs transition";
+/* Палитра фиксированная: раздел живёт внутри тёмной модалки настроек. */
+const CARD = "rounded-xl border border-white/10 bg-white/[0.03] p-3";
+const BTN = "px-2.5 py-1 rounded-lg text-[11px] leading-5 transition";
+const BTN_OFF = "border border-white/10 text-white/60 hover:bg-white/5";
+const BTN_ON = "bg-[var(--cn-accent)] text-white";
+const FIELD =
+  "w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs text-white/80 outline-none focus:border-white/25";
 
-/** Баннер и фоны в data URL раздувают запись в базе, поэтому потолок скромный. */
-const MAX_UPLOAD = 600 * 1024;
+/** Картинки лежат в самой записи темы, поэтому потолок на файл скромный. */
+const MAX_UPLOAD = 320 * 1024;
+
+type TabId = "presets" | "surfaces" | "banner" | "accent" | "particles";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "presets", label: "Пресеты" },
+  { id: "surfaces", label: "Фоны" },
+  { id: "banner", label: "Баннер" },
+  { id: "accent", label: "Цвет и шрифт" },
+  { id: "particles", label: "Частицы" },
+];
+
+/* ───────────────────────── Мелкие элементы ───────────────────────── */
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1">
+      <span className="text-xs text-white/60">{label}</span>
+      <div className="flex items-center gap-2">{children}</div>
+    </div>
+  );
+}
 
 function Slider({
-	label,
-	value,
-	min,
-	max,
-	step = 1,
-	suffix = "",
-	onChange,
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  suffix = "",
+  onChange,
 }: {
-	label: string;
-	value: number;
-	min: number;
-	max: number;
-	step?: number;
-	suffix?: string;
-	onChange: (v: number) => void;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+  onChange: (v: number) => void;
 }) {
-	return (
-		<label className="block">
-			<span className="flex items-center justify-between text-xs text-white/60">
-				<span>{label}</span>
-				<span className="tabular-nums text-white/40">
-					{value}
-					{suffix}
-				</span>
-			</span>
-			<input
-				type="range"
-				min={min}
-				max={max}
-				step={step}
-				value={value}
-				onChange={(e) => onChange(Number(e.target.value))}
-				className="mt-1 w-full accent-[var(--cn-accent)]"
-			/>
-		</label>
-	);
+  return (
+    <label className="flex items-center gap-2 py-0.5">
+      <span className="w-24 flex-shrink-0 text-[11px] text-white/55">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-1 min-w-0 flex-1 accent-[var(--cn-accent)]"
+      />
+      <span className="w-10 flex-shrink-0 text-right text-[11px] tabular-nums text-white/40">
+        {value}
+        {suffix}
+      </span>
+    </label>
+  );
 }
 
 function ColorPick({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-	return (
-		<label className="flex items-center gap-2 text-xs text-white/60">
-			<input
-				type="color"
-				value={value}
-				onChange={(e) => onChange(e.target.value)}
-				className="h-7 w-9 cursor-pointer rounded border border-white/10 bg-transparent p-0"
-			/>
-			<span>{label}</span>
-		</label>
-	);
+  return (
+    <label className="flex items-center gap-1.5 text-[11px] text-white/55">
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 w-7 cursor-pointer rounded border border-white/10 bg-transparent p-0"
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function Switch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      onClick={() => onChange(!value)}
+      className={`h-5 w-9 flex-shrink-0 rounded-full p-0.5 transition ${value ? "bg-[var(--cn-accent)]" : "bg-white/15"}`}
+    >
+      <span className={`block h-4 w-4 rounded-full bg-white transition ${value ? "translate-x-4" : ""}`} />
+    </button>
+  );
 }
 
 function Toggle({
-	label,
-	hint,
-	value,
-	onChange,
+  label,
+  hint,
+  value,
+  onChange,
 }: {
-	label: string;
-	hint?: string;
-	value: boolean;
-	onChange: (v: boolean) => void;
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
 }) {
-	return (
-		<button
-			type="button"
-			onClick={() => onChange(!value)}
-			className="flex w-full items-start justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-left transition hover:bg-white/[0.05]"
-		>
-			<span>
-				<span className="block text-sm text-white/80">{label}</span>
-				{hint ? <span className="block text-[11px] leading-snug text-white/40">{hint}</span> : null}
-			</span>
-			<span
-				className={`mt-0.5 h-5 w-9 flex-shrink-0 rounded-full p-0.5 transition ${value ? "bg-[var(--cn-accent)]" : "bg-white/15"}`}
-			>
-				<span className={`block h-4 w-4 rounded-full bg-white transition ${value ? "translate-x-4" : ""}`} />
-			</span>
-		</button>
-	);
+  return (
+    <div className="flex items-start justify-between gap-3 py-1">
+      <span className="min-w-0">
+        <span className="block text-xs text-white/80">{label}</span>
+        {hint ? <span className="block text-[11px] leading-snug text-white/35">{hint}</span> : null}
+      </span>
+      <Switch value={value} onChange={onChange} />
+    </div>
+  );
 }
 
-/** Редактор одной поверхности: чат, текстовые каналы или голосовые. */
+function Chips<T extends string>({
+  options,
+  value,
+  onChange,
+  accent = true,
+}: {
+  options: { value: T; label: string; hint?: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          title={opt.hint}
+          onClick={() => onChange(opt.value)}
+          className={`${BTN} ${value === opt.value ? (accent ? BTN_ON : "bg-white/15 text-white") : BTN_OFF}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ─────────────────────────── Редакторы ────────────────────────── */
+
+/** Одна поверхность: чат, текстовые каналы или голосовые. */
 function SurfaceEditor({
-	title,
-	hint,
-	surface,
-	onChange,
+  surface,
+  onChange,
+  onNote,
 }: {
-	title: string;
-	hint: string;
-	surface: GroupSurface;
-	onChange: (patch: Partial<GroupSurface>) => void;
+  surface: GroupSurface;
+  onChange: (patch: Partial<GroupSurface>) => void;
+  onNote: (note: string) => void;
 }) {
-	const fileRef = useRef<HTMLInputElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
 
-	const pickImage = (file: File | null | undefined) => {
-		if (!file) return;
-		if (file.size > MAX_UPLOAD) {
-			void alertDialog(`Файл больше ${Math.round(MAX_UPLOAD / 1024)} КБ. Выберите картинку поменьше или укажите ссылку.`);
-			return;
-		}
-		const reader = new FileReader();
-		reader.onload = () => onChange({ image: String(reader.result || ""), mode: "image" });
-		reader.readAsDataURL(file);
-	};
+  const pickImage = async (file: File | null | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const res = await fitSurfaceFile(file, MAX_UPLOAD);
+      onChange({ image: res.url, mode: "image" });
+      if (res.note) onNote(res.note);
+    } catch (err) {
+      void alertDialog(fitErrorText(err, MAX_UPLOAD));
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
-	const preview = useMemo(
-		() => ({
-			backgroundImage: surfaceLayer(surface),
-			backgroundSize: surfaceSize(surface),
-			backgroundRepeat: surfaceRepeat(surface),
-			backgroundPosition: "center",
-		}),
-		[surface],
-	);
+  return (
+    <div className="space-y-2">
+      <Chips
+        options={SURFACE_MODE_OPTIONS.map((o) => ({ value: o.value as SurfaceMode, label: o.label }))}
+        value={surface.mode}
+        onChange={(v) => onChange({ mode: v })}
+      />
 
-	return (
-		<div className={CARD}>
-			<div>
-				<div className="text-sm text-white/85">{title}</div>
-				<div className="text-[11px] leading-snug text-white/40">{hint}</div>
-			</div>
+      {surface.mode === "theme" ? (
+        <p className="text-[11px] leading-snug text-white/35">
+          Останется фон темы — включая личное оформление участника.
+        </p>
+      ) : null}
 
-			<div className="flex flex-wrap gap-1.5">
-				{SURFACE_MODE_OPTIONS.map((opt) => (
-					<button
-						key={opt.value}
-						type="button"
-						onClick={() => onChange({ mode: opt.value as SurfaceMode })}
-						className={`${BTN} ${
-							surface.mode === opt.value
-								? "bg-[var(--cn-accent)] text-white"
-								: "border border-white/10 text-white/60 hover:bg-white/5"
-						}`}
-					>
-						{opt.label}
-					</button>
-				))}
-			</div>
+      {surface.mode === "solid" ? (
+        <ColorPick label="Цвет фона" value={surface.color} onChange={(v) => onChange({ color: v })} />
+      ) : null}
 
-			{surface.mode === "solid" ? <ColorPick label="Цвет фона" value={surface.color} onChange={(v) => onChange({ color: v })} /> : null}
+      {surface.mode === "gradient" ? (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <ColorPick label="Начало" value={surface.from} onChange={(v) => onChange({ from: v })} />
+            {surface.useVia ? (
+              <ColorPick label="Середина" value={surface.via} onChange={(v) => onChange({ via: v })} />
+            ) : null}
+            <ColorPick label="Конец" value={surface.to} onChange={(v) => onChange({ to: v })} />
+          </div>
+          <Row label="Три цвета">
+            <Switch value={surface.useVia} onChange={(v) => onChange({ useVia: v })} />
+          </Row>
+          <Slider label="Угол" value={surface.angle} min={0} max={360} suffix="°" onChange={(v) => onChange({ angle: v })} />
+        </div>
+      ) : null}
 
-			{surface.mode === "gradient" ? (
-				<div className="space-y-2">
-					<div className="flex flex-wrap gap-3">
-						<ColorPick label="Начало" value={surface.from} onChange={(v) => onChange({ from: v })} />
-						{surface.useVia ? (
-							<ColorPick label="Середина" value={surface.via} onChange={(v) => onChange({ via: v })} />
-						) : null}
-						<ColorPick label="Конец" value={surface.to} onChange={(v) => onChange({ to: v })} />
-					</div>
-					<Toggle label="Три цвета" value={surface.useVia} onChange={(v) => onChange({ useVia: v })} />
-					<Slider label="Угол" value={surface.angle} min={0} max={360} suffix="°" onChange={(v) => onChange({ angle: v })} />
-				</div>
-			) : null}
-
-			{surface.mode === "image" ? (
-				<div className="space-y-2">
-					<div className="flex flex-wrap items-center gap-2">
-						<button type="button" onClick={() => fileRef.current?.click()} className={`${BTN} border border-white/10 text-white/70 hover:bg-white/5`}>
-							Загрузить
-						</button>
-						{surface.image ? (
-							<button type="button" onClick={() => onChange({ image: "" })} className={`${BTN} text-red-300 hover:bg-red-500/10`}>
-								Убрать
-							</button>
-						) : null}
-						<input
-							ref={fileRef}
-							type="file"
-							accept="image/png,image/jpeg,image/webp,image/gif"
-							className="hidden"
-							onChange={(e) => pickImage(e.target.files?.[0])}
-						/>
-					</div>
-					<input
-						type="url"
-						value={surface.image.startsWith("data:") ? "" : surface.image}
-						placeholder="или ссылка https://…"
-						onChange={(e) => onChange({ image: e.target.value })}
-						className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/80 outline-none focus:border-white/25"
-					/>
-					<div className="flex flex-wrap gap-1.5">
-						{FIT_OPTIONS.map((opt) => (
-							<button
-								key={opt.value}
-								type="button"
-								onClick={() => onChange({ fit: opt.value as SurfaceFit })}
-								className={`${BTN} ${
-									surface.fit === opt.value ? "bg-white/15 text-white" : "border border-white/10 text-white/60 hover:bg-white/5"
-								}`}
-							>
-								{opt.label}
-							</button>
-						))}
-					</div>
-					<Slider label="Затемнение" value={surface.dim} min={0} max={85} suffix="%" onChange={(v) => onChange({ dim: v })} />
-				</div>
-			) : null}
-
-			{surface.mode !== "theme" ? (
-				<div className="h-16 rounded-lg border border-white/10" style={preview} />
-			) : (
-				<div className="rounded-lg border border-dashed border-white/10 px-3 py-2 text-[11px] text-white/35">
-					Останется фон темы — включая личное оформление участника.
-				</div>
-			)}
-		</div>
-	);
+      {surface.mode === "image" ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+              className={`${BTN} ${BTN_OFF} disabled:opacity-50`}
+            >
+              {busy ? "Обработка…" : "Загрузить"}
+            </button>
+            {surface.image ? (
+              <button
+                type="button"
+                onClick={() => onChange({ image: "" })}
+                className={`${BTN} text-red-300 hover:bg-red-500/10`}
+              >
+                Убрать
+              </button>
+            ) : null}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => void pickImage(e.target.files?.[0])}
+            />
+          </div>
+          <input
+            type="url"
+            value={surface.image.startsWith("data:") ? "" : surface.image}
+            placeholder={surface.image.startsWith("data:") ? "загруженный файл" : "или ссылка https://…"}
+            onChange={(e) => onChange({ image: e.target.value })}
+            className={FIELD}
+          />
+          <Chips
+            accent={false}
+            options={FIT_OPTIONS.map((o) => ({ value: o.value as SurfaceFit, label: o.label }))}
+            value={surface.fit}
+            onChange={(v) => onChange({ fit: v })}
+          />
+          <Slider label="Затемнение" value={surface.dim} min={0} max={85} suffix="%" onChange={(v) => onChange({ dim: v })} />
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
-function BannerEditor({ banner, onChange }: { banner: GroupBannerCfg; onChange: (patch: Partial<GroupBannerCfg>) => void }) {
-	const fileRef = useRef<HTMLInputElement | null>(null);
+function BannerEditor({
+  banner,
+  onChange,
+  onNote,
+}: {
+  banner: GroupBannerCfg;
+  onChange: (patch: Partial<GroupBannerCfg>) => void;
+  onNote: (note: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
 
-	const pick = (file: File | null | undefined) => {
-		if (!file) return;
-		if (file.size > MAX_UPLOAD) {
-			void alertDialog(
-				`Файл больше ${Math.round(MAX_UPLOAD / 1024)} КБ. Для видео-баннера укажите ссылку https:// — видео в базу не кладётся.`,
-			);
-			return;
-		}
-		const reader = new FileReader();
-		reader.onload = () => onChange({ url: String(reader.result || ""), kind: "image" });
-		reader.readAsDataURL(file);
-	};
+  const pick = async (file: File | null | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      /* Анимация и фото идут одним путём: обрезка по центру до пропорции шапки
+         и сжатие до лимита; что именно сделано — в note. */
+      const res = await fitBannerFile(file, MAX_UPLOAD);
+      onChange({ url: res.url, kind: "image" });
+      if (res.note) onNote(res.note);
+    } catch (err) {
+      void alertDialog(fitErrorText(err, MAX_UPLOAD));
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
-	return (
-		<div className={CARD}>
-			<div>
-				<div className="text-sm text-white/85">Баннер сообщества</div>
-				<div className="text-[11px] leading-snug text-white/40">
-					Картинка, GIF, живой градиент или видео по ссылке (mp4/webm, без звука).
-				</div>
-			</div>
+  return (
+    <div className="space-y-2">
+      <Chips
+        options={[
+          { value: "none" as const, label: "Нет" },
+          { value: "image" as const, label: "Картинка" },
+          { value: "gradient" as const, label: "Градиент" },
+          { value: "video" as const, label: "Видео" },
+        ]}
+        value={banner.kind}
+        onChange={(v) => onChange({ kind: v })}
+      />
 
-			<div className="flex flex-wrap gap-1.5">
-				{[
-					{ value: "none", label: "Нет" },
-					{ value: "image", label: "Картинка" },
-					{ value: "gradient", label: "Градиент" },
-					{ value: "video", label: "Видео" },
-				].map((opt) => (
-					<button
-						key={opt.value}
-						type="button"
-						onClick={() => onChange({ kind: opt.value as GroupBannerCfg["kind"] })}
-						className={`${BTN} ${
-							banner.kind === opt.value ? "bg-[var(--cn-accent)] text-white" : "border border-white/10 text-white/60 hover:bg-white/5"
-						}`}
-					>
-						{opt.label}
-					</button>
-				))}
-			</div>
+      {banner.kind === "image" ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+              className={`${BTN} ${BTN_OFF} disabled:opacity-50`}
+            >
+              {busy ? "Обработка…" : "Загрузить"}
+            </button>
+            {banner.url ? (
+              <button type="button" onClick={() => onChange({ url: "" })} className={`${BTN} text-red-300 hover:bg-red-500/10`}>
+                Убрать
+              </button>
+            ) : null}
+            <span className="text-[11px] text-white/30">PNG, JPG, WEBP, GIF — подгоним сами</span>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => void pick(e.target.files?.[0])}
+            />
+          </div>
+          <input
+            type="url"
+            value={banner.url.startsWith("data:") ? "" : banner.url}
+            placeholder={banner.url.startsWith("data:") ? "загруженный файл" : "или ссылка https://…"}
+            onChange={(e) => onChange({ url: e.target.value })}
+            className={FIELD}
+          />
+        </div>
+      ) : null}
 
-			{banner.kind === "image" ? (
-				<div className="space-y-2">
-					<div className="flex flex-wrap items-center gap-2">
-						<button type="button" onClick={() => fileRef.current?.click()} className={`${BTN} border border-white/10 text-white/70 hover:bg-white/5`}>
-							Загрузить
-						</button>
-						<input
-							ref={fileRef}
-							type="file"
-							accept="image/png,image/jpeg,image/webp,image/gif"
-							className="hidden"
-							onChange={(e) => pick(e.target.files?.[0])}
-						/>
-						<span className="text-[11px] text-white/35">GIF анимируется сам</span>
-					</div>
-					<input
-						type="url"
-						value={banner.url.startsWith("data:") ? "" : banner.url}
-						placeholder="или ссылка https://…"
-						onChange={(e) => onChange({ url: e.target.value })}
-						className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/80 outline-none focus:border-white/25"
-					/>
-				</div>
-			) : null}
+      {banner.kind === "video" ? (
+        <div className="space-y-1">
+          <input
+            type="url"
+            value={banner.url}
+            placeholder="https://…/banner.mp4"
+            onChange={(e) => onChange({ url: e.target.value })}
+            className={FIELD}
+          />
+          <p className="text-[11px] leading-snug text-white/35">
+            mp4 или webm без звука. Кадр обрезается по центру автоматически.
+          </p>
+        </div>
+      ) : null}
 
-			{banner.kind === "video" ? (
-				<input
-					type="url"
-					value={banner.url}
-					placeholder="https://…/banner.mp4"
-					onChange={(e) => onChange({ url: e.target.value })}
-					className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/80 outline-none focus:border-white/25"
-				/>
-			) : null}
+      {banner.kind === "gradient" ? (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <ColorPick label="Начало" value={banner.from} onChange={(v) => onChange({ from: v })} />
+            {banner.useVia ? <ColorPick label="Середина" value={banner.via} onChange={(v) => onChange({ via: v })} /> : null}
+            <ColorPick label="Конец" value={banner.to} onChange={(v) => onChange({ to: v })} />
+          </div>
+          <Row label="Три цвета">
+            <Switch value={banner.useVia} onChange={(v) => onChange({ useVia: v })} />
+          </Row>
+          <Slider label="Угол" value={banner.angle} min={0} max={360} suffix="°" onChange={(v) => onChange({ angle: v })} />
+        </div>
+      ) : null}
 
-			{banner.kind === "gradient" ? (
-				<div className="space-y-2">
-					<div className="flex flex-wrap gap-3">
-						<ColorPick label="Начало" value={banner.from} onChange={(v) => onChange({ from: v })} />
-						{banner.useVia ? <ColorPick label="Середина" value={banner.via} onChange={(v) => onChange({ via: v })} /> : null}
-						<ColorPick label="Конец" value={banner.to} onChange={(v) => onChange({ to: v })} />
-					</div>
-					<Toggle label="Три цвета" value={banner.useVia} onChange={(v) => onChange({ useVia: v })} />
-					<Slider label="Угол" value={banner.angle} min={0} max={360} suffix="°" onChange={(v) => onChange({ angle: v })} />
-				</div>
-			) : null}
-
-			{banner.kind !== "none" ? (
-				<>
-					<Toggle
-						label="Анимация"
-						hint="Градиент плывёт, видео играет. Участникам с «уменьшением анимации» покажется статика."
-						value={banner.animated}
-						onChange={(v) => onChange({ animated: v })}
-					/>
-					<Slider label="Затемнение под названием" value={banner.overlay} min={0} max={85} suffix="%" onChange={(v) => onChange({ overlay: v })} />
-					<div
-						className="relative h-20 overflow-hidden rounded-lg border border-white/10"
-						style={{ backgroundImage: bannerCss(banner), backgroundSize: "cover", backgroundPosition: "center" }}
-					>
-						{banner.kind === "video" && banner.url ? (
-							<video src={banner.url} muted loop autoPlay playsInline className="h-full w-full object-cover" />
-						) : null}
-						<div className="absolute inset-0" style={{ background: hexToRgba("#000000", banner.overlay / 100) }} />
-						<div className="absolute bottom-2 left-3 text-sm font-medium text-white/90">Превью баннера</div>
-					</div>
-				</>
-			) : null}
-		</div>
-	);
+      {banner.kind !== "none" ? (
+        <>
+          <Toggle
+            label="Анимация"
+            hint="Градиент плывёт, видео играет."
+            value={banner.animated}
+            onChange={(v) => onChange({ animated: v })}
+          />
+          <Slider
+            label="Затемнение"
+            value={banner.overlay}
+            min={0}
+            max={85}
+            suffix="%"
+            onChange={(v) => onChange({ overlay: v })}
+          />
+        </>
+      ) : null}
+    </div>
+  );
 }
+
+/* ──────────────────────────── Превью ─────────────────────────── */
+
+function surfaceStyle(s: GroupSurface, fallback: string): React.CSSProperties {
+  if (s.mode === "theme") return { background: fallback };
+  return {
+    backgroundImage: surfaceLayer(s),
+    backgroundSize: surfaceSize(s),
+    backgroundRepeat: surfaceRepeat(s),
+    backgroundPosition: "center",
+  };
+}
+
+/** Макет сообщества в миниатюре: шапка с баннером, каналы, переписка, голосовой. */
+function ThemePreview({ theme, narrow }: { theme: GroupTheme; narrow: boolean }) {
+  const accent = theme.useAccent ? theme.accent : "#7c3aed";
+  const font = fontStack(theme.font);
+  const showBanner = theme.banner.kind !== "none" && (theme.banner.kind === "gradient" || !!theme.banner.url);
+  const animatedGradient = theme.banner.animated && theme.banner.kind === "gradient";
+
+  return (
+    <div
+      className="overflow-hidden rounded-xl border border-white/10 bg-[#0d0d13] shadow-lg"
+      style={{ fontFamily: font || undefined, fontSize: `${theme.font.scale}%` }}
+    >
+      <div className={narrow ? "flex flex-col" : "flex"}>
+        <div
+          className={narrow ? "w-full" : "w-[42%] flex-shrink-0 border-r border-white/10"}
+          style={surfaceStyle(theme.channels, "#14141c")}
+        >
+          <div className="relative overflow-hidden">
+            {showBanner ? (
+              <span
+                className={`absolute inset-0${animatedGradient ? " tz-group-banner-animated" : ""}`}
+                style={{ backgroundImage: bannerCss(theme.banner), backgroundSize: "cover", backgroundPosition: "center" }}
+              />
+            ) : null}
+            {showBanner && theme.banner.kind === "video" && theme.banner.url ? (
+              <video
+                src={theme.banner.url}
+                muted
+                loop
+                playsInline
+                autoPlay={theme.banner.animated}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : null}
+            {showBanner ? (
+              <span className="absolute inset-0" style={{ background: hexToRgba("#000000", theme.banner.overlay / 100) }} />
+            ) : null}
+            <div className="relative flex items-center gap-2 px-3 py-2.5">
+              <span
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold text-white"
+                style={{ background: accent }}
+              >
+                TZ
+              </span>
+              <span className="truncate text-[12px] font-medium text-white/90">Моё сообщество</span>
+            </div>
+          </div>
+
+          <div className="space-y-1 px-2 pb-2 pt-1">
+            {["общий", "анонсы", "флуд"].map((name, i) => (
+              <div
+                key={name}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px]"
+                style={
+                  i === 0
+                    ? { background: hexToRgba(accent, 0.22), color: "#fff" }
+                    : { color: "rgba(255,255,255,0.55)" }
+                }
+              >
+                <span className="opacity-50">#</span>
+                {name}
+              </div>
+            ))}
+            <div
+              className="tz-group-voice mt-1 rounded-md px-2 py-1.5 text-[11px] text-white/60"
+              style={surfaceStyle(theme.voice, "rgba(255,255,255,0.04)")}
+            >
+              Голосовой · 2 участника
+            </div>
+          </div>
+        </div>
+
+        <div className="relative min-h-[168px] flex-1 overflow-hidden" style={surfaceStyle(theme.chat, "#101018")}>
+          <ParticleField particles={theme.particles} inline />
+          <div className="relative space-y-2 p-3">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 h-5 w-5 flex-shrink-0 rounded-full bg-white/20" />
+              <div className="rounded-lg rounded-tl-sm bg-white/10 px-2.5 py-1.5 text-[11px] text-white/85">
+                Так выглядит сообщение участника
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <div className="rounded-lg rounded-br-sm px-2.5 py-1.5 text-[11px] text-white" style={{ background: accent }}>
+                А так — ваше, в акцентном цвете
+              </div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-[11px] text-white/40">
+              Напишите сообщение…
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────── Основной компонент ───────────────────── */
 
 export default function DesignPanel({ groupId, theme, onSaved }: Props) {
-	const initial = useMemo(() => parseGroupTheme(theme ?? null), [theme]);
-	const [draft, setDraft] = useState<GroupTheme>(initial);
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
+  const initial = useMemo(() => parseGroupTheme(theme ?? null), [theme]);
+  const [draft, setDraft] = useState<GroupTheme>(initial);
+  const [tab, setTab] = useState<TabId>("presets");
+  const [surfaceTab, setSurfaceTab] = useState<"chat" | "channels" | "voice">("chat");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [narrow, setNarrow] = useState(false);
 
-	/* Любая правка сразу включает оформление. Раньше можно было собрать тему,
-	   нажать «Сохранить» и не увидеть ничего: верхний тумблер оставался выключенным.
-	   Выключить тему по-прежнему можно — тем же тумблером или кнопкой сброса. */
-	const patch = (p: Partial<GroupTheme>) => {
-		setDraft((d) => ({ ...d, ...p, preset: "custom", enabled: true }));
-		setSaved(false);
-	};
+  /* Если тему поменял другой администратор, подхватываем её только пока нет
+     своих правок: иначе чужое сохранение стёрло бы недоделанную тему. */
+  useEffect(() => {
+    if (!dirty) setDraft(initial);
+  }, [initial, dirty]);
 
-	const save = async () => {
-		setSaving(true);
-		try {
-			const payload = serializeGroupTheme(draft);
-			const res = await fetch(`/api/groups/${groupId}`, {
-				method: "PUT",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ theme: payload }),
-			});
-			if (!res.ok) {
-				const data = (await res.json().catch(() => ({}))) as { error?: string };
-				await alertDialog(data.error || "Не удалось сохранить оформление");
-				return;
-			}
-			setSaved(true);
-			onSaved?.(payload);
-		} catch {
-			await alertDialog("Сеть недоступна. Повторите позже.");
-		} finally {
-			setSaving(false);
-		}
-	};
+  /* Любая правка сразу включает оформление: иначе можно собрать тему, нажать
+     «Сохранить» и не увидеть ничего из-за верхнего тумблера. */
+  const patch = (p: Partial<GroupTheme>) => {
+    setDraft((d) => ({ ...d, ...p, preset: "custom", enabled: true }));
+    setDirty(true);
+    setSaved(false);
+  };
 
-	const reset = () => {
-		setDraft(defaultGroupTheme());
-		setSaved(false);
-	};
+  const applyPreset = (build: () => GroupTheme) => {
+    setDraft({ ...build(), enabled: true });
+    setDirty(true);
+    setSaved(false);
+    setNote(null);
+  };
 
-	const previewFont = fontStack(draft.font);
+  const payload = useMemo(() => serializeGroupTheme(draft), [draft]);
+  const tooHeavy = payload.length > GROUP_THEME_MAX_JSON;
 
-	return (
-		<div className="space-y-4">
-			<div className={CARD}>
-				<Toggle
-					label="Оформление сообщества"
-					hint="Выключено — участники видят обычную тему и своё личное оформление."
-					value={draft.enabled}
-					onChange={(v) => setDraft((d) => ({ ...d, enabled: v }))}
-				/>
-				<Toggle
-					label="Главнее личного оформления"
-					hint="Включено — внутри сообщества фон группы перекрывает Premium-скин участника."
-					value={draft.priority}
-					onChange={(v) => patch({ priority: v })}
-				/>
-			</div>
+  const save = async () => {
+    if (tooHeavy) {
+      await alertDialog(
+        "Оформление слишком тяжёлое: уберите одну из загруженных картинок или замените её ссылкой https://.",
+      );
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/groups/${groupId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme: payload }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        await alertDialog(data.error || "Не удалось сохранить оформление");
+        return;
+      }
+      setSaved(true);
+      setDirty(false);
+      onSaved?.(payload);
+    } catch {
+      await alertDialog("Сеть недоступна. Повторите позже.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
-			<div className={CARD}>
-				<div className={LABEL}>Пресеты</div>
-				<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-					{GROUP_PRESETS.map((p) => (
-						<button
-							key={p.id}
-							type="button"
-							title={p.hint}
-							onClick={() => {
-								setDraft({ ...p.build(), enabled: true });
-								setSaved(false);
-							}}
-							className={`rounded-xl border p-2 text-left transition ${
-								draft.preset === p.id ? "border-[var(--cn-accent)] bg-white/[0.06]" : "border-white/10 hover:bg-white/5"
-							}`}
-						>
-							<span
-								className="mb-1.5 block h-8 rounded-lg"
-								style={{ backgroundImage: `linear-gradient(120deg, ${p.swatch[0]}, ${p.swatch[1]}, ${p.swatch[2]})` }}
-							/>
-							<span className="block text-xs text-white/80">{p.label}</span>
-							<span className="block text-[10px] leading-snug text-white/35">{p.hint}</span>
-						</button>
-					))}
-				</div>
-				<p className="text-[11px] text-white/35">Пресет — только стартовая точка: любой параметр ниже можно поменять.</p>
-			</div>
+  const reset = () => {
+    setDraft(defaultGroupTheme());
+    setDirty(true);
+    setSaved(false);
+    setNote(null);
+  };
 
-			<SurfaceEditor
-				title="Область переписки"
-				hint="Фон чата внутри сообщества."
-				surface={draft.chat}
-				onChange={(p) => patch({ chat: { ...draft.chat, ...p } })}
-			/>
-			<SurfaceEditor
-				title="Текстовые каналы"
-				hint="Боковая панель со списком каналов."
-				surface={draft.channels}
-				onChange={(p) => patch({ channels: { ...draft.channels, ...p } })}
-			/>
-			<SurfaceEditor
-				title="Голосовые каналы"
-				hint="Список голосовых комнат и панель участников звонка."
-				surface={draft.voice}
-				onChange={(p) => patch({ voice: { ...draft.voice, ...p } })}
-			/>
+  const surfaces = {
+    chat: { label: "Переписка", hint: "Фон чата внутри сообщества." },
+    channels: { label: "Каналы", hint: "Боковая панель со списком каналов." },
+    voice: { label: "Голосовые", hint: "Комнаты и панель участников звонка." },
+  } as const;
 
-			<div className={CARD}>
-				<div className="text-sm text-white/85">Акцент и шрифт</div>
-				<Toggle
-					label="Свой акцентный цвет"
-					hint="Кнопки, активные каналы, выделения."
-					value={draft.useAccent}
-					onChange={(v) => patch({ useAccent: v })}
-				/>
-				{draft.useAccent ? <ColorPick label="Акцент" value={draft.accent} onChange={(v) => patch({ accent: v })} /> : null}
+  return (
+    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
+      <div className="min-w-0 space-y-3">
+        <div className={`${CARD} space-y-1`}>
+          <Toggle
+            label="Оформление сообщества"
+            hint="Выключено — участники видят обычную тему."
+            value={draft.enabled}
+            onChange={(v) => {
+              setDraft((d) => ({ ...d, enabled: v }));
+              setDirty(true);
+              setSaved(false);
+            }}
+          />
+          <Toggle
+            label="Главнее личного оформления"
+            hint="Фон группы перекрывает личный скин участника."
+            value={draft.priority}
+            onChange={(v) => patch({ priority: v })}
+          />
+        </div>
 
-				<div className="flex flex-wrap gap-1.5">
-					<button
-						type="button"
-						onClick={() => patch({ font: { ...draft.font, mode: "theme" } })}
-						className={`${BTN} ${
-							draft.font.mode === "theme" ? "bg-white/15 text-white" : "border border-white/10 text-white/60 hover:bg-white/5"
-						}`}
-					>
-						Шрифт темы
-					</button>
-					<button
-						type="button"
-						onClick={() => patch({ font: { ...draft.font, mode: "builtin" } })}
-						className={`${BTN} ${
-							draft.font.mode === "builtin" ? "bg-white/15 text-white" : "border border-white/10 text-white/60 hover:bg-white/5"
-						}`}
-					>
-						Шрифт сообщества
-					</button>
-				</div>
+        <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex-shrink-0 rounded-lg px-3 py-1.5 text-xs transition ${
+                tab === t.id ? "bg-white/[0.12] text-white" : "text-white/50 hover:bg-white/5"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-				{draft.font.mode === "builtin" ? (
-					<div className="space-y-2">
-						<select
-							value={draft.font.family}
-							onChange={(e) => patch({ font: { ...draft.font, family: e.target.value } })}
-							className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/80 outline-none focus:border-white/25"
-						>
-							{GROUP_FONTS.map((f) => (
-								<option key={f.id} value={f.id} className="bg-[#15151c]">
-									{f.label}
-								</option>
-							))}
-						</select>
-						<Slider
-							label="Размер текста"
-							value={draft.font.scale}
-							min={90}
-							max={115}
-							suffix="%"
-							onChange={(v) => patch({ font: { ...draft.font, scale: v } })}
-						/>
-						<div
-							className="rounded-lg border border-white/10 px-3 py-2 text-sm text-white/75"
-							style={{ fontFamily: previewFont || undefined, fontSize: `${draft.font.scale}%` }}
-						>
-							Съешь ещё этих мягких французских булок — The quick brown fox 0123456789
-						</div>
-					</div>
-				) : null}
-			</div>
+        {tab === "presets" ? (
+          <div className={`${CARD} space-y-2`}>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {GROUP_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  title={p.hint}
+                  onClick={() => applyPreset(p.build)}
+                  className={`rounded-lg border p-1.5 text-left transition ${
+                    draft.preset === p.id ? "border-[var(--cn-accent)] bg-white/[0.06]" : "border-white/10 hover:bg-white/5"
+                  }`}
+                >
+                  <span
+                    className="mb-1 block h-7 rounded-md"
+                    style={{ backgroundImage: `linear-gradient(120deg, ${p.swatch[0]}, ${p.swatch[1]}, ${p.swatch[2]})` }}
+                  />
+                  <span className="block truncate text-[11px] text-white/80">{p.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] leading-snug text-white/35">
+              Пресет — стартовая точка: любой параметр меняется на соседних вкладках.
+            </p>
+          </div>
+        ) : null}
 
-			<BannerEditor banner={draft.banner} onChange={(p) => patch({ banner: { ...draft.banner, ...p } })} />
+        {tab === "surfaces" ? (
+          <div className={`${CARD} space-y-2`}>
+            <Chips
+              accent={false}
+              options={(Object.keys(surfaces) as (keyof typeof surfaces)[]).map((k) => ({
+                value: k,
+                label: surfaces[k].label,
+              }))}
+              value={surfaceTab}
+              onChange={(v) => setSurfaceTab(v)}
+            />
+            <p className="text-[11px] text-white/35">{surfaces[surfaceTab].hint}</p>
+            <SurfaceEditor
+              surface={draft[surfaceTab]}
+              onChange={(p) => patch({ [surfaceTab]: { ...draft[surfaceTab], ...p } } as Partial<GroupTheme>)}
+              onNote={setNote}
+            />
+          </div>
+        ) : null}
 
-			<div className={CARD}>
-				<div>
-					<div className="text-sm text-white/85">Частицы</div>
-					<div className="text-[11px] leading-snug text-white/40">
-						Фоновый слой поверх интерфейса. Не перехватывает клики и не мешает чтению.
-					</div>
-				</div>
+        {tab === "banner" ? (
+          <div className={CARD}>
+            <BannerEditor banner={draft.banner} onChange={(p) => patch({ banner: { ...draft.banner, ...p } })} onNote={setNote} />
+          </div>
+        ) : null}
 
-				<div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-					{PARTICLE_OPTIONS.map((opt) => (
-						<button
-							key={opt.value}
-							type="button"
-							title={opt.hint}
-							onClick={() => patch({ particles: { ...draft.particles, kind: opt.value } })}
-							className={`${BTN} ${
-								draft.particles.kind === opt.value
-									? "bg-[var(--cn-accent)] text-white"
-									: "border border-white/10 text-white/60 hover:bg-white/5"
-							}`}
-						>
-							{opt.label}
-						</button>
-					))}
-				</div>
+        {tab === "accent" ? (
+          <div className={`${CARD} space-y-2`}>
+            <Toggle
+              label="Свой акцентный цвет"
+              hint="Кнопки, активные каналы, выделения."
+              value={draft.useAccent}
+              onChange={(v) => patch({ useAccent: v })}
+            />
+            {draft.useAccent ? <ColorPick label="Акцент" value={draft.accent} onChange={(v) => patch({ accent: v })} /> : null}
 
-				{draft.particles.kind !== "none" ? (
-					<div className="space-y-2">
-						<Slider
-							label="Плотность"
-							value={draft.particles.density}
-							min={5}
-							max={100}
-							suffix="%"
-							onChange={(v) => patch({ particles: { ...draft.particles, density: v } })}
-						/>
-						<Slider
-							label="Скорость"
-							value={draft.particles.speed}
-							min={20}
-							max={200}
-							suffix="%"
-							onChange={(v) => patch({ particles: { ...draft.particles, speed: v } })}
-						/>
-						<Slider
-							label="Размер"
-							value={draft.particles.size}
-							min={1}
-							max={16}
-							onChange={(v) => patch({ particles: { ...draft.particles, size: v } })}
-						/>
-						<Slider
-							label="Прозрачность"
-							value={draft.particles.opacity}
-							min={5}
-							max={60}
-							suffix="%"
-							onChange={(v) => patch({ particles: { ...draft.particles, opacity: v } })}
-						/>
-						<ColorPick
-							label="Цвет частиц"
-							value={draft.particles.color}
-							onChange={(v) => patch({ particles: { ...draft.particles, color: v } })}
-						/>
-						<Toggle
-							label="Реагировать на курсор"
-							hint="Частицы разлетаются от указателя мыши."
-							value={draft.particles.interactive}
-							onChange={(v) => patch({ particles: { ...draft.particles, interactive: v } })}
-						/>
+            <Chips
+              accent={false}
+              options={[
+                { value: "theme" as const, label: "Шрифт темы" },
+                { value: "builtin" as const, label: "Шрифт сообщества" },
+              ]}
+              value={draft.font.mode}
+              onChange={(v) => patch({ font: { ...draft.font, mode: v } })}
+            />
 
-						<div
-							className="relative h-28 overflow-hidden rounded-lg border border-white/10"
-							style={{
-								backgroundImage: draft.chat.mode === "theme" ? "linear-gradient(#101018, #101018)" : surfaceLayer(draft.chat),
-								backgroundSize: surfaceSize(draft.chat),
-								backgroundRepeat: surfaceRepeat(draft.chat),
-								backgroundPosition: "center",
-							}}
-						>
-							<ParticleField particles={draft.particles} inline />
-							<div className="absolute bottom-2 left-3 text-[11px] text-white/50">Превью над фоном чата</div>
-						</div>
-					</div>
-				) : null}
-			</div>
+            {draft.font.mode === "builtin" ? (
+              <div className="space-y-2">
+                <select
+                  value={draft.font.family}
+                  onChange={(e) => patch({ font: { ...draft.font, family: e.target.value } })}
+                  className={FIELD}
+                >
+                  {GROUP_FONTS.map((f) => (
+                    <option key={f.id} value={f.id} className="bg-[#15151c]">
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+                <Slider
+                  label="Размер текста"
+                  value={draft.font.scale}
+                  min={90}
+                  max={115}
+                  suffix="%"
+                  onChange={(v) => patch({ font: { ...draft.font, scale: v } })}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
-			<div className="flex flex-wrap items-center gap-2 pt-1">
-				<button
-					type="button"
-					onClick={() => void save()}
-					disabled={saving}
-					className="rounded-lg bg-[var(--cn-accent)] px-4 py-2 text-sm text-white transition disabled:opacity-50"
-				>
-					{saving ? "Сохранение…" : "Сохранить оформление"}
-				</button>
-				<button
-					type="button"
-					onClick={reset}
-					className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/70 transition hover:bg-white/5"
-				>
-					Сбросить
-				</button>
-				{saved ? <span className="text-xs text-emerald-300">Сохранено</span> : null}
-			</div>
-		</div>
-	);
+        {tab === "particles" ? (
+          <div className={`${CARD} space-y-2`}>
+            <Chips
+              options={PARTICLE_OPTIONS.map((o) => ({ value: o.value, label: o.label, hint: o.hint }))}
+              value={draft.particles.kind}
+              onChange={(v) => patch({ particles: { ...draft.particles, kind: v } })}
+            />
+            {draft.particles.kind !== "none" ? (
+              <div className="space-y-1">
+                <Slider
+                  label="Плотность"
+                  value={draft.particles.density}
+                  min={5}
+                  max={100}
+                  suffix="%"
+                  onChange={(v) => patch({ particles: { ...draft.particles, density: v } })}
+                />
+                <Slider
+                  label="Скорость"
+                  value={draft.particles.speed}
+                  min={20}
+                  max={200}
+                  suffix="%"
+                  onChange={(v) => patch({ particles: { ...draft.particles, speed: v } })}
+                />
+                <Slider
+                  label="Размер"
+                  value={draft.particles.size}
+                  min={1}
+                  max={16}
+                  onChange={(v) => patch({ particles: { ...draft.particles, size: v } })}
+                />
+                <Slider
+                  label="Прозрачность"
+                  value={draft.particles.opacity}
+                  min={5}
+                  max={60}
+                  suffix="%"
+                  onChange={(v) => patch({ particles: { ...draft.particles, opacity: v } })}
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <ColorPick
+                    label="Цвет частиц"
+                    value={draft.particles.color}
+                    onChange={(v) => patch({ particles: { ...draft.particles, color: v } })}
+                  />
+                  <label className="flex items-center gap-2 text-[11px] text-white/55">
+                    Реагировать на курсор
+                    <Switch
+                      value={draft.particles.interactive}
+                      onChange={(v) => patch({ particles: { ...draft.particles, interactive: v } })}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {note ? (
+          <div className="flex items-start justify-between gap-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[11px] leading-snug text-amber-200">
+            <span>{note}</span>
+            <button type="button" onClick={() => setNote(null)} className="text-amber-200/60 hover:text-amber-100">
+              ✕
+            </button>
+          </div>
+        ) : null}
+
+        {tooHeavy ? (
+          <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-[11px] leading-snug text-red-200">
+            Оформление весит {Math.round(payload.length / 1024)} КБ — больше лимита. Замените одну из картинок ссылкой https://.
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || tooHeavy}
+            className="rounded-lg bg-[var(--cn-accent)] px-4 py-2 text-sm text-white transition disabled:opacity-50"
+          >
+            {saving ? "Сохранение…" : "Сохранить"}
+          </button>
+          <button
+            type="button"
+            onClick={reset}
+            className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/70 transition hover:bg-white/5"
+          >
+            Сбросить
+          </button>
+          {saved ? <span className="text-xs text-emerald-300">Сохранено</span> : null}
+          {!saved && dirty ? <span className="text-xs text-white/35">Есть несохранённые правки</span> : null}
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <div className="space-y-2 lg:sticky lg:top-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-white/40">Превью</span>
+            <Chips
+              accent={false}
+              options={[
+                { value: "wide" as const, label: "Компьютер" },
+                { value: "narrow" as const, label: "Телефон" },
+              ]}
+              value={narrow ? "narrow" : "wide"}
+              onChange={(v) => setNarrow(v === "narrow")}
+            />
+          </div>
+          <div className={narrow ? "mx-auto max-w-[240px]" : ""}>
+            <ThemePreview theme={draft} narrow={narrow} />
+          </div>
+          <p className="text-[11px] leading-snug text-white/30">
+            {draft.enabled
+              ? "Так сообщество увидят участники после сохранения."
+              : "Оформление выключено: участники увидят обычную тему."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
