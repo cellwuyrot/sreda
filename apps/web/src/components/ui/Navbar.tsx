@@ -166,7 +166,8 @@ export default function Navbar() {
   }, [userId]);
   const [menuOpen, setMenuOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
-  const { editMode, toggleEditMode, isAdmin } = useInlineEdit();
+  /* NAV-NOEDIT: iz konteksta pravki nuzhen tolko priznak admina. */
+  const { isAdmin } = useInlineEdit();
   const pathname = usePathname();
 
   // The Electron desktop shell is a dedicated TZ.Connect client. The top-bar
@@ -271,19 +272,8 @@ export default function Navbar() {
                     <span className="hidden sm:inline">Редакторская</span>
                   </Link>
                 )}
-                {isAdmin && (
-                  <button
-                    onClick={toggleEditMode}
-                    className={`text-sm px-3 py-1.5 rounded-lg transition-all duration-300 flex items-center gap-1.5 ${
-                      editMode
-                        ? "bg-violet-500 dark:bg-cyan-500 text-white shadow-lg shadow-violet-500/30 dark:shadow-cyan-500/30"
-                        : "text-neutral-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-neutral-100 dark:hover:bg-white/5"
-                    }`}
-                  >
-                    <SquarePen className="w-4 h-4" strokeWidth={2} />
-                    <span className="hidden sm:inline">{editMode ? "Редактирование" : "Редактировать"}</span>
-                  </button>
-                )}
+                {/* NAV-NOEDIT: knopka Redaktirovat ryadom s nikom ubrana vmeste s deystviem:
+                    rezhim pravki tekstov otsyuda bolshe ne pereklyuchaetsya. */}
                 {isAdmin && (
                   <Link
                     href="/admin"
@@ -339,13 +329,8 @@ export default function Navbar() {
                       <UsersIcon size={18} style={{ color: "inherit" }} />
                       Мой профиль
                     </Link>
-                    <Link
-                      href="/settings/notifications"
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-neutral-700 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <BellOffIcon size={18} style={{ color: "inherit" }} />
-                      Уведомления
-                    </Link>
+                    {/* NAV-NOBELL: punkt Uvedomleniya ubran - ryadom s imenem uzhe est
+                        kolokolchik s toy zhe stranitsey i beydzhem neprochitannogo. */}
                     <Link
                       href="/settings"
                       className="flex items-center gap-2 px-4 py-2.5 text-sm text-neutral-700 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
