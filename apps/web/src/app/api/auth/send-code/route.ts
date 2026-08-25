@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { generateCode, sendVerificationEmail } from "@/lib/email";
 import { rateLimit } from "@/lib/rateLimit";
+import { isRegistrationEmailAllowed, REGISTRATION_BLOCKED } from "@/lib/emailWhitelist";
 
 /**
  * FIX-RESET: строгая связка «логин ↔ почта».
@@ -52,6 +53,13 @@ export async function POST(req: NextRequest) {
       // Регистрация: код уходит на новый адрес, он обязан быть email-ом.
       if (!rawInput.includes("@")) {
         return NextResponse.json({ error: "Укажите корректный email" }, { status: 400 });
+      }
+      /* MAIL-WHITELIST: белый список доменов проверяется ЗДЕСЬ, а не только на
+         шаге регистрации: иначе человек получает письмо с кодом, вводит его и
+         только тогда узнаёт об отказе, а мы зря шлём почту на сторонние домены.
+         Текст ответа — ровно «Регистрация невозможна», без упоминания списка. */
+      if (!(await isRegistrationEmailAllowed(rawInput))) {
+        return NextResponse.json({ error: REGISTRATION_BLOCKED }, { status: 403 });
       }
       if (resolved.exists) {
         // Не раскрываем, что адрес уже занят.
