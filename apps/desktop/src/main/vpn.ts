@@ -1,36 +1,19 @@
 /**
- * VPN-EMBEDDED: менеджер туннеля со ВСТРОЕННЫМ клиентом.
+ * VPN-WINDOWS-OFFICIAL: менеджер туннеля.
  *
- * Что было до. С `VPN-ONECLICK` кнопка включения перестала отдавать файл-профиль и
- * стала поднимать туннель сама — но только при условии, что человек уже скачал и
- * установил СТОРОННИЙ клиент (WireGuard или AmneziaWG). Оболочка искала его
- * по PATH и в Program Files, а не найдя — предлагала установить. То есть «своего
- * лаунчера» у проекта не было: был пульт к чужому приложению.
+ * Windows больше не использует самописный бэкенд `wireguard-go + Wintun + netsh`.
+ * Вместо него в ресурсы сборки кладётся официальный `wireguard.exe` из проекта
+ * wireguard-windows, а включение вызывает:
  *
- * Что теперь. Клиент лежит внутри сборки (`resources/wireguard`), и туннель
- * поднимает именно он:
+ *   wireguard.exe /installtunnelservice <путь к trioz.conf>
  *
- *   • Linux/macOS — встроенный `wireguard-go` / `amneziawg-go`. Настройка идёт не
- *     через `wg`/`wg-quick` (это часть сторонних wireguard-tools), а по UAPI —
- *     собственным кодом в `vpnHelper.ts`.
- *   • Windows — точно так же: `wireguard-go.exe` + `wintun.dll` из ресурсов, адреса́,
- *     маршруты и DNS — штатным `netsh`.
+ * Официальный клиент сам создаёт службу `WireGuardTunnel$trioz`, WireGuardNT-
+ * адаптер, назначает адреса/DNS, сохраняет маршрут до endpoint и применяет
+ * full-tunnel (`0.0.0.0/1`, `128.0.0.0/1`) тем способом, которым это делает
+ * WireGuard for Windows.
  *
- * Почему на Windows НЕ используется официальный `wireguard.exe`. Сначала он и
- * был взят в ресурсы — и кнопка включения падала с «The specified service does not
- * exist as an installed service», а иногда вместо туннеля открывалось ОКНО WireGuard.
- * Причина не в правах: `wireguard.exe /installtunnelservice` — не автономный
- * туннель, а запрос к службе-менеджеру, которая появляется только при установке
- * стороннего продукта; любой непонятный ему аргумент он понимает как «покажи окно».
- * `wireguard-go.exe` — обычный дочерний процесс без служб и без окон.
- *
- * Системный клиент остался только как ЗАПАСНОЙ вариант для разработчика (в дереве
- * исходников бинарников нет, их раскладывает шаг сборки). В собранном
- * приложении человеку ничего доставать не нужно.
- *
- * Вся ошибкоопасная арифметика (разбор профиля, UAPI, команды маршрутизации,
- * экранирование при повышении прав) живёт в чистых `shared/vpnPlan.ts` и
- * `shared/vpnEmbedded.ts` и закрыта тестами; здесь — только побочные эффекты.
+ * Linux/macOS пока остаются на прежнем встроенном helper (`wireguard-go` через
+ * UAPI), потому что wireguard-windows относится только к Windows.
  */
 
 import { app } from "electron";
@@ -40,6 +23,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { getMainWindow } from "./mainWindow";
+/* FIX-FOREIGNVPN: поиск чужих включённых VPN-адаптеров. */
+import { detectForeignTunnels, foreignTunnelMessage } from "./foreignVpn";
+import { windowsLinkVerdict, windowsTunnelDown, windowsTunnelUp } from "./winTunnel";
 import { IPC } from "../shared/constants";
 import {
   elevatedInvocation,
@@ -48,6 +34,7 @@ import {
   isObfuscatedConfig,
   parseLatestHandshake,
   TUNNEL_CONF_FILE,
+  TUNNEL_NAME,
   tunnelBackendCandidates,
   tunnelDownArgs,
   tunnelUpArgs,
@@ -225,7 +212,7 @@ async function runElevated(exe: string, args: string[]): Promise<void> {
 
 /**
  * Состояние связи у встроенного клиента — читается через его же UAPI-сокет,
- * без утилиты `wg`. Ответ читается под правами пользователя только если ОС
+ * без ути��иты `wg`. Ответ читается под правами пользователя только если ОС
  * разрешает; если нет — считаем туннель поднятым (снять его кнопкой всё
  * равно можно), а не показываем ложную ошибку.
  */
@@ -254,6 +241,69 @@ async function embeddedHandshake(): Promise<"fresh" | "silent" | "unknown"> {
     return Date.now() / 1000 - latest <= HANDSHAKE_FRESH_SECONDS ? "fresh" : "silent";
   } catch {
     return "unknown";
+  }
+}
+
+/**
+ * WINDOWS-STATUS: состояние туннеля у официального WireGuard for Windows.
+ *
+ * Почему не `wg show`: на Windows канал управления туннеля принадлежит
+ * службе и закрыт обычному пользователю, а самого `wg.exe` в сборке нет.
+ * Раньше это давало ЛОЖНУЮ ошибку «туннель поднят, но связи нет»: вызов
+ * `wg` просто не удавался, и проверка считала это отсутствием рукопожатия.
+ *
+ * Поэтому смотрим на то, что доступно без прав: жива ли служба
+ * `WireGuardTunnel$trioz` и поднят ли её адаптер. Служба сама останавливается,
+ * если профиль неверный или адаптер не создался.
+ */
+async function windowsServiceHandshake(): Promise<"fresh" | "silent" | "unknown"> {
+  try {
+    /* FIX-AWG-ONLY: имя службы зависит от клиента: форк AmneziaWG регистрирует
+       AmneziaWGTunnel$<имя>. Проверяем оба имени, а не одно: привязка к одному
+       имени давала бы ложное «туннель не поднят» на работающем туннеле — тот самый
+       сорт ошибки, из-за которой приложение раньше ругалось на исправный узел. */
+    const names = [`AmneziaWGTunnel$${TUNNEL_NAME}`, `WireGuardTunnel$${TUNNEL_NAME}`];
+    let running = false;
+    for (const name of names) {
+      try {
+        const { stdout } = await run("sc.exe", ["query", name], {
+          windowsHide: true,
+          timeout: 10_000,
+        });
+        if (/RUNNING/i.test(stdout)) {
+          running = true;
+          break;
+        }
+      } catch {
+        /* Службы с таким именем нет — пробуем следующее. */
+      }
+    }
+    if (!running) return "silent";
+  } catch {
+    return "silent";
+  }
+  /* Служба жива. Дополнительно убеждаемся, что адаптер в состоянии Up:
+     так ловится случай «служба есть, а сетевого устройства нет». */
+  try {
+    const { stdout } = await run(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `(Get-NetAdapter -Name '${TUNNEL_NAME}' -ErrorAction SilentlyContinue).Status`,
+      ],
+      { windowsHide: true, timeout: 15_000 },
+    );
+    /* FIX-WINLINK: живая служба и адаптер Up ещё не значат связь с узлом.
+       Спрашиваем счётчик входящих байт: в туннеле они приходят только от
+       узла, поэтому ноль — это честное «связи нет», а не «всё хорошо». */
+    if (/Up/i.test(stdout)) return await windowsLinkVerdict();
+    if (stdout.trim() === "") return "unknown";
+    return "silent";
+  } catch {
+    /* Не смогли спросить адаптер, но служба работает — считаем туннель живым. */
+    return "fresh";
   }
 }
 
@@ -291,9 +341,10 @@ function readServiceFile(name: string): string | null {
  * через разовое повышение прав, чтобы не остаться вообще без VPN.
  */
 function serviceAvailable(): boolean {
-  const raw = readServiceFile(AGENT_FILE);
-  if (raw === null) return false;
-  return isAgentAlive(parseHeartbeat(raw), Date.now());
+  /* Windows теперь использует официальный wireguard.exe /installtunnelservice.
+     Старый служебный компонент TrioZ с vpnHelper/wireguard-go больше не нужен
+     для WireGuardNT и намеренно отключён. */
+  return false;
 }
 
 /**
@@ -377,7 +428,9 @@ function startStatusPolling(
         ? serviceHandshake()
         : mode === "embedded"
           ? await embeddedHandshake()
-          : await systemHandshake(backend);
+          : process.platform === "win32"
+            ? await windowsServiceHandshake()
+            : await systemHandshake(backend);
     if (current.state !== "connecting" && current.state !== "on") return;
 
     if (result === "fresh") {
@@ -478,6 +531,15 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     return current;
   }
 
+  /* FIX-FOREIGNVPN: два full-tunnel VPN делят один маршрут по умолчанию. Если
+     сторонний туннель уже поднят, наш выглядит включённым, а трафик идёт мимо —
+     самый запутывающий из возможных исходов. Лучше честно отказать. */
+  const foreign = await detectForeignTunnels();
+  if (foreign.length > 0) {
+    emit({ state: "error", since: null, error: foreignTunnelMessage(foreign), backend: null, embedded: true });
+    return current;
+  }
+
   emit({ state: "connecting", since: null, error: null, backend, embedded: true });
 
   const embedded = embeddedClientPath(backend);
@@ -496,11 +558,29 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
       activeMode = "service";
       await serviceSend("up", config);
     } else if (embedded) {
-      /* Запасной путь: сборка без служебного компонента. Тогда работник
-         запускается через разовое повышение прав — как до этой правки. */
       activeExe = embedded;
-      activeMode = "embedded";
-      await runHelperElevated(["up", confPath, embedded]);
+      if (process.platform === "win32") {
+        /* На Windows больше не поднимаем wireguard-go + Wintun своим кодом.
+           Используем официальный wireguard-windows: /installtunnelservice сам
+           создаёт службу WireGuardTunnel$trioz, WireGuardNT-адаптер, адреса,
+           DNS, endpoint-exclude и full-tunnel маршруты. */
+        /* FIX-WINCLIENT: раньше здесь была одна строка «попросить клиента
+           поставить службу» — и всё. У автора проекта это работало только
+           потому, что клиент AmneziaWG уже был установлен в системе руками.
+           На чистой машине служба создавалась от пути внутри профиля
+           пользователя, не находила ни своих библиотек, ни профиля, и падала
+           с «Системе не удаётся найти указанный путь» — приложение при этом
+           показывало «туннель поднят, связи с узлом нет». Теперь весь этот
+           ручной сценарий делает windowsTunnelUp: копирует клиента целиком и
+           профиль в общий каталог машины, снимает прежнюю службу и адаптер,
+           ставит новую и ждёт подтверждения, что она действительно живёт. */
+        activeMode = "system";
+        activeExe = await windowsTunnelUp(config, embedded);
+      } else {
+        /* Linux/macOS по-прежнему используют встроенный wireguard-go helper. */
+        activeMode = "embedded";
+        await runHelperElevated(["up", confPath, embedded]);
+      }
     } else {
       /* Запасной путь только для дерева исходников без вендоренных бинарников:
          в установленном приложении сюда не попадают. */
@@ -582,6 +662,13 @@ async function tearDown(): Promise<void> {
   }
 
   if (activeMode === "system") {
+    /* FIX-WINCLIENT: служба снимается по имени туннеля, а не по файлу профиля.
+       Прежняя проверка `existsSync(path)` молча выходила, если профиль уже
+       был удалён, и туннель оставался поднятым до перезагрузки. */
+    if (process.platform === "win32") {
+      await windowsTunnelDown(activeExe);
+      return;
+    }
     if (!activeExe || !existsSync(path)) return;
     await runElevated(activeExe, tunnelDownArgs(process.platform, path));
     return;

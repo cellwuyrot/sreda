@@ -8,6 +8,8 @@ import { isAndroidShell, resolveAuthRedirect } from "@/lib/shell";
 import { isDesktop } from "@/lib/desktop";
 import { motion } from "framer-motion";
 import Link from "next/link";
+/* REG-VALIDATE: общие правила для имени, логина, почты и пароля. */
+import { checkRegister, passwordStrength, type RegisterChecks } from "@/lib/registerValidation";
 
 type Step = "form" | "verify" | "reset-password";
 type AuthType = "login" | "register";
@@ -197,30 +199,46 @@ export default function SignInPage() {
     setLoading(false);
   };
 
+  /* REG-VALIDATE: требования считаются на каждый ввод, чтобы человек видел,
+     чего не хватает, ещё до нажатия кнопки, а не после письма с кодом. */
+  const regChecks: RegisterChecks = checkRegister({ name, username, email, password });
+  const regReady = authType !== "register" || regChecks.ready;
+  const pwdScore = passwordStrength(password);
+
   const sendCode = async () => {
     setError("");
     setLoading(true);
 
     try {
-      if (!email || !name || !username || !password) {
-        setError("Заполните все поля");
+      /* REG-VALIDATE: все обязательные требования — одним модулем, тем же, что
+         рисует список под полями. Два набора правил расходятся рано или поздно. */
+      const checks = checkRegister({ name, username, email, password });
+      if (!checks.ready) {
+        setError(checks.firstError || "Проверьте поля формы");
         setLoading(false);
         return;
       }
-      if (!/^[a-zA-Z0-9_]{6,20}$/.test(username)) {
-        setError("Логин: 6-20 символов, только латиница, цифры и _");
-        setLoading(false);
-        return;
-      }
-      if (!/\d/.test(username)) {
-        setError("Логин должен содержать хотя бы одну цифру");
-        setLoading(false);
-        return;
-      }
-      if (password.length < 8) {
-        setError("Пароль должен быть не короче 8 символов");
-        setLoading(false);
-        return;
+
+      /* Занятость логина и почты тоже до письма: иначе человек узнавал о том,
+         что логин занят, только на шаге ввода кода. Сетевой сбой не блокирует
+         регистрацию — сервер всё равно проверит уникальность при создании. */
+      try {
+        const [byName, byMail] = await Promise.all([
+          fetch(`/api/auth/check-username?username=${encodeURIComponent(username)}`).then((r) => r.json()),
+          fetch(`/api/auth/check-username?email=${encodeURIComponent(email)}`).then((r) => r.json()),
+        ]);
+        if (byName?.available === false) {
+          setError("Такой логин уже занят");
+          setLoading(false);
+          return;
+        }
+        if (byMail?.available === false) {
+          setError("На эту почту уже зарегистрирован аккаунт");
+          setLoading(false);
+          return;
+        }
+      } catch {
+        /* проверка необязательная — идём дальше */
       }
 
       const res = await fetch("/api/auth/send-code", {
@@ -430,6 +448,48 @@ export default function SignInPage() {
                   </button>
                 </div>
               </div>
+              {authType === "register" && (
+                <div className="rounded-xl border border-neutral-200 dark:border-white/10 p-3 space-y-2">
+                  {/* REG-VALIDATE: живой список требований. Пока есть невыполненные,
+                      кнопка получения кода неактивна. */}
+                  <div className="flex items-center gap-1.5">
+                    {[0, 1, 2, 3].map((i) => (
+                      <span
+                        key={i}
+                        className={`h-1 flex-1 rounded-full transition-colors ${
+                          pwdScore > i
+                            ? pwdScore >= 4
+                              ? "bg-emerald-500"
+                              : pwdScore === 3
+                                ? "bg-lime-500"
+                                : pwdScore === 2
+                                  ? "bg-amber-500"
+                                  : "bg-red-500"
+                            : "bg-neutral-200 dark:bg-white/10"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <ul className="space-y-1">
+                    {[
+                      ...regChecks.name.requirements,
+                      ...regChecks.username.requirements,
+                      ...regChecks.password.requirements,
+                      ...regChecks.email.requirements,
+                    ].map((req) => (
+                      <li
+                        key={req.id}
+                        className={`flex items-start gap-2 text-xs leading-snug ${
+                          req.ok ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-500 dark:text-gray-400"
+                        }`}
+                      >
+                        <span aria-hidden className="mt-0.5">{req.ok ? "✓" : "•"}</span>
+                        <span>{req.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {authType === "login" && (
                 <div className="text-right -mt-2">
                   <button
@@ -444,7 +504,7 @@ export default function SignInPage() {
 
               <button
                 onClick={authType === "login" ? handleLogin : sendCode}
-                disabled={loading}
+                disabled={loading || !regReady}
                 className="btn-primary w-full min-h-[46px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading

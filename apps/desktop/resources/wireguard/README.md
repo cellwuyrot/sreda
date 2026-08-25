@@ -1,44 +1,50 @@
-# Встроенный клиент туннеля (VPN-EMBEDDED)
+# Встроенный клиент туннеля
 
-Сюда `scripts/vendor-wireguard.mjs` кладёт бинарники клиента, которые
-`electron-builder` через `extraResources` переносит в `resourcesPath/wireguard`
-готового приложения. Именно этот клиент поднимает туннель — пользователю
-не нужно ставить WireGuard или AmneziaWG самостоятельно.
+`scripts/vendor-wireguard.mjs` кладёт сюда бинарники клиента. `electron-builder`
+переносит их в `resourcesPath/wireguard` готового приложения, вне `asar`.
 
-Ожидаемые файлы:
+## Ожидаемые файлы
 
 | Каталог | Файлы |
 |---|---|
-| `win32/` | `wireguard-go.exe`, `wintun.dll` |
+| `win32/` | `wireguard.exe` из wireguard-windows |
 | `darwin/` | `wireguard-go` |
 | `linux/` | `wireguard-go` |
 
-Важно про Windows: нужен именно `wireguard-go.exe`, а НЕ официальный
-`wireguard.exe`. Официальный не умеет поднимать туннель сам: он просит службу-
-менеджер WireGuard (без неё — «The specified service does not exist as an
-installed service») и на любой непонятный аргумент открывает своё окно.
+## Windows
 
-Где взять:
+На Windows больше не используется самописная связка `wireguard-go.exe` +
+`wintun.dll` + ручные команды `netsh`. Нужен официальный `wireguard.exe` из
+проекта wireguard-windows. Приложение вызывает его так:
 
-- `wireguard-go.exe` — собрать из исходников (готовых бинарников под Windows
-  проект не выкладывает): `go build -o wireguard-go.exe golang.zx2c4.com/wireguard/...`
-  — точная команда есть в `build-desktop.bat`.
-- `wintun.dll` — `https://www.wintun.net/builds/wintun-0.14.1.zip`, файл `bin\amd64\wintun.dll`
-  (подписанный распространяемый драйвер тех же авторов).
-
-Сами файлы в git не хранятся: три платформы — это десятки мегабайт в истории
-навсегда, а заменить их потом нельзя без такого же роста.
-
-Сборка:
-
-```bash
-# строго: без клиента сборка остановится (так надо для релиза)
-TRIOZ_CLIENT_SRC=/путь/к/бинарникам npm run vendor:client:strict
-
-# сразу под все платформы
-TRIOZ_CLIENT_SRC=/путь/к/бинарникам node scripts/vendor-wireguard.mjs --platform all
+```powershell
+wireguard.exe /installtunnelservice C:\ProgramData\TrioZ\tunnel\trioz.conf
 ```
 
-В `npm run build` входит мягкий вариант (`--allow-missing`), чтобы разработка без
-бинарников не ломалась. В такой сборке включение скажет: «Встроенный клиент
-отсутствует в этой сборке. Пересоберите приложение с шагом vendor:client.»
+Официальный клиент создаёт службу `WireGuardTunnel$trioz` и использует
+WireGuardNT. Адреса, DNS, endpoint-exclude и full-tunnel маршруты применяются
+официальным кодом WireGuard for Windows.
+
+Где взять `wireguard.exe`:
+
+1. Установить официальный WireGuard for Windows и взять файл:
+   `C:\Program Files\WireGuard\wireguard.exe`.
+2. Или собрать репозиторий wireguard-windows по его `docs/buildrun.md`.
+
+## Сборка
+
+```bash
+# пример структуры источника
+/path/to/vpn-bin/win32/wireguard.exe
+/path/to/vpn-bin/linux/wireguard-go
+/path/to/vpn-bin/darwin/wireguard-go
+
+# строгая укладка бинарников для релиза
+TRIOZ_CLIENT_SRC=/path/to/vpn-bin npm run vendor:client:strict
+
+# только Windows
+TRIOZ_CLIENT_SRC=/path/to/vpn-bin node scripts/vendor-wireguard.mjs --platform win32
+```
+
+В обычный `npm run build` входит мягкий вариант `--allow-missing`, чтобы dev-сборка
+без бинарников не ломалась. Для релиза используйте `vendor:client:strict`.
