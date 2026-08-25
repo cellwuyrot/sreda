@@ -61,7 +61,7 @@ function psQuote(value: string): string {
  * превращается в лишние аргументы — именно на этом раньше ломался вызов с
  * путём вида «TrioZ Connect».
  */
-async function elevatedScript(script: string): Promise<void> {
+async function elevatedScript(script: string): Promise<number> {
   const encoded = Buffer.from(script, "utf16le").toString("base64");
   const inner = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encoded}`;
   const outer =
@@ -72,15 +72,39 @@ async function elevatedScript(script: string): Promise<void> {
       windowsHide: true,
       timeout: 120_000,
     });
+    return 0;
   } catch (err) {
     const e = err as { code?: number; killed?: boolean; stderr?: string };
     if (e.killed) throw new Error("Команда управления туннелем не завершилась вовремя");
     /* Отказ в UAC — это выбор человека, а не поломка: текст говорит об этом прямо. */
     const stderr = (e.stderr || "").trim();
-    if (/canceled|отменен|1223/i.test(stderr)) {
+    if (/canceled|отмен|denied|1223/i.test(stderr)) {
       throw new Error("Не выданы права администратора на включение туннеля");
     }
+    /* FIX-WINCODE: ненулевой код — ЕЩЁ НЕ отказ. Клиент туннеля пишет в stderr
+       даже при успехе, а установка службы могла пройти. Раньше здесь летела
+       ошибка «Не удалось выполнить команду управления туннелем», хотя реальную
+       причину никто не видел. Теперь код возвращается наверх, а вердикт даёт
+       проверка службы и адаптера плюс журнал сценария. */
+    if (typeof e.code === "number") return e.code;
     throw new Error(stderr || "Не удалось выполнить команду управления туннелем");
+  }
+}
+
+/** Путь к журналу повышенного сценария: единственный источник причины сбоя. */
+function installLogPath(): string {
+  return join(stableClientDir(process.env), "install.log");
+}
+
+/** Последние строки журнала — их показываем человеку вместо общей фразы. */
+function installLogTail(): string {
+  try {
+    const text = readFileSync(installLogPath(), "utf8").trim();
+    if (!text) return "";
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+    return lines.slice(-4).join("; ").slice(0, 400);
+  } catch {
+    return "";
   }
 }
 
@@ -193,34 +217,80 @@ function installScript(exePath: string, config: string, targetDir: string): stri
   const confB64 = Buffer.from(config.endsWith("\n") ? config : `${config}\n`, "utf8").toString("base64");
 
   const lines: string[] = [
-    "$ErrorActionPreference = 'Stop'",
+    /* FIX-WINSTOP: 'Stop' здесь был вреден. В PowerShell любая строка, которую
+       внешняя программа пишет в поток ошибок, при 'Stop' превращается в
+       исключение, а клиент туннеля пишет туда и при успешной установке. Из-за
+       этого сценарий обрывался на первой же служебной строке, наружу уходил
+       только код возврата, и приложение показывало общую фразу «Не удалось
+       выполнить команду управления туннелем». Ошибки разбираем по факту. */
+    "$ErrorActionPreference = 'Continue'",
+    "$ProgressPreference = 'SilentlyContinue'",
     `$dir = ${psQuote(targetDir)}`,
     "New-Item -ItemType Directory -Force -Path $dir | Out-Null",
+    `$log = ${psQuote(join(targetDir, "install.log"))}`,
+    "Set-Content -LiteralPath $log -Value \"start $(Get-Date -Format o)\" -Encoding UTF8",
+    "function L($m) { Add-Content -LiteralPath $log -Value $m -Encoding UTF8 }",
     /* Права: только Система и Администраторы. В каталоге лежит приватный
-       ключ туннеля, а %ProgramData% по умолчанию читаем всеми. */
-    "icacls $dir /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' /grant:r 'Administrators:(OI)(CI)F' | Out-Null",
-  ];
-
-  for (const file of files) {
-    lines.push(`Copy-Item -LiteralPath ${psQuote(file)} -Destination $dir -Force`);
-  }
-
-  lines.push(
-    `$conf = ${psQuote(targetConf)}`,
-    `[IO.File]::WriteAllBytes($conf, [Convert]::FromBase64String('${confB64}'))`,
-    /* Снятие прежнего туннеля обоими именами службы и без падения, если их нет. */
+       ключ туннеля, а %ProgramData% по умолчанию читаем всеми.
+       FIX-WINACL: имена групп задаём через SID. На русской Windows группы
+       «Administrators» нет — она называется «Администраторы», icacls такой
+       строки не находил, а /inheritance:r к тому моменту уже снял наследование.
+       Каталог оставался без прав, служба не могла прочитать профиль и умирала
+       с «Системе не удается найти указанный путь». */
+    "icacls $dir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' /grant:r '*S-1-5-32-544:(OI)(CI)F' *>> $log",
     `$exe = ${psQuote(targetExe)}`,
-    `& $exe /uninstalltunnelservice ${psQuote(TUNNEL_NAME)} 2>$null | Out-Null`,
+    `$conf = ${psQuote(targetConf)}`,
+    /* FIX-WINORDER: сначала СНЯТЬ прежний туннель, потом копировать файлы.
+       В обратном порядке (как было) живая служба держит exe и библиотеки
+       открытыми, Copy-Item падает с отказом доступа, и повторное включение
+       не работало вообще никогда — только первое, на чистой машине. */
+    "L 'stage: stop old tunnel'",
+    `if (Test-Path -LiteralPath $exe) { & $exe /uninstalltunnelservice ${psQuote(TUNNEL_NAME)} *>> $log }`,
     "Start-Sleep -Milliseconds 800",
+    ...serviceNames().map((name) => `sc.exe delete ${psQuote(name)} *>> $log`),
     ...serviceNames().map(
-      (name) => `sc.exe delete ${psQuote(name)} 2>$null | Out-Null`,
+      (name) =>
+        `$null = (Get-Service -Name ${psQuote(name)} -ErrorAction SilentlyContinue | ` +
+        "Where-Object { $_.Status -ne 'Stopped' } | Stop-Service -Force -ErrorAction SilentlyContinue)",
     ),
     /* Адаптер-призрак от предыдущей попытки мешает создать новый. */
     `Get-NetAdapter -Name ${psQuote(TUNNEL_NAME)} -ErrorAction SilentlyContinue | ` +
-      "ForEach-Object { pnputil /remove-device $_.PnPDeviceID 2>$null | Out-Null }",
-    "Start-Sleep -Milliseconds 500",
-    `& $exe /installtunnelservice $conf`,
-    "exit $LASTEXITCODE",
+      "ForEach-Object { pnputil /remove-device $_.PnPDeviceID *>> $log }",
+    "Start-Sleep -Milliseconds 800",
+    "L 'stage: copy client'",
+  ];
+
+  for (const file of files) {
+    lines.push(
+      `try { Copy-Item -LiteralPath ${psQuote(file)} -Destination $dir -Force -ErrorAction Stop } ` +
+        `catch { L "copy failed: ${basename(file)} $($_.Exception.Message)" }`,
+    );
+  }
+
+  lines.push(
+    "L 'stage: write profile'",
+    `[IO.File]::WriteAllBytes($conf, [Convert]::FromBase64String('${confB64}'))`,
+    /* Профиль без клиента ставить некуда: это единственная действительно
+       безнадёжная ситуация, и её видно в журнале сразу. */
+    "if (-not (Test-Path -LiteralPath $exe)) { L 'client missing in target dir'; exit 4 }",
+    "L 'stage: install service'",
+    `& $exe /installtunnelservice $conf *>> $log`,
+    "$code = $LASTEXITCODE",
+    "L \"installtunnelservice exit: $code\"",
+    /* Ждём службу здесь же, под правами администратора: без прав состояние
+       службы иногда не читается, и снаружи это выглядело как «не поднялось». */
+    "$ok = $false",
+    "foreach ($i in 1..25) {",
+    `  foreach ($n in @(${serviceNames().map(psQuote).join(", ")})) {`,
+    "    $s = Get-Service -Name $n -ErrorAction SilentlyContinue",
+    "    if ($s -and $s.Status -eq 'Running') { $ok = $true }",
+    "  }",
+    "  if ($ok) { break }",
+    "  Start-Sleep -Milliseconds 600",
+    "}",
+    "L \"service running: $ok\"",
+    `L "adapter: $((Get-NetAdapter -Name ${psQuote(TUNNEL_NAME)} -ErrorAction SilentlyContinue).Status)"`,
+    "if ($ok) { exit 0 } else { exit 3 }",
   );
 
   return lines.join("\n");
@@ -267,10 +337,12 @@ export async function windowsTunnelUp(config: string, embeddedExe: string | null
       if (/права администратора/i.test(lastError.message)) throw lastError;
       continue;
     }
+    /* Вердикт даёт состояние системы, а не код возврата клиента. */
     if (await waitTunnelReady()) {
       return join(targetDir, basename(exe));
     }
-    lastError = new Error(WIN_SERVICE_HINT);
+    const tail = installLogTail();
+    lastError = new Error(tail ? `${WIN_SERVICE_HINT} Журнал: ${tail}` : WIN_SERVICE_HINT);
   }
 
   throw lastError ?? new Error(WIN_SERVICE_HINT);
