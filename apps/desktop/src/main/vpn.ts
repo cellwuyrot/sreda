@@ -31,7 +31,6 @@ import {
   elevatedInvocation,
   handshakeQuery,
   HANDSHAKE_FRESH_SECONDS,
-  isObfuscatedConfig,
   parseLatestHandshake,
   TUNNEL_CONF_FILE,
   TUNNEL_NAME,
@@ -520,8 +519,10 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
   }
   if (current.state === "connecting") return current;
 
-  const obfuscated = isObfuscatedConfig(config);
-  const backend: VpnBackend = obfuscated ? "amneziawg" : "wireguard";
+  /* FIX-AWG-ONLY: бекенд в проекте один. Раньше здесь выбирался обычный
+     WireGuard для профилей без параметров маскировки, но узлы проекта
+     поднимают только AmneziaWG, а он справляется и с простым профилем. */
+  const backend: VpnBackend = "amneziawg";
 
   /* Самая частая причина «включил, а не работает» — битый профиль. Лучше
      поймать это до окна повышения прав, чем после. */
@@ -584,7 +585,7 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     } else {
       /* Запасной путь только для дерева исходников без вендоренных бинарников:
          в установленном приложении сюда не попадают. */
-      const fallback = await resolveSystemExe(backend);
+      const fallback = await resolveSystemExe();
       if (!fallback) {
         emit({
           state: "error",
@@ -626,9 +627,8 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
 }
 
 /** Системный инструмент для запасного пути (только режим разработки). */
-async function resolveSystemExe(backend: VpnBackend): Promise<string> {
-  const obfuscated = backend === "amneziawg";
-  for (const candidate of tunnelBackendCandidates(process.platform, obfuscated)) {
+async function resolveSystemExe(): Promise<string> {
+  for (const candidate of tunnelBackendCandidates(process.platform)) {
     const resolved = await findExecutable(candidate.exe);
     if (resolved) return resolved;
   }
