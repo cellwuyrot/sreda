@@ -46,6 +46,37 @@ export interface ScreenShareStats {
 }
 
 export type ConnectionQuality = "good" | "medium" | "poor" | "unknown";
+/* VOICE-VOLKEEP: где лежат личные громкости собеседников. Это выбор слушателя,
+   он никому не отправляется и потому хранится на устройстве. */
+const USER_VOLUME_KEY = "voice-user-volumes";
+
+/** Запомненные громкости: userId -> проценты (0..200). */
+function readSavedUserVolumes(): Map<string, number> {
+  const map = new Map<string, number>();
+  if (typeof window === "undefined") return map;
+  try {
+    const raw = window.localStorage.getItem(USER_VOLUME_KEY);
+    if (!raw) return map;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return map;
+    for (const [userId, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const num = Number(value);
+      if (userId && Number.isFinite(num)) map.set(userId, Math.max(0, Math.min(200, num)));
+    }
+  } catch { /* битое значение не должно ломать голос */ }
+  return map;
+}
+
+/** Сохранение всей карты: записей ровно столько, сколько людей вручную настроили. */
+function writeSavedUserVolumes(map: Map<string, number>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const plain: Record<string, number> = {};
+    map.forEach((value, userId) => { plain[userId] = value; });
+    window.localStorage.setItem(USER_VOLUME_KEY, JSON.stringify(plain));
+  } catch { /* переполненное хранилище — не причина падать */ }
+}
+
 export type VoiceStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
 export type VoiceConnectionStage =
   | "idle"
@@ -640,6 +671,25 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   // was chosen before the audio element existed.
   const [userVolumes, setUserVolumes] = useState<Map<string, number>>(new Map());
   const userVolumesRef = useRef<Map<string, number>>(new Map());
+  /* VOICE-VOLKEEP: персональная громкость живёт по userId, а не по socketId.
+     socketId выдаётся заново каждый раз, когда человек вышел и зашёл, поэтому
+     выставленное значение терялось уже на втором его входе в канал. Теперь
+     выбор слушателя запоминается навсегда — один раз для каждого собеседника. */
+  const savedVolumesRef = useRef<Map<string, number>>(readSavedUserVolumes());
+
+  /** Громкость для участника: текущая для соединения, иначе запомненная, иначе 100%. */
+  const volumeFor = useCallback((socketId: string): number => {
+    const live = userVolumesRef.current.get(socketId);
+    if (typeof live === "number") return live;
+    const userId = usersRef.current.find(u => u.socketId === socketId)?.userId;
+    const saved = userId ? savedVolumesRef.current.get(userId) : undefined;
+    if (typeof saved !== "number") return 100;
+    /* Запомненное значение сразу становится текущим для этого соединения,
+       чтобы ползунок в списке участников показывал его, а не ровные 100%. */
+    userVolumesRef.current.set(socketId, saved);
+    setUserVolumes(prev => { const m = new Map(prev); m.set(socketId, saved); return m; });
+    return saved;
+  }, []);
 
   /* ── Channel users preview (before joining) ── */
   const [channelUsersMap, setChannelUsersMap] = useState<Map<string, VoiceUser[]>>(new Map());
@@ -1164,7 +1214,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
     audio.srcObject = stream;
 
-    const vol = (userVolumesRef.current.get(socketId) ?? 100) / 100; // 0..2
+    const vol = volumeFor(socketId) / 100; // 0..2
     const graph = ensurePlaybackGraph();
     if (graph) {
       try { userSourceRef.current.get(socketId)?.disconnect(); } catch { /* ignore */ }
@@ -2420,6 +2470,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     remoteScreenRef.current.clear();
     setRemoteScreens(new Map());
     setRemoteScreenQualities(new Map());
+    /* Сбрасываем только привязку к socketId; запомненные значения по userId остаются. */
     userVolumesRef.current.clear();
     setUserVolumes(new Map());
     // Keep the channel selected for one short paint so the user sees the final
@@ -3002,6 +3053,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const setUserVolume = useCallback((socketId: string, volume: number) => {
     const clamped = Math.max(0, Math.min(200, volume));
     userVolumesRef.current.set(socketId, clamped);
+    /* VOICE-VOLKEEP: запоминаем за человеком, а не за его текущим соединением. */
+    const userId = usersRef.current.find(u => u.socketId === socketId)?.userId;
+    if (userId) {
+      savedVolumesRef.current.set(userId, clamped);
+      writeSavedUserVolumes(savedVolumesRef.current);
+    }
     setUserVolumes(prev => { const m = new Map(prev); m.set(socketId, clamped); return m; });
     const gain = userGainRef.current.get(socketId);
     if (gain) {
