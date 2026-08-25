@@ -10,12 +10,26 @@ import { describe, it, expect } from "vitest";
 import {
   elevatedInvocation,
   handshakeQuery,
+  isObfuscatedConfig,
   parseLatestHandshake,
   tunnelBackendCandidates,
   tunnelDownArgs,
   tunnelUpArgs,
   TUNNEL_NAME,
 } from "./vpnPlan";
+
+const PLAIN = [
+  "[Interface]",
+  "PrivateKey = QOM2s3xS1S4H1H2gP+aBcDeFgHiJkLmNoPqRsTuVwXY=",
+  "Address = 10.8.0.7/32",
+  "DNS = 1.1.1.1",
+  "",
+  "[Peer]",
+  "PublicKey = HdS1S2H1I5aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456=",
+  "Endpoint = vpn1.example.ru:51820",
+  "AllowedIPs = 0.0.0.0/0, ::/0",
+  "PersistentKeepalive = 25",
+].join("\n");
 
 const OBFUSCATED = [
   "[Interface]",
@@ -32,26 +46,35 @@ const OBFUSCATED = [
   "AllowedIPs = 0.0.0.0/0, ::/0",
 ].join("\n");
 
-describe("выбор бинарника под платформу", () => {
-  /* FIX-AWG-ONLY: обычного WireGuard в проекте нет, значит кандидата
-     «wireguard.exe / wg-quick» быть не должно ни на одной платформе. Проверка
-     не декоративная: именно откат на обычный клиент давал молчаливую
-     тишину в туннеле на маскированном узле. */
-  it("Windows — только клиент AmneziaWG", () => {
-    expect(tunnelBackendCandidates("win32")).toEqual([{ exe: "amneziawg.exe", backend: "amneziawg" }]);
+describe("тип профиля: обычный или обфусцированный", () => {
+  it("обычный профиль не считается обфусцированным, хотя S1/H1 мелькают в base64 ключей", () => {
+    expect(isObfuscatedConfig(PLAIN)).toBe(false);
   });
 
-  it("Linux — только awg-quick", () => {
-    expect(tunnelBackendCandidates("linux")).toEqual([{ exe: "awg-quick", backend: "amneziawg" }]);
+  it("профиль с параметрами маскировки в [Interface] распознаётся", () => {
+    expect(isObfuscatedConfig(OBFUSCATED)).toBe(true);
   });
 
-  it("ИНВАРИАНТ: ни одного кандидата обычного WireGuard", () => {
-    for (const platform of ["win32", "linux", "darwin"] as NodeJS.Platform[]) {
-      for (const candidate of tunnelBackendCandidates(platform)) {
-        expect(candidate.backend).toBe("amneziawg");
-        expect(candidate.exe).not.toMatch(/^wg|^wireguard/);
-      }
-    }
+  it("ключ маскировки в комментарии не в счёт", () => {
+    expect(isObfuscatedConfig("[Interface]\n# S1 = 30\nAddress = 10.8.0.2/32")).toBe(false);
+  });
+});
+
+describe("выбор бинарника под платформу и тип профиля", () => {
+  it("Windows, обычный — служба WireGuard", () => {
+    expect(tunnelBackendCandidates("win32", false)).toEqual([{ exe: "wireguard.exe", backend: "wireguard" }]);
+  });
+
+  it("Windows, обфусцированный — AmneziaWG без отката на обычный", () => {
+    expect(tunnelBackendCandidates("win32", true)).toEqual([{ exe: "amneziawg.exe", backend: "amneziawg" }]);
+  });
+
+  it("Linux, обычный — wg-quick", () => {
+    expect(tunnelBackendCandidates("linux", false)).toEqual([{ exe: "wg-quick", backend: "wireguard" }]);
+  });
+
+  it("Linux, обфусцированный — awg-quick", () => {
+    expect(tunnelBackendCandidates("linux", true)).toEqual([{ exe: "awg-quick", backend: "amneziawg" }]);
   });
 });
 
@@ -114,6 +137,9 @@ describe("разбор рукопожатия для статуса", () => {
   });
 
   it("запрос статуса выбирает wg или awg под бэкенд и платформу", () => {
+    expect(handshakeQuery("linux", "wireguard").exe).toBe("wg");
     expect(handshakeQuery("linux", "amneziawg").exe).toBe("awg");
+    expect(handshakeQuery("win32", "wireguard").exe).toBe("wg.exe");
+    expect(handshakeQuery("win32", "wireguard").args).toEqual(["show", TUNNEL_NAME, "latest-handshakes"]);
   });
 });

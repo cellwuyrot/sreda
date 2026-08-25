@@ -314,7 +314,7 @@ describe("pickVpnNode", () => {
       name: "vpn-1",
       url: "",
       endpointHost: "vpn1.example.ru:51820",
-      transport: "OBFUSCATED",
+      transport: "PLAIN",
       obfuscation: "",
       region: "",
       publicIps: "",
@@ -405,23 +405,17 @@ describe("nodeTunnel", () => {
   });
 
   /**
-   * ИНВАРИАНТ (FIX-AWG-ONLY): параметры маскировки уезжают клиенту всегда,
-   * когда узел их прислал — даже если в базе осталась старая пометка "PLAIN".
-   * Прежний обратный инвариант и был той самой поломкой: узел с awg0 выдавал
-   * профиль без Jc/S1/H1, и рукопожатия отбрасывались молча.
+   * ИНВАРИАНТ (FIX-NOAWG): параметры маскировки не попадают в профиль НИКОГДА —
+   * даже если в базе осталась пометка OBFUSCATED от прежних версий и узел даже
+   * прислал параметры. Профиль с такими строками обычный узел отбрасывает молча,
+   * и пользователь видит только «узел не ответил на рукопожатие».
    */
-  it("ИНВАРИАНТ: маскировка выдаётся и при старой пометке PLAIN", () => {
+  it("ИНВАРИАНТ: параметры маскировки никогда не уезжают клиенту", () => {
     const obfuscation = JSON.stringify({ Jc: 4 });
-    expect(nodeTunnel({ endpointHost: "", lastReport: report, transport: "PLAIN", obfuscation }).obfuscation).toEqual({
-      Jc: 4,
-    });
+    expect(nodeTunnel({ endpointHost: "", lastReport: report, transport: "PLAIN", obfuscation }).obfuscation).toBeNull();
     expect(
       nodeTunnel({ endpointHost: "", lastReport: report, transport: "OBFUSCATED", obfuscation }).obfuscation,
-    ).toEqual({ Jc: 4 });
-  });
-
-  it("без параметров узла маскировки в профиле нет", () => {
-    expect(nodeTunnel({ endpointHost: "", lastReport: report, transport: "OBFUSCATED" }).obfuscation).toBeNull();
+    ).toBeNull();
   });
 });
 
@@ -463,8 +457,7 @@ describe("parseObfuscation", () => {
 
 describe("isTransport", () => {
   it("только два значения", () => {
-    /* FIX-AWG-ONLY: старое "PLAIN" больше не допустимое значение. */
-    expect(isTransport("PLAIN")).toBe(false);
+    expect(isTransport("PLAIN")).toBe(true);
     expect(isTransport("OBFUSCATED")).toBe(true);
     expect(isTransport("plain")).toBe(false);
     expect(isTransport(null)).toBe(false);

@@ -148,12 +148,8 @@ export function wintunSearchDirs(env: Record<string, string | undefined>): strin
  * `wg`, `wg-quick` и `wireguard.exe`.
  */
 export function embeddedClientName(platform: NodeJS.Platform, backend: VpnBackend): string {
-  /* FIX-AWG-ONLY: имя одно на все случаи. Раньше здесь была развилка, и при
-     backend === "wireguard" в ресурсах искался wireguard.exe, которого в сборке
-     больше нет — приложение честно сообщало «клиент не найден» вместо работы. */
-  void backend;
-  if (platform === "win32") return "amneziawg.exe";
-  return "amneziawg-go";
+  const base = backend === "amneziawg" ? "amneziawg-go" : "wireguard-go";
+  return platform === "win32" ? `${base}.exe` : base;
 }
 
 /* ────────────────────────── Разбор профиля ────────────────────────── */

@@ -92,7 +92,7 @@ const MOCK_NODE = {
   endpoint: "vpn.example.com:51820",
   publicIps: "",
   endpointHost: "vpn.example.com",
-  transport: "OBFUSCATED",
+  transport: "PLAIN",
   obfuscation: null,
   lastReport: null,
   enabled: true,

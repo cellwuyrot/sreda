@@ -156,9 +156,8 @@ export async function POST(req: Request) {
       kind,
       url: cleanUrl(body?.url),
       endpointHost: normalizeWgEndpoint(body?.endpointHost),
-      /* FIX-AWG-ONLY: выбирать нечего — все узлы маскированные. Раньше здесь
-         стояло "PLAIN", и такой узел выдавал профили без параметров маскировки. */
-      transport: "OBFUSCATED",
+      // FIX-NOAWG: тип подключения теперь только обычный — выбирать нечего.
+      transport: "PLAIN",
       region: typeof body?.region === "string" ? sanitizeText(body.region).trim().slice(0, 60) : "",
       note: typeof body?.note === "string" ? sanitizeText(body.note).trim().slice(0, 300) : "",
       tokenHash: issued?.tokenHash ?? null,
@@ -217,11 +216,10 @@ export async function PATCH(req: Request) {
      схему и подставляет стандартный порт, поэтому вставленная ссылка тоже
      превратится в рабочее значение, а не в пустое поле. */
   if (body?.endpointHost !== undefined) data.endpointHost = normalizeWgEndpoint(body.endpointHost);
-  /* FIX-AWG-ONLY: тип подключения больше не настраивается. Любая правка
-     карточки заодно лечит узлы, которые остались с пометкой "PLAIN" с прежних
-     версий: иначе такой узел молча выдавал бы немаскированные профили. */
-  if (isTransport(body?.transport)) data.transport = body.transport;
-  else if (node.transport !== "OBFUSCATED") data.transport = "OBFUSCATED";
+  /* FIX-NOAWG: режим маскировки убран. Обращения со старого интерфейса или сторонние
+     запросы не отклоняются ошибкой, а приводятся к обычному типу: так любая
+     правка карточки заодно лечит узлы, помеченные «устойчивыми» раньше. */
+  if (isTransport(body?.transport)) data.transport = "PLAIN";
   if (typeof body?.region === "string") data.region = sanitizeText(body.region).trim().slice(0, 60);
   if (typeof body?.note === "string") data.note = sanitizeText(body.note).trim().slice(0, 300);
   if (typeof body?.enabled === "boolean") data.enabled = body.enabled;
