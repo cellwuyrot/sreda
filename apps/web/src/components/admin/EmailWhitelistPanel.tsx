@@ -1,10 +1,10 @@
 "use client";
 
-/* MAIL-WHITELIST: блок «Белые списки» в разделе «Сервисы и система».
+/* MAIL-WHITELIST: таблица раздела «Настройки ограничений» → «Белые списки».
 
-   Сейчас в блоке один раздел — регистрация по почте. Структура сознательно
-   сделана двухуровневой (блок → раздел): следующие списки — по телефонам
-   или странам — встанут рядом, а не потребуют переделки шапки.
+   Заголовок и подводка живут на странице, а не внутри компонента: рядом встанут
+   другие списки, и каждый должен быть карточкой одного уровня, без вложенных
+   «белый список внутри белого списка».
 
    О самом списке знает только администратор: тот, кто регистрируется, видит
    только «Регистрация невозможна» (см. lib/emailWhitelist.ts). */
@@ -132,11 +132,6 @@ export default function EmailWhitelistPanel() {
 
   return (
     <div className="rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-5">
-      <h2 className="mb-1 text-base font-semibold text-neutral-900 dark:text-white">Белые списки</h2>
-      <p className="mb-4 text-xs text-neutral-500 dark:text-gray-400">
-        Ограничения доступа на входе в проект
-      </p>
-
       <div className="rounded-2xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 p-4">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <div>
