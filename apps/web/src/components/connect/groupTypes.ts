@@ -12,6 +12,8 @@ export interface Group {
 	requireRules?: boolean;
 	/** NEW: пауза группы («скелетирование»): контент виден только OWNER/ADMIN */
 	paused?: boolean;
+	/** GROUP-SKIN: оформление сообщества (JSON, см. lib/groupTheme.ts) */
+	theme?: string | null;
 	_count: { members: number; channels: number };
 }
 

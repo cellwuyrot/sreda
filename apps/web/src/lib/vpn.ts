@@ -3,7 +3,7 @@ import { hasPremium } from "@/lib/premium";
 /* VPN-PLAN: отдельная подписка, которая даёт только туннель. */
 import { hasActiveVpnPlan } from "@/lib/vpnPlan";
 /* FIX-AWG: единая проверка параметров маскировки — и для панели, и для выдачи профиля. */
-import { awgProblem } from "@/lib/awgParams";
+import { AWG_LIMITS, awgProblem } from "@/lib/awgParams";
 
 /**
  * VPN-WG: серверная часть выдачи доступа к WireGuard.
@@ -278,7 +278,7 @@ export async function assignExitIp(nodeId: string, publicIpsRaw: string): Promis
  * пиров молча пропадал выход в интернет. Симптом при этом самый неудобный:
  * туннель поднят, рукопожатие идёт, а сайты не открываются.
  *
- * Поэтому при смене пула затронутые пиры получают адреса зан��во: те, чей адрес
+ * Поэтому при смене пула затронутые пиры получают адреса зан����во: те, чей адрес
  * исчез, и те, у кого его не было вовсе (пул появился позже, чем пир). Остальных
  * не трогаем — смена внешнего адреса посреди работы выглядит для банков и длинных
  * сессий как смена пользователя.
@@ -367,23 +367,22 @@ export async function pickVpnNode(maxPeersPerNode?: number) {
  * узла они одинаковые. Отсюда и место хранения — карточка узла.
  */
 
-export const TRANSPORTS = ["PLAIN", "OBFUSCATED"] as const;
+/* FIX-AWG-ONLY: тип подключения больше не выбирается: узлы проекта всегда
+   маслируют трафик (AmneziaWG). Значение "PLAIN" убрано не для порядка:
+   именно оно было значением по умолчанию, и такой узел выдавал профиль без
+   Jc/S1/H1, а сервер молча отбрасывал рукопожатия такого клиента. */
+export const TRANSPORTS = ["OBFUSCATED"] as const;
 export type Transport = (typeof TRANSPORTS)[number];
 
 export function isTransport(value: unknown): value is Transport {
-  return value === "PLAIN" || value === "OBFUSCATED";
+  return value === "OBFUSCATED";
 }
 
 /** Числовые параметры и их допустимые границы — по спецификации форка. */
-const NUMERIC_BOUNDS: Record<string, [number, number]> = {
-  Jc: [0, 10],
-  Jmin: [0, 1280],
-  Jmax: [0, 1280],
-  S1: [0, 64],
-  S2: [0, 64],
-  S3: [0, 64],
-  S4: [0, 32],
-};
+const NUMERIC_KEYS = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4"] as const;
+const NUMERIC_BOUNDS: Record<string, [number, number]> = Object.fromEntries(
+  NUMERIC_KEYS.map((key) => [key, [AWG_LIMITS[key].min, AWG_LIMITS[key].max]]),
+) as Record<string, [number, number]>;
 /** Заголовки: одно число или диапазон «x-y». */
 const HEADER_KEYS = ["H1", "H2", "H3", "H4"] as const;
 /** Пакеты-подписи: произвольные строки, отдаём как есть. */
@@ -469,20 +468,21 @@ export function nodeTunnel(node: {
   return {
     publicKey: reported.publicKey,
     endpoint: normalizeWgEndpoint(node.endpointHost) || reported.endpoint,
-    /* FIX-NOAWG: режим маскировки больше не выдаётся клиентам НИКОГДА.
+    /* FIX-AWG-ONLY: параметры маскировки выдаются всегда, когда узел их
+       прислал в отчёте.
 
-       На живом узле это давало самый неприятный вид отказа — рассогласование
-       протоколов. Администратор отмечал узел «устойчивым», профиль уезжал с
-       строками Jc/S1/H1, а интерфейс на сервере при этом оставался обычным
-       (awg-quick не поднимался из-за занятого имени и того же адреса 10.8.0.1/24).
-       Обычный узел молча отбрасывает такое рукопожатие — клиент видит лишь
-       «узел не ответил на рукопожатие», причём сразу у всех.
+       Раньше здесь стояла заглушка (FIX-NOAWG): маскировка не выдавалась
+       никогда, потому что на узле не было работающего awg-интерфейса, и профиль
+       со строками Jc/S1/H1 упирался в обычный WireGuard. Теперь узел поднимает
+       awg0 через amneziawg-tools, а в сборке лежит amneziawg.exe, поэтому
+       заглушка стала прямо противоположной проблемой: маскированный узел
+       получал обычные профили и молча отбрасывал рукопожатия.
 
-       Пока на стороне узла нет гарантированно работающего маскированного
-       интерфейса И встроенного клиента под него в сборке, включать режим нечем:
-       всегда выдаём обычный WireGuard. Поле transport в базе оставлено (миграция
-       ради одного столбца не стоит риска), но на выдачу оно больше не влияет. */
-    obfuscation: null,
+       Проверки по полю transport больше нет нарочно: узлы бывают только
+       маскированные, а старые записи с transport = "PLAIN" иначе навечно остались
+       бы без маскировки. Единственный критерий — прислал ли узел годные
+       параметры: негодные parseObfuscation отбросит сам. */
+    obfuscation: parseObfuscation(node.obfuscation),
   };
 }
 

@@ -1350,6 +1350,100 @@ html[data-tz-skin-font="on"] kbd {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+/* ═════════════════════════════════════════════════════════════════════
+   GROUP-SKIN: оформление сообщества
+   ═════════════════════════════════════════════════════════════════════
+
+   Значения ставит lib/groupTheme.ts на <html> в рантайме. Сами правила
+   включаются только атрибутом data-tz-group: переменные без атрибута ничего
+   не меняют, и выход из сообщества — это снятие одного атрибута.
+
+   Почему здесь !important, а в PREMIUM-SKIN его нет: два слоя правят одно и то же
+   свойство, и без явного приоритета победа зависела бы от порядка правил в
+   файле, а не от смысла. Внутри сообщества главнее сообщество; если админ
+   отключит приоритет, атрибут data-tz-group-priority станет off и личный скин
+   вернётся. */
+
+:root {
+  --tz-group-chat-layer: none;
+  --tz-group-chat-size: auto;
+  --tz-group-chat-repeat: no-repeat;
+  --tz-group-channels-layer: none;
+  --tz-group-channels-size: auto;
+  --tz-group-channels-repeat: no-repeat;
+  --tz-group-voice-layer: none;
+  --tz-group-voice-size: auto;
+  --tz-group-voice-repeat: no-repeat;
+  --tz-group-font-scale: 1;
+}
+
+/* Область переписки внутри сообщества. */
+html[data-tz-group="on"][data-tz-group-priority="on"] .tz-skin-chat {
+  background-image: var(--tz-group-chat-layer) !important;
+  background-size: var(--tz-group-chat-size) !important;
+  background-repeat: var(--tz-group-chat-repeat) !important;
+  background-position: center center;
+  background-attachment: local;
+}
+
+/* Текстовые каналы — боковая панель со списком каналов. */
+html[data-tz-group="on"][data-tz-group-priority="on"] .cn-sidebar {
+  background-image: var(--tz-group-channels-layer) !important;
+  background-size: var(--tz-group-channels-size) !important;
+  background-repeat: var(--tz-group-channels-repeat) !important;
+  background-position: center center;
+}
+
+/* Голосовые комнаты и панель звонка. */
+html[data-tz-group="on"][data-tz-group-priority="on"] .tz-group-voice {
+  background-image: var(--tz-group-voice-layer) !important;
+  background-size: var(--tz-group-voice-size) !important;
+  background-repeat: var(--tz-group-voice-repeat) !important;
+  background-position: center center;
+}
+
+/* Шрифт сообщества. Код остаётся моноширинным — иначе ломается выравнивание. */
+html[data-tz-group-font="on"] body,
+html[data-tz-group-font="on"] input,
+html[data-tz-group-font="on"] textarea,
+html[data-tz-group-font="on"] button,
+html[data-tz-group-font="on"] select {
+  font-family: var(--tz-group-font) !important;
+}
+
+html[data-tz-group-font="on"] code,
+html[data-tz-group-font="on"] pre,
+html[data-tz-group-font="on"] kbd {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace !important;
+}
+
+/* Масштаб текста сообщества: притрагиваем только ленту сообщений, а не всю
+   страницу: панели и модальные окна свёрстаны под базовый размер. */
+html[data-tz-group="on"] .tz-skin-chat {
+  font-size: calc(1rem * var(--tz-group-font-scale));
+}
+
+/* Анимированный баннер: градиент медленно плывёт. */
+@keyframes tz-group-banner-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.tz-group-banner-animated {
+  background-size: 220% 220%;
+  animation: tz-group-banner-flow 18s ease-in-out infinite;
+}
+
+/* Уважаем системную просьбу убрать анимацию. */
+@media (prefers-reduced-motion: reduce) {
+  .tz-group-banner-animated {
+    animation: none;
+    background-size: cover;
+  }
+}
+
+
 
 /* FIX-REACTPOP: окно выбора реакции держится внутри области чата.
 
