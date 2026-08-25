@@ -42,7 +42,7 @@ function node(over: Record<string, unknown> = {}) {
     kind: "VPN",
     url: "",
     endpointHost: "",
-    transport: "OBFUSCATED",
+    transport: "PLAIN",
     obfuscation: "",
     region: "",
     publicIps: "",

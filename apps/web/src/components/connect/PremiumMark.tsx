@@ -96,22 +96,21 @@ export default function PremiumMark({ isPremium, onClick, size = 44, asToggle = 
       : {};
 
   const label = switchMode
-    ? "Открыть защищённое соединение (правая кнопка — включить или выключить)"
+    ? tunnel.on
+      ? "Выключить защищённое соединение (Premium)"
+      : "Включить защищённое соединение (Premium)"
     : "Открыть информацию о premium";
 
   const title = switchMode
-    ? `${tunnel.on ? "Соединение включено" : tunnel.pending ? "Переключаем…" : "Соединение выключено"} · левая кнопка — подробности · правая кнопка — ${tunnel.on ? "выключить" : "включить"}`
+    ? `${tunnel.on ? "Соединение включено" : tunnel.pending ? "Переключаем…" : "Соединение выключено"} · нажмите, чтобы ${tunnel.on ? "выключить" : "включить"} · правая кнопка — подробности`
     : "TZ.Connect Premium";
 
   return (
     <button
       type="button"
-      /* FIX-TZBTN: ЛКМ и ПКМ поменяны местами. Обычное нажатие теперь открывает
-         окно соединения, а включает и выключает туннель правая кнопка:
-         случайный клик по значку больше не рвёт сеть. Shift/Alt оставлены как
-         быстрое переключение для тех, кто привык к клавиатуре. */
       onClick={(e) => {
-        if (switchMode && (e.shiftKey || e.altKey)) {
+        /* Shift/Alt и правая кнопка — прямой путь к окну, когда значок включает VPN. */
+        if (switchMode && !e.shiftKey && !e.altKey) {
           void tunnel.toggle();
           return;
         }
@@ -120,7 +119,7 @@ export default function PremiumMark({ isPremium, onClick, size = 44, asToggle = 
       onContextMenu={(e) => {
         if (!switchMode) return;
         e.preventDefault();
-        void tunnel.toggle();
+        onClick?.();
       }}
       className="relative rounded-xl flex items-center justify-center font-black text-base select-none transition-transform hover:scale-105 flex-shrink-0"
       style={{ width: size, height: size, ...style, ...ringStyle }}

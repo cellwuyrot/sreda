@@ -196,8 +196,6 @@ model Group {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   banner                 String?                 @db.Text
-  /// GROUP-SKIN: оформление сообщества (JSON, см. lib/groupTheme.ts)
-  theme                  String                  @default("") @db.Text
   requireRules           Boolean                 @default(false)
   /// NEW: пауза группы (��скелетирование»): контент виден только OWNER/ADMIN
   paused                 Boolean                 @default(false)
