@@ -17,6 +17,8 @@ import ScreenSharePrivacyModal from "@/components/voice/ScreenSharePrivacyModal"
 import { isModuleType } from "@/lib/channelModules";
 import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
 import { useDragOrder } from "./useDragOrder"; // FIX-DRAGORDER
+/* GROUP-SKIN: шапка сообщества берётся из оформления группы. */
+import { bannerCss, parseGroupTheme } from "@/lib/groupTheme";
 
 /* ─── Props ─── */
 
@@ -287,6 +289,21 @@ export default function ChannelSidebar({
     };
   }, [groupDetail.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* GROUP-SKIN: шапка сообщества. Приоритет у оформления из раздела «Дизайн»;
+     старое поле `banner` остаётся запа��ным вариантом для групп, где тему
+     ещё не настроили — иначе у всех сразу пропала бы загруженная картинка. */
+  const groupSkin = useMemo(() => parseGroupTheme(groupDetail.theme ?? null), [groupDetail.theme]);
+  const skinBanner = groupSkin.enabled ? groupSkin.banner : null;
+  const bannerVideo = skinBanner && skinBanner.kind === "video" && skinBanner.url ? skinBanner.url : "";
+  const skinLayer = skinBanner && !bannerVideo ? bannerCss(skinBanner) : "none";
+  const bannerLayer = skinLayer !== "none" ? skinLayer : groupDetail.banner ? `url("${groupDetail.banner}")` : "";
+  /* Анимация есть только у градиента: картинку двигать нечем, а видео движется само. */
+  const bannerAnimated = !!skinBanner && skinBanner.animated && skinBanner.kind === "gradient";
+  /* Затенение нужно для читаемости названия поверх любой картинки. */
+  const bannerDim = skinBanner ? skinBanner.overlay / 100 : 0.62;
+  const bannerShade = `linear-gradient(to bottom, rgba(0,0,0,${(bannerDim * 0.3).toFixed(3)}), rgba(0,0,0,${bannerDim.toFixed(3)}))`;
+  const hasBanner = !!bannerLayer || !!bannerVideo;
+
   const isInVoice = voiceState?.isConnected && voiceState?.channelId;
   const currentVoiceChannelId = voiceState?.channelId;
 
@@ -296,23 +313,45 @@ export default function ChannelSidebar({
           Название группы теперь кликабельно и открывает меню со всеми
           действиями (настройки, инвайты, участники, мьют, выход). */}
       <div
-        className="p-3 flex items-center gap-2 relative z-20 overflow-visible"
+        className={`p-3 flex items-center gap-2 relative z-20 overflow-visible${
+          bannerAnimated && bannerLayer ? " tz-group-banner-animated" : ""
+        }`}
         style={{
           borderBottom: "1px solid var(--cn-border)",
           flexShrink: 0,
-          /* Загруженный баннер группы — фон блока с названием и описанием. */
-          ...(groupDetail.banner
+          /* GROUP-SKIN: баннер из оформления сообщества или старая картинка. */
+          ...(hasBanner
             ? {
                 minHeight: 88,
                 alignItems: "flex-end",
-                backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.18), rgba(0,0,0,0.62)), url(${groupDetail.banner})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
+                ...(bannerLayer
+                  ? {
+                      backgroundImage: `${bannerShade}, ${bannerLayer}`,
+                      backgroundSize: bannerAnimated ? "auto, 220% 220%" : "cover",
+                      backgroundPosition: "center",
+                    }
+                  : {}),
                 color: "#fff",
               }
             : {}),
         }}
       >
+        {/* GROUP-SKIN: видео-баннер. Обёртка с отрицательным z-index и своим
+            overflow-hidden: клипает только себя, поэтому выпадающее меню шапки
+            по-прежнему выходит за границы блока. */}
+        {bannerVideo && (
+          <span className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: -1 }} aria-hidden="true">
+            <video
+              src={bannerVideo}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="h-full w-full object-cover"
+            />
+            <span className="absolute inset-0" style={{ background: bannerShade }} />
+          </span>
+        )}
         {onBack && (
           <button onClick={onBack} className="-ml-2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center flex-shrink-0 text-neutral-400 hover:text-neutral-600 active:text-neutral-600 dark:hover:text-white dark:active:text-white" aria-label="Назад к сообществам" title="Назад к сообществам">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -668,7 +707,7 @@ export default function ChannelSidebar({
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
-                                  /* Первый клик — подключиться и остаться там,
+                                  /* Первый кл��к — подключиться и остаться там,
                                      где были: человек заходит в канал, чтобы
                                      говорить, и не всегда хочет уходить из
                                      переписки. */
@@ -898,7 +937,7 @@ export default function ChannelSidebar({
             недоступны совсем — рендерим их здесь встроенным блоком.
             APPEALS исключён: «Обращения» уже показываются в общем списке каналов. */}
         {/* FIX-PANELVIEW3: раньше блок рисовался только при наличии модулей. Теперь
-            его заголовок — ещё и вход в участников, поэтому он нужен и без модулей;
+            его заголовок — ещё и вход в участников, поэтому ��н нужен и без модулей;
             прячем только когда нет ни модулей, ни права смотреть участников. */}
         {!blockMode &&
           (textChannels.some((c) => isModuleType(c.type) && !(c as Channel & { hidden?: boolean }).hidden) ||
