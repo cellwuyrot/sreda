@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-/* GROUP-SKIN: оформление сообщества нормализуется на сервере. */
-import { GROUP_THEME_MAX_JSON, parseGroupTheme, serializeGroupTheme } from "@/lib/groupTheme";
 import { hasPremium } from "@/lib/premium";
 import { logAction } from "@/lib/audit";
 import { logGroupAction } from "@/lib/groupAudit";
@@ -146,7 +144,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { name, icon, description, rules, sectionsEnabled, banner, requireRules, paused, theme } = await req.json();
+  const { name, icon, description, rules, sectionsEnabled, banner, requireRules, paused } = await req.json();
 
   const existing = await prisma.group.findUnique({
     where: { id },
@@ -193,24 +191,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  // GROUP-SKIN: оформление меняют только владелец и администратор: это вид всего
-  // сообщества, а не личная настройка модератора.
-  let themeData: { theme?: string } = {};
-  if (theme !== undefined) {
-    if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Менять оформление сообщества может только владелец или администратор" },
-        { status: 403 },
-      );
-    }
-    if (theme !== null && (typeof theme !== "string" || theme.length > GROUP_THEME_MAX_JSON)) {
-      return NextResponse.json({ error: "Некорректное оформление сообщества" }, { status: 400 });
-    }
-    // Прогон через разбор и сборку: в базу попадает только известный набор полей,
-    // а не произвольный JSON из браузера.
-    themeData = { theme: theme && String(theme).trim() ? serializeGroupTheme(parseGroupTheme(String(theme))) : "" };
-  }
-
   const group = await prisma.group.update({
     where: { id },
     data: {
@@ -222,7 +202,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       ...(requireRules !== undefined && { requireRules: !!requireRules }),
       ...(paused !== undefined && { paused: !!paused }),
       ...sectionsData,
-      ...themeData,
     },
   });
 
@@ -246,7 +225,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     requireRules !== undefined && "обязательное принятие правил",
     sectionsEnabled !== undefined && "разделы",
     paused !== undefined && (paused ? "пауза группы (включена)" : "пауза группы (снята)"),
-    theme !== undefined && "оформление сообщества",
   ].filter(Boolean).join(", ");
 
   if (changedFields) {

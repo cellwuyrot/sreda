@@ -258,10 +258,9 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.92, opacity: 0, y: 12 }}
         transition={{ type: "spring", damping: 26, stiffness: 280 }}
-        /* GROUP-SKIN: tz-group-voice — крючок для фона голосовых каналов. */
         className={docked
-          ? "tz-group-voice bg-white dark:bg-neutral-900 w-full h-full min-h-0 flex flex-col overflow-hidden"
-          : `tz-group-voice bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-white/10 w-full ${mediaTiles.length > 0 ? "max-w-3xl" : "max-w-xl"} overflow-hidden`}
+          ? "bg-white dark:bg-neutral-900 w-full h-full min-h-0 flex flex-col overflow-hidden"
+          : `bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-white/10 w-full ${mediaTiles.length > 0 ? "max-w-3xl" : "max-w-xl"} overflow-hidden`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header — собранная строка: индикатор статуса, название канала,

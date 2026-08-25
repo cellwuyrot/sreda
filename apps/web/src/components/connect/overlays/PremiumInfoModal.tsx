@@ -4,12 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
-import { deviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
+import { deviceKeyPair, forgetDeviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
 import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
 import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
-import { useLinkMetrics } from "@/lib/useLinkMetrics"; // FIX-LINKSTATS
 
 /* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
    Для обычных аккаунтов — витрина подписки.
@@ -378,11 +377,38 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  /* FIX-AWG-ONLY: полный отзыв доступа из этого окна убран. Обычное выключение
-     доступ не трогает, а кнопка рядом с ним удаляла пира на узле и ключ
-     устройства — после случайного нажатия включение требовало полной
-     перевыдачи и ловило лимит запросов. Сам эндпоинт DELETE /api/vpn/me жив:
-     он нужен админской отвязке и удалению аккаунта. */
+  /* Полный отзыв доступа: снять туннель и удалить пира на сервере. Нужен, когда
+     человек уходит с устройства насовсем; обычное «выключить» запись о доступе
+     не трогает, чтобы включить снова можно было одной кнопкой. */
+  const revoke = async () => {
+    setBusy(true);
+    try {
+      const bridge = getDesktopApi()?.vpn;
+      if (bridge) {
+        try {
+          const st = await bridge.down();
+          setTunnel(st);
+        } catch {
+          /* туннель мог быть уже снят — отзыву это не мешает */
+        }
+      }
+      const res = await fetch("/api/vpn/me", { method: "DELETE" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error || "Не удалось отключить доступ");
+        return;
+      }
+      /* FIX-KEYSTICK: запись пира удалена на сервере — держать её ключ на устройстве
+         больше незачем: следующее включение честно выдаст новую пару. */
+      forgetDeviceKeyPair();
+      setError("");
+      await refresh();
+    } catch {
+      setError("Ошибка сети");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -408,10 +434,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const shownError = error || (canTunnel ? tunnel?.error ?? "" : "");
   /* Всё для включения на месте: право есть, сервис включён, узел готов. */
   const ready = !!state?.entitled && !!state.serviceEnabled && state.nodeReady;
-
-  /* FIX-LINKSTATS: задержка и скорость меряются только при поднятом туннеле.
-     При выключенном они говорили бы о обычном канале и тратили запросы впустую. */
-  const link = useLinkMetrics(active);
 
   /* ── VPN-EMBEDDED: один выключатель ──
      Раньше включение и выключение были двумя разными кнопками внизу окна.
@@ -482,35 +504,20 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mt-7 flex flex-col items-center">
-          {/* FIX-POWERBTN: сам круг и есть выключатель. Раньше здесь стоял <div aria-hidden>,
-              то есть картинка: обработчик togglePower уже был написан, но нажимать было
-              нечего, и включение жило отдельной кнопкой внизу окна. Два органа управления
-              одним действием — это всегда вопрос «а этот тогда зачем», тем более когда
-              главный на вид — мертвый. */}
-          <button
-            type="button"
-            onClick={() => void togglePower()}
-            disabled={!powerReady}
-            aria-pressed={active}
-            aria-label={powerLabel}
-            title={powerReady ? powerLabel : powerHint}
-            className={`relative grid h-28 w-28 place-items-center rounded-full border outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-cyan-400/60 ${
-              powerReady ? "cursor-pointer hover:scale-[1.03] active:scale-95" : "cursor-not-allowed opacity-70"
-            } ${active
+          <div
+            className={`relative grid h-28 w-28 place-items-center rounded-full border transition-all duration-300 ${active
               ? "border-emerald-400/50 bg-emerald-500 text-white shadow-[0_0_45px_rgba(34,197,94,.34)]"
               : tunnelConnecting
               ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-600 dark:text-cyan-300"
               : "border-neutral-300 bg-neutral-100 text-neutral-500 shadow-inner dark:border-white/10 dark:bg-white/[0.06] dark:text-white/50"}`}
+            aria-hidden
           >
             <span className={`absolute inset-2 rounded-full border ${active ? "border-white/20" : "border-neutral-200 dark:border-white/[0.06]"}`} />
-            {(tunnelConnecting || tunnelDisconnecting) && (
-              <span className="absolute inset-0 animate-ping rounded-full border border-cyan-400/50" />
-            )}
             <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <path d="M12 2v10" />
               <path d="M6.35 5.35a8 8 0 1 0 11.3 0" />
             </svg>
-          </button>
+          </div>
 
           {state === null && !failed && (
             <strong className="mt-4 text-sm text-neutral-500 dark:text-white/50">Проверяем состояние…</strong>
@@ -644,64 +651,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* ── FIX-LINKSTATS: состояние канала ──
-            Задержка обновляется сама каждые пять секунд, скорость — только по кнопке:
-            каждый замер скорости — это три мегабайта из того самого лимита, который
-            показан в блоке выше. Подробности в lib/useLinkMetrics.ts. */}
-        {active && (
-          <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Канал</span>
-              <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                {state?.peer?.node?.name ? `узел ${state.peer.node.name}` : "через туннель"}
-              </span>
-            </div>
-
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <div>
-                <span className="text-[10px] text-neutral-400 dark:text-white/35">Задержка</span>
-                <strong className={`mt-0.5 block text-lg leading-tight ${
-                  link.lost
-                    ? "text-red-600 dark:text-red-400"
-                    : link.pingMs === null
-                    ? "text-neutral-400 dark:text-white/35"
-                    : link.pingMs < 80
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : link.pingMs < 200
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-red-600 dark:text-red-400"
-                }`}>
-                  {link.lost ? "нет связи" : link.pingMs === null ? "—" : `${link.pingMs} мс`}
-                </strong>
-              </div>
-              <div>
-                <span className="text-[10px] text-neutral-400 dark:text-white/35">Скорость</span>
-                <strong className="mt-0.5 block text-lg leading-tight text-neutral-900 dark:text-white">
-                  {link.speedBusy
-                    ? "замеряем…"
-                    : link.speedMbits === null
-                    ? "—"
-                    : `${link.speedMbits.toLocaleString("ru-RU")} Мбит/с`}
-                </strong>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void link.measureSpeed()}
-              disabled={link.speedBusy}
-              className="mt-3 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-600 transition hover:bg-white disabled:opacity-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/5"
-            >
-              {link.speedBusy ? "Измеряем скорость…" : link.speedMbits === null ? "Замерить скорость" : "Замерить снова"}
-            </button>
-            <p className="mt-1.5 text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
-              {link.speedError
-                ? link.speedError
-                : "Замер скорости скачивает 3 МБ и тратит их из лимита, поэтому запускается только вручную."}
-            </p>
-          </div>
-        )}
-
         {/* Выбор сервера — только тому, кто действительно может подключиться из
             приложения: в браузере переезд ничего бы не поднял. */}
         {canTunnel && state?.peer && servers.length > 0 && (
@@ -744,13 +693,45 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* ── Режим маршрутизации ──
-            FIX-POWERBTN: кнопок «Включить» и «Выключить соединение» здесь больше нет:
-            включает и выключает сам круг выше. Остался только выбор того, что пойдёт
-            в туннель: он нужен ДО включения, потому что AllowedIPs живёт в самом
-            профиле, и смена режима на живом туннеле ничего бы не изменила. */}
-        {ready && canTunnel && !active && !tunnelConnecting && !tunnelDisconnecting && (
-          <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
+        {/* ── Включение / выключение ──
+            VPN-ONECLICK: скачивания файла-профиля больше нет. В приложении туннель
+            поднимает и снимает сама оболочка; в браузере включать нечем, поэтому
+            показываем, что подключение живёт в приложении. */}
+        {ready && canTunnel && (
+          active || tunnelConnecting || tunnelDisconnecting ? (
+            <button
+              type="button"
+              disabled={busy || tunnelConnecting || tunnelDisconnecting}
+              onClick={() => void disconnectTunnel()}
+              className="mt-5 w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/5"
+            >
+              {tunnelConnecting ? "Подключаем…" : tunnelDisconnecting ? "Выключаем…" : "Выключить соединение"}
+            </button>
+          ) : (
+            <>
+              <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
+              <button
+                type="button"
+                disabled={busy || nodeIncomplete}
+                onClick={() => void connect(routing)}
+                className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+              >
+                {busy ? "Включаем…" : "Включить соединение"}
+              </button>
+            </>
+          )
+        )}
+
+        {/* Полный отзыв доступа — вторично: обычное «выключить» доступ не трогает. */}
+        {state?.peer && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void revoke()}
+            className="mt-3 w-full text-center text-[11px] text-neutral-400 underline-offset-2 transition hover:text-neutral-600 hover:underline disabled:opacity-50 dark:text-white/35 dark:hover:text-white/60"
+          >
+            Отключить и удалить доступ на этом аккаунте
+          </button>
         )}
       </div>
     </div>

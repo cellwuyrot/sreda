@@ -7,12 +7,11 @@ import RoleManager from "@/components/connect/RoleManager";
 import WorkspaceManager from "@/components/connect/WorkspaceManager";
 import AuditPanel from "@/components/connect/settings/AuditPanel";
 import ReportsPanel from "@/components/connect/settings/ReportsPanel";
+import BannerUpload from "@/components/connect/settings/BannerUpload";
 import InvitesPanel from "@/components/connect/settings/InvitesPanel";
 import StatsPanel from "@/components/connect/settings/StatsPanel";
 import TimeoutButton from "@/components/connect/settings/TimeoutButton";
 import EmojiPanel from "@/components/connect/settings/EmojiPanel";
-/* GROUP-SKIN: инструменты дизайна группы. */
-import DesignPanel from "@/components/connect/settings/DesignPanel";
 import { CrownIcon, ShieldIcon } from "@/components/ui/ConnectIcons";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 /* Значок раздела — готовый смайл из набора TrioZ: своего рисовать не нужно. */
@@ -39,14 +38,13 @@ const ROLE_BADGE: Record<string, string> = {
 	MEMBER: "bg-neutral-500/10 text-neutral-500 dark:text-gray-400",
 };
 
-type SectionId = "overview" | "rules" | "emoji" | "censor" | "design" | "workspace" | "members" | "roles" | "bans" | "invites" | "reports" | "audit" | "danger";
+type SectionId = "overview" | "rules" | "emoji" | "censor" | "workspace" | "members" | "roles" | "bans" | "invites" | "reports" | "audit" | "danger";
 
 const SECTION_TITLE: Record<SectionId, string> = {
 	overview: "Обзор",
 	rules: "Правила",
 	emoji: "Эмодзи",
 	censor: "Цензура",
-	design: "Дизайн",
 	workspace: "Рабочая среда",
 	members: "Участники",
 	roles: "Роли",
@@ -523,9 +521,6 @@ export default function GroupSettingsModal({
 				...(!group.isMain && canManageWorkspace
 					? [{ id: "workspace" as const, label: "Рабочая среда", icon: <NavIcon path={<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>} /> }]
 					: []),
-				...(canManageWorkspace
-					? [{ id: "design" as const, label: "Дизайн", icon: <NavIcon path={<><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4A10 10 0 0 0 12 2z" /></>} /> }]
-					: []),
 			],
 		},
 		{
@@ -557,15 +552,6 @@ export default function GroupSettingsModal({
 
 	const renderSection = () => {
 		switch (section) {
-			case "design":
-				return (
-					<Section
-						title="Дизайн сообщества"
-						subtitle="Фон переписки и каналов, шрифт, баннер и частицы. Видят все участники."
-					>
-						<DesignPanel groupId={group.id} theme={group.theme ?? null} onSaved={() => onUpdated()} />
-					</Section>
-				);
 			case "overview":
 				return (
 					<>
@@ -627,19 +613,9 @@ export default function GroupSettingsModal({
 								</Button>
 							)}
 						</Section>
-						{/* GROUP-SKIN: баннер теперь только в «Дизайне». Два редактора одной и той же
-						    шапки неизбежно расходились: в обзоре картинка, в дизайне градиент,
-						    а кто победит — зависело от того, где сохранили позже. */}
-						{canManageWorkspace && (
-							<Section title="Баннер" info="Шапка сообщества настраивается в разделе «Дизайн».">
-								<div className="flex flex-wrap items-center gap-3">
-									<p className="text-sm text-neutral-500 dark:text-gray-400 flex-1 min-w-[200px]">
-										Картинка, градиент, анимация и видео — всё в одном месте, рядом с фонами и шрифтами.
-									</p>
-									<Button size="sm" onClick={() => setSection("design")}>
-										Открыть дизайн
-									</Button>
-								</div>
+						{canEdit && (
+							<Section title="Баннер" info="Широкая картинка в шапке сообщества — её видят все участники.">
+								<BannerUpload groupId={group.id} banner={group.banner} onChanged={() => onUpdated()} />
 							</Section>
 						)}
 						<Section title="Информация">

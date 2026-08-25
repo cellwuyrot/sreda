@@ -607,18 +607,6 @@ async function up(confPath: string, clientPath: string): Promise<void> {
 
   const parsed = parseWgConfig(readFileSync(confPath, "utf8"));
   if (!isUsableConfig(parsed)) fail("Профиль подключения неполон: нет ключа, адреса или сервера");
-  const routeAll = routesEverything(parsed);
-
-  /* FIX-FULLTUN-ENDPOINT: физический маршрут до VPN endpoint надо запоминать ДО
-     запуска Wintun и до любых адресов/маршрутов туннеля. После создания
-     адаптера Windows уже может видеть on-link/default-кандидаты через Wintun,
-     и выбор «лучшего default route» начнёт указывать на сам туннель. Тогда
-     добавленный endpoint-exclude формально есть, но ведёт через WireGuard —
-     после первого handshake клиент перестаёт слышать сервер и уходит в retry. */
-  const preTunnelDefaultRoute = process.platform === "win32" && routeAll ? findDefaultRoute() : null;
-  if (process.platform === "win32" && routeAll && !preTunnelDefaultRoute) {
-    fail("Не удалось определить основной шлюз системы до запуска туннеля");
-  }
 
   /**
    * FIX-BACKEND: протокол клиента обязан совпадать с протоколом профиля.
@@ -734,6 +722,7 @@ async function up(confPath: string, clientPath: string): Promise<void> {
     );
   }
 
+  const routeAll = routesEverything(parsed);
   let response: string;
   try {
     response = await uapiRequest(socketPath, uapiSetRequest(parsed, routeAll, process.platform));
@@ -756,11 +745,10 @@ async function up(confPath: string, clientPath: string): Promise<void> {
     } catch {
       fail("Не удалось определить адрес VPN-узла по его имени");
     }
-    const gate = preTunnelDefaultRoute;
+    const gate = findDefaultRoute();
     if (!gate) {
       fail("Не удалось определить основной шлюз системы: без него туннель замкнётся сам на себя");
     }
-    logSetup(`endpoint-exclude: ${endpointIp}/32 через шлюз ${gate.gateway}, физический ifIndex=${gate.interfaceIndex}`);
     runTool(excludeRouteCommand(endpointIp, gate.gateway, gate.interfaceIndex), true);
     if (winAdapter) writeFileSync(join(dirname(confPath), IFACE_FILE), `${winAdapter.interfaceIndex}\n`, { mode: 0o600 });
     writeFileSync(join(dirname(confPath), EXCLUDE_FILE), `${endpointIp} ${gate.interfaceIndex}\n`, {
