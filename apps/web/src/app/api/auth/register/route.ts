@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
+import { isRegistrationEmailAllowed, REGISTRATION_BLOCKED } from "@/lib/emailWhitelist";
 import { autoJoinMainCommunity } from "@/lib/mainCommunity";
 import { getClientIp, isIdentityBlocked, recordIdentities, DEVICE_COOKIE } from "@/lib/identity";
 
@@ -30,6 +31,13 @@ export async function POST(req: NextRequest) {
 
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       return NextResponse.json({ error: "Некорректный адрес почты" }, { status: 400 });
+    }
+
+    /* MAIL-WHITELIST: второй рубеж. Отправка кода и регистрация — два отдельных
+       запроса, и второй можно отправить напрямую, минуя форму. Заодно это
+       закрывает случай, когда домен убрали из списка между шагами. */
+    if (!(await isRegistrationEmailAllowed(email))) {
+      return NextResponse.json({ error: REGISTRATION_BLOCKED }, { status: 403 });
     }
 
     const trimmedName = name.trim();
