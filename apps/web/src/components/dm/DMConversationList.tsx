@@ -53,6 +53,61 @@ interface DMConversationListProps {
 const FAVORITES_KEY = "tz-dm-favorites";
 const MAX_FAVORITES = 5;
 
+/* DM-FOLDERS: папки для личных сообщений.
+
+   Сортировка по папкам — личное дело владельца списка и собеседника никак не
+   касается, поэтому раскладка живёт рядом с избранным и архивом — на устройстве,
+   без обращений к серверу. Разделы (личные / деловые) хранятся порознь: папка
+   «Работа» из одного раздела в другом не имеет смысла. */
+const FOLDERS_KEY = "tz-dm-folders";
+const MAX_FOLDERS = 12;
+const FOLDER_NAME_MAX = 24;
+
+interface DmFolder {
+  id: string;
+  name: string;
+  /** Какие разговоры сложены в папку. Один разговор — не больше одной папки. */
+  convIds: string[];
+}
+
+function foldersKey(kind: ArchiveKind): string {
+  return `${FOLDERS_KEY}:${kind}`;
+}
+
+function readFolders(kind: ArchiveKind): DmFolder[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(foldersKey(kind));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is DmFolder =>
+        !!item && typeof item === "object" &&
+        typeof (item as DmFolder).id === "string" &&
+        typeof (item as DmFolder).name === "string")
+      .map((item) => ({
+        id: item.id,
+        name: item.name.slice(0, FOLDER_NAME_MAX),
+        convIds: Array.isArray(item.convIds)
+          ? item.convIds.filter((x): x is string => typeof x === "string")
+          : [],
+      }))
+      .slice(0, MAX_FOLDERS);
+  } catch {
+    return [];
+  }
+}
+
+function writeFolders(kind: ArchiveKind, list: DmFolder[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(foldersKey(kind), JSON.stringify(list));
+  } catch {
+    /* хранилище недоступно — раскладка просто не доживёт до следующего запуска */
+  }
+}
+
 // FIX-DM-SORT: направление ранжирования (см. convTime).
 //
 // Порядок перевёрнут по сравнению с прежней правкой: наверху теперь то, где
@@ -115,6 +170,65 @@ export default function DMConversationList({
   /* Идёт выгрузка или удаление — чтобы повторное нажатие не запускало вторую
      ту же работу: выгрузка годовой переписки заметно не мгновенна. */
   const [busyId, setBusyId] = useState<string | null>(null);
+  /* DM-FOLDERS: сами папки, свёрнутые из них, меню раздела и меню папки,
+     а также строка ввода имени (создание или переименование). */
+  const [folders, setFolders] = useState<DmFolder[]>([]);
+  const [closedFolders, setClosedFolders] = useState<string[]>([]);
+  const [sectionMenu, setSectionMenu] = useState<{ x: number; y: number } | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{ folderId: string; x: number; y: number } | null>(null);
+  const [draft, setDraft] = useState<
+    { mode: "create"; convId?: string; value: string } |
+    { mode: "rename"; folderId: string; value: string } |
+    null
+  >(null);
+
+  /* Папки читаются после появления списка и при смене раздела. */
+  useEffect(() => {
+    setFolders(readFolders(archiveKind));
+    setDraft(null);
+  }, [archiveKind]);
+
+  const persistFolders = useCallback((next: DmFolder[]) => {
+    setFolders(next);
+    writeFolders(archiveKind, next);
+  }, [archiveKind]);
+
+  /** Создать папку; если задан convId — сразу положить в неё разговор. */
+  const createFolder = useCallback((name: string, convId?: string) => {
+    const clean = name.trim().slice(0, FOLDER_NAME_MAX);
+    if (!clean || folders.length >= MAX_FOLDERS) return;
+    const id = `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const next = folders.map((f) => (
+      convId ? { ...f, convIds: f.convIds.filter((x) => x !== convId) } : f
+    ));
+    persistFolders([...next, { id, name: clean, convIds: convId ? [convId] : [] }]);
+  }, [folders, persistFolders]);
+
+  const renameFolder = useCallback((folderId: string, name: string) => {
+    const clean = name.trim().slice(0, FOLDER_NAME_MAX);
+    if (!clean) return;
+    persistFolders(folders.map((f) => (f.id === folderId ? { ...f, name: clean } : f)));
+  }, [folders, persistFolders]);
+
+  /** Удаление папки не трогает переписки: они возвращаются в общий список. */
+  const deleteFolder = useCallback((folderId: string) => {
+    persistFolders(folders.filter((f) => f.id !== folderId));
+  }, [folders, persistFolders]);
+
+  /** Перенос разговора: folderId === null — вернуть в общий список. */
+  const moveToFolder = useCallback((convId: string, folderId: string | null) => {
+    setMenu(null);
+    persistFolders(folders.map((f) => {
+      const without = f.convIds.filter((x) => x !== convId);
+      return f.id === folderId ? { ...f, convIds: [...without, convId] } : { ...f, convIds: without };
+    }));
+  }, [folders, persistFolders]);
+
+  const toggleFolder = useCallback((folderId: string) => {
+    setClosedFolders((prev) => (
+      prev.includes(folderId) ? prev.filter((x) => x !== folderId) : [...prev, folderId]
+    ));
+  }, []);
 
   // Load persisted favorites once on mount (client only).
   useEffect(() => {
@@ -241,6 +355,23 @@ export default function DMConversationList({
     };
   }, [menu]);
 
+  /* DM-FOLDERS: те же правила закрытия, что и у меню разговора. */
+  useEffect(() => {
+    if (!sectionMenu && !folderMenu) return;
+    const close = () => { setSectionMenu(null); setFolderMenu(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("click", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [sectionMenu, folderMenu]);
+
   // FIX-DM-SORT + FIX-DM-FAV + ARCHIVE: порядок выдачи.
   //   0) Архивированные в обычном режиме вообще не показываются, а в режиме
   //      архива — показываются только они. Смешивать их бессмысленно: архив затем
@@ -278,67 +409,49 @@ export default function DMConversationList({
   const menuIsFav = menu ? isFavorite(menu.convId) : false;
   const menuArchived = menu ? archived.includes(menu.convId) : false;
   const favLimitReached = favorites.length >= MAX_FAVORITES;
+  const folderMenuFolder = folderMenu ? folders.find((f) => f.id === folderMenu.folderId) ?? null : null;
 
-  return (
-    <aside
-      className={`w-60 max-md:w-full cn-sidebar flex-shrink-0 flex flex-col ${selectedConv ? "max-md:hidden" : ""}`}
-    >
-      <div className="p-3 border-b border-neutral-200 dark:border-white/5 flex items-center justify-between">
-        <h2 className="font-bold text-neutral-900 dark:text-white text-sm">
-          {showArchived ? `${title} · архив` : title}
-        </h2>
-        <div className="flex items-center gap-1">
-        {/* ARCHIVE: переключатель архива. Появляется только когда архив не пуст:
-            кнопка, открывающая гарантированно пустой список, — шум в заголовке. */}
-        {(archived.length > 0 || showArchived) && (
-          <button
-            onClick={() => setShowArchived((v) => !v)}
-            className={`p-1 transition-colors ${
-              showArchived
-                ? "text-[var(--cn-accent)]"
-                : "text-neutral-400 hover:text-neutral-600 dark:hover:text-white"
-            }`}
-            title={showArchived ? "Вернуться к активным" : `Архив (${archived.length})`}
-            aria-label={showArchived ? "Вернуться к активным разговорам" : "Открыть архив"}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-            </svg>
-          </button>
-        )}
-        {/* FIX-VAULT: кнопка создания/открытия Сейфа */}
-        {onOpenVault && (
-          <button
-            onClick={onOpenVault}
-            className="p-1 text-neutral-400 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
-            title="Сейф — избранная переписка с самим собой"
-            aria-label="Открыть Сейф"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-7a2 2 0 00-2-2H6a2 2 0 00-2 2v7a2 2 0 002 2zm10-11V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </button>
-        )}
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-white"
-            aria-label="Закрыть"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        )}
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {ordered.length === 0 ? (
-          <p className="text-sm text-neutral-400 text-center py-8 px-4 leading-relaxed">
-            {showArchived ? "В архиве пусто" : emptyText}
-          </p>
-        ) : (
-          ordered.map((conv) => {
+  /* DM-FOLDERS: строка ввода имени папки. Отдельного окна здесь не надо:
+     имя короткое, и ввод уместен там же, где появится сама папка. */
+  const folderInput = draft ? (
+    <input
+      autoFocus
+      value={draft.value}
+      maxLength={FOLDER_NAME_MAX}
+      placeholder="Название папки"
+      onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={() => setDraft(null)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") { setDraft(null); return; }
+        if (e.key !== "Enter") return;
+        if (draft.mode === "create") createFolder(draft.value, draft.convId);
+        else renameFolder(draft.folderId, draft.value);
+        setDraft(null);
+      }}
+      className="w-full rounded-md border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-neutral-900 dark:text-white outline-none focus:border-[var(--cn-accent)]"
+    />
+  ) : null;
+
+  /* Разговор → папка, в которой он лежит. */
+  const folderOf = useMemo(() => {
+    const map = new Map<string, string>();
+    folders.forEach((f) => f.convIds.forEach((id) => map.set(id, f.id)));
+    return map;
+  }, [folders]);
+
+  /* Всё, что ни в одной папке не лежит, остаётся в общем списке как раньше. */
+  const looseConvs = useMemo(
+    () => ordered.filter((conv) => !folderOf.has(conv.id)),
+    [ordered, folderOf],
+  );
+
+  /* DM-FOLDERS: одна строка списка. Вынесена из разметки, потому что теперь
+     рисуется в двух местах: внутри папки и в общем списке. */
+  /* В какой папке лежит разговор, по которому открыто контекстное меню. */
+  const menuFolderId = menu ? folderOf.get(menu.convId) ?? null : null;
+
+  const renderConv = (conv: Conversation) => {
             const hasUnread = (conv.unread ?? 0) > 0;
             const isVault = conv.other.id === currentUserId;
             const favorite = !isVault && isFavorite(conv.id);
@@ -430,7 +543,126 @@ export default function DMConversationList({
                 )}
               </button>
             );
-          })
+  };
+
+
+  return (
+    <aside
+      className={`w-60 max-md:w-full cn-sidebar flex-shrink-0 flex flex-col ${selectedConv ? "max-md:hidden" : ""}`}
+    >
+      {/* DM-FOLDERS: ПКМ по заголовку раздела — единственное место, где заводятся
+          папки: класть постоянную кнопку в шапку ради редкого действия не стоит. */}
+      <div
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setMenu(null);
+          setFolderMenu(null);
+          setSectionMenu({ x: e.clientX, y: e.clientY });
+        }}
+        className="p-3 border-b border-neutral-200 dark:border-white/5 flex items-center justify-between"
+      >
+        <h2 className="font-bold text-neutral-900 dark:text-white text-sm">
+          {showArchived ? `${title} · архив` : title}
+        </h2>
+        <div className="flex items-center gap-1">
+        {/* ARCHIVE: переключатель архива. Появляется только когда архив не пуст:
+            кнопка, открывающая гарантированно пустой список, — шум в заголовке. */}
+        {(archived.length > 0 || showArchived) && (
+          <button
+            onClick={() => setShowArchived((v) => !v)}
+            className={`p-1 transition-colors ${
+              showArchived
+                ? "text-[var(--cn-accent)]"
+                : "text-neutral-400 hover:text-neutral-600 dark:hover:text-white"
+            }`}
+            title={showArchived ? "Вернуться к активным" : `Архив (${archived.length})`}
+            aria-label={showArchived ? "Вернуться к активным разговорам" : "Открыть архив"}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+          </button>
+        )}
+        {/* FIX-VAULT: кнопка создания/открытия Сейфа */}
+        {onOpenVault && (
+          <button
+            onClick={onOpenVault}
+            className="p-1 text-neutral-400 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
+            title="Сейф — избранная переписка с самим собой"
+            aria-label="Открыть Сейф"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-7a2 2 0 00-2-2H6a2 2 0 00-2 2v7a2 2 0 002 2zm10-11V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </button>
+        )}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-white"
+            aria-label="Закрыть"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {draft && draft.mode === "create" && (
+          <div className="px-3 py-2">{folderInput}</div>
+        )}
+        {ordered.length === 0 ? (
+          <p className="text-sm text-neutral-400 text-center py-8 px-4 leading-relaxed">
+            {showArchived ? "В архиве пусто" : emptyText}
+          </p>
+        ) : (
+          <>
+            {/* DM-FOLDERS: сначала папки с их содержимым, потом всё остальное.
+                Пустая папка тоже видна: иначе только что созданная папка пропадала бы
+                с экрана и положить в неё чат было бы некуда. */}
+            {folders.map((folder) => {
+              const inside = ordered.filter((conv) => folderOf.get(conv.id) === folder.id);
+              const open = !closedFolders.includes(folder.id);
+              return (
+                <div key={folder.id}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleFolder(folder.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleFolder(folder.id); }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMenu(null);
+                      setSectionMenu(null);
+                      setFolderMenu({ folderId: folder.id, x: e.clientX, y: e.clientY });
+                    }}
+                    className="w-full cursor-pointer select-none px-3 py-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 hover:text-neutral-600 dark:hover:text-white"
+                    title="Нажмите, чтобы свернуть. ПКМ — переименовать или удалить папку"
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="truncate">{folder.name}</span>
+                    <span className="ml-auto tabular-nums">{inside.length}</span>
+                  </div>
+                  {draft && draft.mode === "rename" && draft.folderId === folder.id && (
+                    <div className="px-3 pb-2">{folderInput}</div>
+                  )}
+                  {open && inside.length === 0 && (
+                    <p className="px-3 pb-2 text-[11px] text-neutral-400">
+                      Пусто. ПКМ по чату → «В папку».
+                    </p>
+                  )}
+                  {open && inside.map(renderConv)}
+                </div>
+              );
+            })}
+            {looseConvs.map(renderConv)}
+          </>
         )}
       </div>
 
@@ -482,6 +714,56 @@ export default function DMConversationList({
             </div>
           )}
 
+          {/* DM-FOLDERS: раскладка по папкам — перетаскивание мышью заменено выбором
+              из меню: попасть по узкой строке папки с зажатой кнопкой сложнее,
+              чем выбрать название из списка, а результат один и тот же. */}
+          <div className="my-1 border-t border-neutral-100 dark:border-white/5" />
+          <div className="px-3 py-1 text-[11px] text-neutral-400">Папки</div>
+          {folders.map((folder) => (
+            <button
+              key={folder.id}
+              type="button"
+              role="menuitem"
+              onClick={() => moveToFolder(menu.convId, folder.id)}
+              disabled={menuFolderId === folder.id}
+              className={`w-full text-left px-3 py-2 flex items-center gap-2 ${
+                menuFolderId === folder.id
+                  ? "text-neutral-300 dark:text-neutral-600 cursor-default"
+                  : "text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5"
+              }`}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>
+              <span className="truncate">{folder.name}</span>
+              {menuFolderId === folder.id && <span className="ml-auto text-[10px]">здесь</span>}
+            </button>
+          ))}
+          {menuFolderId && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => moveToFolder(menu.convId, null)}
+              className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              Вынуть из папки
+            </button>
+          )}
+          {folders.length < MAX_FOLDERS && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const convId = menu.convId;
+                setMenu(null);
+                setDraft({ mode: "create", convId, value: "" });
+              }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" /></svg>
+              Новая папка с этим чатом
+            </button>
+          )}
+
           {/* ARCHIVE: выгрузка на устройство и безвозвратное удаление. */}
           <div className="my-1 border-t border-neutral-100 dark:border-white/5" />
           {menuArchived ? (
@@ -521,6 +803,90 @@ export default function DMConversationList({
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
             Удалить безвозвратно
+          </button>
+        </div>,
+        document.body,
+      )}
+      {/* DM-FOLDERS: меню раздела — только создание папки. */}
+      {sectionMenu && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed z-[9999] min-w-[200px] py-1 rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-sm"
+          style={{
+            left: Math.min(sectionMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 220),
+            top: sectionMenu.y,
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={folders.length >= MAX_FOLDERS}
+            onClick={() => {
+              setSectionMenu(null);
+              setDraft({ mode: "create", value: "" });
+            }}
+            className={`w-full text-left px-3 py-2 flex items-center gap-2 ${
+              folders.length >= MAX_FOLDERS
+                ? "text-neutral-300 dark:text-neutral-600 cursor-not-allowed"
+                : "text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5"
+            }`}
+            title={folders.length >= MAX_FOLDERS ? `Максимум ${MAX_FOLDERS} папок` : undefined}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7zm9 3v6m-3-3h6" /></svg>
+            Создать папку
+          </button>
+          <div className="px-3 py-1.5 text-[11px] text-neutral-400">
+            {folders.length > 0
+              ? "Чтобы положить чат в папку — ПКМ по чату"
+              : "Папки видны только вам и только на этом устройстве"}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* DM-FOLDERS: меню самой папки — переименование и удаление. */}
+      {folderMenu && folderMenuFolder && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed z-[9999] min-w-[200px] py-1 rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-sm"
+          style={{
+            left: Math.min(folderMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 220),
+            top: folderMenu.y,
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          role="menu"
+        >
+          <div className="px-3 py-1.5 text-[11px] text-neutral-400 truncate border-b border-neutral-100 dark:border-white/5">
+            {folderMenuFolder.name}
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const folderId = folderMenuFolder.id;
+              setFolderMenu(null);
+              setDraft({ mode: "rename", folderId, value: folderMenuFolder.name });
+            }}
+            className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5h6M4 20h4l10-10-4-4L4 16v4z" /></svg>
+            Переименовать
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const folderId = folderMenuFolder.id;
+              setFolderMenu(null);
+              deleteFolder(folderId);
+            }}
+            className="w-full text-left px-3 py-2 flex items-center gap-2 text-red-500 hover:bg-red-500/10"
+            title="Переписки останутся на месте — вернутся в общий список"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+            Удалить папку
           </button>
         </div>,
         document.body,
