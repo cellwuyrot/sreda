@@ -5,6 +5,8 @@ import Spinner from "@/components/ui/Spinner";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import SystemStatsPanel from "@/components/admin/SystemStatsPanel"; // FIX-ADM1
+// MAIL-WHITELIST: белые списки того же раздела: кто вообще может зарегистрироваться.
+import EmailWhitelistPanel from "@/components/admin/EmailWhitelistPanel";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import BackButton from "@/components/ui/BackButton"; // BACK-STEP
@@ -254,6 +256,7 @@ export default function AdminPage() {
     return (
       <div className="space-y-6">
         {activeCat === "system" && <SystemStatsPanel />}{/* FIX-ADM1 */}
+        {activeCat === "system" && <EmailWhitelistPanel />}{/* MAIL-WHITELIST */}
         <div className="space-y-2.5">
           {activeGroup.items.map((item) => (
             <Row key={item.href} item={item} count={item.countKey ? stats[item.countKey] : undefined} />

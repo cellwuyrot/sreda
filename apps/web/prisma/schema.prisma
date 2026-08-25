@@ -2353,3 +2353,22 @@ model WallPostView {
 
   @@unique([postId, userId])
 }
+
+/// MAIL-WHITELIST: разрешённые почтовые домены для регистрации.
+///
+/// Запись в таблице — единственное основание пропустить адрес. Связи с User
+/// намеренно нет, только createdById: строка переживает удаление администратора,
+/// иначе увольнение сотрудника тихо открывало бы регистрацию всем подряд.
+///
+/// active позволяет закрыть домен на время, не теряя строку и примечание к ней.
+model EmailDomainWhitelist {
+  id          String   @id @default(cuid())
+  domain      String   @unique @db.VarChar(100)
+  note        String   @default("") @db.VarChar(80)
+  active      Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active])
+}
