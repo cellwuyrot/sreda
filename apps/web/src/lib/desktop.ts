@@ -70,8 +70,7 @@ export interface DesktopVpnState {
   /** Причина ошибки (для `error`), иначе null. */
   error: string | null;
   /** Чем поднят туннель, если поднят: `wireguard` | `amneziawg`, иначе null. */
-  /* FIX-AWG-ONLY: стек только один — AmneziaWG. */
-  backend: "amneziawg" | null;
+  backend: "wireguard" | "amneziawg" | null;
   /**
    * VPN-EMBEDDED: туннель поднят встроенным в приложение клиентом, то есть
    * стороннее ПО скачивать не потребовалось. Нет в старых сборках оболочки —
