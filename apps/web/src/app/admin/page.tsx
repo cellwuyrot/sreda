@@ -5,8 +5,6 @@ import Spinner from "@/components/ui/Spinner";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import SystemStatsPanel from "@/components/admin/SystemStatsPanel"; // FIX-ADM1
-// MAIL-WHITELIST: белые списки того же раздела: кто вообще может зарегистрироваться.
-import EmailWhitelistPanel from "@/components/admin/EmailWhitelistPanel";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import BackButton from "@/components/ui/BackButton"; // BACK-STEP
@@ -81,6 +79,9 @@ const GROUPS: NavGroup[] = [
       /* BUSINESS-SUB: раздел перестал быть только премиумным: теперь в нём две
          независимые группы реквизитов — подписка Premium и счета бизнеса. */
       { title: "Платежи", description: "Реквизиты Premium и счетов бизнеса", href: "/admin/payments", icon: <Icon path={<><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></>} /> },
+      /* MAIL-WHITELIST: ограничения на входе в проект — отдельный раздел, а не
+         таблица прямо в обзоре: списков будет больше одного. */
+      { title: "Настройки ограничений", description: "Белые списки: кто может зарегистрироваться в проекте", href: "/admin/restrictions", icon: <Icon path={<><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><path d="M12 14v2" /></>} /> },
       { title: "Логи редактора", description: "Кто и что редактировал", href: "/admin/logs", icon: <Icon path={<><path d="M4 5h16M4 12h16M4 19h10" /></>} /> },
       /* FIX-ADMCOUNT: страница управления услугами существовала, но входа в неё
          из панели не было — счётчик «Услуг» в обзоре выглядел взявшимся из
@@ -256,7 +257,6 @@ export default function AdminPage() {
     return (
       <div className="space-y-6">
         {activeCat === "system" && <SystemStatsPanel />}{/* FIX-ADM1 */}
-        {activeCat === "system" && <EmailWhitelistPanel />}{/* MAIL-WHITELIST */}
         <div className="space-y-2.5">
           {activeGroup.items.map((item) => (
             <Row key={item.href} item={item} count={item.countKey ? stats[item.countKey] : undefined} />
