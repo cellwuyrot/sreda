@@ -195,7 +195,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
       )}
 
       {/* Input */}
-      <div className="relative z-20 border-t border-[var(--cn-border)] bg-[var(--cn-main)]/80 backdrop-blur-sm">
+      <div className="relative z-20 border-t border-[var(--cn-border)] bg-[var(--cn-main)]/85 backdrop-blur-md">
         {/* Extra tools panel */}
         {showFormatBar && (
           <div className="px-3 pt-2 pb-1">
@@ -246,7 +246,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
             onDragOver={onDragOver}
             onDragLeave={onDragLeave}
             onDrop={onDrop}
-            className={`relative flex flex-wrap gap-2 items-end rounded-2xl border transition-colors px-2 py-1.5 focus-within:ring-2 focus-within:ring-violet-400/20 dark:focus-within:ring-cyan-400/20 focus-within:border-violet-400 dark:focus-within:border-cyan-400 ${isDragOver ? "bg-violet-50 dark:bg-cyan-900/10 border-violet-300 dark:border-cyan-700" : "border-[var(--cn-border)] bg-[var(--cn-card)]"}`}
+            className={`relative flex flex-wrap gap-2 items-end rounded-[22px] border transition-all duration-200 px-2 py-1.5 focus-within:ring-2 focus-within:ring-violet-400/30 dark:focus-within:ring-cyan-400/25 focus-within:border-violet-400/70 dark:focus-within:border-cyan-400/60 focus-within:shadow-lg ${isDragOver ? "bg-violet-50 dark:bg-cyan-900/10 border-violet-300 dark:border-cyan-700" : "border-[var(--cn-border)] bg-[var(--cn-card)]"}`}
           >
             {fileUploading ? (
               <span className="w-11 h-11 shrink-0 inline-flex items-center justify-center text-neutral-400"><Spinner size="sm" tone="current" /></span>

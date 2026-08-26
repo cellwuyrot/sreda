@@ -174,6 +174,8 @@ export default function DMConversationList({
      а также строка ввода имени (создание или переименование). */
   const [folders, setFolders] = useState<DmFolder[]>([]);
   const [closedFolders, setClosedFolders] = useState<string[]>([]);
+  /* DM-MOBILE-FOLDERS: active folder pill on mobile. null = show all. */
+  const [mobileFolderFilter, setMobileFolderFilter] = useState<string | null>(null);
   const [sectionMenu, setSectionMenu] = useState<{ x: number; y: number } | null>(null);
   const [folderMenu, setFolderMenu] = useState<{ folderId: string; x: number; y: number } | null>(null);
   const [draft, setDraft] = useState<
@@ -446,6 +448,14 @@ export default function DMConversationList({
     [ordered, folderOf],
   );
 
+  /* DM-MOBILE-FOLDERS: filter convs by active pill folder */
+  const mobileFiltered = useMemo(() => {
+    if (!mobileFolderFilter) return ordered;
+    const folder = folders.find((f) => f.id === mobileFolderFilter);
+    if (!folder) return ordered;
+    return ordered.filter((conv) => folder.convIds.includes(conv.id));
+  }, [ordered, mobileFolderFilter, folders]);
+
   /* DM-FOLDERS: одна строка списка. Вынесена из разметки, потому что теперь
      рисуется в двух местах: внутри папки и в общем списке. */
   /* В какой папке лежит разговор, по которому открыто контекстное меню. */
@@ -610,6 +620,29 @@ export default function DMConversationList({
         )}
         </div>
       </div>
+      {/* DM-MOBILE-FOLDERS: horizontal pill bar, shown only when there are folders */}
+      {folders.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto px-3 py-2 border-b border-neutral-100 dark:border-white/5 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setMobileFolderFilter(null)}
+            className={`flex-shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${mobileFolderFilter === null ? "bg-[var(--cn-accent)] text-white" : "bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-200 dark:hover:bg-white/15"}`}
+          >
+            Все
+          </button>
+          {folders.map((folder) => (
+            <button
+              key={folder.id}
+              type="button"
+              onClick={() => setMobileFolderFilter(mobileFolderFilter === folder.id ? null : folder.id)}
+              className={`flex-shrink-0 flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${mobileFolderFilter === folder.id ? "bg-[var(--cn-accent)] text-white" : "bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-200 dark:hover:bg-white/15"}`}
+            >
+              <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>
+              <span className="truncate max-w-[72px]">{folder.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {draft && draft.mode === "create" && (
           <div className="px-3 py-2">{folderInput}</div>
@@ -619,6 +652,10 @@ export default function DMConversationList({
             {showArchived ? "В архиве пусто" : emptyText}
           </p>
         ) : (
+          <>
+          {mobileFolderFilter
+            ? mobileFiltered.map(renderConv)
+            : (
           <>
             {/* DM-FOLDERS: сначала папки с их содержимым, потом всё остальное.
                 Пустая папка тоже видна: иначе только что созданная папка пропадала бы
@@ -662,6 +699,8 @@ export default function DMConversationList({
               );
             })}
             {looseConvs.map(renderConv)}
+          </>
+            )}
           </>
         )}
       </div>
