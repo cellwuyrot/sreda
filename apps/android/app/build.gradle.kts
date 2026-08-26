@@ -198,7 +198,12 @@ dependencies {
         implementation("com.google.firebase:firebase-messaging")
     }
 
+    // VPN-ANDROID: AmneziaWG Go-backend для нативного VPN-туннеля.
+    // Официальная нативная реализация AmneziaWG для Android,
+    // аналог wireguard-android с параметрами маскировки.
+    implementation("com.github.amnezia-vpn:amneziawg-android:3.0.7.8")
     implementation("androidx.core:core-ktx:1.13.1")
+
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.core:core-splashscreen:1.0.1")

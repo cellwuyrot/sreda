@@ -8,6 +8,7 @@ import { deviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
 import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
+import { isAndroidShell } from "@/lib/shell"; // VPN-ANDROID
 import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
 import { useLinkMetrics } from "@/lib/useLinkMetrics"; // FIX-LINKSTATS
 
@@ -207,6 +208,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
    * чтение в теле компонента дало бы расхождение разметки при гидратации.
    */
   const [desktopShell, setDesktopShell] = useState(false);
+  /* VPN-ANDROID: true когда страница работает внутри Android WebView. */
+  const [androidShell, setAndroidShell] = useState(false);
+  // VPN-ANDROID-NATIVE: androidDownloading removed.
   /* VPN-ONECLICK: умеет ли эта сборка оболочки реально поднимать туннель, и его
      живое состояние. В браузере и в старых сборках моста `vpn` нет — тогда
      включать нечем, и панель отправляет человека в приложение. */
@@ -214,6 +218,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const [tunnel, setTunnel] = useState<DesktopVpnState | null>(null);
 
   useEffect(() => {
+    /* VPN-ANDROID: определяем оболочку один раз — window нет на сервере. */
+    if (isAndroidShell()) setAndroidShell(true);
     if (!isDesktop()) return;
     setDesktopShell(true);
     /* В установленном приложении безопасный по умолчанию выбор — туннель только для
@@ -417,6 +423,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      Раньше включение и выключение были двумя разными кнопками внизу окна.
      Теперь действие одно и живёт в одном месте, чтобы круглая кнопка и значок TZ
      не могли разошестись в поведении. */
+  // VPN-ANDROID-NATIVE: downloadAndroidConfig removed.
+
   const togglePower = useCallback(async () => {
     if (active || tunnelOn) {
       await disconnectTunnel();
@@ -571,11 +579,15 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
 
           {ready && !canTunnel && (
             <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Включение — в приложении</strong>
+              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
+                {androidShell ? "WireGuard на Android" : "Включение — в приложении"}
+              </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                {desktopShell
-                  ? "Обновите приложение TZ\u00a0Connect до последней версии — в нём соединение поднимается одной кнопкой."
-                  : "Соединение поднимается в приложении TZ\u00a0Connect для компьютера — в браузере системный туннель включить нельзя."}
+                {androidShell
+                  ? "Скачайте профиль и откройте его приложением WireGuard — соединение поднимается там."
+                  : desktopShell
+                  ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
+                  : "Соединение поднимается в приложении TZ Connect для компьютера — в браузере системный туннель включить нельзя."}
               </span>
             </>
           )}
