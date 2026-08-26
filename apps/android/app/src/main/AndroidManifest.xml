@@ -20,36 +20,36 @@
 
     <!--
       CALL: входящий звонок поверх блокировки.
-
-      USE_FULL_SCREEN_INTENT — разрешение разворачивать окно сразу, а не показывать
-      полоску в шторке. Без него вызов на закрытом телефоне выглядит как
-      обычное уведомление, и его просто не заметят. С Android 14 оно выдаётся
-      только приложениям со звонками — это как раз наш случай.
-
-      WAKE_LOCK — разбудить экран на время вызова.
-
-      FIX-BOOT: разрешений FOREGROUND_SERVICE* здесь больше нет. Они были взяты
-      «на будущее», но фоновой службы разговора в приложении нет: разговор
-      идёт в веб-части. Объявленные, но неиспользуемые разрешения на Android 14
-      только мешают: система требует под каждое обоснование и тип службы.
     -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!--
+      VPN-ANDROID: права для нативного VPN-сервиса.
+
+      BIND_VPN_SERVICE — обязательно для любого VpnService: без него система
+      отказывает сервису в доступе к сетевому стеку. Нельзя объявить вручную
+      от имени приложения — он выдаётся системой через VpnService.prepare().
+
+      FOREGROUND_SERVICE + FOREGROUND_SERVICE_SPECIAL_USE — VPN-сервис обязан
+      быть foreground, иначе Android его убьёт через несколько минут.
+      На Android 14+ нужен тип специального использования (FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+      для сервисов, не попадающих в стандартные категории.
+
+      CHANGE_NETWORK_STATE / CHANGE_WIFI_STATE — некоторые версии AmneziaWG-Go
+      используют их для управления маршрутами.
+    -->
+    <uses-permission android:name="android.permission.BIND_VPN_SERVICE"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <!-- Nothing here is mandatory, so the app installs on all devices. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
 
-    <!-- FIX-SEC: android:allowBackup был "true". При включённой резервной копии
-         данные приложения (cookie сессии в WebView, токен доставки) уезжают в
-         облако и снимаются через adb backup с разблокированного телефона — то
-         есть войти в аккаунт можно без пароля. Мессенджеру резервная копия
-         состояния не нужна: вся переписка и так на сервере.
-
-         Важно: комментарий стоит ПЕРЕД тегом, а не среди его атрибутов:
-         комментарий внутри открывающего тега — невалидный XML, и сборка apk
-         падает на разборе манифеста. -->
     <application
         android:name=".ConnectApp"
         android:allowBackup="false"
@@ -80,19 +80,30 @@
         </activity>
 
         <!--
-          CALL: окно входящего вызова.
+          VPN-ANDROID: нативный VPN-сервис на базе AmneziaWG.
 
-          showWhenLocked + turnScreenOn — то, зачем вся эта отдельная страница и
-          существует: экран загорается сам, и вызов виден без разблокировки,
-          как у телефонного звонка.
+          permission="android.permission.BIND_VPN_SERVICE" — защищает сервис от
+          запуска произвольными приложениями: только система и наше приложение
+          могут его запустить.
 
-          excludeFromRecents — завершённый вызов не должен оставаться в недавних:
-          открытый из недавних снимок показал бы вызов, которого больше нет.
-
-          exported=false: окно открывает только служба доставки внутри приложения.
-          Стороннее приложение иначе могло бы рисовать поддельный вызов поверх
-          блокировки от имени мессенджера.
+          foregroundServiceType="specialUse" — Android 14+ требует явного типа
+          для foreground-сервисов. «specialUse» — это тип для VPN и подобных
+          сервисов, не попадающих в стандартные категории (camera/microphone/etc).
         -->
+        <service
+            android:name=".AmneziaVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <!-- Android 14+ requires a <property> declaring the use case. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="VPN tunnel via AmneziaWG" />
+        </service>
+
         <activity
             android:name=".IncomingCallActivity"
             android:exported="false"
@@ -104,17 +115,5 @@
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:theme="@style/Theme.Connect" />
 
-        <!--
-          PUSH: служба доставки описана В ОТДЕЛЬНОМ манифесте app/src/push.
-
-          FIX-BOOT: раньше служба и библиотека доставки попадали в ЛЮБУЮ сборку,
-          включая сборку без файла доступов app/google-services.json (в репозитории
-          его нет и быть не должно). Библиотека доставки поднимается при старте
-          процесса сама, до первого экрана, и без своего файла доступов роняла
-          приложение ещё на запуске — вместо мессенджера человек видел «произошёл
-          сбой». Теперь вся доставка подключается только вместе с файлом доступов:
-          без него приложение собирается и работает, просто без уведомлений в
-          закрытом состоянии. См. apps/android/app/build.gradle.kts.
-        -->
     </application>
 </manifest>

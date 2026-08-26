@@ -1,12 +1,14 @@
 package ru.trioz.connect
 
 import android.Manifest
+import android.app.Activity
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -28,6 +30,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import org.json.JSONObject
 import ru.trioz.connect.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
@@ -35,22 +38,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val webView: WebView get() = binding.webView
 
-    /** Set true once the first real page finished loading (dismisses the splash). */
     private var contentReady = false
 
-    /**
-     * FIX-SEC: на каком адресе сейчас страница — на нашем или на чужом.
-     *
-     * JavaScript-мост уведомлений виден ЛЮБОЙ странице в этом WebView — включая
-     * стороннюю, куда могла увести цепочка переадресаций или встроенный фрейм.
-     * Такая страница могла показывать системные уведомления от имени мессенджера
-     * и читать токен доставки через pushToken(). Флаг обновляется в потоке UI, а
-     * читается из потока JavaScript-моста — отсюда @Volatile.
-     */
     @Volatile
     private var webOriginTrusted = false
 
-    // ── File uploads (message attachments) ──────────────────────────────
+    // ── File uploads ─────────────────────────────────────────────────────
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -58,13 +51,11 @@ class MainActivity : AppCompatActivity() {
             fileChooserCallback = null
             val uris: Array<Uri>? = if (result.resultCode == RESULT_OK) {
                 WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
-            } else {
-                null
-            }
+            } else null
             callback.onReceiveValue(uris)
         }
 
-    // ── WebRTC (mic/camera) permission bridging ─────────────────────────
+    // ── WebRTC (mic/camera) ───────────────────────────────────────────────
     private var pendingWebPermission: PermissionRequest? = null
     private val runtimePermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
@@ -73,29 +64,25 @@ class MainActivity : AppCompatActivity() {
             if (request == null) return@registerForActivityResult
             val granted = request.resources.filter { res ->
                 when (res) {
-                    PermissionRequest.RESOURCE_AUDIO_CAPTURE ->
-                        grants[Manifest.permission.RECORD_AUDIO] == true
-                    PermissionRequest.RESOURCE_VIDEO_CAPTURE ->
-                        grants[Manifest.permission.CAMERA] == true
+                    PermissionRequest.RESOURCE_AUDIO_CAPTURE -> grants[Manifest.permission.RECORD_AUDIO] == true
+                    PermissionRequest.RESOURCE_VIDEO_CAPTURE -> grants[Manifest.permission.CAMERA] == true
                     else -> true
                 }
             }.toTypedArray()
             if (granted.isNotEmpty()) request.grant(granted) else request.deny()
         }
 
-    // ── ANDROID-NOTIFY: системное разрешение на уведомления (Android 13+) ──
+    // ── Notifications (Android 13+) ──────────────────────────────────────
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* результат не нужен:
-            веб-сторона просто перестанет получать системные тосты, если отказали */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
-    /** Запросить POST_NOTIFICATIONS, если он ещё не выдан (до Android 13 — no-op). */
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (hasPermission(Manifest.permission.POST_NOTIFICATIONS)) return
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    // ── Geolocation (map sharing) permission bridging ───────────────────
+    // ── Geolocation ───────────────────────────────────────────────────────
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
     private val geoPermissionLauncher =
@@ -109,9 +96,76 @@ class MainActivity : AppCompatActivity() {
             callback?.invoke(origin, allowed, false)
         }
 
-    // ── Fullscreen <video> support ──────────────────────────────────────
+    // ── Fullscreen video ──────────────────────────────────────────────────
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    // ── VPN-ANDROID: разрешение и запуск туннеля ─────────────────────────
+    /**
+     * Профиль, который ждёт разрешения VPN.
+     * Если пользователь ещё не выдал разрешение, Android показывает диалог.
+     * После получения разрешения запускаем сервис с этим профилем.
+     */
+    private var pendingVpnConfig: String? = null
+
+    private val vpnPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val config = pendingVpnConfig ?: return@registerForActivityResult
+                pendingVpnConfig = null
+                AmneziaVpnService.startUp(this, config)
+            } else {
+                pendingVpnConfig = null
+                // Пользователь отказал — сообщаем об этом веб-части.
+                notifyVpnState(VpnState.ERROR, null, "Разрешение VPN не выдано")
+            }
+        }
+
+    companion object {
+        /**
+         * VPN-ANDROID: callback для уведомления WebView об изменении состояния.
+         * Устанавливается в onCreate, очищается в onDestroy.
+         * AmneziaVpnService вызывает его при каждом изменении статуса.
+         */
+        @Volatile
+        var onVpnStateChanged: ((VpnState, String?, String?) -> Unit)? = null
+    }
+
+    // ── VPN public API (вызывается из VpnBridge через runOnUiThread) ──────
+
+    /** Запустить туннель с готовым профилем WireGuard/AmneziaWG. */
+    fun vpnUp(config: String) {
+        val prepareIntent = VpnService.prepare(this)
+        if (prepareIntent != null) {
+            // Разрешения ещё нет — сохраняем профиль и показываем диалог.
+            pendingVpnConfig = config
+            vpnPermissionLauncher.launch(prepareIntent)
+        } else {
+            // Разрешение уже есть — запускаем сервис сразу.
+            AmneziaVpnService.startUp(this, config)
+        }
+    }
+
+    /** Остановить туннель. */
+    fun vpnDown() {
+        AmneziaVpnService.startDown(this)
+    }
+
+    /** Передать состояние туннеля в WebView через evaluateJavascript. */
+    private fun notifyVpnState(state: VpnState, since: String?, error: String?) {
+        val json = JSONObject().apply {
+            put("state", state.jsonKey)
+            put("since", since ?: JSONObject.NULL)
+            put("error", error ?: JSONObject.NULL)
+            put("backend", if (state == VpnState.ON || state == VpnState.CONNECTING) "amneziawg" else JSONObject.NULL)
+            put("embedded", true)
+        }.toString()
+        // Экранируем для вставки в JS-строку.
+        val escaped = json.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+        webView.evaluateJavascript("window.__androidVpnState && window.__androidVpnState(\"$escaped\")", null)
+    }
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -124,27 +178,21 @@ class MainActivity : AppCompatActivity() {
         configureWebView()
         registerBackNavigation()
 
-        /* ANDROID-NOTIFY: канал уведомлений нужен до первого показа (Android 8+). */
         NotificationBridge.ensureChannel(this)
+
+        // VPN-ANDROID: слушаем изменения состояния туннеля.
+        onVpnStateChanged = { state, since, error ->
+            runOnUiThread { notifyVpnState(state, since, error) }
+        }
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
             contentReady = true
         } else {
-            /* PUSH: приложение могли открыть нажатием на уведомление — тогда
-               открываем сразу тот разговор, о котором оно было. Без этого человек
-               попадал бы на общий экран и искал сообщение сам. */
             webView.loadUrl(linkFromIntent(intent) ?: Config.startUrl)
         }
     }
 
-    /**
-     * PUSH: приложение уже было открыто, и человек нажал на уведомление.
-     *
-     * launchMode=singleTask, поэтому нового экземпляра не создаётся — приходит
-     * только новый intent. Переход выполняем через loadUrl, а не перезагрузкой
-     * оболочки: страница остаётся живой, и разговор в голосовом канале не рвётся.
-     */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -152,13 +200,12 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl(url)
     }
 
-    /**
-     * Полный адрес из уведомления. null — уведомление без адреса или адрес чужой.
-     *
-     * Проверка обязательна: в intent может прийти что угодно, а WebView оболочки
-     * открывает ТОЛЬКО свой origin и только разрешённые разделы (см. Config).
-     * Иначе нажатие на подделанное уведомление увело бы оболочку на чужой сайт.
-     */
+    override fun onDestroy() {
+        onVpnStateChanged = null
+        webView.destroy()
+        super.onDestroy()
+    }
+
     private fun linkFromIntent(source: Intent?): String? {
         val raw = source?.getStringExtra(EXTRA_LINK)?.trim().orEmpty()
         if (raw.isEmpty()) return null
@@ -167,13 +214,12 @@ class MainActivity : AppCompatActivity() {
         return if (Config.isBlockedInApp(url)) null else url
     }
 
+    // ── WebView configuration ─────────────────────────────────────────────
+
     @Suppress("SetJavaScriptEnabled")
     private fun configureWebView() {
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
-            /* FIX-SEC: было true. Оболочка работает с одним своим адресом, чужие
-               cookie ей не нужны, а их приём — это слежка и лишняя поверхность
-               для CSRF во встроенных фреймах. */
             setAcceptThirdPartyCookies(webView, false)
         }
 
@@ -181,34 +227,15 @@ class MainActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
-            /* FIX-SEC: было true при setSupportMultipleWindows(false) — сочетание
-               бессмысленное: окна всё равно не открываются, а window.open() из
-               любого скрипта обходит проверку «по жесту пользователя». */
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
-            // Voice channels autoplay remote audio without a tap.
             mediaPlaybackRequiresUserGesture = false
             loadWithOverviewMode = true
             useWideViewPort = true
             allowFileAccess = false
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
-            /* FIX-EMOJI: системный масштаб шрифта сюда не пускаем.
-
-               WebView по умолчанию берёт textZoom из настроек системы (Настройки →
-               Экран → Размер шрифта) и масштабирует только текст. Картинки он не
-               трогает вовсе. Эмодзи у нас — картинки 20–22px рядом с текстом,
-               поэтому при системном увеличении шрифта (частая настройка, особенно
-               130% и выше) текст растёт, а глиф остаётся прежним — и вся строка
-               выглядит перекошенной. Именно поэтому «кривые эмодзи» видны в
-               андроид-клиенте и не воспроизводятся в браузере на том же телефоне.
-
-               Доступность от этого не страдает: размер текста чата настраивается в
-               самом приложении (--tz-chat-body-size), и там он меняет всю строку
-               целиком — вместе с глифами. */
             textZoom = 100
-            // Identify the shell so the site can tell it apart from a plain
-            // mobile browser, while keeping the mobile responsive layout.
             userAgentString = "$userAgentString ConnectAndroid/${BuildConfig.VERSION_NAME}"
         }
 
@@ -219,58 +246,41 @@ class MainActivity : AppCompatActivity() {
             startDownload(url, userAgent, contentDisposition, mimeType)
         }
 
-        /* ANDROID-NOTIFY: мост в системные уведомления. WebView не реализует Web
-           Notifications API, поэтому веб-часть (lib/appNotify.ts) зовёт этот
-           интерфейс — и сообщения видны в шторке и на экране блокировки. */
+        // Мост уведомлений.
         webView.addJavascriptInterface(
             NotificationBridge(
                 activity = this,
-                /* FIX-SEC: мост работает только на нашем адресе. */
                 originOk = { webOriginTrusted },
             ) { requestNotificationPermission() },
             NotificationBridge.JS_NAME,
         )
+
+        // VPN-ANDROID: мост управления нативным туннелем.
+        webView.addJavascriptInterface(
+            VpnBridge(
+                activity = this,
+                originOk = { webOriginTrusted },
+            ),
+            VpnBridge.JS_NAME,
+        )
     }
 
-    // ── Navigation policy (зеркалит десктоп-оболочку и apps/web/src/lib/shell.ts) ──
+    // ── Navigation policy ─────────────────────────────────────────────────
+
     private inner class ConnectWebViewClient : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url.toString()
             when {
-                Config.isExternal(url) -> {
-                    openExternally(url)
-                    return true
-                }
-                Config.isBlockedInApp(url) -> {
-                    view.loadUrl(Config.startUrl)
-                    return true
-                }
+                Config.isExternal(url) -> { openExternally(url); return true }
+                Config.isBlockedInApp(url) -> { view.loadUrl(Config.startUrl); return true }
             }
             return false
         }
 
-        /**
-         * ANDROID-LOCK: страховка от SPA-навигации. Сайт — Next.js-приложение:
-         * внутренние переходы выполняются через history.pushState и НЕ проходят
-         * через shouldOverrideUrlLoading. Первая линия защиты — веб-гард
-         * (AndroidShellGuard глушит клики по ссылкам вне /connect и прячет
-         * сайтовые кнопки по классу tz-android), а этот хук — последний рубеж:
-         * если клиентский роутер всё же увёл страницу в сайтовый раздел,
-         * возвращаем оболочку на стартовый экран мессенджера.
-         */
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             super.doUpdateVisitedHistory(view, url, isReload)
             webOriginTrusted = url != null && url.startsWith(Config.appUrl)
             if (isReload || url == null || !Config.isBlockedInApp(url)) return
-
-            /* Возвращаемся мягко. Раньше здесь стоял loadUrl(startUrl): он
-               перезагружает страницу целиком, а вместе с ней сносит дерево
-               React с VoiceProvider — человека молча выбрасывало из голосового
-               канала просто потому, что он открыл раздел вне мессенджера.
-               Шаг назад по истории возвращает то же место без перезагрузки,
-               и разговор продолжается. Полная загрузка остаётся запасным
-               путём: если истории нет (переход был первым), возвращаться
-               некуда. */
             if (view.canGoBack()) view.goBack() else view.loadUrl(Config.startUrl)
         }
 
@@ -278,10 +288,16 @@ class MainActivity : AppCompatActivity() {
             super.onPageFinished(view, url)
             webOriginTrusted = url != null && url.startsWith(Config.appUrl)
             contentReady = true
+
+            // VPN-ANDROID: при перезагрузке страницы отдаём актуальное состояние.
+            if (webOriginTrusted) {
+                notifyVpnState(AmneziaVpnService.state, AmneziaVpnService.since, AmneziaVpnService.lastError)
+            }
         }
     }
 
-    // ── Media / file-chooser / fullscreen bridging ──────────────────────
+    // ── Media / file-chooser / fullscreen ─────────────────────────────────
+
     private inner class ConnectWebChromeClient : WebChromeClient() {
         override fun onPermissionRequest(request: PermissionRequest) {
             runOnUiThread { handleWebPermission(request) }
@@ -327,16 +343,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-            if (customView != null) {
-                callback.onCustomViewHidden()
-                return
-            }
+            if (customView != null) { callback.onCustomViewHidden(); return }
             customView = view
             customViewCallback = callback
             binding.fullscreenContainer.addView(
-                view,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
+                view, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
             )
             binding.fullscreenContainer.visibility = View.VISIBLE
             binding.webView.visibility = View.GONE
@@ -353,42 +364,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Grant a WebRTC media request, prompting for the matching Android runtime
-     * permission first if it has not been granted yet.
-     */
     private fun handleWebPermission(request: PermissionRequest) {
-        // Only mic/camera come from same-origin voice channels; deny the rest.
         val wanted = request.resources.filter {
             it == PermissionRequest.RESOURCE_AUDIO_CAPTURE ||
                 it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
         }
-        if (wanted.isEmpty()) {
-            request.deny()
-            return
-        }
-
+        if (wanted.isEmpty()) { request.deny(); return }
         val missing = mutableListOf<String>()
         if (wanted.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
             !hasPermission(Manifest.permission.RECORD_AUDIO)
-        ) {
-            missing.add(Manifest.permission.RECORD_AUDIO)
-        }
+        ) missing.add(Manifest.permission.RECORD_AUDIO)
         if (wanted.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
             !hasPermission(Manifest.permission.CAMERA)
-        ) {
-            missing.add(Manifest.permission.CAMERA)
-        }
-
-        if (missing.isEmpty()) {
-            request.grant(wanted.toTypedArray())
-        } else {
-            pendingWebPermission = request
-            runtimePermissionLauncher.launch(missing.toTypedArray())
-        }
+        ) missing.add(Manifest.permission.CAMERA)
+        if (missing.isEmpty()) request.grant(wanted.toTypedArray())
+        else { pendingWebPermission = request; runtimePermissionLauncher.launch(missing.toTypedArray()) }
     }
 
-    // ── Downloads (attachments, exports) ────────────────────────────────
+    // ── Downloads ─────────────────────────────────────────────────────────
+
     private fun startDownload(url: String, userAgent: String?, contentDisposition: String?, mimeType: String?) {
         if (!url.startsWith("http")) return
         try {
@@ -417,7 +411,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ── Back button: navigate WebView history, then close fullscreen, then exit ──
+    // ── Back navigation ───────────────────────────────────────────────────
+
     private fun registerBackNavigation() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -429,6 +424,8 @@ class MainActivity : AppCompatActivity() {
             }
         })
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
@@ -442,18 +439,6 @@ class MainActivity : AppCompatActivity() {
         webView.saveState(outState)
     }
 
-    override fun onPause() {
-        super.onPause()
-        webView.onPause()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        webView.onResume()
-    }
-
-    override fun onDestroy() {
-        webView.destroy()
-        super.onDestroy()
-    }
+    override fun onPause() { super.onPause(); webView.onPause() }
+    override fun onResume() { super.onResume(); webView.onResume() }
 }
