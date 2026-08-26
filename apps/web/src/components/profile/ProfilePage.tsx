@@ -297,6 +297,7 @@ function WallMediaView({ items }: { items?: WallMedia[] }) {
 }
 
 export default function ProfilePage({ username }: { username?: string }) {
+  const router = useRouter(); // WRITE-BTN SETTINGS-BTN
   const { data: session } = useSession();
   const viewerName = session?.user?.username;
   const target = username || viewerName;
