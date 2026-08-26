@@ -20,7 +20,7 @@ import {
   UserPlusIcon,
   UsersIcon,
 } from "@/components/ui/ConnectIcons";
-import { TrashIcon } from "@/components/ui/ConnectIconsExtra";
+import { TrashIcon, GearIcon } from "@/components/ui/ConnectIconsExtra";
 import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { useCall } from "@/components/call/CallProvider"; // CALL
 import ProfileBanner from "@/components/ui/ProfileBanner"; // FIX-BANNERONE
@@ -552,9 +552,31 @@ export default function ProfilePage({ username }: { username?: string }) {
 
             {/* CALL: звонок другу — только на чужой странице и только в приложении для телефона.
                 Кнопки действий в одной переносимой строке, чтобы ничего не наезжало. */}
+            {head.isSelf && (
+              <div className="flex flex-wrap items-center gap-2 max-sm:w-full sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => router.push("/settings")}
+                  className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5 max-sm:flex-1"
+                >
+                  <GearIcon size={16} style={{ color: "inherit" }} />
+                  Настройки
+                </button>
+              </div>
+            )}
             {!head.isSelf && (
               <div className="flex flex-wrap items-center gap-2 max-sm:w-full sm:justify-end">
                 <CallButtons head={head} />
+                {/* WRITE-BTN: кнопка написать — переход в личные сообщения */}
+                <button
+                  type="button"
+                  onClick={() => router.push(`/connect?section=dm&dm=${head.id}`)}
+                  className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 max-sm:flex-1"
+                  aria-label={`Написать ${head.name}`}
+                >
+                  <MessagesIcon size={16} style={{ color: "inherit" }} />
+                  Написать
+                </button>
                 <button
                   type="button"
                   onClick={toggleFollow}
