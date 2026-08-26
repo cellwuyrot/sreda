@@ -8,6 +8,7 @@ import { deviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
 import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
+import { isAndroidShell } from "@/lib/shell"; // VPN-ANDROID
 import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
 import { useLinkMetrics } from "@/lib/useLinkMetrics"; // FIX-LINKSTATS
 
@@ -207,6 +208,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
    * чтение в теле компонента дало бы расхождение разметки при гидратации.
    */
   const [desktopShell, setDesktopShell] = useState(false);
+  /* VPN-ANDROID: true когда страница работает внутри Android WebView. */
+  const [androidShell, setAndroidShell] = useState(false);
+  const [androidDownloading, setAndroidDownloading] = useState(false);
   /* VPN-ONECLICK: умеет ли эта сборка оболочки реально поднимать туннель, и его
      живое состояние. В браузере и в старых сборках моста `vpn` нет — тогда
      включать нечем, и панель отправляет человека в приложение. */
@@ -214,6 +218,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const [tunnel, setTunnel] = useState<DesktopVpnState | null>(null);
 
   useEffect(() => {
+    /* VPN-ANDROID: определяем оболочку один раз — window нет на сервере. */
+    if (isAndroidShell()) setAndroidShell(true);
     if (!isDesktop()) return;
     setDesktopShell(true);
     /* В установленном приложении безопасный по умолчанию выбор — туннель только для
@@ -417,6 +423,31 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      Раньше включение и выключение были двумя разными кнопками внизу окна.
      Теперь действие одно и живёт в одном месте, чтобы круглая кнопка и значок TZ
      не могли разошестись в поведении. */
+  /* VPN-ANDROID: собираем профиль и отдаём как файл .conf для WireGuard.
+     Приватный ключ живёт только в памяти; в localStorage и на сервер не попадает. */
+  const downloadAndroidConfig = useCallback(async () => {
+    if (androidDownloading) return;
+    setAndroidDownloading(true);
+    setError("");
+    try {
+      const config = await enroll(routing);
+      if (!config) return;
+      const blob = new Blob([config], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "tz-connect.conf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Не удалось сформировать профиль WireGuard");
+    } finally {
+      setAndroidDownloading(false);
+    }
+  }, [androidDownloading, enroll, routing]);
+
   const togglePower = useCallback(async () => {
     if (active || tunnelOn) {
       await disconnectTunnel();
@@ -571,12 +602,28 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
 
           {ready && !canTunnel && (
             <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Включение — в приложении</strong>
+              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
+                {androidShell ? "WireGuard на Android" : "Включение — в приложении"}
+              </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                {desktopShell
-                  ? "Обновите приложение TZ\u00a0Connect до последней версии — в нём соединение поднимается одной кнопкой."
-                  : "Соединение поднимается в приложении TZ\u00a0Connect для компьютера — в браузере системный туннель включить нельзя."}
+                {androidShell
+                  ? "Скачайте профиль и откройте его приложением WireGuard — соединение поднимается там."
+                  : desktopShell
+                  ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
+                  : "Соединение поднимается в приложении TZ Connect для компьютера — в браузере системный туннель включить нельзя."}
               </span>
+              {/* VPN-ANDROID: кнопка скачивания .conf только внутри Android WebView */}
+              {androidShell && ready && (
+                <button
+                  type="button"
+                  onClick={() => void downloadAndroidConfig()}
+                  disabled={androidDownloading}
+                  className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-60"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                  {androidDownloading ? "Формируем…" : "Скачать профиль WireGuard"}
+                </button>
+              )}
             </>
           )}
         </div>

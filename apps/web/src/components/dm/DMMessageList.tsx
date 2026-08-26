@@ -189,10 +189,14 @@ export default function DMMessageList(props: DMMessageListProps) {
 
   return (
     <>
-      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 md:px-5 py-4 space-y-1" role="log" aria-label="Личные сообщения">
+      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-2 md:px-4 py-4 space-y-0.5" role="log" aria-label="Личные сообщения">
         {hasMore && (
-          <button onClick={onLoadMore} disabled={messagesLoading} className="mx-auto block text-xs text-violet-500 dark:text-cyan-400 hover:underline disabled:opacity-50">
-            {messagesLoading ? "Загрузка..." : "Загрузить ранее"}
+          <button onClick={onLoadMore} disabled={messagesLoading} className="mx-auto flex items-center gap-1.5 rounded-full border border-neutral-200 dark:border-white/10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm px-4 py-1.5 text-xs font-medium text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5 shadow-sm disabled:opacity-50 transition-all">
+            {messagesLoading ? (
+              <><svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="30" strokeDashoffset="10"/></svg>Загрузка…</>
+            ) : (
+              <><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 15l7-7 7 7"/></svg>История</>
+            )}
           </button>
         )}
         {messages.length === 0 ? (
@@ -237,7 +241,7 @@ export default function DMMessageList(props: DMMessageListProps) {
             const barHot = hoverBar.activeId === msg.id;
             const holdBar = () => hoverBar.hold(msg.id);
             const releaseBar = () => hoverBar.release(msg.id);
-            const dmRowClassName = `tz-msg-row tz-dm-msg-row ${barHot ? "tz-msg-hot " : ""}${msg.userId === currentUserId ? "tz-dm-own flex-row-reverse" : "tz-dm-peer"} group/dm flex items-end gap-2 py-1 ${msg.pinned ? "bg-amber-50/50 dark:bg-amber-400/5 px-2 rounded-xl" : ""}`;
+            const dmRowClassName = `tz-msg-row tz-dm-msg-row ${barHot ? "tz-msg-hot " : ""}${msg.userId === currentUserId ? "tz-dm-own flex-row-reverse" : "tz-dm-peer"} group/dm flex items-end gap-2 py-0.5 px-1 ${msg.pinned ? "bg-amber-50/50 dark:bg-amber-400/5 rounded-2xl" : ""}`;
             const dmRowBody = (
               <>
                   {!msg.deleted && (
@@ -273,10 +277,10 @@ export default function DMMessageList(props: DMMessageListProps) {
                       )}
                     </MessageHoverToolbar>
                   )}
-                  <div className={`max-w-[78%] md:max-w-[680px] rounded-2xl px-3.5 py-2.5 border shadow-sm ${
+                  <div className={`max-w-[80%] md:max-w-[640px] px-3.5 py-2.5 shadow-sm ${
                     msg.userId === currentUserId
-                      ? "bg-violet-600 dark:bg-cyan-700 border-violet-500/30 dark:border-cyan-500/30 text-white rounded-br-md"
-                      : "bg-[var(--cn-card)] border-[var(--cn-border)] text-neutral-900 dark:text-white rounded-bl-md"
+                      ? "bg-gradient-to-br from-violet-600 to-violet-700 dark:from-cyan-700 dark:to-cyan-800 text-white rounded-[20px] rounded-br-[5px]"
+                      : "bg-[var(--cn-card)] border border-[var(--cn-border)] text-neutral-900 dark:text-white rounded-[20px] rounded-bl-[5px]"
                   }`}>
                     {/* Pin indicator */}
                     {msg.pinned && (
@@ -449,8 +453,9 @@ export default function DMMessageList(props: DMMessageListProps) {
                 {isLast ? (
                   <motion.div
                     id={`dm-msg-${msg.id}`}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 26, mass: 0.75 }}
                     transition={{ type: "spring", stiffness: 380, damping: 28 }}
                     className={dmRowClassName}
                     onMouseEnter={holdBar}
@@ -480,11 +485,12 @@ export default function DMMessageList(props: DMMessageListProps) {
       {/* Scroll-to-bottom button */}
       {showScrollBtn && (
         <motion.button
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
+          initial={{ scale: 0.6, opacity: 0, y: 8 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          transition={{ type: "spring", stiffness: 500, damping: 30 }}
           exit={{ scale: 0, opacity: 0 }}
           onClick={onScrollToBottom}
-          className="absolute bottom-20 right-4 z-20 w-10 h-10 rounded-full bg-[var(--cn-sidebar)] border border-[var(--cn-border)] shadow-lg flex items-center justify-center text-neutral-600 dark:text-gray-300 hover:bg-[var(--cn-hover)] transition-colors"
+          className="absolute bottom-20 right-4 z-20 w-11 h-11 rounded-full bg-white/90 dark:bg-neutral-800/90 backdrop-blur-md border border-neutral-200/60 dark:border-white/10 shadow-xl flex items-center justify-center text-neutral-600 dark:text-gray-200 hover:bg-white dark:hover:bg-neutral-700 hover:shadow-2xl active:scale-95 transition-all duration-150"
           aria-label="Прокрутить вниз"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
