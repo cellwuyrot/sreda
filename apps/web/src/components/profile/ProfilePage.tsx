@@ -19,8 +19,9 @@ import {
   StarIcon,
   UserPlusIcon,
   UsersIcon,
+  GearIcon,
 } from "@/components/ui/ConnectIcons";
-import { TrashIcon, GearIcon } from "@/components/ui/ConnectIconsExtra";
+import { TrashIcon } from "@/components/ui/ConnectIconsExtra";
 import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { useCall } from "@/components/call/CallProvider"; // CALL
 import ProfileBanner from "@/components/ui/ProfileBanner"; // FIX-BANNERONE
