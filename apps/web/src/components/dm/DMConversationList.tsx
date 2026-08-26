@@ -652,6 +652,7 @@ export default function DMConversationList({
             {showArchived ? "В архиве пусто" : emptyText}
           </p>
         ) : (
+          <>
           {mobileFolderFilter
             ? mobileFiltered.map(renderConv)
             : (
@@ -700,7 +701,7 @@ export default function DMConversationList({
             {looseConvs.map(renderConv)}
           </>
             )}
-
+          </>
         )}
       </div>
 
