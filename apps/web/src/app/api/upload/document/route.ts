@@ -9,9 +9,16 @@ import {
   isAllowedDocument,
   formatSize,
 } from "@/lib/businessPayment";
+import { uploadDirRoot } from "@/lib/uploadPaths"; // FIX-SEC-DOCS
+import { recordUpload } from "@/lib/uploadAccess"; // FIX-SEC-DOCS
 
 /**
- * BUSINESS-PAY: загрузка договоров и приложений (public/uploads/documents).
+ * BUSINESS-PAY: загрузка договоров и приложений.
+ *
+ * FIX-SEC-DOCS: документы теперь хранятся в storage/uploads/documents
+ * (приватный каталог, вне public/), а не в public/uploads/documents.
+ * Адрес в базе прежний — /uploads/documents/<файл> — его перехватывает
+ * server.ts и проверяет сессию до раздачи файла.
  *
  * ── Почему отдельный маршрут, а не /api/admin/upload ────────────────────────
  *
@@ -58,12 +65,26 @@ export async function POST(req: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const uploadDir = path.join(process.cwd(), "public", "uploads", UPLOAD_SUBDIR);
+  // FIX-SEC-DOCS: приватный каталог вне public/ — не раздаётся статикой Next.js
+  const uploadDir = uploadDirRoot(UPLOAD_SUBDIR);
   await mkdir(uploadDir, { recursive: true });
 
   const ext = sanitizeExtension(file.name);
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
   await writeFile(path.join(uploadDir, filename), buffer);
+
+  const relPath = `${UPLOAD_SUBDIR}/${filename}`;
+  const userId = (session.user as { id?: string }).id;
+  if (userId) {
+    // FIX-SEC-DOCS: регистрируем файл в указателе — server.ts применит
+    // canAccessUpload при следующей попытке скачать этот документ.
+    try {
+      await recordUpload({ path: relPath, uploaderId: userId });
+    } catch {
+      // Незарегистрированный файл всё равно отдаётся вошедшему (UPLOADS_STRICT=0 по умолчанию);
+      // это лучше, чем потерять уже загруженный договор. Журнал предупредит.
+    }
+  }
 
   return NextResponse.json({
     url: `/uploads/${UPLOAD_SUBDIR}/${filename}`,
