@@ -41,10 +41,13 @@ export async function applyMemberOverrides<
     if (!over) continue;
     if (over.displayName) user.name = over.displayName;
     if (over.avatar) user.avatar = over.avatar;
-    /* FIX-BANNERONE: фон профиля НЕ переопределяется по сообществу. Иначе в
-       чате мини-профиль показывал одну картинку, а страница пользователя —
-       другую; раздел «Профиль на выбранном сервере», ради которого это
-       переопределение делалось, убран (FIX-NOSRVPROFILE). */
+    /* FIX-BANNERSYNC: если пользователь никогда не заходил на свою страницу
+       профиля через веб, resolveProfileBanner ещё не мигрировал баннер из
+       GroupMember.profileBanner в User.profileBanner, и сообщения отдают
+       user.profileBanner = null. Применяем запасной вариант здесь: баннер
+       берётся из первого найденного сообщества, как это делает
+       resolveProfileBanner, — поведение идентично странице профиля. */
+    if (over.profileBanner) user.profileBanner = over.profileBanner;
   }
   return items;
 }
