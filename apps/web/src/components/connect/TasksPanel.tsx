@@ -172,8 +172,8 @@ function MobileTasksBoard({
   tasks, currentUserId, canModerate,
   onTake, onClose, onDelete, onOpen,
 }: MobileTasksBoardProps) {
-  const [activeCol, setActiveCol] = React.useState<string>("open");
-  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null);
+  const [activeCol, setActiveCol] = useState<string>("open");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const getItems = (key: string) => {
     if (key === "closed") {
