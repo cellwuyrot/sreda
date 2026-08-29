@@ -28,6 +28,9 @@ const TYPE_LABELS: Record<string, { label: string; icon: string; color: string }
   game_invite: { label: "Игровые приглашения", icon: "🎮", color: "text-green-400" },
   game: { label: "Игры", icon: "🎲", color: "text-yellow-400" },
   system: { label: "Система", icon: "🔔", color: "text-gray-400" },
+  // TASK-NOTIFY: уведомления о задачах — назначена, изменён статус и т.д.
+  task_assigned: { label: "Задачи", icon: "✅", color: "text-amber-400" },
+  task: { label: "Задачи", icon: "✅", color: "text-amber-400" },
 };
 
 function getTypeInfo(type: string) {
@@ -160,6 +163,7 @@ export default function NotificationsPage() {
     { key: "all", label: "Все" },
     { key: "dm", label: "ЛС" },
     { key: "mention", label: "Упоминания" },
+    { key: "task_assigned", label: "Задачи" },
     { key: "game_invite", label: "Игры" },
     { key: "system", label: "Система" },
   ];

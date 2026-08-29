@@ -145,6 +145,101 @@ function statusLabel(status: string): string {
   return OPEN_COLUMNS.find((c) => c.key === status)?.label || CLOSED_META[status]?.label || status;
 }
 
+// ===== MOBILE-BLOCKS: мобильная доска задач =====
+// Блоки колонок слева, список задач справа/снизу. Всё пролистывается.
+type MobileTasksBoardProps = {
+  tasks: Task[];
+  currentUserId: string;
+  canModerate: boolean;
+  dragId: string | null;
+  setDragId: (id: string | null) => void;
+  onMove: (taskId: string, status: string) => void;
+  onTake: (taskId: string) => void;
+  onClose: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
+  onOpen: (taskId: string) => void;
+};
+
+const MOBILE_COLUMNS = [
+  { key: "open",    label: "К выполнению", color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/20" },
+  { key: "in_progress", label: "В работе",     color: "text-amber-400",  bg: "bg-amber-500/10 border-amber-500/20" },
+  { key: "closed",  label: "Закрытые",      color: "text-green-400",  bg: "bg-green-500/10 border-green-500/20" },
+];
+
+const CLOSED_STATUSES_MB = ["done", "failed", "needs_clarification"];
+
+function MobileTasksBoard({
+  tasks, currentUserId, canModerate,
+  onTake, onClose, onDelete, onOpen,
+}: MobileTasksBoardProps) {
+  const [activeCol, setActiveCol] = React.useState<string>("open");
+  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null);
+
+  const getItems = (key: string) => {
+    if (key === "closed") {
+      return tasks.filter((t) => CLOSED_STATUSES_MB.includes(t.status) && !t.parentId);
+    }
+    return tasks.filter((t) => t.status === key && !t.parentId);
+  };
+
+  const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
+
+  return (
+    <div className="flex h-full overflow-hidden">
+      {/* Левая панель: блоки колонок */}
+      <div className="flex flex-col gap-2 p-3 w-28 flex-shrink-0 border-r border-neutral-200 dark:border-white/10 overflow-y-auto">
+        {MOBILE_COLUMNS.map((col) => {
+          const count = getItems(col.key).length;
+          const isActive = activeCol === col.key;
+          return (
+            <button
+              key={col.key}
+              onClick={() => setActiveCol(col.key)}
+              className={`flex flex-col items-center justify-center gap-1 p-3 rounded-xl border transition-all text-center ${
+                isActive
+                  ? col.bg + " " + col.color + " border-current shadow-sm"
+                  : "border-neutral-200 dark:border-white/10 text-neutral-500 dark:text-neutral-400 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              }`}
+            >
+              <span className="text-xs font-semibold leading-tight">{col.label}</span>
+              <span className={`text-base font-bold ${ isActive ? col.color : "text-neutral-400 dark:text-neutral-500" }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Список задач */}
+      <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="p-3 space-y-2">
+          {getItems(activeCol).length === 0 ? (
+            <div className="text-center text-sm text-neutral-400 dark:text-neutral-500 py-10">
+              Нет задач
+            </div>
+          ) : (
+            getItems(activeCol).map((task) => (
+              <button
+                key={task.id}
+                onClick={() => { setSelectedTaskId(task.id); onOpen(task.id); }}
+                className="w-full text-left p-3 rounded-xl bg-white dark:bg-neutral-800/80 border border-neutral-200 dark:border-white/10 hover:border-violet-400 dark:hover:border-cyan-500/40 transition-colors shadow-sm"
+              >
+                <p className="text-sm font-medium text-neutral-900 dark:text-white line-clamp-2">{task.title}</p>
+                {task.description && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">{task.description}</p>
+                )}
+                {task.assigneeId && (
+                  <p className="text-[11px] text-violet-500 dark:text-cyan-400 mt-1">Назначено</p>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TasksPanel({ channelId, channelName, currentUserId, canModerate, onBack, highlightTaskId, onHighlightConsumed }: TasksPanelProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -325,11 +420,23 @@ export default function TasksPanel({ channelId, channelName, currentUserId, canM
           <p className="text-center text-sm text-neutral-400 py-8">Загрузка…</p>
         ) : (
           <div className="flex h-full flex-col lg:flex-row">
-            {/* MOBILE-FIX: на телефоне колонки листаются по одной (scroll-snap),
-                каждая занимает почти всю ширину экрана — раньше 18rem-колонки
-                обрезались по краю и вёрстка выглядела сдвинутой. */}
-            <div className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden p-3 max-md:snap-x max-md:snap-mandatory">
-              <div className="flex gap-3 h-full min-w-max md:min-w-0">
+            {/* MOBILE-BLOCKS: на телефоне показываем блоки колонок слева, список задач справа. */}
+            {isMobileViewport ? (
+              <MobileTasksBoard
+                tasks={tasks}
+                currentUserId={currentUserId}
+                canModerate={canModerate}
+                dragId={dragId}
+                setDragId={setDragId}
+                onMove={move}
+                onTake={takeTask}
+                onClose={(taskId) => setClosingTaskId(taskId)}
+                onDelete={remove}
+                onOpen={setSelectedTaskId}
+              />
+            ) : (
+            <div className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden p-3">
+              <div className="flex gap-3 h-full min-w-max">
                 {OPEN_COLUMNS.map((col) => {
                   const items = tasks.filter((task) => task.status === col.key && !task.parentId);
                   return (
@@ -412,6 +519,7 @@ export default function TasksPanel({ channelId, channelName, currentUserId, canM
                 </div>
               </div>
             </div>
+            )} {/* end desktop kanban */}
 
             {/* FIX-UI2: ширина панели «Выберите задачу…» теперь регулируется
                 перетаскиванием рукоятки на границе с колонками (двойной клик —
