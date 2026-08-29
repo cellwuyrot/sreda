@@ -228,7 +228,7 @@ function MobileTasksBoard({
                 {task.description && (
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">{task.description}</p>
                 )}
-                {task.assigneeId && (
+                {task.assignee && (
                   <p className="text-[11px] text-violet-500 dark:text-cyan-400 mt-1">Назначено</p>
                 )}
               </button>
