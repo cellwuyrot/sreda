@@ -769,7 +769,7 @@ export default function ChannelSidebar({
                               <div className="ml-4 pl-2 border-l-2 border-neutral-200 dark:border-white/10 space-y-0.5 mb-1">
                                 {isActive && voiceState && (
                                   <VoiceUserRow
-                                    name={myProfileUser.name ?? myProfileUser.username ?? "Вы"}
+                                    name={myProfileUser.name ?? "Вы"}
                                     avatar={myProfileUser.avatar}
                                     muted={voiceState.isMuted}
                                     speaking={voiceState.localSpeaking && !voiceState.isMuted}
