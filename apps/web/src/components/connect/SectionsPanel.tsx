@@ -76,7 +76,7 @@ interface SectionsPanelProps {
   generalChannelId: string | null;
   selectedChannel: string | null;
   unreadCounts: Record<string, number>;
-  canManage: boolean;
+  effectiveCanManage: boolean;
   groupId: string;
   /** Первая страница участников — приходит из снимка сообщества уровнем выше. */
   members: MemberListEntry[];
@@ -88,12 +88,15 @@ interface SectionsPanelProps {
   onSelectChannel: (channel: Channel) => void;
   onRefresh: () => void;
   onDeleteChannel?: (channelId: string) => void;
+  /** FIX-PREMIUM-EXPIRED: false = у владельца истекла подписка, режим только для чтения */
+  ownerHasPremium?: boolean;
   onToggleHideChannel?: (channelId: string, hidden: boolean) => void;
 }
 
 export default function SectionsPanel({
-  channels, generalChannelId, selectedChannel, unreadCounts, canManage, groupId,
+  channels, generalChannelId, selectedChannel, unreadCounts, effectiveCanManage, groupId,
   members, membersTotal, canSeeMembers = true,
+  ownerHasPremium = true, // FIX-PREMIUM-EXPIRED
   variant = "desktop", onSelectChannel, onRefresh, onDeleteChannel, onToggleHideChannel,
 }: SectionsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -112,7 +115,10 @@ export default function SectionsPanel({
     }).catch(() => {});
     onRefresh();
   };
-  const drag = useDragOrder({ enabled: canManage, onReorder: commitOrder });
+  // FIX-PREMIUM-EXPIRED: режим только-для-чтения когда подписка владельца истекла
+  const premiumExpired = !ownerHasPremium;
+  const effectiveCanManage = effectiveCanManage && !premiumExpired;
+  const drag = useDragOrder({ enabled: effectiveCanManage, onReorder: commitOrder });
   // undefined = closed, null = new top-level block, string = new list item under block id
 
   // Top-level "разделы" = non-voice channels that aren't the general chat and have no parent.
@@ -176,6 +182,15 @@ export default function SectionsPanel({
      «свёрнуто» означает просто скрытое содержимое при видимом заголовке. */
   const stripOnly = collapsed && !isMobile;
 
+  const expiredBanner = premiumExpired ? (
+    <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      </svg>
+      <span>Подписка владельца истекла — только просмотр</span>
+    </div>
+  ) : null;
+
   return (
     <div
       className={isMobile ? "" : "flex-shrink-0 flex flex-col h-full transition-[width] duration-200"}
@@ -235,9 +250,10 @@ export default function SectionsPanel({
       <div className={isMobile ? "grid [grid-template-columns:repeat(2,minmax(0,1fr))] gap-2.5" : "flex-1 overflow-y-auto p-2 space-y-1.5"}>
         {blocks.length === 0 && (
           <div className="col-span-2 text-center text-sm py-6" style={{ color: "var(--cn-muted)" }}>
-            {canManage ? "Пока нет разделов. Создайте первый блок." : "Разделов пока нет."}
+            {effectiveCanManage ? "Пока нет разделов. Создайте первый блок." : "Разделов пока нет."}
           </div>
         )}
+        {expiredBanner}
         {blocks.map((block) => {
           const access = effectiveAccess(block);
           const kids = autoKidsOf(block.id);
@@ -284,7 +300,7 @@ export default function SectionsPanel({
                   {/* Gear icon — admin only */}
                   {/* FIX-BLOCKDEL: шестерёнка есть у любого раздела: в ней и
                       настройки, и удаление. */}
-                  {canManage && (
+                  {effectiveCanManage && (
                     <button
                         onClick={(e) => { e.stopPropagation(); setSettingsBlock(block); }}
                         className="w-6 h-6 flex items-center justify-center rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition-all flex-none"
@@ -328,7 +344,7 @@ export default function SectionsPanel({
                       </button>
                     );
                   })}
-                  {canManage && (
+                  {effectiveCanManage && (
                     <button
                       onClick={() => setCreateParent(block.id)}
                       className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-accent hover:bg-[var(--cn-hover)] transition-colors"
@@ -340,7 +356,7 @@ export default function SectionsPanel({
               )}
 
               {/* Admin: add list item even when block has no children yet */}
-              {canManage && kids.length === 0 && (isMobile || isOpen || active) && (
+              {effectiveCanManage && kids.length === 0 && (isMobile || isOpen || active) && (
                 <div className="px-3 pb-2.5">
                   <button
                     onClick={() => setCreateParent(block.id)}

@@ -116,6 +116,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   return NextResponse.json({
     ...group,
+    ownerHasPremium: hasPremium(group.owner), // FIX-PREMIUM-EXPIRED
     channels: visibleChannels,
     // FIX-SRVSHOW: участники — с персональными настройками профиля для этой группы.
     members: group.members.map(withMemberOverrides),
