@@ -116,13 +116,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   return NextResponse.json({
     ...group,
-    ownerHasPremium: hasPremium(group.owner), // FIX-PREMIUM-EXPIRED
     channels: visibleChannels,
     // FIX-SRVSHOW: участники — с персональными настройками профиля для этой группы.
     members: group.members.map(withMemberOverrides),
     membersTotal,
     myRole: membership.role,
     rulesAccepted: membership.rulesAccepted,
+    // FIX-PREMIUM-EXPIRED: клиент использует это поле для режима только-чтение.
+    ownerHasPremium: hasPremium(group.owner),
   });
 }
 

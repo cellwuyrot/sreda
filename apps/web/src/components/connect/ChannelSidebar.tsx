@@ -946,11 +946,11 @@ export default function ChannelSidebar({
               selectedChannel={selectedChannel}
               unreadCounts={unreadCounts}
               canManage={canManage}
+              ownerHasPremium={groupDetail.ownerHasPremium ?? true}
               groupId={groupDetail.id}
               members={groupDetail.members}
               membersTotal={groupDetail.membersTotal}
               canSeeMembers={!(isMainCommunity && !canManage && userRole !== "ADMIN")}
-              ownerHasPremium={groupDetail.ownerHasPremium ?? true}
               onSelectChannel={onChannelClick}
               onRefresh={() => onGroupRefresh?.()}
             />

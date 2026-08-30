@@ -64,10 +64,10 @@ export default function ModulesPanel({
   onSelect: (ch: ModChannel) => void;
   /** FIX-MODDRAG: кому разрешено менять порядок разделов перетаскиванием. */
   canManage?: boolean;
-  /** FIX-PREMIUM-EXPIRED: false = подписка истекла, только просмотр */
-  ownerHasPremium?: boolean;
   /** Переспросить состав группы после сохранённого порядка. */
   onRefresh?: () => void;
+  /** FIX-PREMIUM-EXPIRED: false = у владельца истекла подписка, только просмотр. */
+  ownerHasPremium?: boolean;
 }) {
   const isMobile = variant === "mobile";
   const mods = channels.filter((c) => isModuleType(c.type) && !c.hidden);
@@ -87,6 +87,14 @@ export default function ModulesPanel({
   // FIX-PREMIUM-EXPIRED
   const premiumExpired = !ownerHasPremium;
   const effectiveCanManage = canManage && !premiumExpired;
+  const expiredBanner = premiumExpired ? (
+    <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      </svg>
+      <span>Подписка владельца истекла — только просмотр</span>
+    </div>
+  ) : null;
   const drag = useDragOrder({ enabled: effectiveCanManage, onReorder: commitOrder });
   // Показ панели — общая механика с SectionsPanel, один источник истины.
   const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers);
@@ -140,7 +148,7 @@ export default function ModulesPanel({
         <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--cn-muted)" }}>Разделов пока нет.<br/>Добавьте их в настройках группы → «Рабочая среда».</div>
       )}
       {expiredBanner}
-          {mods.map((ch) => {
+      {mods.map((ch) => {
           const m = META[ch.type] ?? META.DOCS;
           const active = selectedChannel === ch.id;
           return (
@@ -185,15 +193,6 @@ export default function ModulesPanel({
       </div>
     );
   }
-
-    const expiredBanner = premiumExpired ? (
-    <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
-      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-      </svg>
-      <span>Подписка владельца истекла — только просмотр</span>
-    </div>
-  ) : null;
 
   return (
     <aside
