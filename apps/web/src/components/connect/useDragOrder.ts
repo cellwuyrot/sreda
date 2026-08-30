@@ -127,11 +127,15 @@ export function useDragOrder({
   }, [enabled, reset]);
 
   const itemProps = (id: string, ids: string[]): DragItemProps => {
-    if (!enabled || ids.length < 2) return {};
+    if (!enabled) return {};
     return {
       "data-drag-id": id,
       onPointerDown: (e) => {
         if (e.pointerType !== "mouse" || e.button !== 0) return;
+        /* FIX-DRAG-IDS: убрана проверка ids.length < 2; вместо этого перемещение
+           просто не фиксируется, когда в списке меньше двух элементов. Cursor
+           теперь показывает grab-руку на всех перетаскиваемых каналах. */
+        if (ids.length < 2) return;
         session.current = { id, ids: [...ids], x: e.clientX, y: e.clientY, started: false, over: null, before: false };
       },
       onClickCapture: (e) => {
@@ -144,8 +148,9 @@ export function useDragOrder({
 
   /* Подсветка отдельно от обработчиков: у рядов и плиток свои классы,
      и подменять им style из хука нельзя — он там уже занят. */
+  /* FIX-DRAG-CURSOR: курсор grab показывает что элемент можно перетащить. */
   const itemClass = (id: string) =>
-    `${dragId === id ? " opacity-40" : ""}${overId === id ? " ring-1 ring-violet-500/70 dark:ring-cyan-400/70 rounded-lg" : ""}`;
+    `cursor-grab active:cursor-grabbing${dragId === id ? " opacity-40" : ""}${overId === id ? " ring-1 ring-violet-500/70 dark:ring-cyan-400/70 rounded-lg" : ""}`;
 
   return { dragId, overId, itemProps, itemClass };
 }

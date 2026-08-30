@@ -103,6 +103,7 @@ model User {
   dmSettingsOwned        DmUserSetting[]             @relation("DmSettingOwner")
   dmSettingsTargeted     DmUserSetting[]             @relation("DmSettingTarget")
   groupLayout            GroupLayout?
+  dmFolderLayouts        DmFolderLayout[]
   channelMutes           ChannelMute[]
   polls                  Poll[]                      @relation("UserPolls")
   pollVotes              PollVote[]
@@ -1531,6 +1532,20 @@ model GroupLayout {
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model DmFolderLayout {
+  id        String   @id @default(cuid())
+  userId    String
+  /// Тип раздела: "dm", "business" и т. д.
+  kind      String
+  /// JSON-массив DmFolder[]
+  data      String   @db.Text @default("[]")
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind])
+}
+
 
 model GroupAuditEntry {
   id         String   @id @default(cuid())
