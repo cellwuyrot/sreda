@@ -59,7 +59,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         orderBy: groupMemberOrder(),
         take: MEMBERS_PAGE_SIZE,
       },
-      owner: { select: { id: true, name: true, username: true, isPremium: true } },
+      owner: { select: { id: true, name: true, username: true, isPremium: true, role: true } },
       roles: {
         include: { _count: { select: { members: true } } },
         orderBy: { createdAt: "asc" },
