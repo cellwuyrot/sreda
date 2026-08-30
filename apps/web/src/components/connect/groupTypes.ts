@@ -53,5 +53,7 @@ export interface GroupDetail extends Group {
 	members: GroupMember[];
 	/** Сколько участников всего — для счётчиков и признака «есть что догрузить». */
 	membersTotal?: number;
+	/** FIX-PREMIUM-EXPIRED: вычислено сервером через hasPremium(owner). */
+	ownerHasPremium?: boolean;
 	invites?: { code: string; uses: number; maxUses: number; expiresAt: string | null }[];
 }
