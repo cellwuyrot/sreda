@@ -456,7 +456,13 @@ export default function ChannelSidebar({
                   )}
                 </div>
                 {textOpen && serviceGroups.ungrouped.map((ch) => (
-                  <ChannelItem key={ch.id} ch={ch} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)} onToggleMute={handleToggleChannelMute} />
+                  /* FIX-DRAG-UNGROUPED: каналы без сервисной группы теперь
+                     поддерживают перетаскивание — drag.itemProps добавляет
+                     data-drag-id и onPointerDown так же, как это сделано
+                     для rootChannels в обычной группе (line ~634). */
+                  <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, serviceGroups.ungrouped.map(c => c.id))}>
+                    <ChannelItem ch={ch} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)} onToggleMute={handleToggleChannelMute} />
+                  </div>
                 ))}
               </>
             )}
@@ -947,6 +953,7 @@ export default function ChannelSidebar({
               unreadCounts={unreadCounts}
               canManage={canManage}
               ownerHasPremium={groupDetail.ownerHasPremium ?? true}
+              isGroupOwner={groupDetail.myRole === "OWNER"}
               groupId={groupDetail.id}
               members={groupDetail.members}
               membersTotal={groupDetail.membersTotal}
@@ -980,6 +987,7 @@ export default function ChannelSidebar({
               canSeeMembers={!(isMainCommunity && !canManage && userRole !== "ADMIN")}
               canManage={canManage} /* FIX-MODDRAG */
               ownerHasPremium={groupDetail.ownerHasPremium ?? true}
+              isGroupOwner={groupDetail.myRole === "OWNER"}
               onRefresh={() => onGroupRefresh?.()}
               onSelect={(ch) => onChannelClick(ch as unknown as Channel)}
             />
