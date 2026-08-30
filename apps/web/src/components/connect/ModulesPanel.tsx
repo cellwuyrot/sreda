@@ -63,7 +63,7 @@ export default function ModulesPanel({
   variant?: "desktop" | "mobile";
   onSelect: (ch: ModChannel) => void;
   /** FIX-MODDRAG: кому разрешено менять порядок разделов перетаскиванием. */
-  effectiveCanManage?: boolean;
+  canManage?: boolean;
   /** FIX-PREMIUM-EXPIRED: false = подписка истекла, только просмотр */
   ownerHasPremium?: boolean;
   /** Переспросить состав группы после сохранённого порядка. */

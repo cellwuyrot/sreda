@@ -76,7 +76,7 @@ interface SectionsPanelProps {
   generalChannelId: string | null;
   selectedChannel: string | null;
   unreadCounts: Record<string, number>;
-  effectiveCanManage: boolean;
+  canManage: boolean;
   groupId: string;
   /** Первая страница участников — приходит из снимка сообщества уровнем выше. */
   members: MemberListEntry[];
