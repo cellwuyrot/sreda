@@ -1357,6 +1357,7 @@ function ConnectPageInner() {
                 selectedChannel={selectedChannel}
                 unreadCounts={unreadCounts}
                 canManage={!!canManage}
+                ownerHasPremium={(groupDetail as unknown as { ownerHasPremium?: boolean }).ownerHasPremium ?? true}
                 groupId={groupDetail.id}
                 members={groupDetail.members}
                 membersTotal={groupDetail.membersTotal}

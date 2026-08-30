@@ -24,13 +24,13 @@ export type DragItemProps = {
   onClickCapture?: (e: ReactMouseEvent<HTMLElement>) => void;
 };
 
-function moved(ids: string[], from: string, to: string): string[] {
-  const fromAt = ids.indexOf(from);
-  const toAt = ids.indexOf(to);
-  if (fromAt < 0 || toAt < 0) return ids;
+function moved(ids: string[], from: string, to: string, before: boolean): string[] {
+  if (!ids.includes(from) || !ids.includes(to)) return ids;
   const rest = ids.filter((id) => id !== from);
   const at = rest.indexOf(to);
-  rest.splice(fromAt < toAt ? at + 1 : at, 0, from);
+  if (at < 0) return ids;
+  // FIX-DRAGPOS: вставляем до цели (курсор в верхней половине) или после (нижняя)
+  rest.splice(before ? at : at + 1, 0, from);
   return rest;
 }
 
@@ -65,6 +65,7 @@ export function useDragOrder({
     y: number;
     started: boolean;
     over: string | null;
+    before: boolean; // FIX-DRAGPOS: вставлять до (верхняя половина) или после
   } | null>(null);
   const suppressClick = useRef(false);
   const reorderRef = useRef(onReorder);
@@ -93,8 +94,9 @@ export function useDragOrder({
         setDragId(s.id);
         document.body.style.userSelect = "none";
       }
-      const over = targetIdAt(e.clientX, e.clientY, s.ids);
-      s.over = over && over !== s.id ? over : null;
+      const hit = targetAt(e.clientX, e.clientY, s.ids);
+      s.over = hit && hit.id !== s.id ? hit.id : null;
+      s.before = hit ? hit.before : true; // FIX-DRAGPOS
       setOverId(s.over);
     };
 
@@ -107,7 +109,7 @@ export function useDragOrder({
       suppressClick.current = true;
       window.setTimeout(() => { suppressClick.current = false; }, 300);
       if (!s.over) return;
-      const next = moved(s.ids, s.id, s.over);
+      const next = moved(s.ids, s.id, s.over, s.before); // FIX-DRAGPOS
       if (next.join(",") !== s.ids.join(",")) reorderRef.current(next);
     };
 
@@ -128,7 +130,7 @@ export function useDragOrder({
       "data-drag-id": id,
       onPointerDown: (e) => {
         if (e.pointerType !== "mouse" || e.button !== 0) return;
-        session.current = { id, ids: [...ids], x: e.clientX, y: e.clientY, started: false, over: null };
+        session.current = { id, ids: [...ids], x: e.clientX, y: e.clientY, started: false, over: null, before: false };
       },
       onClickCapture: (e) => {
         if (!suppressClick.current) return;
