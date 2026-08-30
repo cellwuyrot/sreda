@@ -299,9 +299,13 @@ export default function ConnectionMenu({
                       : overLimit
                         ? "Лимит исчерпан"
                         : `Осталось ${formatTraffic(remainingBytes ?? 0)}`}
-                    <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
-                      · израсходовано {formatTraffic(usedBytes)}
-                    </span>
+                    {/* FIX-TRAFFIC-DUP: спан «израсходовано» показывался даже когда limitGb=0,
+                       в этом случае текст уже содержал «Израсходовано X ГБ» — дублирование. */}
+                    {limitGb !== null && limitGb > 0 && (
+                      <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
+                        · израсходовано {formatTraffic(usedBytes)}
+                      </span>
+                    )}
                   </p>
                   {overLimit && (
                     <p className="mt-1 text-[11px] text-amber-400">
