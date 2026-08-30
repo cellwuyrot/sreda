@@ -94,7 +94,7 @@ interface SectionsPanelProps {
 }
 
 export default function SectionsPanel({
-  channels, generalChannelId, selectedChannel, unreadCounts, effectiveCanManage, groupId,
+  channels, generalChannelId, selectedChannel, unreadCounts, canManage, groupId,
   members, membersTotal, canSeeMembers = true,
   ownerHasPremium = true, // FIX-PREMIUM-EXPIRED
   variant = "desktop", onSelectChannel, onRefresh, onDeleteChannel, onToggleHideChannel,
@@ -117,7 +117,7 @@ export default function SectionsPanel({
   };
   // FIX-PREMIUM-EXPIRED: режим только-для-чтения когда подписка владельца истекла
   const premiumExpired = !ownerHasPremium;
-  const effectiveCanManage = effectiveCanManage && !premiumExpired;
+  const effectiveCanManage = canManage && !premiumExpired;
   const drag = useDragOrder({ enabled: effectiveCanManage, onReorder: commitOrder });
   // undefined = closed, null = new top-level block, string = new list item under block id
 
