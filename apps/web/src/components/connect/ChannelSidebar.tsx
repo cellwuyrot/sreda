@@ -950,7 +950,7 @@ export default function ChannelSidebar({
               members={groupDetail.members}
               membersTotal={groupDetail.membersTotal}
               canSeeMembers={!(isMainCommunity && !canManage && userRole !== "ADMIN")}
-              ownerHasPremium={(groupDetail as any).ownerHasPremium ?? true}
+              ownerHasPremium={groupDetail.ownerHasPremium ?? true}
               onSelectChannel={onChannelClick}
               onRefresh={() => onGroupRefresh?.()}
             />
@@ -979,7 +979,7 @@ export default function ChannelSidebar({
               membersTotal={groupDetail.membersTotal}
               canSeeMembers={!(isMainCommunity && !canManage && userRole !== "ADMIN")}
               canManage={canManage} /* FIX-MODDRAG */
-              ownerHasPremium={(groupDetail as any).ownerHasPremium ?? true}
+              ownerHasPremium={groupDetail.ownerHasPremium ?? true}
               onRefresh={() => onGroupRefresh?.()}
               onSelect={(ch) => onChannelClick(ch as unknown as Channel)}
             />
