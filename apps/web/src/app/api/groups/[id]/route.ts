@@ -122,6 +122,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     membersTotal,
     myRole: membership.role,
     rulesAccepted: membership.rulesAccepted,
+    // FIX-PREMIUM-EXPIRED: клиент использует это поле для режима только-чтение.
+    ownerHasPremium: hasPremium(group.owner),
   });
 }
 

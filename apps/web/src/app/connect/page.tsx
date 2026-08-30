@@ -1357,6 +1357,7 @@ function ConnectPageInner() {
                 selectedChannel={selectedChannel}
                 unreadCounts={unreadCounts}
                 canManage={!!canManage}
+                ownerHasPremium={groupDetail.ownerHasPremium ?? true}
                 groupId={groupDetail.id}
                 members={groupDetail.members}
                 membersTotal={groupDetail.membersTotal}
@@ -1391,6 +1392,7 @@ function ConnectPageInner() {
                 membersTotal={groupDetail.membersTotal}
                 canSeeMembers={!hideMembersForMain}
                 canManage={!!canManage} /* FIX-MODDRAG */
+                ownerHasPremium={groupDetail.ownerHasPremium ?? true}
                 onRefresh={() => { if (selectedGroup) fetchGroupDetail(selectedGroup); }}
                 onSelect={(ch) => handleChannelClick(ch as unknown as Channel)}
               />
