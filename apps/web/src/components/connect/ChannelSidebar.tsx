@@ -764,8 +764,34 @@ export default function ChannelSidebar({
                                 </div>
                               )}
                             </div>
-                            {/* FIX-VAVATAR: кто в канале — видно и без захода в него. */}
-                            <VoiceOccupantsStrip users={displayUsers} />
+                            {/* FIX-VAVATAR2: вертикальный список как в одиночных каналах */}
+                            {displayUsers.length > 0 && (
+                              <div className="ml-4 pl-2 border-l-2 border-neutral-200 dark:border-white/10 space-y-0.5 mb-1">
+                                {isActive && voiceState && (
+                                  <VoiceUserRow
+                                    name={myProfileUser.name ?? "Вы"}
+                                    avatar={myProfileUser.avatar}
+                                    muted={voiceState.isMuted}
+                                    speaking={voiceState.localSpeaking && !voiceState.isMuted}
+                                    sharingScreen={voiceState.isSharingScreen}
+                                    isLocal
+                                  />
+                                )}
+                                {displayUsers
+                                  .filter(u => !(isActive && u.userId === myProfileUser.id))
+                                  .map(u => (
+                                    <VoiceUserRow
+                                      key={u.socketId}
+                                      name={u.userName}
+                                      avatar={u.avatar}
+                                      muted={u.muted}
+                                      speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
+                                      quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
+                                      sharingScreen={isActive ? voiceState?.screenSharerIds.has(u.socketId) ?? false : false}
+                                    />
+                                  ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -920,6 +946,7 @@ export default function ChannelSidebar({
               selectedChannel={selectedChannel}
               unreadCounts={unreadCounts}
               canManage={canManage}
+              ownerHasPremium={groupDetail.ownerHasPremium ?? true}
               groupId={groupDetail.id}
               members={groupDetail.members}
               membersTotal={groupDetail.membersTotal}
@@ -952,6 +979,7 @@ export default function ChannelSidebar({
               membersTotal={groupDetail.membersTotal}
               canSeeMembers={!(isMainCommunity && !canManage && userRole !== "ADMIN")}
               canManage={canManage} /* FIX-MODDRAG */
+              ownerHasPremium={groupDetail.ownerHasPremium ?? true}
               onRefresh={() => onGroupRefresh?.()}
               onSelect={(ch) => onChannelClick(ch as unknown as Channel)}
             />

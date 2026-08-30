@@ -51,6 +51,8 @@ export interface GroupDetail {
   }[];
   /** Сколько участников всего — счётчик и признак «есть что догрузить». */
   membersTotal?: number;
+  /** FIX-PREMIUM-EXPIRED: вычислено сервером через hasPremium(owner). */
+  ownerHasPremium?: boolean;
 }
 
 export interface VoiceState {
