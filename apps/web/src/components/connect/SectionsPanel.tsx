@@ -88,15 +88,15 @@ interface SectionsPanelProps {
   onSelectChannel: (channel: Channel) => void;
   onRefresh: () => void;
   onDeleteChannel?: (channelId: string) => void;
-  /** FIX-PREMIUM-EXPIRED: false = у владельца истекла подписка, режим только для чтения */
-  ownerHasPremium?: boolean;
   onToggleHideChannel?: (channelId: string, hidden: boolean) => void;
+  /** FIX-PREMIUM-EXPIRED: false = у владельца истекла подписка, панель только для чтения. */
+  ownerHasPremium?: boolean;
 }
 
 export default function SectionsPanel({
   channels, generalChannelId, selectedChannel, unreadCounts, canManage, groupId,
   members, membersTotal, canSeeMembers = true,
-  ownerHasPremium = true, // FIX-PREMIUM-EXPIRED
+  ownerHasPremium = true,
   variant = "desktop", onSelectChannel, onRefresh, onDeleteChannel, onToggleHideChannel,
 }: SectionsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -115,9 +115,17 @@ export default function SectionsPanel({
     }).catch(() => {});
     onRefresh();
   };
-  // FIX-PREMIUM-EXPIRED: режим только-для-чтения когда подписка владельца истекла
+  // FIX-PREMIUM-EXPIRED: когда подписка владельца истекла — режим только для чтения
   const premiumExpired = !ownerHasPremium;
   const effectiveCanManage = canManage && !premiumExpired;
+  const expiredBanner = premiumExpired ? (
+    <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      </svg>
+      <span>Подписка владельца истекла — только просмотр</span>
+    </div>
+  ) : null;
   const drag = useDragOrder({ enabled: effectiveCanManage, onReorder: commitOrder });
   // undefined = closed, null = new top-level block, string = new list item under block id
 
@@ -181,15 +189,6 @@ export default function SectionsPanel({
      мобильном ширина не применяется: там панель встроена в список каналов, и
      «свёрнуто» означает просто скрытое содержимое при видимом заголовке. */
   const stripOnly = collapsed && !isMobile;
-
-  const expiredBanner = premiumExpired ? (
-    <div className="mx-2 mb-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
-      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-      </svg>
-      <span>Подписка владельца истекла — только просмотр</span>
-    </div>
-  ) : null;
 
   return (
     <div

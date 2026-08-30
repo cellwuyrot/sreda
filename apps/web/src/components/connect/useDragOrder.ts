@@ -24,30 +24,32 @@ export type DragItemProps = {
   onClickCapture?: (e: ReactMouseEvent<HTMLElement>) => void;
 };
 
-function moved(ids: string[], from: string, to: string, before: boolean): string[] {
-  if (!ids.includes(from) || !ids.includes(to)) return ids;
-  const rest = ids.filter((id) => id !== from);
-  const at = rest.indexOf(to);
-  if (at < 0) return ids;
-  // FIX-DRAGPOS: вставляем до цели (курсор в верхней половине) или после (нижняя)
-  rest.splice(before ? at : at + 1, 0, from);
-  return rest;
-}
-
-/* Куда целимся: берём элемент под курсором и поднимаемся вверх до первого
-   соседа из того же списка. Подъём нужен для групп каналов: внутри них
-   лежат свои перетаскиваемые строки, и курсор почти всегда над ребёнком. */
-function targetIdAt(x: number, y: number, ids: string[]): string | null {
+// FIX-DRAGPOS: insert before/after based on cursor Y vs element midpoint
+function targetAt(x: number, y: number, ids: string[]): { id: string; before: boolean } | null {
   let el: Element | null = document.elementFromPoint(x, y);
   while (el) {
     if (el instanceof HTMLElement) {
       const id = el.dataset.dragId;
-      if (id && ids.includes(id)) return id;
+      if (id && ids.includes(id)) {
+        const rect = el.getBoundingClientRect();
+        return { id, before: y < rect.top + rect.height / 2 };
+      }
     }
     el = el.parentElement;
   }
   return null;
 }
+
+function moved(ids: string[], from: string, to: string, before: boolean): string[] {
+  if (!ids.includes(from) || !ids.includes(to)) return ids;
+  const rest = ids.filter((id) => id !== from);
+  const at = rest.indexOf(to);
+  if (at < 0) return ids;
+  rest.splice(before ? at : at + 1, 0, from);
+  return rest;
+}
+
+
 
 export function useDragOrder({
   enabled,
@@ -65,7 +67,7 @@ export function useDragOrder({
     y: number;
     started: boolean;
     over: string | null;
-    before: boolean; // FIX-DRAGPOS: вставлять до (верхняя половина) или после
+    before: boolean;
   } | null>(null);
   const suppressClick = useRef(false);
   const reorderRef = useRef(onReorder);
@@ -96,7 +98,7 @@ export function useDragOrder({
       }
       const hit = targetAt(e.clientX, e.clientY, s.ids);
       s.over = hit && hit.id !== s.id ? hit.id : null;
-      s.before = hit ? hit.before : true; // FIX-DRAGPOS
+      s.before = hit ? hit.before : true;
       setOverId(s.over);
     };
 
@@ -109,7 +111,7 @@ export function useDragOrder({
       suppressClick.current = true;
       window.setTimeout(() => { suppressClick.current = false; }, 300);
       if (!s.over) return;
-      const next = moved(s.ids, s.id, s.over, s.before); // FIX-DRAGPOS
+      const next = moved(s.ids, s.id, s.over, s.before);
       if (next.join(",") !== s.ids.join(",")) reorderRef.current(next);
     };
 
