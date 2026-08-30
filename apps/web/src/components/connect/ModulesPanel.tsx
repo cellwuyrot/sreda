@@ -49,7 +49,7 @@ const META: Record<string, Meta> = {
 
 export default function ModulesPanel({
   channels, selectedChannel, groupId, members, membersTotal, canSeeMembers = true, variant = "desktop", onSelect,
-  effectiveCanManage = false, onRefresh, ownerHasPremium = true,
+  canManage = false, onRefresh, ownerHasPremium = true,
 }: {
   channels: ModChannel[];
   selectedChannel: string | null;
@@ -86,7 +86,7 @@ export default function ModulesPanel({
   };
   // FIX-PREMIUM-EXPIRED
   const premiumExpired = !ownerHasPremium;
-  const effectiveCanManage = effectiveCanManage && !premiumExpired;
+  const effectiveCanManage = canManage && !premiumExpired;
   const drag = useDragOrder({ enabled: effectiveCanManage, onReorder: commitOrder });
   // Показ панели — общая механика с SectionsPanel, один источник истины.
   const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers);
