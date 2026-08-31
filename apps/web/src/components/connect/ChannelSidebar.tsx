@@ -592,7 +592,7 @@ export default function ChannelSidebar({
 						)}
                         </div>
                         {!isCollapsed && children.map(sub => (
-                          <div key={sub.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5${drag.itemClass(sub.id)}`} {.../* FIX-DRAG-UNIFIED: все текстовые каналы группы делят один список, поэтому перетаскивание работает даже когда категория содержит один канал. */ drag.itemProps(sub.id, flatList.map(c => c.id))}>
+                          <div key={sub.id} className={`ml-4${drag.itemClass(sub.id)}`} {.../* FIX-DRAG-UNIFIED: все текстовые каналы группы делят один список, поэтому перетаскивание работает даже когда категория содержит один канал. */ drag.itemProps(sub.id, flatList.map(c => c.id))}>
                             <ChannelItem ch={sub} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[sub.id] ?? (groupMuted && channelMutes[sub.id] !== false)} onToggleMute={handleToggleChannelMute} />
                           </div>
                         ))}
@@ -709,7 +709,7 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5 pl-1${drag.itemClass(ch.id)}`} {.../* FIX-DRAG-UNIFIED */ drag.itemProps(ch.id, voiceChannels.map(c => c.id))}>
+                          <div key={ch.id} className={`ml-4 pl-1${drag.itemClass(ch.id)}`} {.../* FIX-DRAG-UNIFIED */ drag.itemProps(ch.id, voiceChannels.map(c => c.id))}>
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
