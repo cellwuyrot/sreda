@@ -12,6 +12,8 @@
 export interface FetchedGroupMember {
   id: string;
   role: string;
+  mutedUntil?: string | null;
+  guidedUntil?: string | null;
   user: {
     id: string;
     name: string | null;
