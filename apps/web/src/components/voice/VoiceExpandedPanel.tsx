@@ -96,6 +96,11 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
   // `voice.userVolumes`, so each user tunes everyone else independently — it
   // never affects what other people hear.
   const [volumeMenu, setVolumeMenu] = useState<{ socketId: string; name: string; x: number; y: number } | null>(null);
+  // Moderation context menu for kick/ban in voice channel
+  const [modMenu, setModMenu] = useState<{
+    userId: string; socketId: string; name: string; x: number; y: number;
+    canKick: boolean; canBan: boolean; groupId: string;
+  } | null>(null);
 
   /* ── FIX-REPLAY: кнопка «сохранить мгновенный повтор» (только Premium).
      Хуки обязаны стоять ДО раннего return ниже (rules-of-hooks). */
@@ -394,7 +399,19 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                   const openMenu = (e: React.MouseEvent) => {
                     if (isSelf) return;
                     e.preventDefault();
-                    setVolumeMenu({ socketId: u.socketId, name: u.userName, x: e.clientX, y: e.clientY });
+                    const cx = e.clientX, cy = e.clientY;
+                    setVolumeMenu({ socketId: u.socketId, name: u.userName, x: cx, y: cy });
+                    // Fetch moderation permissions for this channel participant
+                    if (voice.channelId && u.userId) {
+                      fetch(`/api/voice/moderation-info?channelId=${encodeURIComponent(voice.channelId)}&targetUserId=${encodeURIComponent(u.userId)}`)
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => {
+                          if (data && (data.canKick || data.canBan)) {
+                            setModMenu({ userId: u.userId, socketId: u.socketId, name: u.userName, x: cx, y: cy, canKick: data.canKick, canBan: data.canBan, groupId: data.groupId });
+                          }
+                        })
+                        .catch(() => null);
+                    }
                   };
 
                   /* Свои потоки хранятся под ключом "local", поэтому для себя ищем по isLocal. */
@@ -580,6 +597,39 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
             volume={voice.userVolumes.get(volumeMenu.socketId) ?? 100}
             onChange={(v) => voice.setUserVolume(volumeMenu.socketId, v)}
             onClose={() => setVolumeMenu(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Voice moderation actions (kick/ban) shown when moderator right-clicks */}
+      <AnimatePresence>
+        {modMenu && (
+          <VoiceModerationMenu
+            key={modMenu.socketId + "-mod"}
+            name={modMenu.name}
+            x={modMenu.x}
+            y={modMenu.y + 100}
+            canKick={modMenu.canKick}
+            canBan={modMenu.canBan}
+            onKick={async () => {
+              setModMenu(null);
+              // Find memberId via group members — lazy lookup via bans endpoint alternative
+              const res = await fetch(`/api/groups/${modMenu.groupId}/members?userId=${encodeURIComponent(modMenu.userId)}`);
+              if (!res.ok) return;
+              const data = await res.json();
+              const member = Array.isArray(data) ? data.find((m: { user: { id: string }; id: string }) => m.user?.id === modMenu.userId) : null;
+              if (!member) return;
+              await fetch(`/api/groups/${modMenu.groupId}/members/${member.id}`, { method: "DELETE" });
+            }}
+            onBan={async () => {
+              setModMenu(null);
+              await fetch(`/api/groups/${modMenu.groupId}/bans`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: modMenu.userId, reasonPreset: "CUSTOM", reason: "Нарушение в голосовом канале" }),
+              });
+            }}
+            onClose={() => setModMenu(null)}
           />
         )}
       </AnimatePresence>
@@ -939,5 +989,81 @@ function ParticipantTile({
           : (!isSelf && volume !== 100) && <span className="text-[9px] text-neutral-300">Громкость {volume}%</span>}
       </div>
     </div>
+  );
+}
+
+/* ── Voice moderation menu ─────────────────────────────────────────────────
+ * Shown below the volume popover when the local user has kick/ban rights over
+ * the target in this voice channel. Rendered through a portal. */
+function VoiceModerationMenu({
+  name, x, y, canKick, canBan, onKick, onBan, onClose,
+}: {
+  name: string;
+  x: number;
+  y: number;
+  canKick: boolean;
+  canBan: boolean;
+  onKick: () => void;
+  onBan: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth || 200;
+    const h = el.offsetHeight || 80;
+    const left = Math.min(x, window.innerWidth - w - 8);
+    const top  = Math.min(y, window.innerHeight - h - 8);
+    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
+  }, [x, y]);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    const onKey  = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
+    window.addEventListener("keydown", onKey);
+    return () => { clearTimeout(t); document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  return createPortal(
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.12 }}
+      style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: 10001 }}
+      className="w-52 rounded-xl border border-white/10 bg-neutral-800 shadow-2xl overflow-hidden"
+    >
+      <div className="px-3 py-2 text-xs text-neutral-400 font-medium border-b border-white/10 truncate">
+        Модерация: {name}
+      </div>
+      {canKick && (
+        <button
+          onClick={onKick}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-orange-400 hover:bg-orange-500/10 transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M18 6L6 18" /><path d="M6 6l12 12" />
+          </svg>
+          Исключить из голосового
+        </button>
+      )}
+      {canBan && (
+        <button
+          onClick={onBan}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="12" cy="12" r="10" /><path d="M4.93 4.93l14.14 14.14" />
+          </svg>
+          Забанить из группы
+        </button>
+      )}
+    </motion.div>,
+    document.body,
   );
 }
