@@ -619,6 +619,71 @@ function KeybindRecorder({
   );
 }
 
+
+/* ─── Mouse button recorder ─── */
+const MOUSE_BUTTON_LABELS: Record<number, string> = {
+  1: "Средняя кнопка",
+  2: "Правая кнопка",
+  3: "Кнопка 4 (назад)",
+  4: "Кнопка 5 (вперёд)",
+};
+function formatMouseButton(button: number | null | undefined): string {
+  if (button === null || button === undefined) return "—";
+  return MOUSE_BUTTON_LABELS[button] ?? `Кнопка ${button + 1}`;
+}
+
+function MouseButtonRecorder({
+  value,
+  onCapture,
+  onClear,
+}: {
+  value: string;
+  onCapture: (button: number) => void;
+  onClear?: () => void;
+}) {
+  const [recording, setRecording] = useState(false);
+
+  useEffect(() => {
+    if (!recording) return;
+    const handler = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Левую кнопку (0) не захватываем — она нужна для работы с UI.
+      if (e.button === 0) { setRecording(false); return; }
+      onCapture(e.button);
+      setRecording(false);
+    };
+    window.addEventListener("mousedown", handler, true);
+    return () => window.removeEventListener("mousedown", handler, true);
+  }, [recording, onCapture]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setRecording((r) => !r)}
+        className={`min-w-[8rem] px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+          recording
+            ? "border-violet-500 dark:border-cyan-500 text-violet-600 dark:text-cyan-400 bg-violet-500/10 dark:bg-cyan-500/10 animate-pulse"
+            : "border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 text-neutral-900 dark:text-white hover:border-violet-400 dark:hover:border-cyan-500/60"
+        }`}
+      >
+        {recording ? "Нажмите кнопку мыши…" : value}
+      </button>
+      {onClear && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="px-3 py-2 text-xs text-neutral-500 dark:text-gray-400 hover:text-red-500 transition-colors"
+          title="Очистить бинд"
+        >
+          Очистить
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -998,6 +1063,10 @@ export default function SettingsPage() {
     if (!acc) return false;
     void saveShortcut({ replayShortcut: acc });
     return true;
+  }, [saveShortcut]);
+
+  const capturePttMouseButton = useCallback((button: number) => {
+    void saveShortcut({ pttMouseButton: button });
   }, [saveShortcut]);
 
   const chooseReplayFolder = useCallback(async () => {
@@ -1385,52 +1454,6 @@ export default function SettingsPage() {
               <CameraDeviceSelect />
             </Section>
 
-            <Section dense title="Режим передачи голоса" info="Как открывается ваш микрофон в голосовом канале.">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => voice.setPttEnabled(false)}
-                  className={`text-left p-3 rounded-xl border transition-all ${
-                    !voice.pttEnabled
-                      ? "border-violet-500/40 dark:border-cyan-500/40 bg-violet-500/10 dark:bg-cyan-500/10"
-                      : "border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5"
-                  }`}
-                >
-                  <p className="text-sm font-medium text-neutral-900 dark:text-white">Активация по голосу</p>
-                  <p className="text-xs text-neutral-500 dark:text-gray-400 mt-1">Микрофон всегда открыт, передача начинается автоматически, когда вы говорите.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => voice.setPttEnabled(true)}
-                  className={`text-left p-3 rounded-xl border transition-all ${
-                    voice.pttEnabled
-                      ? "border-violet-500/40 dark:border-cyan-500/40 bg-violet-500/10 dark:bg-cyan-500/10"
-                      : "border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5"
-                  }`}
-                >
-                  <p className="text-sm font-medium text-neutral-900 dark:text-white">Рация (Push-to-Talk)</p>
-                  <p className="text-xs text-neutral-500 dark:text-gray-400 mt-1">Микрофон открыт, только пока зажата назначенная клавиша.</p>
-                </button>
-              </div>
-
-              {voice.pttEnabled && (
-                <div className="rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5 space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
-                        Клавиша рации
-                        <InfoTooltip text="Действует, пока окно TrioZ в фокусе." />
-                      </p>
-                    </div>
-                    <KeybindRecorder value={formatBrowserKeys(voice.pttKeys)} onCapture={capturePttKeys} />
-                  </div>
-                  {!browserKeysHaveMainKey(voice.pttKeys) && (
-                    <p className="text-xs text-yellow-500">Клавиша не назначена — в режиме рации микрофон не откроется.</p>
-                  )}
-                </div>
-              )}
-            </Section>
-
             <Section
               dense
               title="Шумоподавление"
@@ -1731,6 +1754,19 @@ export default function SettingsPage() {
                       value={formatAccelerator(desktopCfg?.pushToTalkShortcut ?? "")}
                       onCapture={capturePttShortcut}
                       onClear={() => void saveShortcut({ pushToTalkShortcut: "" })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                    <div>
+                      <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                        Рация — кнопка мыши
+                        <InfoTooltip text="Дополнительная кнопка мыши (средняя, 4, 5) как рация: работает во всей системе. Левая кнопка не поддерживается." />
+                      </p>
+                    </div>
+                    <MouseButtonRecorder
+                      value={formatMouseButton(desktopCfg?.pttMouseButton)}
+                      onCapture={capturePttMouseButton}
+                      onClear={() => void saveShortcut({ pttMouseButton: null })}
                     />
                   </div>
                 </div>
