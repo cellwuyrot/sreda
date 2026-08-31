@@ -19,7 +19,8 @@ export type GroupAuditAction =
   // важности, что и бан: решение про чужую речь должно быть подписано.
   | "censor.add"
   | "censor.level"
-  | "censor.remove";
+  | "censor.remove"
+  | "member.warn";
 
 /**
  * Записывает событие в журнал аудита группы (GroupAuditEntry).
