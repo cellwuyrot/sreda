@@ -62,6 +62,9 @@ import LinkPreviewCard, { firstLink } from "./LinkPreviewCard";
 // неё успел затесаться ключ SITE_ADMIN, который к групповой роли отношения не
 // имеет и потому никогда не срабатывал.
 import { rankOf, RANK_MODERATOR } from "@/lib/groupModeration";
+import SlashCommandPopup from "./SlashCommandPopup";
+import SlashCommandResult, { type CmdResultData } from "./SlashCommandResult";
+import { filterCommands, availableCommands, type CommandDef } from "./slashCommandDefs";
 import {
   CHAT_APPEARANCE_DEFAULT,
   CHAT_APPEARANCE_EVENT,
@@ -1194,6 +1197,12 @@ export default function MessageArea({
   // Mirror the live socket into state so the typing indicator (a child) can
   // subscribe to it reactively without reading a ref during render.
   const [chatSocket, setChatSocket] = useState<Socket | null>(null);
+  // --- Slash commands ---
+  const [cmdResult, setCmdResult] = useState<CmdResultData | null>(null);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashMatches, setSlashMatches] = useState<CommandDef[]>([]);
+  const [slashActiveIdx, setSlashActiveIdx] = useState(0);
+  const [warnAlert, setWarnAlert] = useState<{ from: string; reason?: string | null } | null>(null);
   const hasConnectedRef = useRef(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // PERF-CHAT: время последнего отправленного "typing" для троттлинга
@@ -1598,6 +1607,13 @@ export default function MessageArea({
       }));
     });
 
+    // /warn — ephemeral warning banner, visible only to this user
+    socket.on("group-warn", ({ from, reason }: { groupId: string; from: string; reason?: string | null }) => {
+      setWarnAlert({ from, reason });
+      setTimeout(() => setWarnAlert(null), 60_000);
+    });
+
+
     return () => {
       socket.emit("leave-channel", { channelId });
       socket.disconnect();
@@ -1918,8 +1934,408 @@ export default function MessageArea({
     }
   };
 
+  // ── Slash command executor ──
+  const executeCommand = async (raw: string) => {
+    const parts = raw.trim().split(/\s+/);
+    const cmd = parts[0].slice(1).toLowerCase();
+    const args = parts.slice(1);
+    const groupId = groupIdRef.current;
+
+    const ok  = (lines: string[], title?: string) => setCmdResult({ status: "success", title, lines });
+    const err = (msg: string) => setCmdResult({ status: "error", lines: [msg] });
+    const info= (lines: string[], title?: string) => setCmdResult({ status: "info", title, lines });
+
+    const findMemberByNick = (nick: string) => {
+      const n = nick.replace(/^@/, "").toLowerCase();
+      return channelMembers.find(
+        (m) => m.username?.toLowerCase() === n || m.name?.toLowerCase() === n
+      );
+    };
+    const findGroupMember = (nick: string) => {
+      const cm = findMemberByNick(nick);
+      if (!cm) return null;
+      return groupMeta?.members.find((m) => m.userId === cm.id) ?? null;
+    };
+
+    if (!groupId && cmd !== "help" && cmd !== "members") {
+      err("Группа не определена"); return;
+    }
+
+    switch (cmd) {
+      case "help": {
+        const pageNum = Math.max(1, parseInt(args[0] ?? "1", 10) || 1);
+        const userRank = rankOf(currentUserCommunityRole);
+        const cmds = availableCommands(userRank);
+        const PAGE_SIZE = 10;
+        const pages = Math.max(1, Math.ceil(cmds.length / PAGE_SIZE));
+        if (pageNum > pages) { err(`Страница ${pageNum} не существует. Всего: ${pages}`); return; }
+        const page = cmds.slice((pageNum - 1) * PAGE_SIZE, pageNum * PAGE_SIZE);
+        const lines = page.map((c) => `/${c.name} — ${c.description}`);
+        if (pages > 1) lines.push(`... стр. ${pageNum}/${pages}  /help ${Math.min(pageNum + 1, pages)} — следующая`);
+        info(lines, `Команды (стр. ${pageNum}/${pages})`); return;
+      }
+      case "profile":
+      case "whois": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        try {
+          const res = await fetch(`/api/profile/public?username=${encodeURIComponent(nick)}`);
+          if (!res.ok) { err(`Пользователь @${nick} не найден`); return; }
+          const u = await res.json();
+          info([
+            `Имя: ${u.name ?? "—"}`,
+            `Ник: @${u.username ?? nick}`,
+            `Роль: ${u.role ?? "—"}`,
+            ...(u.bio ? [`О себе: ${String(u.bio).slice(0, 120)}`] : []),
+          ], `Профиль @${nick}`);
+        } catch { err("Ошибка загрузки"); }
+        return;
+      }
+      case "report": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const reason = args.slice(1).join(" ");
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/reports`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: nick, reason: reason || undefined, category: "other" }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`Жалоба на @${nick} отправлена модераторам.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "mute": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const u = findMemberByNick(nick);
+        if (!u) { err(`@${nick} не найден в канале`); return; }
+        if (u.id === currentUserId) { err("Нельзя заигнорировать себя"); return; }
+        if (!ignoredIds.has(u.id)) toggleIgnoreUser(u.id);
+        ok([`@${nick} добавлен в игнор. Его сообщения скрыты.`]); return;
+      }
+      case "unmute": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const u = findMemberByNick(nick);
+        if (!u) { err(`@${nick} не найден в канале`); return; }
+        if (ignoredIds.has(u.id)) toggleIgnoreUser(u.id);
+        ok([`@${nick} убран из игнора.`]); return;
+      }
+      case "notify": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const key = `tz-notify-users:${groupId!}`;
+        const list: string[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+        if (!list.includes(nick.toLowerCase())) { list.push(nick.toLowerCase()); localStorage.setItem(key, JSON.stringify(list)); }
+        ok([`Уведомления от @${nick} включены.`]); return;
+      }
+      case "declinenotify": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const key = `tz-notify-users:${groupId!}`;
+        const list: string[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+        localStorage.setItem(key, JSON.stringify(list.filter((n) => n !== nick.toLowerCase())));
+        ok([`Уведомления от @${nick} отключены.`]); return;
+      }
+      case "pin": {
+        const n = Math.max(1, parseInt(args[0] ?? "1", 10) || 1);
+        if (pinnedMessages.length === 0) { info(["Закреплённых сообщений нет."]); return; }
+        if (n > pinnedMessages.length) { err(`Закреплённых: ${pinnedMessages.length}. Номер ${n} не существует.`); return; }
+        const pm = pinnedMessages[n - 1];
+        setShowPinned(false);
+        jumpToMessage(pm.id);
+        ok([`Переход к закреплённому #${n}: "${pm.content.slice(0, 60)}"`, `Автор: ${pm.user.name}`], "Закреплённое"); return;
+      }
+      case "members": {
+        const mems = (groupMeta?.members ?? []).slice(0, 20);
+        const lines = mems.map((m) => { const cm = channelMembers.find((u) => u.id === m.userId); return `${cm?.name ?? m.userId} — ${m.role}`; });
+        if ((groupMeta?.members.length ?? 0) > 20) lines.push(`... и ещё ${groupMeta!.members.length - 20}`);
+        info(lines.length > 0 ? lines : ["Нет данных"], "Участники группы"); return;
+      }
+      case "warn": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const reason = args.slice(1).join(" ");
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/commands/warn`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: nick, reason: reason || undefined }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`Предупреждение выдано @${nick}. Пользователь увидит красный баннер.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "timeout": {
+        const nick = args[0]?.replace(/^@/, "");
+        const minutes = parseInt(args[1] ?? "", 10);
+        if (!nick || !minutes || minutes < 1) { err("Использование: /timeout @ник минуты [причина]"); return; }
+        const reason = args.slice(2).join(" ");
+        const member = findGroupMember(nick);
+        if (!member) { err(`@${nick} не найден в группе`); return; }
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/members/${member.id}/timeout`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ minutes, reason: reason || undefined }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`@${nick} получил таймаут на ${minutes} мин.${reason ? ` — ${reason}` : ""}`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "untimeout": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const member = findGroupMember(nick);
+        if (!member) { err(`@${nick} не найден`); return; }
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/members/${member.id}/timeout`, { method: "DELETE" });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`Таймаут снят с @${nick}.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "kick": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        const member = findGroupMember(nick);
+        if (!member) { err(`@${nick} не найден`); return; }
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/members/${member.id}`, { method: "DELETE" });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`@${nick} выгнан из группы.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "ban": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        let durationDays: number | undefined;
+        let reasonStart = 1;
+        if (args[1] && /^\d+$/.test(args[1])) { durationDays = parseInt(args[1], 10); reasonStart = 2; }
+        const reason = args.slice(reasonStart).join(" ");
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/bans`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: nick, reason: reason || undefined, durationDays }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`@${nick} забанен${durationDays ? ` на ${durationDays} дн.` : " навсегда"}.${reason ? ` Причина: ${reason}` : ""}`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "unban": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        try {
+          const bansRes = await fetch(`/api/groups/${groupId!}/bans`);
+          if (!bansRes.ok) { err("Не удалось загрузить бан-лист"); return; }
+          const bans = await bansRes.json();
+          const ban = (bans as { user: { username: string }; id: string }[]).find(
+            (b) => b.user.username?.toLowerCase() === nick.toLowerCase()
+          );
+          if (!ban) { err(`@${nick} не в бан-листе`); return; }
+          const delRes = await fetch(`/api/groups/${groupId!}/bans/${ban.id}`, { method: "DELETE" });
+          const d = await delRes.json();
+          if (!delRes.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`Бан с @${nick} снят.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "history": {
+        const nick = args[0]?.replace(/^@/, "");
+        if (!nick) { err("Укажите @ник"); return; }
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/commands/history?username=${encodeURIComponent(nick)}`);
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          const lines: string[] = [];
+          if (d.currentBan) lines.push(`[БАН] активный бан с ${new Date(d.currentBan.createdAt).toLocaleDateString("ru-RU")}`);
+          if (d.currentTimeout?.until && new Date(d.currentTimeout.until) > new Date()) {
+            lines.push(`[ТАЙМАУТ] до ${new Date(d.currentTimeout.until).toLocaleTimeString("ru-RU")}`);
+          }
+          if (d.entries.length === 0 && !d.currentBan && !d.currentTimeout) {
+            lines.push("Нарушений не найдено.");
+          } else {
+            for (const e of (d.entries as { createdAt: string; action: string; actorName: string; details?: string }[]).slice(0, 10)) {
+              const date = new Date(e.createdAt).toLocaleDateString("ru-RU");
+              lines.push(`${date} — ${e.action}${e.details ? ` (${e.details.slice(0, 40)})` : ""}`);
+            }
+          }
+          info(lines, `История @${nick}`);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "clear": {
+        let username: string | undefined;
+        let countArg: string;
+        if (args[0]?.startsWith("@")) { username = args[0]; countArg = args[1] ?? "10"; }
+        else { countArg = args[0] ?? "10"; }
+        const count = Math.min(200, Math.max(1, parseInt(countArg, 10) || 10));
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/commands/clear`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ channelId, count, username }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`Удалено ${d.deleted} сообщений${username ? ` от ${username}` : ""}.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "slowmode": {
+        const secs = Math.max(0, parseInt(args[0] ?? "0", 10) || 0);
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/commands/slowmode`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ channelId, seconds: secs }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([secs === 0 ? "Медленный режим выключен." : `Медленный режим: ${secs} сек. между сообщениями.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "stats": {
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/stats`);
+          if (!res.ok) { err("Не удалось загрузить статистику"); return; }
+          const d = await res.json();
+          info([
+            `Участников: ${d.membersCount ?? "—"}`,
+            `Каналов: ${d.channelsCount ?? "—"}`,
+            ...(d.messagesCount !== undefined ? [`Сообщений: ${d.messagesCount}`] : []),
+          ], "Статистика группы");
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "role": {
+        let nickIdx = -1;
+        for (let i = args.length - 1; i >= 0; i--) { if (args[i].startsWith("@")) { nickIdx = i; break; } }
+        if (nickIdx < 0) { err("Использование: /role название_роли @ник"); return; }
+        const nick = args[nickIdx].replace(/^@/, "");
+        const roleName = args.slice(0, nickIdx).join(" ").replace(/_/g, " ").trim();
+        if (!roleName) { err("Укажите название роли"); return; }
+        const sysRoles = ["ADMIN", "MODERATOR", "GUIDE", "MEMBER"];
+        if (sysRoles.includes(roleName.toUpperCase())) {
+          const m = findGroupMember(nick);
+          if (!m) { err(`@${nick} не найден`); return; }
+          try {
+            const res = await fetch(`/api/groups/${groupId!}/members/${m.id}`, {
+              method: "PATCH", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ role: roleName.toUpperCase() }),
+            });
+            const d = await res.json();
+            if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+            ok([`@${nick} -> роль ${roleName.toUpperCase()}`]);
+          } catch { err("Ошибка сети"); }
+          return;
+        }
+        const tagRole = groupMeta?.roles.find((r) => r.name.toLowerCase() === roleName.toLowerCase());
+        if (!tagRole) { err(`Роль «${roleName}» не найдена`); return; }
+        const cu = findMemberByNick(nick);
+        if (!cu) { err(`@${nick} не найден`); return; }
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/roles/${tagRole.id}/members`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: cu.id }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`@${nick} получил роль «${tagRole.name}».`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "createrole": {
+        const colorArg = args.find((a) => /^#[0-9a-fA-F]{3,6}$/.test(a));
+        const name = args.filter((a) => !/^#[0-9a-fA-F]{3,6}$/.test(a)).join(" ").trim();
+        if (!name) { err("Укажите название роли"); return; }
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/roles`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, color: colorArg ?? "#808080" }),
+          });
+          const d = await res.json();
+          if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+          ok([`Роль «${name}» создана${colorArg ? ` (${colorArg})` : ""}.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "deleterole": {
+        const name = args.join(" ").trim();
+        if (!name) { err("Укажите название роли"); return; }
+        const tagRole = groupMeta?.roles.find((r) => r.name.toLowerCase() === name.toLowerCase());
+        if (!tagRole) { err(`Роль «${name}» не найдена`); return; }
+        try {
+          const res = await fetch(`/api/groups/${groupId!}/roles/${tagRole.id}`, { method: "DELETE" });
+          if (!res.ok) { const d = await res.json(); err(d.error ?? "Ошибка"); return; }
+          ok([`Роль «${name}» удалена.`]);
+        } catch { err("Ошибка сети"); }
+        return;
+      }
+      case "invite": {
+        const sub = (args[0] ?? "").toLowerCase();
+        if (!sub) { info(["Подкоманды: create, list, info"], "invite"); return; }
+        if (sub === "create") {
+          try {
+            const res = await fetch("/api/invites", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ groupId: groupId!, permanent: true }),
+            });
+            const d = await res.json();
+            if (!res.ok) { err(d.error ?? "Ошибка"); return; }
+            const url = `${window.location.origin}/invite/${d.code}`;
+            ok([url, d.existing ? "(существующая постоянная ссылка)" : "(новая ссылка)"], "Инвайт");
+          } catch { err("Ошибка сети"); }
+        } else if (sub === "list" || sub === "info") {
+          try {
+            const res = await fetch(`/api/groups/${groupId!}`);
+            const d = await res.json();
+            if (!res.ok) { err("Ошибка загрузки"); return; }
+            const invites: { code: string; uses: number; maxUses: number; expiresAt: string | null }[] = d.invites ?? [];
+            if (invites.length === 0) { info(["Нет приглашений."], "Инвайты"); return; }
+            const total = invites.reduce((s: number, i) => s + (i.uses ?? 0), 0);
+            const lines = sub === "info"
+              ? [`Всего ссылок: ${invites.length}`, `Всего переходов: ${total}`, ...invites.map((i) => `/${i.code}: ${i.uses} переходов`)]
+              : invites.map((i) => `${window.location.origin}/invite/${i.code} — исп.: ${i.uses}${i.expiresAt ? ` до ${new Date(i.expiresAt).toLocaleDateString("ru-RU")}` : " (постоянная)"}`);
+            info(lines, sub === "info" ? "Статистика инвайтов" : "Список инвайтов");
+          } catch { err("Ошибка сети"); }
+        } else { err("Подкоманды: create, list, info"); }
+        return;
+      }
+      case "settings": {
+        document.dispatchEvent(new CustomEvent("open-group-settings", { bubbles: true, detail: { groupId: groupId! } }));
+        ok(["Открытие настроек группы..."], "Настройки"); return;
+      }
+      case "topic": {
+        const text = args.join(" ").trim();
+        if (!text) { err("Укажите текст темы"); return; }
+        info([`Тема: «${text}»`], "Тема канала"); return;
+      }
+      default:
+        err(`Неизвестная команда /${cmd}. /help — список команд.`);
+    }
+  };
+
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Slash command intercept
+    if (newMessage.trim().startsWith("/")) {
+      const cmd = newMessage.trim();
+      updateChannelDraft("");
+      setSlashOpen(false);
+      setSlashActiveIdx(0);
+      void executeCommand(cmd);
+      return;
+    }
     if ((!newMessage.trim() && pendingAttachments.length === 0) || sending || uploading || slowmodeWait > 0) return;
 
     /* Предел длины проверяем до отправки. Раньше его знал только сервер: человек
@@ -1932,6 +2348,7 @@ export default function MessageArea({
     }
 
     setSending(true);
+    setWarnAlert(null);
     socketRef.current?.emit("stop-typing", { channelId });
 
     const content = newMessage;
@@ -2672,6 +3089,20 @@ export default function MessageArea({
         {/* Typing indicator */}
         <TypingIndicator socket={chatSocket} target={{ kind: "channel", channelId }} selfUserId={currentUserId} />
 
+        {/* /warn ephemeral banner */}
+        {warnAlert && (
+          <div className="mx-4 mb-2 flex items-start gap-3 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 shadow-sm">
+            <span className="text-red-500 text-lg mt-0.5">&#9888;</span>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-400">Предупреждение от модератора {warnAlert.from}</p>
+              {warnAlert.reason && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{warnAlert.reason}</p>
+              )}
+              <p className="text-xs text-red-400 mt-1">Примите к сведению. Исчезнет через 1 минуту или после следующего сообщения.</p>
+            </div>
+            <button type="button" onClick={() => setWarnAlert(null)} className="text-red-400 hover:text-red-600 ml-1">&times;</button>
+          </div>
+        )}
         {/* Reply indicator */}
         {replyTo && (
           <div className="px-4 py-2 border-t border-[var(--cn-border)] flex items-center gap-2 text-xs text-neutral-500 dark:text-gray-400 bg-[var(--cn-accent-dim)]">
@@ -2832,6 +3263,17 @@ export default function MessageArea({
                   <TriozEmojiButton onSelect={insertEmoji} groupEmojis={groupEmojis} />
                   <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept={CHAT_ATTACHMENT_ACCEPT} multiple />
                   <div className="relative flex-1">
+                    {slashOpen && !composerMentions.open && (
+                      <SlashCommandPopup
+                        matches={slashMatches}
+                        activeIndex={slashActiveIdx}
+                        onPick={(cmd) => { updateChannelDraft(`/${cmd.name} `); setSlashOpen(false); textareaRef.current?.focus(); }}
+                        onHover={setSlashActiveIdx}
+                      />
+                    )}
+                    {cmdResult && (
+                      <SlashCommandResult result={cmdResult} onDismiss={() => setCmdResult(null)} />
+                    )}
                     {composerMentions.open && (
                       <MentionPopupList
                         entries={composerMentions.entries}
@@ -2854,9 +3296,33 @@ export default function MessageArea({
                     <textarea
                       ref={textareaRef}
                       value={newMessage}
-                      onChange={(e) => { updateChannelDraft(e.target.value); composerMentions.update(e.target.value, e.target.selectionStart ?? e.target.value.length); composerTags.update(e.target.value, e.target.selectionStart ?? e.target.value.length); emitTyping(); }}
+                      onChange={(e) => {
+                        updateChannelDraft(e.target.value);
+                        composerMentions.update(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                        composerTags.update(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                        emitTyping();
+                        // Slash autocomplete
+                        const sv = e.target.value;
+                        const cur = e.target.selectionStart ?? sv.length;
+                        const bef = sv.slice(0, cur);
+                        if (bef.startsWith("/") && !bef.includes(" ")) {
+                          const q = bef.slice(1);
+                          const m = filterCommands(q, rankOf(currentUserCommunityRole));
+                          setSlashMatches(m); setSlashOpen(m.length > 0); setSlashActiveIdx(0);
+                        } else { setSlashOpen(false); }
+                      }}
                       onPaste={(e) => dropPaste.handlePaste(e, handleTextPaste)}
                       onKeyDown={(e) => {
+                        if (slashOpen) {
+                          if (e.key === "ArrowDown") { e.preventDefault(); setSlashActiveIdx((i) => Math.min(i + 1, slashMatches.length - 1)); return; }
+                          if (e.key === "ArrowUp") { e.preventDefault(); setSlashActiveIdx((i) => Math.max(i - 1, 0)); return; }
+                          if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !composerMentions.open)) {
+                            const picked = slashMatches[slashActiveIdx];
+                            if (picked) { e.preventDefault(); updateChannelDraft(`/${picked.name} `); setSlashOpen(false); }
+                            return;
+                          }
+                          if (e.key === "Escape") { e.preventDefault(); setSlashOpen(false); return; }
+                        }
                         if (composerMentions.handleKeyDown(e, newMessage)) return;
                         if (composerTags.handleKeyDown(e, newMessage)) return; // FIX-TAGMENTION
                         /* MOBILE-UI: на сенсорных устройствах Enter — перенос строки,
