@@ -38,8 +38,6 @@ export interface GroupMember {
 	/** NEW: активный тайм-аут (ISO-строка) и его причина */
 	mutedUntil?: string | null;
 	muteReason?: string | null;
-	/** Проводник: дата истечения роли (ISO-строка) */
-	guidedUntil?: string | null;
 	user: { id: string; name: string; username: string; avatar: string | null; role: string; lastSeen?: string | null; avatarGlowEnabled?: boolean; avatarGlowColors?: string | null; profileBanner?: string | null };
 	tags?: { role: { id: string; name: string; color: string } }[];
 }

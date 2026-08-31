@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/Button";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import RoleManager from "@/components/connect/RoleManager";
+import ChannelRoleManager from "@/components/connect/ChannelRoleManager";
 import WorkspaceManager from "@/components/connect/WorkspaceManager";
 import AuditPanel from "@/components/connect/settings/AuditPanel";
 import ReportsPanel from "@/components/connect/settings/ReportsPanel";
@@ -982,12 +983,12 @@ export default function GroupSettingsModal({
 								members={(allMembers ?? []).map((m) => ({ userId: m.user.id, name: m.user.name || m.user.username || "—", roleIds: (m.tags ?? []).map((t) => t.role?.id ?? "").filter(Boolean) }))}
 							/>
 						</Section>
-						<Section title="Роли-возможности" subtitle="Привяжите роль к чату или голосовому каналу — получатель роли станет полным модератором этого канала, но только его." info="Используйте API /api/groups/[id]/roles/[roleId]/channels для управления.">
-							{canManageRoles ? (
-								<p className="text-xs text-neutral-500 dark:text-gray-400">Назначьте роль участнику в разделе «Участники», затем в настройках роли (GET /api/groups/{group.id}/roles/&#123;roleId&#125;/channels) привяжите нужные каналы через POST с &#123;channelId&#125;. Получатели роли будут иметь полную модерацию привязанных каналов.</p>
-							) : (
-								<p className="text-xs text-neutral-500 dark:text-gray-400">Доступно только админам.</p>
-							)}
+						<Section title="Роли-возможности">
+							<ChannelRoleManager
+								groupId={group.id}
+								canManage={canManageRoles}
+								channels={group.channels.map((c) => ({ id: c.id, name: c.name, type: c.type }))}
+							/>
 						</Section>
 					</>
 				);
