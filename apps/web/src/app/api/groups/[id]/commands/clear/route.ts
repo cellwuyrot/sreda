@@ -66,7 +66,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     groupId,
     actorId: session.user.id,
     actorName: session.user.username || session.user.name || "mod",
-    action: "message.clear",
+    action: "message.purge",
     targetId: channelId,
     targetName: channel.name,
     details: `Удалено ${msgs.length} сообщений${username ? ` от @${username.replace(/^@/, "")}` : ""}`,
