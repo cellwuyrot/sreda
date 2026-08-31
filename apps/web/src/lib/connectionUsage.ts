@@ -142,7 +142,8 @@ export function isTrafficBlocked(
 
 /** «12,4 ГБ» / «860 МБ» — без терабайтов и байтов, которые здесь не встречаются. */
 export function formatTraffic(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 ГБ";
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 МБ";
+  if (bytes === 0) return "0 МБ";
   const gb = bytes / BYTES_IN_GB;
   if (gb >= 10) return `${Math.round(gb)} ГБ`;
   if (gb >= 1) return `${gb.toFixed(1).replace(".", ",")} ГБ`;
