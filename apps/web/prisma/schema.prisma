@@ -285,6 +285,7 @@ model UserIgnore {
 model GroupMember {
   mutedUntil    DateTime?
   muteReason    String?           @db.VarChar(300)
+  guidedUntil   DateTime?		  // When role=GUIDE, the expiry datetime. Past = treated as MEMBER.
   id            String            @id @default(cuid())
   userId        String
   groupId       String
@@ -369,6 +370,7 @@ model Channel {
 
   @@index([groupId])
   @@index([serviceId])
+    rolePowers  ChannelRolePower[]
   @@index([parentId])
 }
 
@@ -680,6 +682,7 @@ model GroupRole {
   group           Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
   members         GroupMemberRole[]
   channels        ChannelRoleAccess[]
+  channelPowers   ChannelRolePower[]
   onboardingForms OnboardingForm[]
   createdAt       DateTime            @default(now())
 
