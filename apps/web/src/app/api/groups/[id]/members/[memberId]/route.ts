@@ -4,17 +4,11 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { logGroupAction } from "@/lib/groupAudit";
 import { emitToUsers } from "@/lib/socketEmit";
-import { ROLE_RANK } from "@/lib/groupModeration";
+import { ROLE_RANK, effectiveRank } from "@/lib/groupModeration";
 import { checkBan } from "@/lib/banCheck";
 
-// MODERATION: ранги — из общего модуля. Держать здесь свою копию значило бы
-// заводить восьмое место, где одно и то же правило может разойтись.
+const ASSIGNABLE_ROLES = ["ADMIN", "MODERATOR", "GUIDE", "MEMBER"];
 
-// Roles that can be granted through this endpoint. OWNER is transferred via
-// the dedicated /transfer-ownership route, never assigned directly.
-const ASSIGNABLE_ROLES = ["ADMIN", "MODERATOR", "MEMBER"];
-
-/** Personal room ids of every member of a group, for socket broadcasts. */
 async function groupMemberIds(groupId: string): Promise<string[]> {
   const members = await prisma.groupMember.findMany({
     where: { groupId },
@@ -25,72 +19,62 @@ async function groupMemberIds(groupId: string): Promise<string[]> {
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string; memberId: string }> }) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Сессия на JWT не аннулируется при бане — без проверки забаненный с живым
-  // токеном мог продолжать менять роли участников группы.
   const banned = await checkBan(session.user.id);
   if (banned) return banned;
 
   const { id, memberId } = await params;
-  const { role } = await req.json();
+  const { role, guidedDays } = await req.json();
 
-  // BUGFIX: "ADMIN" was previously missing from this list, so the admin role
-  // could never be granted through the UI.
   if (!role || !ASSIGNABLE_ROLES.includes(role)) {
     return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+  }
+
+  // GUIDE requires a duration (1-365 days)
+  if (role === "GUIDE") {
+    const days = Number(guidedDays);
+    if (!days || days < 1 || days > 365) {
+      return NextResponse.json({ error: "Для роли Проводник обязательно указать guidedDays (1–365)" }, { status: 400 });
+    }
   }
 
   const myMembership = await prisma.groupMember.findUnique({
     where: { userId_groupId: { userId: session.user.id, groupId: id } },
   });
+  if (!myMembership) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
-  if (!myMembership) {
-    return NextResponse.json({ error: "Not a member" }, { status: 403 });
-  }
-
-  const myRank = ROLE_RANK[myMembership.role] ?? 0;
-
-  // Only the owner and group admins can change roles at all.
+  const myRank = effectiveRank(myMembership);
   if (myRank < ROLE_RANK.ADMIN) {
     return NextResponse.json({ error: "Only owner or admin can change roles" }, { status: 403 });
   }
 
   const target = await prisma.groupMember.findUnique({ where: { id: memberId } });
-  if (!target || target.groupId !== id) {
-    return NextResponse.json({ error: "Member not found" }, { status: 404 });
-  }
+  if (!target || target.groupId !== id) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  if (target.userId === session.user.id) return NextResponse.json({ error: "Cannot change your own role" }, { status: 403 });
+  if (target.role === "OWNER") return NextResponse.json({ error: "Cannot change owner role" }, { status: 403 });
 
-  if (target.userId === session.user.id) {
-    return NextResponse.json({ error: "Cannot change your own role" }, { status: 403 });
-  }
-
-  if (target.role === "OWNER") {
-    return NextResponse.json({ error: "Cannot change owner role" }, { status: 403 });
-  }
-
-  const targetRank = ROLE_RANK[target.role] ?? 0;
+  const targetRank = effectiveRank(target);
   const newRank = ROLE_RANK[role] ?? 0;
 
-  // You may only manage members ranked below you, and only assign roles
-  // ranked below yours. The owner can therefore promote up to ADMIN, while
-  // an admin manages moderators/members but cannot touch other admins.
-  if (targetRank >= myRank) {
-    return NextResponse.json({ error: "Cannot change role of a member of equal or higher rank" }, { status: 403 });
-  }
-  if (newRank >= myRank) {
-    return NextResponse.json({ error: "Cannot assign a role equal or higher than your own" }, { status: 403 });
+  if (targetRank >= myRank) return NextResponse.json({ error: "Cannot change role of a member of equal or higher rank" }, { status: 403 });
+  if (newRank >= myRank) return NextResponse.json({ error: "Cannot assign a role equal or higher than your own" }, { status: 403 });
+
+  let guidedUntil: Date | null = null;
+  if (role === "GUIDE" && guidedDays) {
+    guidedUntil = new Date(Date.now() + Number(guidedDays) * 86400000);
   }
 
   const updated = await prisma.groupMember.update({
     where: { id: memberId },
-    data: { role },
+    data: { role, guidedUntil },
     include: { user: { select: { id: true, name: true, username: true, avatar: true } } },
   });
 
-  // NEW: журнал аудита — смена роли.
+  const details = role === "GUIDE"
+    ? `Роль: ${target.role} → GUIDE (до ${guidedUntil?.toLocaleDateString("ru-RU")})`
+    : `Роль: ${target.role} → ${role}`;
+
   await logGroupAction({
     groupId: id,
     actorId: session.user.id,
@@ -98,23 +82,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     action: "member.role",
     targetId: updated.user.id,
     targetName: updated.user.username || updated.user.name,
-    details: `Роль: ${target.role} → ${role}`,
+    details,
   });
 
-  // Live-update member lists / permissions in every open client.
   emitToUsers(await groupMemberIds(id), "group-updated", { id });
-
   return NextResponse.json(updated);
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string; memberId: string }> }) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Сессия на JWT не аннулируется при бане — без проверки забаненный с живым
-  // токеном мог продолжать кикать участников группы.
   const banned = await checkBan(session.user.id);
   if (banned) return banned;
 
@@ -123,36 +101,23 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const myMembership = await prisma.groupMember.findUnique({
     where: { userId_groupId: { userId: session.user.id, groupId: id } },
   });
-
-  if (!myMembership) {
-    return NextResponse.json({ error: "Not a member" }, { status: 403 });
-  }
+  if (!myMembership) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
   const target = await prisma.groupMember.findUnique({
     where: { id: memberId },
     include: { user: { select: { id: true, name: true, username: true } } },
   });
-  if (!target || target.groupId !== id) {
-    return NextResponse.json({ error: "Member not found" }, { status: 404 });
-  }
+  if (!target || target.groupId !== id) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  if (target.role === "OWNER") return NextResponse.json({ error: "Cannot kick owner" }, { status: 403 });
 
-  if (target.role === "OWNER") {
-    return NextResponse.json({ error: "Cannot kick owner" }, { status: 403 });
-  }
+  const myRank = effectiveRank(myMembership);
+  const targetRank = effectiveRank(target);
 
-  const myRank = ROLE_RANK[myMembership.role] ?? 0;
-  const targetRank = ROLE_RANK[target.role] ?? 0;
+  if (myRank <= targetRank) return NextResponse.json({ error: "Cannot kick member of equal or higher rank" }, { status: 403 });
 
-  if (myRank <= targetRank) {
-    return NextResponse.json({ error: "Cannot kick member of equal or higher rank" }, { status: 403 });
-  }
-
-  // Capture ids before deleting so the kicked user also gets the update.
   const memberIds = await groupMemberIds(id);
-
   await prisma.groupMember.delete({ where: { id: memberId } });
 
-  // NEW: журнал аудита — исключение участника.
   await logGroupAction({
     groupId: id,
     actorId: session.user.id,
@@ -163,6 +128,5 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   });
 
   emitToUsers(memberIds, "group-updated", { id });
-
   return NextResponse.json({ ok: true });
 }

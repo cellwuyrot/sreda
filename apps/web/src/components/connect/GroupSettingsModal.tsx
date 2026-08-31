@@ -23,12 +23,13 @@ import { CENSOR_LEVELS, CENSOR_LEVEL_LABELS, CENSOR_LEVEL_HINTS, CENSOR_WORD_MAX
 
 /* MODERATION: ранги — из общего модуля, чтобы настройки и серверные маршруты
    считали иерархию одним и тем же кодом. */
-import { ROLE_RANK } from "@/lib/groupModeration";
+import { ROLE_RANK, effectiveRank, RANK_GUIDE } from "@/lib/groupModeration";
 
 const ROLE_LABEL: Record<string, string> = {
 	OWNER: "Создатель",
 	ADMIN: "Админ",
 	MODERATOR: "Модератор",
+	GUIDE: "Проводник",
 	MEMBER: "Участник",
 };
 
@@ -36,6 +37,7 @@ const ROLE_BADGE: Record<string, string> = {
 	OWNER: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
 	ADMIN: "bg-red-500/15 text-red-600 dark:text-red-400",
 	MODERATOR: "bg-violet-500/15 text-violet-600 dark:bg-cyan-500/15 dark:text-cyan-400",
+	GUIDE: "bg-teal-500/15 text-teal-600 dark:text-teal-400",
 	MEMBER: "bg-neutral-500/10 text-neutral-500 dark:text-gray-400",
 };
 
@@ -141,11 +143,20 @@ export default function GroupSettingsModal({
 	const isOwner = group.myRole === "OWNER";
 	const canEdit = myRank >= ROLE_RANK.MODERATOR; // name / description / rules
 	const canManageRoles = myRank >= ROLE_RANK.ADMIN; // change member roles
-	const canModerate = myRank >= ROLE_RANK.MODERATOR; // kick / ban / invites / audit
+	const canModerate = myRank >= RANK_GUIDE; // kick / ban / invites / audit
 	const canManageWorkspace = isOwner || group.myRole === "ADMIN";
 
 	const [section, setSection] = useState<SectionId>("overview");
 
+
+	/* ban form */
+	const [banUsername, setBanUsername] = useState("");
+	const [banMode, setBanMode] = useState<"ban_only" | "ban_and_purge">("ban_only");
+	const [banReasonPreset, setBanReasonPreset] = useState<"AD" | "SPAM" | "FRAUD" | "CUSTOM" | "">("AD");
+	const [banReasonCustom, setBanReasonCustom] = useState("");
+	const [banFormError, setBanFormError] = useState("");
+	const [banFormLoading, setBanFormLoading] = useState(false);
+	const [guidedDays, setGuidedDays] = useState<number>(7);
 	/* overview */
 	const [name, setName] = useState(group.name);
 	const [description, setDescription] = useState(group.description || "");
@@ -438,6 +449,36 @@ export default function GroupSettingsModal({
 		});
 	};
 
+
+	const handleBanByUsername = async () => {
+		if (!banUsername.trim()) { setBanFormError("Укажите @ник"); return; }
+		setBanFormError("");
+		setBanFormLoading(true);
+		const reasonPreset = banReasonPreset !== "CUSTOM" ? banReasonPreset : undefined;
+		const reason = banReasonPreset === "CUSTOM" ? banReasonCustom : undefined;
+		const res = await fetch(`/api/groups/${group.id}/bans`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				username: banUsername.replace(/^@/, ""),
+				reasonPreset,
+				reason,
+				deleteMessages: banMode === "ban_and_purge",
+			}),
+		});
+		setBanFormLoading(false);
+		if (!res.ok) {
+			const data = await res.json().catch(() => null);
+			setBanFormError(data?.error || "Ошибка");
+			return;
+		}
+		setBanUsername("");
+		setBanReasonCustom("");
+		setBanFormError("");
+		void loadBans();
+		onUpdated();
+		flash("Пользователь забан");
+	};
 	const handleUnban = async (ban: BanEntry) => {
 		setError("");
 		const res = await fetch(`/api/groups/${group.id}/bans/${ban.id}`, { method: "DELETE" });
@@ -858,6 +899,12 @@ export default function GroupSettingsModal({
 												{!!m.mutedUntil && new Date(m.mutedUntil) > new Date() && (
 													<span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/15 text-orange-500 flex-shrink-0" title={m.muteReason || undefined}>тайм-аут</span>
 												)}
+												{m.role === "GUIDE" && m.guidedUntil && new Date(m.guidedUntil) > new Date() && (
+													<span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-teal-500/15 text-teal-500 flex-shrink-0"
+														title={`Проводник до ${new Date(m.guidedUntil).toLocaleDateString("ru-RU")}`}>
+														Проводник
+													</span>
+												)}
 											</div>
 											<p className="text-xs text-neutral-500 dark:text-gray-400 truncate">@{m.user.username}</p>
 										</div>
@@ -872,6 +919,7 @@ export default function GroupSettingsModal({
 												aria-label={`Роль @${m.user.username}`}
 											>
 												<option value="MEMBER">Участник</option>
+												<option value="GUIDE">Проводник (временная)</option>
 												<option value="MODERATOR">Модератор</option>
 												{isOwner && <option value="ADMIN">Админ</option>}
 											</select>
@@ -916,11 +964,12 @@ export default function GroupSettingsModal({
 								{[
 									{ role: "OWNER", desc: "Полный доступ: назначение админов, передача и удаление группы." },
 									{ role: "ADMIN", desc: "Настройки группы, рабочая среда, управление модераторами и участниками, баны." },
-									{ role: "MODERATOR", desc: "Редактирование описания и правил, исключение и бан участников, приглашения." },
+									{ role: "MODERATOR", desc: "Редактирование описания и правил, исключение и бан участников, приглашения, пург сообщений." },
+									{ role: "GUIDE", desc: "Промежуточная роль на время (в днях). Может кикать и банить обычных участников, но не модераторов и выше. Укажите срок при назначении." },
 									{ role: "MEMBER", desc: "Общение в каналах группы." },
 								].map((r) => (
 									<div key={r.role} className="flex items-start gap-3 p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-white/10">
-										<span className={`px-2 py-0.5 rounded-full text-[11px] font-medium flex-shrink-0 ${ROLE_BADGE[r.role]}`}>{ROLE_LABEL[r.role]}</span>
+										<span className={`px-2 py-0.5 rounded-full text-[11px] font-medium flex-shrink-0 ${ROLE_BADGE[r.role] ?? ROLE_BADGE.MEMBER}`}>{ROLE_LABEL[r.role] ?? r.role}</span>
 										<p className="text-xs text-neutral-600 dark:text-gray-400">{r.desc}</p>
 									</div>
 								))}
@@ -933,35 +982,121 @@ export default function GroupSettingsModal({
 								members={(allMembers ?? []).map((m) => ({ userId: m.user.id, name: m.user.name || m.user.username || "—", roleIds: (m.tags ?? []).map((t) => t.role?.id ?? "").filter(Boolean) }))}
 							/>
 						</Section>
+						<Section title="Роли-возможности" subtitle="Привяжите роль к чату или голосовому каналу — получатель роли станет полным модератором этого канала, но только его." info="Используйте API /api/groups/[id]/roles/[roleId]/channels для управления.">
+							{canManageRoles ? (
+								<p className="text-xs text-neutral-500 dark:text-gray-400">Назначьте роль участнику в разделе «Участники», затем в настройках роли (GET /api/groups/{group.id}/roles/&#123;roleId&#125;/channels) привяжите нужные каналы через POST с &#123;channelId&#125;. Получатели роли будут иметь полную модерацию привязанных каналов.</p>
+							) : (
+								<p className="text-xs text-neutral-500 dark:text-gray-400">Доступно только админам.</p>
+							)}
+						</Section>
 					</>
 				);
 			case "bans":
 				return (
-					<Section title="Забаненные">
-						{bans === null ? (
-							<p className="text-sm text-neutral-500 dark:text-gray-400">Загрузка...</p>
-						) : bans.length === 0 ? (
-							<p className="text-sm text-neutral-500 dark:text-gray-400">Никто не забанен. Забанить участника можно в разделе «Участники».</p>
-						) : (
-							<div className="space-y-1">
-								{bans.map((b) => (
-									<div key={b.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
-										<GlowAvatar user={b.user} size={36} />
-										<div className="min-w-0 flex-1">
-											<span className="block text-sm font-medium text-neutral-900 dark:text-white truncate">{b.user.name}</span>
-											<span className="block text-xs text-neutral-500 dark:text-gray-400 truncate">
-												@{b.user.username} · {new Date(b.createdAt).toLocaleDateString("ru-RU")} · бан от @{b.bannedBy.username}
-												{b.reason ? ` · ${b.reason}` : ""}
-											</span>
-										</div>
-										<button onClick={() => handleUnban(b)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors flex-shrink-0">
-											Разбанить
+					<>
+						{/* Форма бана */}
+						<Section title="Забанить пользователя">
+							<div className="space-y-3">
+								<div>
+									<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">@ник пользователя</label>
+									<input
+										value={banUsername}
+										onChange={(e) => setBanUsername(e.target.value)}
+										placeholder="@username"
+										className={inputCls}
+									/>
+								</div>
+								<div>
+									<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">Причина</label>
+									<div className="flex flex-wrap gap-2">
+										{(["AD", "SPAM", "FRAUD", "CUSTOM"] as const).map((p) => (
+											<button
+												key={p}
+												onClick={() => setBanReasonPreset(p)}
+												className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+													banReasonPreset === p
+														? "bg-red-500 text-white"
+														: "bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-200 dark:hover:bg-white/15"
+												}`}
+											>
+												{{ AD: "Реклама", SPAM: "Спам", FRAUD: "Мошенничество", CUSTOM: "Своя причина" }[p]}
+											</button>
+										))}
+									</div>
+									{banReasonPreset === "CUSTOM" && (
+										<input
+											value={banReasonCustom}
+											onChange={(e) => setBanReasonCustom(e.target.value)}
+											placeholder="Укажите причину"
+											className={`${inputCls} mt-2`}
+											maxLength={300}
+										/>
+									)}
+								</div>
+								<div>
+									<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">Режим бана</label>
+									<div className="flex gap-2">
+										<button
+											onClick={() => setBanMode("ban_only")}
+											className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+												banMode === "ban_only"
+													? "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400"
+													: "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
+											}`}
+										>
+											Только бан
+										</button>
+										<button
+											onClick={() => setBanMode("ban_and_purge")}
+											className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+												banMode === "ban_and_purge"
+													? "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400"
+													: "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
+											}`}
+										>
+											Бан + удалить все сообщения
 										</button>
 									</div>
-								))}
+								</div>
+								{banFormError && <p className="text-xs text-red-500">{banFormError}</p>}
+								<Button
+									variant="danger"
+									size="sm"
+									onClick={handleBanByUsername}
+									disabled={banFormLoading}
+									className="w-full"
+								>
+									{banFormLoading ? "Баним..." : "Забанить"}
+								</Button>
 							</div>
-						)}
-					</Section>
+						</Section>
+						{/* Список забаненных */}
+						<Section title="Список забаненных">
+							{bans === null ? (
+								<p className="text-sm text-neutral-500 dark:text-gray-400">Загрузка...</p>
+							) : bans.length === 0 ? (
+								<p className="text-sm text-neutral-500 dark:text-gray-400">Никто не забанен.</p>
+							) : (
+								<div className="space-y-1">
+									{bans.map((b) => (
+										<div key={b.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
+											<GlowAvatar user={b.user} size={36} />
+											<div className="min-w-0 flex-1">
+												<span className="block text-sm font-medium text-neutral-900 dark:text-white truncate">{b.user.name}</span>
+												<span className="block text-xs text-neutral-500 dark:text-gray-400 truncate">
+													@{b.user.username} &middot; {new Date(b.createdAt).toLocaleDateString("ru-RU")} &middot; бан от @{b.bannedBy.username}
+													{b.reason ? ` · ${b.reason}` : ""}
+												</span>
+											</div>
+											<button onClick={() => handleUnban(b)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors flex-shrink-0">
+												Разбанить
+											</button>
+										</div>
+									))}
+								</div>
+							)}
+						</Section>
+					</>
 				);
 			case "invites":
 				return (
