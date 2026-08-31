@@ -991,113 +991,113 @@ export default function GroupSettingsModal({
 						</Section>
 					</>
 				);
-\t\t\tcase "bans":
-\t\t\t\treturn (
-\t\t\t\t\t<>
-\t\t\t\t\t\t{/* \u0424\u043e\u0440\u043c\u0430 \u0431\u0430\u043d\u0430 */}
-\t\t\t\t\t\t<Section title="\u0417\u0430\u0431\u0430\u043d\u0438\u0442\u044c \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f">
-\t\t\t\t\t\t\t<div className="space-y-3">
-\t\t\t\t\t\t\t\t<div>
-\t\t\t\t\t\t\t\t\t<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">@\u043d\u0438\u043a \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f</label>
-\t\t\t\t\t\t\t\t\t<input
-\t\t\t\t\t\t\t\t\t\tvalue={banUsername}
-\t\t\t\t\t\t\t\t\t\tonChange={(e) => setBanUsername(e.target.value)}
-\t\t\t\t\t\t\t\t\t\tplaceholder="@username"
-\t\t\t\t\t\t\t\t\t\tclassName={inputCls}
-\t\t\t\t\t\t\t\t\t/>
-\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t\t<div>
-\t\t\t\t\t\t\t\t\t<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">\u041f\u0440\u0438\u0447\u0438\u043d\u0430</label>
-\t\t\t\t\t\t\t\t\t<div className="flex flex-wrap gap-2">
-\t\t\t\t\t\t\t\t\t\t{(["AD", "SPAM", "FRAUD", "CUSTOM"] as const).map((p) => (
-\t\t\t\t\t\t\t\t\t\t\t<button
-\t\t\t\t\t\t\t\t\t\t\t\tkey={p}
-\t\t\t\t\t\t\t\t\t\t\t\tonClick={() => setBanReasonPreset(p)}
-\t\t\t\t\t\t\t\t\t\t\t\tclassName={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-\t\t\t\t\t\t\t\t\t\t\t\t\tbanReasonPreset === p
-\t\t\t\t\t\t\t\t\t\t\t\t\t\t? "bg-red-500 text-white"
-\t\t\t\t\t\t\t\t\t\t\t\t\t\t: "bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-200 dark:hover:bg-white/15"
-\t\t\t\t\t\t\t\t\t\t\t\t}`}
-\t\t\t\t\t\t\t\t\t\t\t>
-\t\t\t\t\t\t\t\t\t\t\t\t{{ AD: "\u0420\u0435\u043a\u043b\u0430\u043c\u0430", SPAM: "\u0421\u043f\u0430\u043c", FRAUD: "\u041c\u043e\u0448\u0435\u043d\u043d\u0438\u0447\u0435\u0441\u0442\u0432\u043e", CUSTOM: "\u0421\u0432\u043e\u044f \u043f\u0440\u0438\u0447\u0438\u043d\u0430" }[p]}
-\t\t\t\t\t\t\t\t\t\t\t</button>
-\t\t\t\t\t\t\t\t\t\t))}
-\t\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t\t\t{banReasonPreset === "CUSTOM" && (
-\t\t\t\t\t\t\t\t\t\t<input
-\t\t\t\t\t\t\t\t\t\t\tvalue={banReasonCustom}
-\t\t\t\t\t\t\t\t\t\t\tonChange={(e) => setBanReasonCustom(e.target.value)}
-\t\t\t\t\t\t\t\t\t\t\tplaceholder="\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u043f\u0440\u0438\u0447\u0438\u043d\u0443"
-\t\t\t\t\t\t\t\t\t\t\tclassName={`${inputCls} mt-2`}
-\t\t\t\t\t\t\t\t\t\t\tmaxLength={300}
-\t\t\t\t\t\t\t\t\t\t/>
-\t\t\t\t\t\t\t\t\t)}
-\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t\t<div>
-\t\t\t\t\t\t\t\t\t<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">\u0420\u0435\u0436\u0438\u043c \u0431\u0430\u043d\u0430</label>
-\t\t\t\t\t\t\t\t\t<div className="flex gap-2">
-\t\t\t\t\t\t\t\t\t\t<button
-\t\t\t\t\t\t\t\t\t\t\tonClick={() => setBanMode("ban_only")}
-\t\t\t\t\t\t\t\t\t\t\tclassName={`flex-1 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
-\t\t\t\t\t\t\t\t\t\t\t\tbanMode === "ban_only"
-\t\t\t\t\t\t\t\t\t\t\t\t\t? "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400"
-\t\t\t\t\t\t\t\t\t\t\t\t\t: "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
-\t\t\t\t\t\t\t\t\t\t\t}`}
-\t\t\t\t\t\t\t\t\t\t>
-\t\t\t\t\t\t\t\t\t\t\t\u0422\u043e\u043b\u044c\u043a\u043e \u0431\u0430\u043d
-\t\t\t\t\t\t\t\t\t\t</button>
-\t\t\t\t\t\t\t\t\t\t<button
-\t\t\t\t\t\t\t\t\t\t\tonClick={() => setBanMode("ban_and_purge")}
-\t\t\t\t\t\t\t\t\t\t\tclassName={`flex-1 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
-\t\t\t\t\t\t\t\t\t\t\t\tbanMode === "ban_and_purge"
-\t\t\t\t\t\t\t\t\t\t\t\t\t? "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400"
-\t\t\t\t\t\t\t\t\t\t\t\t\t: "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
-\t\t\t\t\t\t\t\t\t\t\t}`}
-\t\t\t\t\t\t\t\t\t\t>
-\t\t\t\t\t\t\t\t\t\t\t\u0411\u0430\u043d + \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f
-\t\t\t\t\t\t\t\t\t\t</button>
-\t\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t\t{banFormError && <p className="text-xs text-red-500">{banFormError}</p>}
-\t\t\t\t\t\t\t\t<Button
-\t\t\t\t\t\t\t\t\tvariant="danger"
-\t\t\t\t\t\t\t\t\tsize="sm"
-\t\t\t\t\t\t\t\t\tonClick={handleBanByUsername}
-\t\t\t\t\t\t\t\t\tdisabled={banFormLoading}
-\t\t\t\t\t\t\t\t\tclassName="w-full"
-\t\t\t\t\t\t\t\t>
-\t\t\t\t\t\t\t\t\t{banFormLoading ? "\u0411\u0430\u043d\u0438\u043c..." : "\u0417\u0430\u0431\u0430\u043d\u0438\u0442\u044c"}
-\t\t\t\t\t\t\t\t</Button>
-\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t</Section>
-\t\t\t\t\t\t{/* \u0421\u043f\u0438\u0441\u043e\u043a \u0437\u0430\u0431\u0430\u043d\u0435\u043d\u043d\u044b\u0445 */}
-\t\t\t\t\t\t<Section title="\u0421\u043f\u0438\u0441\u043e\u043a \u0437\u0430\u0431\u0430\u043d\u0435\u043d\u043d\u044b\u0445">
-\t\t\t\t\t\t\t{bans === null ? (
-\t\t\t\t\t\t\t\t<p className="text-sm text-neutral-500 dark:text-gray-400">\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...</p>
-\t\t\t\t\t\t\t) : bans.length === 0 ? (
-\t\t\t\t\t\t\t\t<p className="text-sm text-neutral-500 dark:text-gray-400">\u041d\u0438\u043a\u0442\u043e \u043d\u0435 \u0437\u0430\u0431\u0430\u043d\u0435\u043d.</p>
-\t\t\t\t\t\t\t) : (
-\t\t\t\t\t\t\t\t<div className="space-y-1">
-\t\t\t\t\t\t\t\t\t{bans.map((b) => (
-\t\t\t\t\t\t\t\t\t\t<div key={b.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
-\t\t\t\t\t\t\t\t\t\t\t<GlowAvatar user={b.user} size={36} />
-\t\t\t\t\t\t\t\t\t\t\t<div className="min-w-0 flex-1">
-\t\t\t\t\t\t\t\t\t\t\t\t<span className="block text-sm font-medium text-neutral-900 dark:text-white truncate">{b.user.name}</span>
-\t\t\t\t\t\t\t\t\t\t\t\t<span className="block text-xs text-neutral-500 dark:text-gray-400 truncate">
-\t\t\t\t\t\t\t\t\t\t\t\t\t@{b.user.username} \xb7 {new Date(b.createdAt).toLocaleDateString("ru-RU")} \xb7 \u0431\u0430\u043d \u043e\u0442 @{b.bannedBy.username}
-\t\t\t\t\t\t\t\t\t\t\t\t\t{b.reason ? ` \xb7 ${b.reason}` : ""}
-\t\t\t\t\t\t\t\t\t\t\t\t</span>
-\t\t\t\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t\t\t\t\t<button onClick={() => handleUnban(b)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors flex-shrink-0">
-\t\t\t\t\t\t\t\t\t\t\t\t\u0420\u0430\u0437\u0431\u0430\u043d\u0438\u0442\u044c
-\t\t\t\t\t\t\t\t\t\t\t</button>
-\t\t\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t\t\t))}
-\t\t\t\t\t\t\t\t</div>
-\t\t\t\t\t\t\t)}
-\t\t\t\t\t\t</Section>
-\t\t\t\t\t</>
-\t\t\t\t);
+			case "bans":
+				return (
+					<>
+						{/* Форма бана */}
+						<Section title="Забанить пользователя">
+							<div className="space-y-3">
+								<div>
+									<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">@ник пользователя</label>
+									<input
+										value={banUsername}
+										onChange={(e) => setBanUsername(e.target.value)}
+										placeholder="@username"
+										className={inputCls}
+									/>
+								</div>
+								<div>
+									<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">Причина</label>
+									<div className="flex flex-wrap gap-2">
+										{(["AD", "SPAM", "FRAUD", "CUSTOM"] as const).map((p) => (
+											<button
+												key={p}
+												onClick={() => setBanReasonPreset(p)}
+												className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+													banReasonPreset === p
+														? "bg-red-500 text-white"
+														: "bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-200 dark:hover:bg-white/15"
+												}`}
+											>
+												{{ AD: "Реклама", SPAM: "Спам", FRAUD: "Мошенничество", CUSTOM: "Своя причина" }[p]}
+											</button>
+										))}
+									</div>
+									{banReasonPreset === "CUSTOM" && (
+										<input
+											value={banReasonCustom}
+											onChange={(e) => setBanReasonCustom(e.target.value)}
+											placeholder="Укажите причину"
+											className={`${inputCls} mt-2`}
+											maxLength={300}
+										/>
+									)}
+								</div>
+								<div>
+									<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">Режим бана</label>
+									<div className="flex gap-2">
+										<button
+											onClick={() => setBanMode("ban_only")}
+											className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+												banMode === "ban_only"
+													? "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400"
+													: "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
+											}`}
+										>
+											Только бан
+										</button>
+										<button
+											onClick={() => setBanMode("ban_and_purge")}
+											className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+												banMode === "ban_and_purge"
+													? "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400"
+													: "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
+											}`}
+										>
+											Бан + удалить все сообщения
+										</button>
+									</div>
+								</div>
+								{banFormError && <p className="text-xs text-red-500">{banFormError}</p>}
+								<Button
+									variant="danger"
+									size="sm"
+									onClick={handleBanByUsername}
+									disabled={banFormLoading}
+									className="w-full"
+								>
+									{banFormLoading ? "Баним..." : "Забанить"}
+								</Button>
+							</div>
+						</Section>
+						{/* Список забаненных */}
+						<Section title="Список забаненных">
+							{bans === null ? (
+								<p className="text-sm text-neutral-500 dark:text-gray-400">Загрузка...</p>
+							) : bans.length === 0 ? (
+								<p className="text-sm text-neutral-500 dark:text-gray-400">Никто не забанен.</p>
+							) : (
+								<div className="space-y-1">
+									{bans.map((b) => (
+										<div key={b.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
+											<GlowAvatar user={b.user} size={36} />
+											<div className="min-w-0 flex-1">
+												<span className="block text-sm font-medium text-neutral-900 dark:text-white truncate">{b.user.name}</span>
+												<span className="block text-xs text-neutral-500 dark:text-gray-400 truncate">
+													@{b.user.username} &middot; {new Date(b.createdAt).toLocaleDateString("ru-RU")} &middot; бан от @{b.bannedBy.username}
+													{b.reason ? ` · ${b.reason}` : ""}
+												</span>
+											</div>
+											<button onClick={() => handleUnban(b)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-gray-300 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors flex-shrink-0">
+												Разбанить
+											</button>
+										</div>
+									))}
+								</div>
+							)}
+						</Section>
+					</>
+				);
 			case "invites":
 				return (
 					<Section title="Приглашения" info="Сделайте ссылку с нужным сроком жизни и лимитом вступлений, а ненужную в любой момент отзовите — она перестанет работать.">
