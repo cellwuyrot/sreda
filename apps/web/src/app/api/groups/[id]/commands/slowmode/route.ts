@@ -44,7 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     groupId,
     actorId: session.user.id,
     actorName: session.user.username || session.user.name || "mod",
-    action: "channel.slowmode",
+    action: "settings.update",
     targetId: channelId,
     targetName: channel.name,
     details: secs === 0 ? "Слоумод выключен" : `Слоумод ${secs}сек`,
