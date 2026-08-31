@@ -718,6 +718,23 @@ model ChannelRoleAccess {
   @@index([channelId])
 }
 
+/// CHANNEL-ROLE-POWER: Роли-возможности.
+/// Привязывает системную роль (GroupRole) к конкретному каналу.
+/// Участник, имеющий эту роль, получает полную модерацию данного канала,
+/// но только его — к остальным каналам права не применяются.
+model ChannelRolePower {
+  id        String    @id @default(cuid())
+  roleId    String
+  channelId String
+  createdAt DateTime  @default(now())
+  role      GroupRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, channelId])
+  @@index([roleId])
+  @@index([channelId])
+}
+
 /// SERVER-MESH: реестр серверов проекта. Ровно одна запись с role = "MAIN" —
 /// сервер, где живёт это приложение; остальные — дочерние узлы (медиа, VPN,
 /// вычисления), которые сами отчитываются о себе по токену агента.
