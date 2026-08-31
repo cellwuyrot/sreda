@@ -709,7 +709,7 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className={`ml-4 pl-1${drag.itemClass(ch.id)}`} {.../* FIX-DRAG-UNIFIED */ drag.itemProps(ch.id, voiceChannels.map(c => c.id))}>
+                          <div key={ch.id} className={`ml-4${drag.itemClass(ch.id)}`} {.../* FIX-DRAG-UNIFIED */ drag.itemProps(ch.id, voiceChannels.map(c => c.id))}>
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
