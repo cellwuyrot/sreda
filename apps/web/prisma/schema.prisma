@@ -2387,3 +2387,33 @@ model EmailDomainWhitelist {
 
   @@index([active])
 }
+
+/// ABOUT-BLOCKS: лендинговые блоки страницы «О проекте».
+/// Каждый блок — текст + медиа (картинка или видео) с гибким лейаутом.
+model AboutBlock {
+  id          String   @id @default(cuid())
+  /// Порядок отображения (меньше = выше).
+  order       Int      @default(0)
+  title       String   @db.VarChar(300)
+  description String   @db.Text
+  /// Путь к медиафайлу на сервере (/uploads/about/...).
+  mediaUrl    String?  @db.VarChar(500)
+  /// "image" | "video"
+  mediaType   String   @default("image")
+  /// "text-left" | "text-right" | "centered"
+  layout      String   @default("text-left")
+  /// "left" | "center" | "right"
+  textAlign   String   @default("left")
+  /// HEX-цвет свечения/градиента блока.
+  glowColor   String   @default("#8b5cf6")
+  /// Форма блока: "rectangle"|"skewed-left"|"skewed-right"|"rounded"|"hexagon"|"diamond"
+  shape       String   @default("rectangle")
+  /// Отступ сверху в пикселях.
+  spacingTop  Int      @default(60)
+  /// Показывать ли блок.
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([order])
+}

@@ -1,135 +1,312 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import Link from "next/link";
-import EditableText from "@/components/EditableText";
 import DesktopDownload from "@/components/DesktopDownload";
-import CosmicBackground from "@/components/about/CosmicBackground";
-import ProjectGlyph from "@/components/about/ProjectGlyph";
-import { ABOUT_SECTIONS, ABOUT_DEFAULTS, aboutKeys, type AboutSection } from "@/lib/about";
 import { LEGAL_DEFAULTS, LEGAL_SECTIONS, legalKeys } from "@/lib/legal";
+import { AnimatePresence } from "framer-motion";
 
-/* ─────────────────────────── Project card ─────────────────────────── */
+// ─── Types ───────────────────────────────────────────────────────────────────
+interface AboutBlock {
+  id: string;
+  order: number;
+  title: string;
+  description: string;
+  mediaUrl: string | null;
+  mediaType: string;
+  layout: string;
+  textAlign: string;
+  glowColor: string;
+  shape: string;
+  spacingTop: number;
+  enabled: boolean;
+}
 
-function ProjectCard({ section, index }: { section: AboutSection; index: number }) {
-  const cardRef = useRef<HTMLAnchorElement>(null);
+// ─── Shape clip-paths ─────────────────────────────────────────────────────────
+const SHAPE_CLIPS: Record<string, string> = {
+  rectangle: "none",
+  "skewed-left":  "polygon(0 4%, 100% 0, 100% 96%, 0 100%)",
+  "skewed-right": "polygon(0 0, 100% 4%, 100% 100%, 0 96%)",
+  rounded:        "none",   // handled via borderRadius
+  hexagon:        "polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)",
+  diamond:        "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)",
+};
 
-  // Move a soft "spotlight" toward the cursor for a premium, tactile feel.
-  const handleMouseMove = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    const el = cardRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    el.style.setProperty("--mx", `${((e.clientX - rect.left) / rect.width) * 100}%`);
-    el.style.setProperty("--my", `${((e.clientY - rect.top) / rect.height) * 100}%`);
-  };
+const SHAPE_RADIUS: Record<string, string> = {
+  rectangle:      "1.5rem",
+  "skewed-left":  "0",
+  "skewed-right": "0",
+  rounded:        "3rem",
+  hexagon:        "0",
+  diamond:        "0",
+};
+
+// ─── Single landing block ─────────────────────────────────────────────────────
+function LandingBlock({ block, index }: { block: AboutBlock; index: number }) {
+  const clip = SHAPE_CLIPS[block.shape] ?? "none";
+  const radius = SHAPE_RADIUS[block.shape] ?? "1.5rem";
+  const isCentered = block.layout === "centered";
+  const mediaRight = block.layout === "text-left";
+
+  const glowBg = `radial-gradient(ellipse 80% 60% at 50% 50%, ${block.glowColor}22 0%, transparent 70%)`;
+  const border = `${block.glowColor}33`;
+  const shadow = `0 0 60px -20px ${block.glowColor}55, 0 0 120px -40px ${block.glowColor}22`;
+
+  const titleAlign =
+    block.textAlign === "center" ? "text-center" :
+    block.textAlign === "right"  ? "text-right"  : "text-left";
+
+  const MediaEl = block.mediaUrl ? (
+    <div className="relative flex-1 min-h-[200px] flex items-center justify-center">
+      {block.mediaType === "video" ? (
+        <video
+          src={block.mediaUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="w-full max-h-[480px] rounded-2xl object-cover"
+          style={{ boxShadow: `0 0 40px -10px ${block.glowColor}66` }}
+        />
+      ) : (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={block.mediaUrl}
+          alt={block.title}
+          className="w-full max-h-[480px] rounded-2xl object-cover"
+          style={{ boxShadow: `0 0 40px -10px ${block.glowColor}66` }}
+        />
+      )}
+      {/* Glow under media */}
+      <div
+        className="pointer-events-none absolute inset-0 rounded-2xl"
+        style={{ boxShadow: `inset 0 0 60px -20px ${block.glowColor}44` }}
+      />
+    </div>
+  ) : null;
+
+  const TextEl = (
+    <div className={`flex-1 flex flex-col justify-center gap-4 ${titleAlign}`}>
+      <h2
+        className="text-3xl sm:text-4xl lg:text-5xl font-black leading-tight"
+        style={{
+          background: `linear-gradient(135deg, #fff 0%, ${block.glowColor} 60%, #fff 100%)`,
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+          filter: `drop-shadow(0 0 12px ${block.glowColor}88)`,
+        }}
+      >
+        {block.title}
+      </h2>
+      <p
+        className="text-base sm:text-lg leading-relaxed"
+        style={{ color: "rgba(255,255,255,0.75)" }}
+      >
+        {block.description}
+      </p>
+    </div>
+  );
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 40 }}
+      initial={{ opacity: 0, y: 50 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.6, delay: index * 0.1, ease: [0.25, 0.1, 0.25, 1] }}
-      className="h-full"
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.7, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1] }}
+      style={{ marginTop: block.spacingTop }}
     >
-      <Link
-        ref={cardRef}
-        href={section.href}
-        onMouseMove={handleMouseMove}
-        className="group relative flex h-full min-h-[240px] flex-col overflow-hidden rounded-3xl
-          border border-neutral-200/70 dark:border-white/10
-          bg-white/70 dark:bg-white/[0.03] backdrop-blur-xl
-          p-7 lg:p-8 transition-all duration-500
-          hover:-translate-y-1 hover:border-neutral-300 dark:hover:border-white/20
-          hover:shadow-[0_20px_60px_-20px_var(--glow)]"
-        style={{ ["--glow" as string]: `${section.color}55` }}
+      <div
+        className="relative overflow-hidden"
+        style={{
+          clipPath: clip !== "none" ? clip : undefined,
+          borderRadius: clip === "none" ? radius : undefined,
+          border: clip === "none" ? `1px solid ${border}` : undefined,
+          background: `linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)`,
+          boxShadow: clip === "none" ? shadow : undefined,
+          backdropFilter: "blur(12px)",
+        }}
       >
-        {/* Cursor spotlight */}
-        <span
-          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-          style={{
-            background: `radial-gradient(420px circle at var(--mx,50%) var(--my,50%), ${section.color}1f, transparent 60%)`,
-          }}
+        {/* Ambient glow bg */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ background: glowBg }}
         />
         {/* Top accent line */}
-        <span
-          className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-40 group-hover:opacity-100 transition-opacity duration-500"
-          style={{ background: `linear-gradient(90deg, transparent, ${section.color}, transparent)` }}
-        />
-        {/* Corner constellation flourish */}
-        <svg
-          className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 opacity-[0.12] transition-transform duration-700 group-hover:rotate-45"
-          viewBox="0 0 100 100"
-          fill="none"
-          stroke={section.color}
-          strokeWidth={1}
-          aria-hidden
-        >
-          <circle cx="50" cy="50" r="30" />
-          <circle cx="50" cy="50" r="46" strokeDasharray="2 8" />
-          <circle cx="50" cy="20" r="2.5" fill={section.color} stroke="none" />
-          <circle cx="80" cy="50" r="1.8" fill={section.color} stroke="none" />
-        </svg>
-
-        {/* Icon badge */}
         <div
-          className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-2xl
-            border transition-all duration-500 group-hover:scale-110"
-          style={{
-            color: section.color,
-            borderColor: `${section.color}40`,
-            backgroundColor: `${section.color}14`,
-            boxShadow: `0 0 24px -6px ${section.color}66`,
-          }}
-        >
-          <ProjectGlyph name={section.key} className="h-8 w-8 tz-float-y" />
-        </div>
-
-        <EditableText
-          contentKey={aboutKeys.sectionTitle(section.key)}
-          defaultValue={section.title}
-          tag="h2"
-          className="text-xl lg:text-2xl font-display font-bold text-neutral-900 dark:text-white"
+          className="pointer-events-none absolute inset-x-0 top-0 h-px"
+          style={{ background: `linear-gradient(90deg, transparent, ${block.glowColor}88, transparent)` }}
         />
 
-        <EditableText
-          contentKey={aboutKeys.sectionDesc(section.key)}
-          defaultValue={section.description}
-          tag="p"
-          className="mt-3 flex-1 text-sm lg:text-[15px] leading-relaxed text-neutral-500 dark:text-gray-400"
-          multiline
-        />
-
-        <div
-          className="mt-6 inline-flex items-center gap-2 text-sm font-semibold transition-all duration-300
-            group-hover:gap-3"
-          style={{ color: section.color }}
-        >
-          Перейти в раздел
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-          </svg>
+        <div className={`relative z-10 px-6 py-10 sm:px-10 sm:py-14 lg:px-16 lg:py-20 ${
+          isCentered
+            ? "flex flex-col items-center text-center gap-8"
+            : "flex flex-col lg:flex-row items-center gap-8 lg:gap-16"
+        }`}>
+          {isCentered ? (
+            <>
+              {TextEl}
+              {MediaEl && <div className="w-full max-w-2xl">{MediaEl}</div>}
+            </>
+          ) : mediaRight ? (
+            <>{TextEl}{MediaEl}</>
+          ) : (
+            <>{MediaEl}{TextEl}</>
+          )}
         </div>
-      </Link>
+      </div>
     </motion.div>
   );
 }
 
-/* ─────────────────────────── Page ─────────────────────────── */
+// ─── Legal section (unchanged) ────────────────────────────────────────────────
+function LegalSection() {
+  const [open, setOpen] = useState(false);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
 
-export default function AboutPage() {
+  useEffect(() => {
+    fetch("/api/site-content")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d: Record<string, string>) => { if (d) setOverrides(d); })
+      .catch(() => {});
+  }, []);
+
+  const pick = (key: string, def: string) => {
+    const v = overrides[key];
+    return v && v.trim() ? v : def;
+  };
+
+  const legalSections = LEGAL_SECTIONS.map((s, i) => ({
+    title: pick(legalKeys.sectionTitle(i), s.title),
+    content: pick(legalKeys.sectionContent(i), s.content),
+  }));
+
   return (
-    <div className="relative min-h-screen overflow-x-hidden text-neutral-900 dark:text-white">
-      <CosmicBackground />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="mt-20">
+      <div className="mb-8 flex items-center gap-4">
+        <div className="h-px flex-1" style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)" }} />
+        <span className="text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>Юридическая информация</span>
+        <div className="h-px flex-1" style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)" }} />
+      </div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="group relative w-full overflow-hidden rounded-2xl transition-all duration-300"
+        style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}
+      >
+        <div className="flex items-center justify-between p-5">
+          <div className="flex items-center gap-3">
+            <svg className="h-5 w-5" style={{ color: "rgba(255,255,255,0.4)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-white">{pick(legalKeys.heading, LEGAL_DEFAULTS.heading)}</div>
+              <div className="mt-0.5 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{pick(legalKeys.subheading, LEGAL_DEFAULTS.subheading)}</div>
+            </div>
+          </div>
+          <motion.svg animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.3 }}
+            className="h-5 w-5 flex-shrink-0" style={{ color: "rgba(255,255,255,0.35)" }}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </motion.svg>
+        </div>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.4, ease: [0.25,0.1,0.25,1] }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 rounded-2xl p-6" style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
+              <p className="mb-6 text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+                {overrides[legalKeys.preamble]?.trim() ||
+                  "Настоящий документ является официальным пользовательским соглашением проекта TRIOZ."}
+              </p>
+              <div className="space-y-2">
+                {legalSections.map((s, i) => (
+                  <div key={i} className="overflow-hidden rounded-xl" style={{ border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <button
+                      onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
+                      className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors"
+                      style={{ background: expandedIdx === i ? "rgba(255,255,255,0.04)" : undefined }}
+                    >
+                      <span className="text-sm font-medium text-white">{s.title}</span>
+                      <motion.svg animate={{ rotate: expandedIdx === i ? 180 : 0 }} transition={{ duration: 0.2 }}
+                        className="h-4 w-4 flex-shrink-0" style={{ color: "rgba(255,255,255,0.35)" }}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </motion.svg>
+                    </button>
+                    <AnimatePresence>
+                      {expandedIdx === i && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden">
+                          <div className="px-4 pb-4">
+                            <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "rgba(255,255,255,0.55)" }}>{s.content}</p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
 
-      {/* Back button */}
+// ─── Page ─────────────────────────────────────────────────────────────────────
+export default function AboutPage() {
+  const [blocks, setBlocks] = useState<AboutBlock[]>([]);
+  const [bgUrl, setBgUrl] = useState<string | null>(null);
+  const [bgColor, setBgColor] = useState("#000000");
+
+  useEffect(() => {
+    fetch("/api/admin/about-blocks")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: AboutBlock[]) => setBlocks(data.filter((b) => b.enabled)))
+      .catch(() => {});
+
+    fetch("/api/site-content")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d: Record<string, string>) => {
+        if (d["about.bg.url"]) setBgUrl(d["about.bg.url"]);
+        if (d["about.bg.color"]) setBgColor(d["about.bg.color"]);
+      })
+      .catch(() => {});
+  }, []);
+
+  return (
+    <div
+      className="relative min-h-screen overflow-x-hidden"
+      style={{ color: "#fff" }}
+    >
+      {/* ── Background ── */}
+      <div
+        className="fixed inset-0 -z-10"
+        style={{
+          backgroundColor: bgColor,
+          backgroundImage: bgUrl ? `url(${bgUrl})` : undefined,
+          backgroundRepeat: "repeat",
+          backgroundSize: "auto",
+        }}
+      />
+
+      {/* ── Back button ── */}
       <div className="fixed top-4 left-4 z-50">
         <Link href="/">
           <motion.button
-            className="flex items-center gap-2 rounded-xl border border-neutral-300 dark:border-white/10
-              bg-white/80 dark:bg-black/40 px-4 py-2 text-sm font-medium text-neutral-600 dark:text-gray-300
-              backdrop-blur-xl transition-all duration-300
-              hover:border-violet-300 dark:hover:border-cyan-400/40 hover:text-violet-600 dark:hover:text-cyan-400"
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium backdrop-blur-xl transition-all duration-300"
+            style={{
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(0,0,0,0.45)",
+              color: "rgba(255,255,255,0.7)",
+            }}
             whileHover={{ scale: 1.05, x: -2 }}
             whileTap={{ scale: 0.95 }}
           >
@@ -141,237 +318,36 @@ export default function AboutPage() {
         </Link>
       </div>
 
-      <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-24 lg:py-28">
-        {/* Hero */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-center"
-        >
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="mb-6 inline-flex items-center gap-3"
-          >
-            <span className="h-px w-10 bg-violet-400/50 dark:bg-cyan-400/40" />
-            <EditableText
-              contentKey={aboutKeys.eyebrow}
-              defaultValue={ABOUT_DEFAULTS.eyebrow}
-              tag="span"
-              className="text-xs font-medium uppercase tracking-[0.3em] text-violet-500 dark:text-cyan-400/90"
-            />
-            <span className="h-px w-10 bg-violet-400/50 dark:bg-cyan-400/40" />
-          </motion.div>
+      {/* ── Content ── */}
+      <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 pb-24 pt-24">
+        {blocks.length === 0 ? (
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <p style={{ color: "rgba(255,255,255,0.25)" }} className="text-sm">
+              Блоки ещё не добавлены — раздел заполняется в{" "}
+              <Link href="/admin/about" className="underline opacity-60 hover:opacity-100">Админ-панели</Link>.
+            </p>
+          </div>
+        ) : (
+          <div>
+            {blocks.map((block, i) => (
+              <LandingBlock key={block.id} block={block} index={i} />
+            ))}
+          </div>
+        )}
 
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="mb-6 text-6xl md:text-8xl font-display font-bold leading-[1.05]"
-          >
-            <EditableText
-              contentKey={aboutKeys.title}
-              defaultValue={ABOUT_DEFAULTS.title}
-              tag="span"
-              className="glow-text bg-gradient-to-r from-violet-600 via-fuchsia-500 to-indigo-600
-                dark:from-cyan-300 dark:via-white dark:to-fantasy-purple bg-clip-text text-transparent"
-            />
-          </motion.h1>
-
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            <EditableText
-              contentKey={aboutKeys.subtitle}
-              defaultValue={ABOUT_DEFAULTS.subtitle}
-              tag="p"
-              className="mx-auto max-w-2xl text-lg leading-relaxed text-neutral-600 dark:text-gray-300/90"
-              multiline
-            />
-          </motion.div>
-        </motion.div>
-
-        {/* Ecosystem bento grid — spans the full width on desktop */}
-        <div className="mt-16 lg:mt-20 grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
-          {ABOUT_SECTIONS.map((section, i) => (
-            <ProjectCard key={section.key} section={section} index={i} />
-          ))}
+        {/* ── Desktop download ── */}
+        <div className="mt-24">
+          <DesktopDownload />
         </div>
 
-        {/* Desktop download */}
-        <DesktopDownload />
-
-        {/* Legal section */}
+        {/* ── Legal ── */}
         <LegalSection />
 
-        {/* Footer info */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.2 }}
-          className="mt-16 text-center text-sm text-neutral-400 dark:text-gray-600"
-        >
-          <EditableText contentKey={aboutKeys.footer} defaultValue={ABOUT_DEFAULTS.footer} tag="p" />
-        </motion.div>
+        {/* ── Footer ── */}
+        <p className="mt-16 text-center text-sm" style={{ color: "rgba(255,255,255,0.2)" }}>
+          © {new Date().getFullYear()} T.Р.И.О.Z
+        </p>
       </div>
     </div>
-  );
-}
-
-/* ─────────────────────────── Legal (unchanged behaviour) ─────────────────────────── */
-
-
-function LegalSection() {
-  const [open, setOpen] = useState(false);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
-
-  /* FIX-LEGAL: действующая редакция приходит из админки (Админ → Контент
-     сайта → Правовая информация). Значения из lib/legal.ts — резерв: пока
-     администратор ничего не менял (или запрос не дошёл), страница
-     показывает ту же редакцию, что и раньше, а не пустые блоки. */
-  const [overrides, setOverrides] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/site-content")
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((data: Record<string, string>) => {
-        if (alive && data && typeof data === "object") setOverrides(data);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const pick = (key: string, def: string) => {
-    const v = overrides[key];
-    return v && v.trim() ? v : def;
-  };
-  const legalSections = LEGAL_SECTIONS.map((s, i) => ({
-    title: pick(legalKeys.sectionTitle(i), s.title),
-    content: pick(legalKeys.sectionContent(i), s.content),
-  }));
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ delay: 1 }}
-      className="mt-20"
-    >
-      {/* Divider */}
-      <div className="mb-8 flex items-center gap-4">
-        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-neutral-300 dark:via-white/10 to-transparent" />
-        <span className="text-xs font-medium uppercase tracking-widest text-neutral-400 dark:text-gray-600">Юридическая информация</span>
-        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-neutral-300 dark:via-white/10 to-transparent" />
-      </div>
-
-      {/* Toggle button */}
-      <button
-        onClick={() => setOpen(!open)}
-        className="group relative w-full overflow-hidden rounded-2xl border border-neutral-200/80 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-neutral-300 dark:hover:border-white/[0.13] hover:shadow-lg dark:hover:shadow-none"
-      >
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-neutral-400 dark:bg-gray-500 opacity-30 transition-opacity group-hover:opacity-60" />
-        <div className="flex items-center justify-between p-5 pl-7">
-          <div className="flex items-center gap-3">
-            <svg className="h-5 w-5 text-neutral-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <div className="text-left">
-              <div className="text-sm font-semibold text-neutral-800 dark:text-white">{pick(legalKeys.heading, LEGAL_DEFAULTS.heading)}</div>
-              <div className="mt-0.5 text-xs text-neutral-400 dark:text-gray-500">{pick(legalKeys.subheading, LEGAL_DEFAULTS.subheading)}</div>
-            </div>
-          </div>
-          <motion.svg
-            animate={{ rotate: open ? 180 : 0 }}
-            transition={{ duration: 0.3 }}
-            className="h-5 w-5 flex-shrink-0 text-neutral-400 dark:text-gray-500"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </motion.svg>
-        </div>
-      </button>
-
-      {/* Expandable content */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="mt-3 rounded-2xl border border-neutral-200/80 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.02] backdrop-blur-xl p-6 md:p-8">
-              {/* Preamble */}
-              <p className="mb-6 text-sm leading-relaxed text-neutral-600 dark:text-gray-400">
-                {overrides[legalKeys.preamble]?.trim() ? (
-                  <span className="whitespace-pre-line">{overrides[legalKeys.preamble]}</span>
-                ) : (
-                  <>
-                Настоящий документ представляет собой официальное публичное предложение (публичную оферту) проекта TRIOZ, доступного в сети Интернет по адресу{" "}
-                <a href="https://trioz.ru" className="text-accent hover:underline">trioz.ru</a>,
-                адресованное любому физическому лицу, индивидуальному предпринимателю или юридическому лицу (далее — «Пользователь»).
-                В соответствии с пунктом 2 статьи 437 ГК РФ, принятие условий и использование Платформы является акцептом данной оферты.
-              </>
-                )}
-              </p>
-
-              {/* Accordion sections */}
-              <div className="space-y-2">
-                {legalSections.map((s, i) => (
-                  <div key={i} className="overflow-hidden rounded-xl border border-neutral-100 dark:border-white/[0.05]">
-                    <button
-                      onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-white/[0.02]"
-                    >
-                      <span className="text-sm font-medium text-neutral-700 dark:text-gray-300">{s.title}</span>
-                      <motion.svg
-                        animate={{ rotate: expandedIdx === i ? 180 : 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="h-4 w-4 flex-shrink-0 text-neutral-400 dark:text-gray-600"
-                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </motion.svg>
-                    </button>
-                    <AnimatePresence>
-                      {expandedIdx === i && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.3 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="whitespace-pre-line px-4 pb-4 text-sm leading-relaxed text-neutral-500 dark:text-gray-400">
-                            {s.content}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                ))}
-              </div>
-
-              {/* Contact footer */}
-              <div className="mt-6 flex flex-col items-start justify-between gap-3 border-t border-neutral-100 dark:border-white/[0.05] pt-5 sm:flex-row sm:items-center">
-                <div className="text-xs text-neutral-400 dark:text-gray-600">
-                  Для юридических запросов:{" "}
-                  <a href="mailto:legal@trioz.ru" className="text-accent hover:underline">legal@trioz.ru</a>
-                </div>
-                <div className="text-xs text-neutral-400 dark:text-gray-600">
-                  trioz.ru — Юридическая документация
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
   );
 }
