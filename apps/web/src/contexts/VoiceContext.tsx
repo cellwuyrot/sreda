@@ -527,6 +527,13 @@ async function acquireWasapiAudioTrack(
     return null;
   }
 
+  // TypeScript не проносит narrowing в колбэк Promise.
+  // После гарда выше все четыре метода гарантированно определены.
+  const _wasapiStart  = desktop.startWasapiCapture!;
+  const _wasapiReady  = desktop.onWasapiReady!;
+  const _wasapiChunk  = desktop.onWasapiChunk!;
+  const _wasapiError  = desktop.onWasapiError!;
+
   return new Promise((resolve) => {
     let audioCtx: AudioContext | null = null;
     let destNode: MediaStreamAudioDestinationNode | null = null;
@@ -545,7 +552,7 @@ async function acquireWasapiAudioTrack(
       resolve(result);
     }
 
-    const unsubReady = desktop.onWasapiReady(async (sampleRate: number, channels: number) => {
+    const unsubReady = _wasapiReady(async (sampleRate: number, channels: number) => {
       try {
         audioCtx = new AudioContext({ sampleRate, latencyHint: "playback" });
         await audioCtx.audioWorklet.addModule("/worklets/wasapi-injector.js");
@@ -558,7 +565,7 @@ async function acquireWasapiAudioTrack(
         workletNode.connect(destNode);
 
         // Подписка на чанки записывается здесь, не в settle
-        const unsubChunk = desktop.onWasapiChunk((data: Float32Array) => {
+        const unsubChunk = _wasapiChunk((data: Float32Array) => {
           if (workletNode) {
             // Transferable send (zero-copy)
             workletNode.port.postMessage({ type: "chunk", data }, [data.buffer]);
@@ -585,14 +592,14 @@ async function acquireWasapiAudioTrack(
     });
     unsubs.push(unsubReady);
 
-    const unsubErr = desktop.onWasapiError((msg: string) => {
+    const unsubErr = _wasapiError((msg: string) => {
       console.warn("[wasapi-ss] capture error:", msg);
       settle(null);
     });
     unsubs.push(unsubErr);
 
     // Запускаем захват; main сам использует process.pid как excludePid
-    desktop.startWasapiCapture();
+    _wasapiStart();
   });
 }
 
