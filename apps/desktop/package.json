@@ -12,7 +12,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run icons && npm run vendor:client && tsc -p tsconfig.json && npm run bundle:preload",
+    "build": "npm run icons && npm run vendor:client && npm run build:native && tsc -p tsconfig.json && npm run bundle:preload",
     "icons": "node scripts/prepare-icons.mjs",
     "vendor:client": "node scripts/vendor-wireguard.mjs --allow-missing",
     "vendor:client:strict": "node scripts/vendor-wireguard.mjs",
@@ -22,13 +22,16 @@
     "start": "npm run build && electron .",
     "dev": "npm run build && cross-env TRIOZ_DEV=1 electron .",
     "dist": "npm run build && electron-builder",
-    "dist:dir": "npm run build && electron-builder --dir"
+    "dist:dir": "npm run build && electron-builder --dir",
+    "build:native": "node-gyp rebuild --target=33.2.1 --arch=x64 --dist-url=https://electronjs.org/headers",
+    "rebuild:native": "electron-rebuild -v 33.2.1 -f -w wasapi_capture"
   },
   "dependencies": {
     "@trioz/shared": "*",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.3.9",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "node-addon-api": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
@@ -40,6 +43,12 @@
     "esbuild": "^0.28.1",
     "eslint": "^8.57.1",
     "rimraf": "^5.0.10",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "node-gyp": "^10.0.0",
+    "@electron/rebuild": "^3.6.0"
+  },
+  "gypfile": true,
+  "build": {
+    "npmRebuild": true
   }
 }
