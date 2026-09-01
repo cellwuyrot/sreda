@@ -213,11 +213,32 @@ export function CreateChannelModal({ groupId, initialParentId = null, initialCre
   const [groupType, setGroupType] = useState<"TEXT" | "VOICE">(initialGroupType);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // FIX-GROUPREQ: список доступных групп-категорий для обязательного выбора родителя
+  const [categories, setCategories] = useState<{ id: string; name: string; channelGroupType?: string | null }[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/channels?groupId=${groupId}`)
+      .then(r => r.json())
+      .then((chs: { id: string; name: string; type: string; channelGroupType?: string | null }[]) => {
+        if (Array.isArray(chs)) setCategories(chs.filter(c => c.type === "CATEGORY"));
+      })
+      .catch(() => {});
+  }, [groupId]);
 
   const effectiveType = createCategory ? "CATEGORY" : type === "VOICE" ? "VOICE" : enhanced ? "FEED" : type;
 
+  // FIX-GROUPREQ: эффективные категории по текущему типу канала
+  const voiceCategories = categories.filter(c => c.channelGroupType === "VOICE");
+  const textCategories = categories.filter(c => c.channelGroupType !== "VOICE");
+  const availableCategories = groupType === "VOICE" ? voiceCategories : textCategories;
+
   const handleCreate = async () => {
     if (!name.trim()) return;
+    // FIX-GROUPREQ: обычный канал должен быть внутри группы
+    if (!createCategory && !parentId) {
+      setError("Сначала создайте группу каналов, затем добавляйте каналы внутрь неё.");
+      return;
+    }
     setLoading(true);
     setError("");
     const res = await fetch("/api/channels", {
@@ -258,6 +279,29 @@ export function CreateChannelModal({ groupId, initialParentId = null, initialCre
             Голосовой
           </button>
         </div>
+        {/* FIX-GROUPREQ: выбор группы-категории для канала */}
+        {!createCategory && (
+          availableCategories.length > 0 ? (
+            <div>
+              <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">Группа каналов *</label>
+              <select
+                value={parentId ?? ""}
+                onChange={e => setParentId(e.target.value || null)}
+                className="w-full bg-neutral-50 dark:bg-neutral-700 border border-neutral-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
+              >
+                <option value="">— Выберите группу —</option>
+                {availableCategories.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 px-3 py-2.5">
+              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">Нет групп</p>
+              <p className="text-[11px] text-amber-600/80 dark:text-amber-400/60 mt-0.5">Сначала создайте группу каналов, затем добавляйте каналы внутрь неё.</p>
+            </div>
+          )
+        )}
         {/* FIX-FEED: вид текстового канала. Голосовому выбор не нужен, группе каналов тоже. */}
         {!createCategory && type !== "VOICE" && (
           <div className="space-y-1.5">
@@ -278,7 +322,7 @@ export function CreateChannelModal({ groupId, initialParentId = null, initialCre
         )}
         {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
         <div className="flex gap-2 pt-1">
-          <Button onClick={handleCreate} disabled={loading || !name.trim()} size="md" className="flex-1">
+          <Button onClick={handleCreate} disabled={loading || !name.trim() || (!createCategory && !parentId)} size="md" className="flex-1">
             {loading ? "Создание..." : "Создать"}
           </Button>
           <button onClick={onClose} className="flex-1 px-4 py-2.5 bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-gray-400 rounded-xl hover:bg-neutral-200 dark:hover:bg-neutral-600 transition-all text-sm">

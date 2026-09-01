@@ -81,6 +81,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     name, icon, type, isRestricted, roleIds, parentId, slowmode, postAccess, readAccess,
     hidden, sortOrder, channelGroupType,
     askAccess, answerAccess, askRoleIds, answerRoleIds, // FIX-QAACL
+    noRecord, voiceLimit, // FIX-GROUPSETTINGS: голосовые настройки
+    propagateToChildren, // FIX-GROUPSETTINGS: применить настройки ко всем каналам в группе
   } = await req.json();
   const data: Record<string, unknown> = {};
   if (name !== undefined) data.name = name;
@@ -104,6 +106,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (slowmode !== undefined) data.slowmode = Math.max(0, Math.min(Number(slowmode) || 0, 3600));
   if (hidden !== undefined) data.hidden = !!hidden;
   if (sortOrder !== undefined && Number.isFinite(Number(sortOrder))) data.sortOrder = Math.trunc(Number(sortOrder));
+  // FIX-GROUPSETTINGS: управление записью и лимитом голосового канала
+  if (noRecord !== undefined) data.noRecord = !!noRecord;
+  if (voiceLimit !== undefined) {
+    data.voiceLimit = (typeof voiceLimit === "number" && voiceLimit > 0) ? voiceLimit : null;
+  }
 
   const updated = await prisma.channel.update({
     where: { id },
@@ -141,6 +148,43 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     await replaceRoles("ANSWER", answerRoleIds);
   } catch {
     return NextResponse.json({ error: "Одна или несколько ролей не принадлежат сообществу" }, { status: 400 });
+  }
+
+  // FIX-GROUPSETTINGS: для CATEGORY-канала распространяем настройки на все
+  // дочерние каналы, если флаг propagateToChildren = true.
+  if (propagateToChildren && updated.type === "CATEGORY") {
+    const children = await prisma.channel.findMany({
+      where: { parentId: updated.id },
+      select: { id: true },
+    });
+    if (children.length > 0) {
+      const childData: Record<string, unknown> = {};
+      if (isRestricted !== undefined) childData.isRestricted = !!isRestricted;
+      if (postAccess !== undefined && ["ALL", "MOD", "ADMIN"].includes(postAccess)) childData.postAccess = postAccess;
+      if (readAccess !== undefined && ["ALL", "MOD", "ADMIN"].includes(readAccess)) childData.readAccess = readAccess;
+      if (hidden !== undefined) childData.hidden = !!hidden;
+      if (noRecord !== undefined) childData.noRecord = !!noRecord;
+      if (voiceLimit !== undefined) childData.voiceLimit = (typeof voiceLimit === "number" && voiceLimit > 0) ? voiceLimit : null;
+      if (Object.keys(childData).length > 0) {
+        await prisma.channel.updateMany({
+          where: { parentId: updated.id },
+          data: childData,
+        });
+      }
+      // Propagate role access (VIEW scope) to all children
+      if (Array.isArray(roleIds)) {
+        const clean = [...new Set((roleIds as unknown[]).filter((v): v is string => typeof v === "string"))];
+        for (const childId of children.map((c: { id: string }) => c.id)) {
+          await prisma.channelRoleAccess.deleteMany({ where: { channelId: childId, scope: "VIEW" } });
+          if (clean.length > 0) {
+            await prisma.channelRoleAccess.createMany({
+              data: clean.map((roleId: string) => ({ channelId: childId, roleId, scope: "VIEW" })),
+              skipDuplicates: true,
+            });
+          }
+        }
+      }
+    }
   }
 
   return NextResponse.json(updated);
