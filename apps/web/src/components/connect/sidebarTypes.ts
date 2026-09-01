@@ -11,6 +11,12 @@ export interface Channel {
   sortOrder?: number;
   /** FIX-PRV: канал ограничен ролями (приватный) — рисуем мини-иконку с замком. */
   isRestricted?: boolean;
+  /** FIX-GROUPSETTINGS: голосовой канал — не записывать (отключить мгновенный повтор). */
+  noRecord?: boolean;
+  /** FIX-GROUPSETTINGS: лимит участников в голосовом канале (null = без лимита). */
+  voiceLimit?: number | null;
+  /** FIX-HIDDEN: канал скрыт от обычных участников. */
+  hidden?: boolean;
   _count: { members: number; messages: number };
 }
 

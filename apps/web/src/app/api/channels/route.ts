@@ -46,13 +46,13 @@ export async function GET(req: Request) {
       where: { userId_groupId: { userId: session.user.id, groupId } },
       include: { tags: { select: { roleId: true } } },
     });
-    const userRoleIds = new Set(memberRecord?.tags.map((t) => t.roleId) ?? []);
+    const userRoleIds = new Set(memberRecord?.tags.map((t: { roleId: string }) => t.roleId) ?? []);
 
-    const visible = channels.filter((ch) => {
+    const visible = channels.filter((ch: typeof channels[number]) => {
       if (!ch.isRestricted) return true;
       const allowed = (ch as typeof ch & { allowedRoles?: { roleId: string }[] }).allowedRoles;
       if (!allowed || allowed.length === 0) return true;
-      return allowed.some((a) => userRoleIds.has(a.roleId));
+      return allowed.some((a: { roleId: string }) => userRoleIds.has(a.roleId));
     });
 
     return NextResponse.json(visible.map(({ allowedRoles: _ar, ...rest }) => rest));
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
   const banned = await checkBan(session.user.id);
   if (banned) return banned;
 
-  const { name, type, groupId, isRestricted, roleIds, parentId, postAccess, channelGroupType } = await req.json();
+  const { name, type, groupId, isRestricted, roleIds, parentId, postAccess, channelGroupType, noRecord, voiceLimit } = await req.json();
   if (!name || !groupId) {
     return NextResponse.json({ error: "Name and groupId required" }, { status: 400 });
   }
@@ -110,6 +110,15 @@ export async function POST(req: NextRequest) {
 
   if (channelType === "CATEGORY" && parentId) {
     return NextResponse.json({ error: "Category cannot have parent" }, { status: 400 });
+  }
+
+  // FIX-GROUPREQ: обычные каналы (не CATEGORY) должны быть внутри группы.
+  // Исключение — главное сообщество и группы с разделами (sectionsEnabled).
+  if (channelType !== "CATEGORY" && !parentId) {
+    const grp = await prisma.group.findUnique({ where: { id: groupId }, select: { isMain: true, sectionsEnabled: true } });
+    if (!grp?.isMain && !grp?.sectionsEnabled) {
+      return NextResponse.json({ error: "Создайте группу каналов, прежде чем добавлять каналы. Сначала создаётся группа — потом каналы внутри неё." }, { status: 400 });
+    }
   }
 
   if (parentId) {
@@ -160,6 +169,8 @@ export async function POST(req: NextRequest) {
       postAccess: channelAccess,
       parentId: parentId || null,
       channelGroupType: channelType === "CATEGORY" ? normalizedGroupType : null,
+      noRecord: noRecord === true,
+      voiceLimit: (typeof voiceLimit === "number" && voiceLimit > 0) ? voiceLimit : null,
     },
   });
 
