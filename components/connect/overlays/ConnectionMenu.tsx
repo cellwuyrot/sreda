@@ -276,6 +276,13 @@ export default function ConnectionMenu({
 
               {/* Остаток трафика — полоской: два больших числа рядом глазом не
                   сравниваются, а длина — сравнивается. */}
+              {loading && !traffic && (
+                <div className="mt-2 animate-pulse">
+                  <div className="h-3 w-16 rounded bg-white/10" />
+                  <div className="mt-1 h-1.5 w-full rounded-full bg-white/10" />
+                  <div className="mt-1 h-3 w-28 rounded bg-white/10" />
+                </div>
+              )}
               {traffic && (
                 <div className="mt-2">
                   <div className="flex items-baseline justify-between gap-2">
@@ -290,7 +297,7 @@ export default function ConnectionMenu({
                   </div>
                   {limitGb !== null && limitGb > 0 && (
                     <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                      <div className={`h-full rounded-full ${tone}`} style={{ width: `${share}%` }} />
+                      <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.max(share > 0 ? share : 0, share > 0 ? 2 : 0)}%`, minWidth: share > 0 ? "4px" : undefined }} />
                     </div>
                   )}
                   <p className="mt-1 text-xs font-medium">
@@ -299,9 +306,13 @@ export default function ConnectionMenu({
                       : overLimit
                         ? "Лимит исчерпан"
                         : `Осталось ${formatTraffic(remainingBytes ?? 0)}`}
-                    <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
-                      · израсходовано {formatTraffic(usedBytes)}
-                    </span>
+                    {/* FIX-TRAFFIC-DUP: спан «израсходовано» показывался даже когда limitGb=0,
+                       в этом случае текст уже содержал «Израсходовано X ГБ» — дублирование. */}
+                    {limitGb !== null && limitGb > 0 && (
+                      <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
+                        · израсходовано {formatTraffic(usedBytes)}
+                      </span>
+                    )}
                   </p>
                   {overLimit && (
                     <p className="mt-1 text-[11px] text-amber-400">

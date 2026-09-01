@@ -107,40 +107,6 @@ function writeFolders(kind: ArchiveKind, list: DmFolder[]): void {
     /* хранилище недоступно — раскладка просто не доживёт до следующего запуска */
   }
 }
-/* DM-FOLDER-SYNC: серверная синхронизация папок по аккаунту.
-   GET/PUT /api/dm/folders сохраняет раскладку в базе, поэтому папки
-   видны на всех устройствах и браузерах одного пользователя.
-   localStorage остаётся как быстрый кеш и запасной вариант. */
-async function fetchFolders(kind: ArchiveKind): Promise<DmFolder[] | null> {
-  try {
-    const res = await fetch(`/api/dm/folders?kind=${encodeURIComponent(kind)}`);
-    if (!res.ok) return null;
-    const data = await res.json() as { folders?: unknown };
-    if (!Array.isArray(data.folders)) return null;
-    return (data.folders as Array<Record<string, unknown>>)
-      .filter((f) => f && typeof f.id === "string" && typeof f.name === "string")
-      .map((f) => ({
-        id: f.id as string,
-        name: (f.name as string).slice(0, FOLDER_NAME_MAX),
-        convIds: Array.isArray(f.convIds)
-          ? (f.convIds as unknown[]).filter((x): x is string => typeof x === "string")
-          : [],
-      }))
-      .slice(0, MAX_FOLDERS);
-  } catch {
-    return null;
-  }
-}
-
-function saveFolders(kind: ArchiveKind, list: DmFolder[]): void {
-  // fire-and-forget: ошибки логируются, но не прерывают UI
-  fetch("/api/dm/folders", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind, folders: list }),
-  }).catch((err) => console.warn("[DM-FOLDER-SYNC] save failed:", err));
-}
-
 
 // FIX-DM-SORT: направление ранжирования (см. convTime).
 //
@@ -218,27 +184,15 @@ export default function DMConversationList({
     null
   >(null);
 
-  /* DM-FOLDER-SYNC: папки читаем с сервера (синхронизация по аккаунту);
-     localStorage — быстрый кеш, пока грузится ответ. */
+  /* Папки читаются после появления списка и при смене раздела. */
   useEffect(() => {
-    // Немедленно показываем локальный кеш
-    const local = readFolders(archiveKind);
-    setFolders(local);
+    setFolders(readFolders(archiveKind));
     setDraft(null);
-    // Асинхронно перезаписываем свежими серверными данными
-    let cancelled = false;
-    fetchFolders(archiveKind).then((remote) => {
-      if (cancelled || remote === null) return;
-      setFolders(remote);
-      writeFolders(archiveKind, remote); // обновляем кеш
-    });
-    return () => { cancelled = true; };
   }, [archiveKind]);
 
   const persistFolders = useCallback((next: DmFolder[]) => {
     setFolders(next);
-    writeFolders(archiveKind, next);  // локальный кеш
-    saveFolders(archiveKind, next);   // DM-FOLDER-SYNC: сохраняем на сервер
+    writeFolders(archiveKind, next);
   }, [archiveKind]);
 
   /** Создать папку; если задан convId — сразу положить в неё разговор. */

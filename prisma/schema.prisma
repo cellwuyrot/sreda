@@ -285,7 +285,6 @@ model UserIgnore {
 model GroupMember {
   mutedUntil    DateTime?
   muteReason    String?           @db.VarChar(300)
-  guidedUntil   DateTime?		  // When role=GUIDE, the expiry datetime. Past = treated as MEMBER.
   id            String            @id @default(cuid())
   userId        String
   groupId       String
@@ -370,7 +369,6 @@ model Channel {
 
   @@index([groupId])
   @@index([serviceId])
-    rolePowers  ChannelRolePower[]
   @@index([parentId])
 }
 
@@ -682,7 +680,6 @@ model GroupRole {
   group           Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
   members         GroupMemberRole[]
   channels        ChannelRoleAccess[]
-  channelPowers   ChannelRolePower[]
   onboardingForms OnboardingForm[]
   createdAt       DateTime            @default(now())
 
@@ -715,23 +712,6 @@ model ChannelRoleAccess {
   role      GroupRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([channelId, roleId, scope])
-  @@index([channelId])
-}
-
-/// CHANNEL-ROLE-POWER: Роли-возможности.
-/// Привязывает системную роль (GroupRole) к конкретному каналу.
-/// Участник, имеющий эту роль, получает полную модерацию данного канала,
-/// но только его — к остальным каналам права не применяются.
-model ChannelRolePower {
-  id        String    @id @default(cuid())
-  roleId    String
-  channelId String
-  createdAt DateTime  @default(now())
-  role      GroupRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-
-  @@unique([roleId, channelId])
-  @@index([roleId])
   @@index([channelId])
 }
 
