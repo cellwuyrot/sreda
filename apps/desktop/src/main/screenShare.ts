@@ -38,8 +38,13 @@ function normalizeContext(raw: unknown): ScreenShareContext {
   // процесс последний перед захватом, и доверять присланному нельзя.
   const resolution = isPremium && c.resolution === 1080 ? 1080 : 720;
   const fps = isPremium && c.fps === 60 ? 60 : 30;
-  // Системный (loopback) звук умеет только Windows: захватывается весь микс,
-  // поэтому голоса участников у зрителей дублируются — осознанный компромисс.
+  // FIX-SS-ECHO: системный (loopback) звук умеет только Windows, и это ВЕСЬ микс
+  // вывода — в него попадают голоса собеседников, которые проигрывает сам
+  // TZ.Connect, поэтому у зрителей они дублируются эхом. Захватить звук одного
+  // приложения Electron/Chromium не умеет (см. обработчик ниже). Поэтому звук —
+  // строго осознанный опт-ин: приложение по умолчанию присылает `audio: false`
+  // (см. readScreenAudioPref в вебе) и включает его только по явному выбору
+  // человека, с предупреждением в окне запуска.
   const audio = process.platform === "win32" && c.audio === true;
   const sourceId = typeof c.sourceId === "string" && c.sourceId ? c.sourceId : null;
   return { isPremium, resolution, fps, audio, sourceId };
@@ -130,8 +135,11 @@ export function setupScreenShare(): void {
           return;
         }
 
-        // Со звуком отдаём Windows loopback — весь системный микс (звук окна и
-        // прочих приложений). Иначе только видео.
+        // FIX-SS-ECHO: со звуком отдаём Windows loopback — это ВЕСЬ системный
+        // микс (звук окна плюс всё остальное, включая голоса собеседников из
+        // самого TZ.Connect). Per-application capture Chromium/Electron не
+        // поддерживает, поэтому звук приходит сюда только когда человек осознанно
+        // включил его в окне запуска (иначе — только видео).
         if (requested.audio) {
           callback({ video: source, audio: "loopback" });
         } else {
