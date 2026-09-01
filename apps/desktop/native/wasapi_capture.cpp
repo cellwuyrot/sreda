@@ -1,360 +1,497 @@
 /**
- * WASAPI-SS: Windows Process Loopback Capture (Electron N-API native addon).
+ * WASAPI-SS: Process Loopback с PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE.
  *
- * Захватывает системный аудио-выход, исключая всё дерево процессов указанного PID.
- * Работает на Windows 10 2004 (20H1) и выше.
+ * Использует чистый C N-API (node_api.h) — без npm-пакета node-addon-api.
+ * node_api.h входит в Electron-заголовки (шаг node-gyp rebuild --dist-url=...).
  *
- * API:
- *   start(excludePid: number, onChunk: (data: Float32Array) => void,
- *         onReady: (sampleRate: number, channels: number) => void,
- *         onError: (msg: string) => void) → void
- *   stop() → void
+ * Аддон экспортирует:
+ *   start(excludePid: number,
+ *         onChunk: (buf: ArrayBuffer) => void,
+ *         onReady: (sr: number, ch: number) => void,
+ *         onError: (msg: string) => void): void
+ *   stop(): void
  */
 
+#ifndef UNICODE
+#define UNICODE
+#endif
 #define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
+#define NAPI_VERSION 8
+
 #include <windows.h>
 #include <initguid.h>
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <audiopolicy.h>
-#include <functiondiscoverykeys_devpkey.h>
-#include <synchapi.h>
-#include <ole2.h>
-#include <napi.h>
-#include <thread>
-#include <atomic>
-#include <vector>
-#include <cstdint>
-#include <memory>
+#include <propkey.h>
+#include <node_api.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
-// ── Process Loopback types (Windows 10 20H1+ SDK; guard duplicate defs) ──────
+// ---- WASAPI Process Loopback API (Windows 10 2004+) -------------------------
+
 #ifndef AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK
-typedef enum AUDIOCLIENT_ACTIVATION_TYPE {
-    AUDIOCLIENT_ACTIVATION_TYPE_DEFAULT          = 0,
-    AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK = 1,
-} AUDIOCLIENT_ACTIVATION_TYPE;
+#define AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK ((AUDIOCLIENT_ACTIVATION_TYPE)1)
+#endif
+#ifndef PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE
+#define PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE 1
+#endif
 
-typedef enum PROCESS_LOOPBACK_MODE {
-    PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE = 0,
-    PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE = 1,
-} PROCESS_LOOPBACK_MODE;
+static const PCWSTR VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK = L"VAD\\Process_Loopback";
 
-typedef struct AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
-    DWORD                TargetProcessId;
-    PROCESS_LOOPBACK_MODE ProcessLoopbackMode;
-} AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS;
-
-typedef struct AUDIOCLIENT_ACTIVATION_PARAMS {
+typedef struct AUDIOCLIENT_ACTIVATION_PARAMS_ {
     AUDIOCLIENT_ACTIVATION_TYPE ActivationType;
-    union {
-        AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS ProcessLoopbackParams;
-    };
-} AUDIOCLIENT_ACTIVATION_PARAMS;
-#endif
+    struct {
+        DWORD ProcessId;
+        BOOL  Mode;
+    } ProcessLoopbackParams;
+} AUDIOCLIENT_ACTIVATION_PARAMS_;
 
-#ifndef VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK
-#  define VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK L"VAD\\Process_Loopback"
-#endif
+// ---- Сообщения между аудио-потоком и JS-потоком -------------------------
 
-// ── ActivateAudioInterfaceAsync declaration (may not be in older SDK headers) ──
-extern "C" {
-typedef HRESULT (WINAPI *PFN_ActivateAudioInterfaceAsync)(
-    LPCWSTR,
-    REFIID,
-    PROPVARIANT*,
-    IActivateAudioInterfaceCompletionHandler*,
-    IActivateAudioInterfaceAsyncOperation**);
+typedef enum { MSG_READY, MSG_CHUNK, MSG_ERROR } MsgType;
+
+typedef struct AudioMsg_ {
+    MsgType type;
+    // MSG_READY
+    UINT32 sampleRate;
+    UINT32 channels;
+    // MSG_CHUNK
+    float* chunkData;
+    size_t chunkCount;
+    // MSG_ERROR
+    char errorText[256];
+} AudioMsg;
+
+// ---- Глобальное состояние ------------------------------------------------
+
+typedef struct Ctx_ {
+    napi_ref onChunk;
+    napi_ref onReady;
+    napi_ref onError;
+} Ctx;
+
+static napi_threadsafe_function g_tsfn   = NULL;
+static HANDLE                   g_thread = NULL;
+static volatile LONG            g_stop   = 0;
+static Ctx*                     g_ctx    = NULL;
+
+// ---- Финалайзер ArrayBuffer (освобождает float*) ----------------------------
+
+static void FinalizeBuffer(napi_env /*env*/, void* data, void* /*hint*/) {
+    free(data);
 }
 
-// ── IActivateAudioInterfaceCompletionHandler ──────────────────────────────────
-struct ActivationHandler : public IActivateAudioInterfaceCompletionHandler {
-    volatile LONG   ref_         = 1;
-    HANDLE          evt_         = nullptr;
-    IAudioClient*   client_      = nullptr;
-    HRESULT         result_      = E_FAIL;
+// ---- dispatch-коллбек: вызывается на JS-потоке ----------------------------
 
-    ActivationHandler() { evt_ = CreateEventW(nullptr, TRUE, FALSE, nullptr); }
-    ~ActivationHandler()  { if (evt_) CloseHandle(evt_); }
+static void Dispatch(
+    napi_env   env,
+    napi_value /* js_cb_placeholder */,
+    void*      rawCtx,
+    void*      rawData
+) {
+    Ctx*      ctx = (Ctx*)rawCtx;
+    AudioMsg* msg = (AudioMsg*)rawData;
+    if (!env || !ctx || !msg) { free(msg); return; }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        if (riid == IID_IUnknown ||
-            riid == __uuidof(IActivateAudioInterfaceCompletionHandler)) {
-            *ppv = static_cast<IActivateAudioInterfaceCompletionHandler*>(this);
-            InterlockedIncrement(&ref_);
-            return S_OK;
-        }
-        *ppv = nullptr; return E_NOINTERFACE;
+    napi_value global;
+    napi_get_global(env, &global);
+
+    switch (msg->type) {
+
+    case MSG_READY: {
+        napi_value fn;
+        napi_get_reference_value(env, ctx->onReady, &fn);
+        napi_value args[2];
+        napi_create_uint32(env, msg->sampleRate, &args[0]);
+        napi_create_uint32(env, msg->channels,   &args[1]);
+        napi_call_function(env, global, fn, 2, args, NULL);
+        break;
     }
-    ULONG STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&ref_); }
-    ULONG STDMETHODCALLTYPE Release() override {
-        ULONG n = InterlockedDecrement(&ref_);
-        if (!n) delete this;
-        return n;
+
+    case MSG_CHUNK: {
+        napi_value fn;
+        napi_get_reference_value(env, ctx->onChunk, &fn);
+        // Передаём chunkData в JS без копирования.
+        // FinalizeBuffer освободит память после GC.
+        napi_value ab;
+        napi_create_external_arraybuffer(
+            env,
+            msg->chunkData,
+            msg->chunkCount * sizeof(float),
+            FinalizeBuffer,
+            NULL,
+            &ab);
+        napi_call_function(env, global, fn, 1, &ab, NULL);
+        break;
     }
-    HRESULT STDMETHODCALLTYPE ActivateCompleted(
-        IActivateAudioInterfaceAsyncOperation* op) override
-    {
-        IUnknown* unk = nullptr;
-        op->GetActivateResult(&result_, &unk);
-        if (SUCCEEDED(result_) && unk) {
-            unk->QueryInterface(__uuidof(IAudioClient), reinterpret_cast<void**>(&client_));
-            unk->Release();
-        }
-        SetEvent(evt_);
+
+    case MSG_ERROR: {
+        napi_value fn;
+        napi_get_reference_value(env, ctx->onError, &fn);
+        napi_value str;
+        napi_create_string_utf8(env, msg->errorText, NAPI_AUTO_LENGTH, &str);
+        napi_call_function(env, global, fn, 1, &str, NULL);
+        break;
+    }
+    }
+
+    free(msg);
+}
+
+// ---- Финалайзер TSFN: освобождаем Ctx ---------------------------------
+
+static void FinalizeCtx(
+    napi_env env,
+    void*    rawCtx,
+    void*    /* hint */
+) {
+    Ctx* ctx = (Ctx*)rawCtx;
+    if (!ctx) return;
+    if (env) {
+        if (ctx->onChunk) napi_delete_reference(env, ctx->onChunk);
+        if (ctx->onReady) napi_delete_reference(env, ctx->onReady);
+        if (ctx->onError) napi_delete_reference(env, ctx->onError);
+    }
+    free(ctx);
+    g_ctx = NULL;
+}
+
+// ---- Отправить сообщение через TSFN ----------------------------------------
+
+static void SendMsg(AudioMsg* msg) {
+    if (!g_tsfn) { free(msg); return; }
+    napi_status st = napi_call_threadsafe_function(g_tsfn, msg, napi_tsfn_nonblocking);
+    if (st != napi_ok) free(msg);
+}
+
+static void SendError(const char* text) {
+    AudioMsg* m = (AudioMsg*)calloc(1, sizeof(AudioMsg));
+    if (!m) return;
+    m->type = MSG_ERROR;
+    strncpy(m->errorText, text, 255);
+    SendMsg(m);
+}
+
+// ---- Автоматический completion handler для ActivateAudioInterfaceAsync --
+
+typedef struct CompletionHandler_ {
+    IActivateAudioInterfaceCompletionHandler iface; // должен быть первым
+    LONG          refCount;
+    HANDLE        hEvent;
+    HRESULT       hrResult;
+    IAudioClient* pClient;
+} CompletionHandler;
+
+static HRESULT STDMETHODCALLTYPE CH_QueryInterface(
+    IActivateAudioInterfaceCompletionHandler* self,
+    REFIID riid, void** ppv)
+{
+    if (IsEqualIID(riid, &IID_IUnknown) ||
+        IsEqualIID(riid, &IID_IActivateAudioInterfaceCompletionHandler)) {
+        *ppv = self;
+        InterlockedIncrement(&((CompletionHandler*)self)->refCount);
         return S_OK;
     }
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE CH_AddRef(
+    IActivateAudioInterfaceCompletionHandler* self)
+{
+    return InterlockedIncrement(&((CompletionHandler*)self)->refCount);
+}
+
+static ULONG STDMETHODCALLTYPE CH_Release(
+    IActivateAudioInterfaceCompletionHandler* self)
+{
+    CompletionHandler* ch = (CompletionHandler*)self;
+    LONG r = InterlockedDecrement(&ch->refCount);
+    if (r == 0) {
+        CloseHandle(ch->hEvent);
+        free(ch);
+    }
+    return (ULONG)r;
+}
+
+static HRESULT STDMETHODCALLTYPE CH_ActivateCompleted(
+    IActivateAudioInterfaceCompletionHandler* self,
+    IActivateAudioInterfaceAsyncOperation*    op)
+{
+    CompletionHandler* ch = (CompletionHandler*)self;
+    HRESULT hrActivate = E_FAIL;
+    IUnknown* pUnk = NULL;
+    op->lpVtbl->GetActivateResult(op, &hrActivate, &pUnk);
+    ch->hrResult = hrActivate;
+    if (SUCCEEDED(hrActivate) && pUnk) {
+        pUnk->lpVtbl->QueryInterface(pUnk, &IID_IAudioClient, (void**)&ch->pClient);
+        pUnk->lpVtbl->Release(pUnk);
+    }
+    SetEvent(ch->hEvent);
+    return S_OK;
+}
+
+static IActivateAudioInterfaceCompletionHandlerVtbl s_chVtbl = {
+    CH_QueryInterface,
+    CH_AddRef,
+    CH_Release,
+    CH_ActivateCompleted
 };
 
-// ── Capture state ─────────────────────────────────────────────────────────────
-static std::atomic<bool>    g_running{false};
-static std::thread          g_thread;
+// ---- Аудио-поток ------------------------------------------------------
 
-// ── N-API thread-safe functions ───────────────────────────────────────────────
-static Napi::ThreadSafeFunction g_tsfChunk;
-static Napi::ThreadSafeFunction g_tsfReady;
-static Napi::ThreadSafeFunction g_tsfError;
+typedef struct ThreadArgs_ {
+    DWORD excludePid;
+} ThreadArgs;
 
-struct ChunkData {
-    std::vector<float> samples; // interleaved
-    uint32_t channels;
-};
-struct ReadyData { uint32_t sampleRate; uint32_t channels; };
-struct ErrorData { std::string msg; };
+static DWORD WINAPI AudioThread(LPVOID param) {
+    ThreadArgs* args = (ThreadArgs*)param;
+    DWORD excludePid = args->excludePid;
+    free(args);
 
-static void CallChunk(Napi::Env env, Napi::Function cb, void*, ChunkData* d) {
-    if (env == nullptr || !cb) { delete d; return; }
-    size_t n = d->samples.size();
-    auto arr = Napi::Float32Array::New(env, n);
-    std::memcpy(arr.Data(), d->samples.data(), n * sizeof(float));
-    cb.Call({ arr });
-    delete d;
-}
-static void CallReady(Napi::Env env, Napi::Function cb, void*, ReadyData* d) {
-    if (env == nullptr || !cb) { delete d; return; }
-    cb.Call({ Napi::Number::New(env, d->sampleRate),
-              Napi::Number::New(env, d->channels) });
-    delete d;
-}
-static void CallError(Napi::Env env, Napi::Function cb, void*, ErrorData* d) {
-    if (env == nullptr || !cb) { delete d; return; }
-    cb.Call({ Napi::String::New(env, d->msg) });
-    delete d;
-}
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
-// ── Capture thread ────────────────────────────────────────────────────────────
-static void CaptureThread(DWORD excludePid) {
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    AUDIOCLIENT_ACTIVATION_PARAMS_ ap = { 0 };
+    ap.ActivationType                      = AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK;
+    ap.ProcessLoopbackParams.ProcessId     = excludePid;
+    ap.ProcessLoopbackParams.Mode          = PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE;
 
-    // --- runtime-load ActivateAudioInterfaceAsync (requires Win 10) ---
-    HMODULE hMm = LoadLibraryW(L"mmdevapi.dll");
-    if (!hMm) {
-        g_tsfError.BlockingCall(new ErrorData{"mmdevapi.dll not found"}, CallError);
-        g_tsfError.Release(); g_tsfReady.Release(); g_tsfChunk.Release();
-        CoUninitialize(); return;
-    }
-    auto pfnActivate = reinterpret_cast<PFN_ActivateAudioInterfaceAsync>(
-        GetProcAddress(hMm, "ActivateAudioInterfaceAsync"));
-    if (!pfnActivate) {
-        FreeLibrary(hMm);
-        g_tsfError.BlockingCall(new ErrorData{"ActivateAudioInterfaceAsync not found (need Win10 2004+)"},
-            CallError);
-        g_tsfError.Release(); g_tsfReady.Release(); g_tsfChunk.Release();
-        CoUninitialize(); return;
-    }
-
-    // --- Build activation params ---
-    AUDIOCLIENT_ACTIVATION_PARAMS params{};
-    params.ActivationType                                    = AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK;
-    params.ProcessLoopbackParams.TargetProcessId            = excludePid;
-    params.ProcessLoopbackParams.ProcessLoopbackMode        = PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE;
-
-    PROPVARIANT pv{};
+    PROPVARIANT pv;
     PropVariantInit(&pv);
-    pv.vt            = VT_BLOB;
-    pv.blob.cbSize   = sizeof(params);
-    pv.blob.pBlobData = reinterpret_cast<BYTE*>(&params);
+    pv.vt              = VT_BLOB;
+    pv.blob.cbSize     = sizeof(ap);
+    pv.blob.pBlobData  = (BYTE*)&ap;
 
-    auto* handler = new ActivationHandler();
-    IActivateAudioInterfaceAsyncOperation* asyncOp = nullptr;
-    HRESULT hr = pfnActivate(
+    CompletionHandler* ch = (CompletionHandler*)calloc(1, sizeof(CompletionHandler));
+    ch->iface.lpVtbl = &s_chVtbl;
+    ch->refCount     = 1;
+    ch->hEvent       = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+    IActivateAudioInterfaceAsyncOperation* pOp = NULL;
+    HRESULT hr = ActivateAudioInterfaceAsync(
         VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
-        __uuidof(IAudioClient),
+        &IID_IAudioClient,
         &pv,
-        handler,
-        &asyncOp);
-    if (FAILED(hr)) {
-        handler->Release();
-        FreeLibrary(hMm);
-        g_tsfError.BlockingCall(new ErrorData{"ActivateAudioInterfaceAsync failed"}, CallError);
-        g_tsfError.Release(); g_tsfReady.Release(); g_tsfChunk.Release();
-        CoUninitialize(); return;
+        &ch->iface,
+        &pOp);
+    if (pOp) pOp->lpVtbl->Release(pOp);
+
+    if (SUCCEEDED(hr)) {
+        WaitForSingleObject(ch->hEvent, 5000);
+        hr = ch->hrResult;
     }
 
-    // Wait for async activation (timeout 5s)
-    DWORD waitRes = WaitForSingleObject(handler->evt_, 5000);
-    if (asyncOp) { asyncOp->Release(); asyncOp = nullptr; }
+    IAudioClient* pClient = ch->pClient;
+    if (pClient) pClient->lpVtbl->AddRef(pClient);
+    ch->iface.lpVtbl->Release(&ch->iface);
 
-    if (waitRes != WAIT_OBJECT_0 || FAILED(handler->result_) || !handler->client_) {
-        handler->Release();
-        FreeLibrary(hMm);
-        g_tsfError.BlockingCall(new ErrorData{"Audio client activation failed"}, CallError);
-        g_tsfError.Release(); g_tsfReady.Release(); g_tsfChunk.Release();
-        CoUninitialize(); return;
+    if (FAILED(hr) || !pClient) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "ActivateAudioInterfaceAsync failed: 0x%08X", (unsigned)hr);
+        SendError(buf);
+        CoUninitialize();
+        return 1;
     }
 
-    IAudioClient*        client  = handler->client_;
-    handler->client_ = nullptr;
-    handler->Release();
+    // Формат: float32, 48кГц, stereo
+    WAVEFORMATEX wfx = { 0 };
+    wfx.wFormatTag      = WAVE_FORMAT_IEEE_FLOAT;
+    wfx.nChannels       = 2;
+    wfx.nSamplesPerSec  = 48000;
+    wfx.wBitsPerSample  = 32;
+    wfx.nBlockAlign     = 8;
+    wfx.nAvgBytesPerSec = 48000 * 8;
 
-    // --- Negotiate format: prefer 48kHz float32 stereo ---
-    WAVEFORMATEX mixFmt{ WAVE_FORMAT_IEEE_FLOAT, 2, 48000,
-        48000 * 2 * 4, 2 * 4, 32, 0 };
-    constexpr REFERENCE_TIME refBuf = 200000; // 20ms in 100ns units
-    hr = client->Initialize(
+    hr = pClient->lpVtbl->Initialize(
+        pClient,
         AUDCLNT_SHAREMODE_SHARED,
-        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK |  // Note: process loopback ignores LOOPBACK flag but it's harmless
-        AUDCLNT_STREAMFLAGS_NOPERSIST,
-        refBuf, 0, &mixFmt, nullptr);
+        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+        2000000, 0, &wfx, NULL);
 
     if (FAILED(hr)) {
-        // Try whatever mix format the endpoint uses
-        WAVEFORMATEX* pMix = nullptr;
-        client->GetMixFormat(&pMix);
-        if (pMix) {
-            hr = client->Initialize(
-                AUDCLNT_SHAREMODE_SHARED,
-                AUDCLNT_STREAMFLAGS_NOPERSIST,
-                refBuf, 0, pMix, nullptr);
-            if (SUCCEEDED(hr)) { mixFmt = *pMix; }
-            CoTaskMemFree(pMix);
-        }
+        char buf[128];
+        snprintf(buf, sizeof(buf), "IAudioClient::Initialize failed: 0x%08X", (unsigned)hr);
+        SendError(buf);
+        pClient->lpVtbl->Release(pClient);
+        CoUninitialize();
+        return 1;
     }
 
-    if (FAILED(hr)) {
-        client->Release();
-        FreeLibrary(hMm);
-        g_tsfError.BlockingCall(new ErrorData{"IAudioClient::Initialize failed"}, CallError);
-        g_tsfError.Release(); g_tsfReady.Release(); g_tsfChunk.Release();
-        CoUninitialize(); return;
+    HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    pClient->lpVtbl->SetEventHandle(pClient, hEvent);
+
+    IAudioCaptureClient* pCapture = NULL;
+    pClient->lpVtbl->GetService(pClient, &IID_IAudioCaptureClient, (void**)&pCapture);
+
+    // Сообщаем JS: захват готов
+    {
+        AudioMsg* m = (AudioMsg*)calloc(1, sizeof(AudioMsg));
+        m->type       = MSG_READY;
+        m->sampleRate = 48000;
+        m->channels   = 2;
+        SendMsg(m);
     }
 
-    uint32_t sr  = mixFmt.nSamplesPerSec;
-    uint32_t ch  = mixFmt.nChannels;
-    bool     f32 = (mixFmt.wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
+    pClient->lpVtbl->Start(pClient);
 
-    IAudioCaptureClient* capture = nullptr;
-    hr = client->GetService(__uuidof(IAudioCaptureClient),
-                             reinterpret_cast<void**>(&capture));
-    if (FAILED(hr)) {
-        client->Release(); FreeLibrary(hMm);
-        g_tsfError.BlockingCall(new ErrorData{"GetService(IAudioCaptureClient) failed"}, CallError);
-        g_tsfError.Release(); g_tsfReady.Release(); g_tsfChunk.Release();
-        CoUninitialize(); return;
-    }
+    // Кольцевой буфер для накопления 20мс-чанков (960 фреймов, 1920 float stereo)
+    const UINT32 CHUNK  = 960 * 2; // float samples per 20ms chunk
+    const UINT32 RING   = CHUNK * 8;
+    float* ring     = (float*)calloc(RING, sizeof(float));
+    UINT32 ringHead = 0;
+    UINT32 ringFill = 0;
 
-    hr = client->Start();
-    if (FAILED(hr)) {
-        capture->Release(); client->Release(); FreeLibrary(hMm);
-        g_tsfError.BlockingCall(new ErrorData{"IAudioClient::Start failed"}, CallError);
-        g_tsfError.Release(); g_tsfReady.Release(); g_tsfChunk.Release();
-        CoUninitialize(); return;
-    }
+    while (!InterlockedCompareExchange(&g_stop, 0, 0)) {
+        if (WaitForSingleObject(hEvent, 50) == WAIT_TIMEOUT) continue;
+        if (InterlockedCompareExchange(&g_stop, 0, 0)) break;
 
-    // Notify JS: capture ready
-    g_tsfReady.BlockingCall(new ReadyData{sr, ch}, CallReady);
-    g_tsfReady.Release();
+        UINT32 packetSize = 0;
+        pCapture->lpVtbl->GetNextPacketSize(pCapture, &packetSize);
 
-    // ── Capture loop (20ms sleep = 960 frames at 48kHz) ──────────────────
-    constexpr DWORD SLEEP_MS = 20;
-    while (g_running.load(std::memory_order_relaxed)) {
-        Sleep(SLEEP_MS);
+        while (packetSize > 0) {
+            BYTE*  data      = NULL;
+            UINT32 numFrames = 0;
+            DWORD  flags     = 0;
 
-        UINT32 packetFrames = 0;
-        HRESULT hrPkt = capture->GetNextPacketSize(&packetFrames);
-        if (FAILED(hrPkt)) break;
-
-        while (packetFrames > 0) {
-            BYTE*  data    = nullptr;
-            UINT32 frames  = 0;
-            DWORD  flags   = 0;
-            hr = capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
+            hr = pCapture->lpVtbl->GetBuffer(pCapture, &data, &numFrames, &flags, NULL, NULL);
             if (FAILED(hr)) break;
 
-            auto* cd = new ChunkData();
-            cd->channels = ch;
-            size_t totalSamples = static_cast<size_t>(frames) * ch;
-            cd->samples.resize(totalSamples);
+            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT) && data && numFrames > 0) {
+                const float* src    = (const float*)data;
+                UINT32       srcLen = numFrames * 2;
 
-            if (flags & AUDCLNT_BUFFERFLAGS_SILENT) {
-                std::fill(cd->samples.begin(), cd->samples.end(), 0.0f);
-            } else if (f32) {
-                std::memcpy(cd->samples.data(), data, totalSamples * sizeof(float));
-            } else if (mixFmt.wBitsPerSample == 16) {
-                const int16_t* src = reinterpret_cast<const int16_t*>(data);
-                constexpr float kScale = 1.0f / 32768.0f;
-                for (size_t i = 0; i < totalSamples; ++i)
-                    cd->samples[i] = static_cast<float>(src[i]) * kScale;
-            } else {
-                // Unsupported format — silence
-                std::fill(cd->samples.begin(), cd->samples.end(), 0.0f);
+                for (UINT32 i = 0; i < srcLen; i++) {
+                    ring[ringHead] = src[i];
+                    ringHead       = (ringHead + 1) % RING;
+                    if (ringFill < RING) ringFill++;
+                }
+
+                while (ringFill >= CHUNK) {
+                    float* chunk = (float*)malloc(CHUNK * sizeof(float));
+                    UINT32 tail  = (ringHead - ringFill % RING + RING) % RING;
+                    for (UINT32 j = 0; j < CHUNK; j++)
+                        chunk[j] = ring[(tail + j) % RING];
+                    ringFill -= CHUNK;
+
+                    AudioMsg* m = (AudioMsg*)calloc(1, sizeof(AudioMsg));
+                    m->type       = MSG_CHUNK;
+                    m->chunkData  = chunk;
+                    m->chunkCount = CHUNK;
+                    SendMsg(m);
+                }
             }
 
-            capture->ReleaseBuffer(frames);
-            g_tsfChunk.NonBlockingCall(cd, CallChunk);
-
-            hrPkt = capture->GetNextPacketSize(&packetFrames);
-            if (FAILED(hrPkt)) packetFrames = 0;
+            pCapture->lpVtbl->ReleaseBuffer(pCapture, numFrames);
+            pCapture->lpVtbl->GetNextPacketSize(pCapture, &packetSize);
         }
     }
 
-    client->Stop();
-    capture->Release();
-    client->Release();
-    FreeLibrary(hMm);
-    g_tsfChunk.Release();
-    g_tsfError.Release();
+    free(ring);
+    pClient->lpVtbl->Stop(pClient);
+    pCapture->lpVtbl->Release(pCapture);
+    CloseHandle(hEvent);
+    pClient->lpVtbl->Release(pClient);
     CoUninitialize();
+    return 0;
 }
 
-// ── Exposed JS functions ───────────────────────────────────────────────────────
-Napi::Value Start(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 4 ||
-        !info[0].IsNumber()  ||
-        !info[1].IsFunction() ||
-        !info[2].IsFunction() ||
-        !info[3].IsFunction())
-    {
-        Napi::TypeError::New(env, "start(excludePid, onChunk, onReady, onError)").ThrowAsJavaScriptException();
-        return env.Undefined();
+// ---- JS: start(excludePid, onChunk, onReady, onError) ----------------------
+
+static napi_value JsStart(napi_env env, napi_callback_info info) {
+    size_t argc = 4;
+    napi_value argv[4];
+    napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+
+    if (argc < 4) {
+        napi_throw_error(env, NULL, "start requires 4 arguments");
+        return NULL;
     }
-    if (g_running.load()) return env.Undefined(); // already running
 
-    DWORD pid = static_cast<DWORD>(info[0].As<Napi::Number>().Uint32Value());
+    uint32_t excludePid = 0;
+    napi_get_value_uint32(env, argv[0], &excludePid);
 
-    g_tsfChunk = Napi::ThreadSafeFunction::New(
-        env, info[1].As<Napi::Function>(), "wasapi_chunk", 0, 1);
-    g_tsfReady = Napi::ThreadSafeFunction::New(
-        env, info[2].As<Napi::Function>(), "wasapi_ready", 0, 1);
-    g_tsfError = Napi::ThreadSafeFunction::New(
-        env, info[3].As<Napi::Function>(), "wasapi_error", 0, 1);
+    // Останавливаем предыдущий захват
+    if (g_thread) {
+        InterlockedExchange(&g_stop, 1);
+        WaitForSingleObject(g_thread, 3000);
+        CloseHandle(g_thread);
+        g_thread = NULL;
+        InterlockedExchange(&g_stop, 0);
+    }
+    if (g_tsfn) {
+        napi_release_threadsafe_function(g_tsfn, napi_tsfn_release);
+        g_tsfn = NULL;
+    }
 
-    g_running.store(true, std::memory_order_relaxed);
-    g_thread = std::thread(CaptureThread, pid);
-    return env.Undefined();
+    // Создаём контекст с референцами на JS-каллбеки
+    Ctx* ctx = (Ctx*)calloc(1, sizeof(Ctx));
+    napi_create_reference(env, argv[1], 1, &ctx->onChunk);
+    napi_create_reference(env, argv[2], 1, &ctx->onReady);
+    napi_create_reference(env, argv[3], 1, &ctx->onError);
+    g_ctx = ctx;
+
+    napi_value resourceName;
+    napi_create_string_utf8(env, "WasapiCapture", NAPI_AUTO_LENGTH, &resourceName);
+
+    napi_status st = napi_create_threadsafe_function(
+        env,
+        argv[1],       // placeholder js func (Dispatch не использует)
+        NULL,          // async_resource
+        resourceName,
+        0,             // max_queue_size (безограничен)
+        1,             // initial_thread_count
+        ctx,           // thread_finalize_data  → FinalizeCtx(env, ctx, hint)
+        FinalizeCtx,
+        ctx,           // context  → Dispatch(env, js_cb, ctx, data)
+        Dispatch,
+        &g_tsfn);
+
+    if (st != napi_ok || !g_tsfn) {
+        napi_throw_error(env, NULL, "napi_create_threadsafe_function failed");
+        return NULL;
+    }
+
+    ThreadArgs* ta = (ThreadArgs*)calloc(1, sizeof(ThreadArgs));
+    ta->excludePid  = excludePid;
+    InterlockedExchange(&g_stop, 0);
+    g_thread = CreateThread(NULL, 0, AudioThread, ta, 0, NULL);
+
+    napi_value undef;
+    napi_get_undefined(env, &undef);
+    return undef;
 }
 
-Napi::Value Stop(const Napi::CallbackInfo& info) {
-    g_running.store(false, std::memory_order_relaxed);
-    if (g_thread.joinable()) g_thread.join();
-    return info.Env().Undefined();
+// ---- JS: stop() ------------------------------------------------------------
+
+static napi_value JsStop(napi_env env, napi_callback_info /*info*/) {
+    InterlockedExchange(&g_stop, 1);
+    if (g_thread) {
+        WaitForSingleObject(g_thread, 3000);
+        CloseHandle(g_thread);
+        g_thread = NULL;
+    }
+    if (g_tsfn) {
+        napi_release_threadsafe_function(g_tsfn, napi_tsfn_release);
+        g_tsfn = NULL;
+    }
+    InterlockedExchange(&g_stop, 0);
+
+    napi_value undef;
+    napi_get_undefined(env, &undef);
+    return undef;
 }
 
-Napi::Object Init(Napi::Env env, Napi::Object exports) {
-    exports.Set("start", Napi::Function::New(env, Start));
-    exports.Set("stop",  Napi::Function::New(env, Stop));
+// ---- Инициализация модуля -----------------------------------------------------
+
+static napi_value ModuleInit(napi_env env, napi_value exports) {
+    napi_value fnStart, fnStop;
+    napi_create_function(env, "start", NAPI_AUTO_LENGTH, JsStart, NULL, &fnStart);
+    napi_create_function(env, "stop",  NAPI_AUTO_LENGTH, JsStop,  NULL, &fnStop);
+    napi_set_named_property(env, exports, "start", fnStart);
+    napi_set_named_property(env, exports, "stop",  fnStop);
     return exports;
 }
 
-NODE_API_MODULE(wasapi_capture, Init)
+NAPI_MODULE(wasapi_capture, ModuleInit)
