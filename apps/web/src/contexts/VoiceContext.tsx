@@ -2802,6 +2802,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       // FIX-GR2: человек пропал из-за обрыва и не вернулся за grace-окно —
       // сервер шлёт отложенный звук отключения (присутствие было снято сразу,
       // тихим user-left, чтобы не было «иллюзии присутствия»).
+      /* FIX-USER-DND: модератор перенёс нас в другой голосовой канал. */
+      socket.on("voice:force-join", ({ channelId: targetId, channelName: targetName }: { channelId: string; channelName: string }) => {
+        if (targetId === chId) return; // уже здесь
+        void joinVoice(targetId, targetName);
+      });
+
       socket.on("voice-user-dropped", () => {
         playSound(disconnectionSfxRef);
       });
