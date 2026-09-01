@@ -135,16 +135,11 @@ export function setupScreenShare(): void {
           return;
         }
 
-        // FIX-SS-ECHO: со звуком отдаём Windows loopback — это ВЕСЬ системный
-        // микс (звук окна плюс всё остальное, включая голоса собеседников из
-        // самого TZ.Connect). Per-application capture Chromium/Electron не
-        // поддерживает, поэтому звук приходит сюда только когда человек осознанно
-        // включил его в окне запуска (иначе — только видео).
-        if (requested.audio) {
-          callback({ video: source, audio: "loopback" });
-        } else {
-          callback({ video: source });
-        }
+        // WASAPI-SS: звук ОС захватывается нативным WASAPI-аддоном в renderer-е
+        // (PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE), а не через
+        // Chromium-loopback. Chromium всегда получает только видео-дорожку,
+        // иначе он захватывает ВЕСЬ системный микс включая голоса из TZ.Connect.
+        callback({ video: source });
       } catch (err) {
         console.error("[screenShare] display media request failed:", err);
         callback({});

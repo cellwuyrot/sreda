@@ -16,6 +16,8 @@ files:
   - dist/**/*
   - static/**/*
   - resources/**/*
+  # WASAPI-SS: нативный аддон кладём рядом с dist/main/index.js
+  - build/Release/wasapi_capture.node
   # VPN-EMBEDDED: бинарники клиента в asar НЕ нужны — они кладутся рядом с ним
   # через extraResources (см. ниже). Без этого исключения каждая сборка тащила
   # бы внутрь архива клиенты всех трёх платформ: лишние десятки мегабайт в
@@ -70,6 +72,11 @@ win:
       to: wireguard
       filter:
         - "**/*"
+    # WASAPI-SS: нативный аддон. electron-builder копирует его
+    # в resources/app/dist/main/ (рядом с index.js),
+    # откуда wasapiCapture.ts и подгружает его через require().
+    - from: build/Release/wasapi_capture.node
+      to: app/dist/main/wasapi_capture.node
   # .ico отдельно не держим: electron-builder делает его из png сам, а лишняя
   # копия картинки в git означала бы старый логотип при следующей смене.
   icon: build/icon.png

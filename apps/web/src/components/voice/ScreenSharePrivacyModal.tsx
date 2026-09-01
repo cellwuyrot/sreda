@@ -271,40 +271,29 @@ export default function ScreenSharePrivacyModal({
               <p className="text-[11px] text-white/40">1080p и 60 кадров — в подписке Premium</p>
             )}
 
-            {/* FIX-SS-ECHO: звук трансляции — осознанный выбор, по умолчанию
-                «Без звука». Оболочка умеет отдать только ВЕСЬ звук системы
-                (Electron/Chromium не даёт захватить звук одного приложения), а в
-                системный микс попадают голоса собеседников, которые проигрывает
-                сам TZ.Connect, — и они возвращаются к людям эхом. Поэтому звук
-                включается вручную и с явным предупреждением. */}
-            <div className="border-t border-white/10 pt-2.5">
-              <span className="flex items-center text-xs text-white/60">
-                Звук трансляции
-                <InfoTooltip
-                  className="ml-1"
-                  text="Демонстрируется картинка экрана; звук идёт отдельной дорожкой. В десктоп-оболочке доступен «Системный звук» — это весь звук компьютера целиком, только на Windows (звук отдельного приложения захватывать пока нельзя). Захват звука конкретного приложения появится позже."
+            <button
+              type="button"
+              onClick={() => voice.setScreenAudioEnabled(!voice.screenAudioEnabled)}
+              aria-pressed={voice.screenAudioEnabled}
+              className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/10 px-2.5 py-2 text-left hover:bg-white/5"
+            >
+              <span className="min-w-0">
+                <span className="block text-xs text-white/80">
+                  Звук вместе с картинкой
+                  <InfoTooltip text="Уйдёт весь системный звук целиком, а не только звук выбранного окна: голоса других участников в том числе." className="ml-1" />
+                </span>
+              </span>
+              <span
+                className={`relative h-5 w-9 flex-none rounded-full transition-colors ${
+                  voice.screenAudioEnabled ? "bg-cyan-500" : "bg-white/15"
+                }`}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform"
+                  style={{ transform: voice.screenAudioEnabled ? "translateX(16px)" : "none" }}
                 />
               </span>
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
-                <AudioChoice
-                  label="Без звука"
-                  hint="Только картинка"
-                  active={!voice.screenAudioEnabled}
-                  onClick={() => voice.setScreenAudioEnabled(false)}
-                />
-                <AudioChoice
-                  label="Системный звук"
-                  hint="Весь звук ПК"
-                  active={voice.screenAudioEnabled}
-                  onClick={() => voice.setScreenAudioEnabled(true)}
-                />
-              </div>
-              {voice.screenAudioEnabled && (
-                <p className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-2.5 py-1.5 text-[11px] leading-snug text-amber-200/90">
-                  Уйдёт весь звук компьютера, включая голоса других участников — они услышат себя в трансляции. Включайте только при необходимости и слушайте через наушники, иначе будет эхо.
-                </p>
-              )}
-            </div>
+            </button>
 
           </div>
         )}
@@ -383,39 +372,6 @@ export default function ScreenSharePrivacyModal({
       </motion.div>
     </div>,
     document.body,
-  );
-}
-
-/**
- * FIX-SS-ECHO: одна из двух карточек выбора звука трансляции («Без звука» /
- * «Системный звук»). Оформлена как таблетки качества рядом, чтобы выбор читался
- * как единый переключатель, а не набор случайных кнопок.
- */
-function AudioChoice({
-  label,
-  hint,
-  active,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
-        active
-          ? "border-cyan-400/60 bg-cyan-400/10 text-white"
-          : "border-white/10 text-white/70 hover:bg-white/5"
-      }`}
-    >
-      <span className="block text-xs">{label}</span>
-      <span className="block text-[10px] text-white/40">{hint}</span>
-    </button>
   );
 }
 

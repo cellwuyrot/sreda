@@ -9,6 +9,7 @@ import { refreshNotificationBridge, stopNotificationBridge } from "./notificatio
 import { initAutoUpdate } from "./updater";
 import { applyAutoLaunch } from "./autoLaunch";
 import { registerIpc } from "./ipc";
+import { registerWasapiIpc } from "./wasapiCapture"; // WASAPI-SS
 import { invalidateCacheOnVersionChange, stopCacheMaintenance } from "./recovery"; // FIX-BLANK
 import { registerMediaCacheScheme, installMediaCache } from "./mediaCache"; // FIX-CLIENTMEDIA
 import { syncOverlay, destroyOverlay } from "./overlay"; // FIX-OVL
@@ -119,6 +120,7 @@ function onReady(): void {
   installApplicationMenu();
 
   registerIpc();
+  registerWasapiIpc(); // WASAPI-SS
   setupScreenShare();
 
   const win = createMainWindow();

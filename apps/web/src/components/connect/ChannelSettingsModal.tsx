@@ -59,34 +59,6 @@ function CustomSelect({ label, info, value, onChange, options }: {
   );
 }
 
-function Toggle({ label, info, checked, onChange }: {
-  label: string;
-  info?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium text-neutral-900 dark:text-white">
-          {label}
-          {info && <InfoTooltip text={info} className="ml-1" />}
-        </p>
-      </div>
-      <button
-        onClick={() => onChange(!checked)}
-        className={`relative w-11 h-6 rounded-full transition-colors ${checked ? "bg-violet-600 dark:bg-cyan-500" : "bg-neutral-300 dark:bg-neutral-600"}`}
-      >
-        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
-      </button>
-    </div>
-  );
-}
-
-// FIX-CATSET: добавлены настройки для групп каналов (CATEGORY):
-//   — ограничение доступа по ролям (propagateToChildren переносит на все каналы группы)
-//   — права публикации и чтения для текстовых групп
-//   — noRecord + voiceLimit для голосовых каналов и голосовых групп
 export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, onUpdated }: {
   channel: Channel;
   groupId: string;
@@ -97,33 +69,19 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
   const [name, setName] = useState(channel.name);
   const [icon, setIcon] = useState(channel.icon || "");
   const type = channel.type;
-  const isCategory = type === "CATEGORY";
-  const isVoiceCategory = isCategory && channel.channelGroupType === "VOICE";
-  const isTextCategory = isCategory && channel.channelGroupType !== "VOICE";
-  const isVoice = type === "VOICE";
-
   const [parentId, setParentId] = useState(channel.parentId || "");
   const [isRestricted, setIsRestricted] = useState(false);
   const [roles, setRoles] = useState<{ id: string; name: string; color: string }[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
   const [slowmode, setSlowmode] = useState(0);
+  /* FIX-NEWSACL: права канала по встроенным ролям — кто публикует и кто читает.
+     Раньше для новостей право писать было зашито в коде (модераторы и выше) и
+     не настраивалось, а ограничить чтение можно было только кастомными тегами. */
   const [postAccess, setPostAccess] = useState<string>("ALL");
   const [readAccess, setReadAccess] = useState<string>("ALL");
-  const [hidden, setHidden] = useState(false);
-  // FIX-CATSET: голосовые настройки — запись и лимит участников
-  const [noRecord, setNoRecord] = useState(false);
-  const [voiceLimit, setVoiceLimit] = useState<number | "">("" );
-  // FIX-CATSET: применить настройки ко всем каналам в группе
-  const [propagateToChildren, setPropagateToChildren] = useState(false);
-
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const possibleParents = allChannels.filter(c =>
-    c.id !== channel.id &&
-    c.type === "CATEGORY" &&
-    ((c.channelGroupType === "VOICE" && type === "VOICE") ||
-     (c.channelGroupType !== "VOICE" && type !== "VOICE" && type !== "CATEGORY"))
-  );
+  const possibleParents = allChannels.filter(c => c.id !== channel.id && c.type === "CATEGORY" && ((c.channelGroupType === "VOICE" && type === "VOICE") || (c.channelGroupType !== "VOICE" && type !== "VOICE" && type !== "CATEGORY")));
 
   useEffect(() => {
     Promise.all([
@@ -132,11 +90,8 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
     ]).then(([chData, rolesData]) => {
       if (chData.isRestricted !== undefined) setIsRestricted(chData.isRestricted);
       if (chData.slowmode !== undefined) setSlowmode(chData.slowmode);
-      if (chData.postAccess) setPostAccess(chData.postAccess);
-      if (chData.readAccess) setReadAccess(chData.readAccess);
-      if (chData.hidden !== undefined) setHidden(!!chData.hidden);
-      if (chData.noRecord !== undefined) setNoRecord(!!chData.noRecord);
-      if (chData.voiceLimit != null) setVoiceLimit(chData.voiceLimit);
+      if (chData.postAccess) setPostAccess(chData.postAccess); // FIX-NEWSACL
+      if (chData.readAccess) setReadAccess(chData.readAccess); // FIX-NEWSACL
       if (chData.roleIds) setSelectedRoles(new Set(chData.roleIds));
       if (Array.isArray(rolesData)) setRoles(rolesData);
       setLoading(false);
@@ -154,14 +109,10 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
         type,
         isRestricted,
         slowmode,
-        postAccess,
-        readAccess,
-        hidden,
-        noRecord,
-        voiceLimit: voiceLimit === "" ? null : Number(voiceLimit),
+        postAccess, // FIX-NEWSACL
+        readAccess, // FIX-NEWSACL
         roleIds: isRestricted ? Array.from(selectedRoles) : [],
         parentId: parentId || null,
-        propagateToChildren: isCategory ? propagateToChildren : false,
       }),
     });
     setSaving(false);
@@ -178,25 +129,12 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
     });
   };
 
-  // Показываем ли блок прав доступа (публикация/чтение)
-  const showTextAccess = !isVoice && !isCategory;
-  // Для категорий — тоже, но только текстовых
-  const showCategoryTextAccess = isTextCategory;
-  // Показываем ли голосовые настройки
-  const showVoiceSettings = isVoice || isVoiceCategory;
-  // Слоумод — только текстовые каналы, не категории
-  const showSlowmode = !isVoice && !isCategory;
-
-  const categoryLabel = isVoiceCategory ? "группы голосовых каналов" : "группы текстовых каналов";
-
   return (
-    <div className="fixed inset-0 z-[92] flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[92] flex items-center justify-center p-4" /* FIX-SHAREZ */ onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 dark:border-white/5">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
-            {isCategory ? `Настройки ${categoryLabel}` : "Настройки канала"}
-          </h2>
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Настройки канала</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-400 transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -207,35 +145,29 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
         {loading ? (
           <div className="p-8 text-center text-neutral-400 text-sm">Загрузка...</div>
         ) : (
-          <div className="p-5 space-y-4 max-h-[72vh] overflow-y-auto">
-
-            {/* Название */}
+          <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
             <div>
               <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1 block">Название</label>
               <input value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400" />
             </div>
 
-            {/* Иконка */}
             <div>
               <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1 block">Иконка (emoji)</label>
               <input value={icon} onChange={e => setIcon(e.target.value)} placeholder="💬" className="w-full px-3 py-2 bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400" />
             </div>
 
-            {/* Тип канала */}
             <div>
-              <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1 block">Тип</label>
+              <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1 block">Тип канала</label>
               <div className="flex items-center gap-2 px-3 py-2 bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl text-sm text-neutral-600 dark:text-neutral-300">
-                {isCategory
-                  ? (isVoiceCategory ? <><VoiceChannelIcon size={16} /> Группа голосовых каналов</> : <>Группа текстовых каналов</>)
-                  : type === "TEXT" ? <><ChatIcon size={16} /> Текстовый</>
-                  : type === "FEED" ? <><NewsIcon size={16} /> Улучшенный чат</>
-                  : type === "NEWS" ? <><NewsIcon size={16} /> Новости</>
-                  : <><VoiceChannelIcon size={16} /> Голосовой</>}
+                {/* FIX-FEED: улучшенный чат — отдельная подпись, иначе он показывался «голосовым». */}
+                {/* FIX-CATSET */}
+                {type === "CATEGORY" ? <>Группа каналов</> : type === "TEXT" ? <><ChatIcon size={16} /> Текстовый</> : type === "FEED" ? <><NewsIcon size={16} /> Улучшенный чат</> : type === "NEWS" ? <><NewsIcon size={16} /> Новости</> : <><VoiceChannelIcon size={16} /> Голосовой</>}
               </div>
             </div>
 
-            {/* FIX-NEWSACL: права на публикацию и чтение для текстовых каналов */}
-            {showTextAccess && (
+            {/* FIX-NEWSACL: права на публикацию и чтение. Для голосовых каналов
+                и категорий лента сообщений не ведётся — там настройки не нужны. */}
+            {type !== "VOICE" && type !== "CATEGORY" && (
               <>
                 <CustomSelect
                   label="Кто может публиковать"
@@ -261,39 +193,7 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
               </>
             )}
 
-            {/* FIX-CATSET: права на публикацию/чтение для текстовой ГРУППЫ каналов */}
-            {showCategoryTextAccess && (
-              <>
-                <div className="rounded-xl bg-violet-50 dark:bg-cyan-900/20 border border-violet-100 dark:border-cyan-800/30 px-3 py-2.5">
-                  <p className="text-xs text-violet-700 dark:text-cyan-300 font-medium">⚙️ Настройки группы</p>
-                  <p className="text-[11px] text-violet-600/70 dark:text-cyan-400/60 mt-0.5">Применяются ко всем каналам группы при нажатии «Сохранить» с включённым переключателем ниже.</p>
-                </div>
-                <CustomSelect
-                  label="Кто может публиковать (в каналах группы)"
-                  value={postAccess}
-                  onChange={setPostAccess}
-                  options={[
-                    { value: "ALL", label: "Все участники" },
-                    { value: "MOD", label: "Создатель, администраторы и модераторы" },
-                    { value: "ADMIN", label: "Только создатель и администраторы" },
-                  ]}
-                />
-                <CustomSelect
-                  label="Кто может читать (каналы группы)"
-                  info="Каналы исчезнут из списка у тех, кто не попадает под условие."
-                  value={readAccess}
-                  onChange={setReadAccess}
-                  options={[
-                    { value: "ALL", label: "Все участники сообщества" },
-                    { value: "MOD", label: "Создатель, администраторы и модераторы" },
-                    { value: "ADMIN", label: "Только создатель и администраторы" },
-                  ]}
-                />
-              </>
-            )}
-
-            {/* Смена группы (только для дочерних каналов) */}
-            {possibleParents.length > 0 && !isCategory && (
+            {possibleParents.length > 0 && (
               <CustomSelect
                 label="Группа канала"
                 value={parentId}
@@ -305,89 +205,39 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
               />
             )}
 
-            {/* FIX-CATSET: скрыть канал / группу */}
-            <Toggle
-              label="Скрыть канал"
-              info="Канал виден только модераторам и выше. Обычные участники не видят его в списке."
-              checked={hidden}
-              onChange={setHidden}
-            />
-
-            {/* Ограничить доступ по ролям */}
-            <div className="space-y-3">
-              <Toggle
-                label={isCategory ? "Ограничить доступ к группе" : "Ограничить доступ"}
-                info={isCategory
-                  ? "Только участники с выбранными тегами видят каналы этой группы. При применении ко всем каналам группы — настраивается массово."
-                  : "Канал увидят только те, у кого есть один из выбранных ниже тегов. Остальным он не покажется в списке."}
-                checked={isRestricted}
-                onChange={setIsRestricted}
-              />
-
-              {isRestricted && roles.length > 0 && (
-                <div>
-                  <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5 block">Теги с доступом</label>
-                  <div className="flex flex-wrap gap-2">
-                    {roles.map(role => (
-                      <button key={role.id} onClick={() => toggleRole(role.id)}
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${selectedRoles.has(role.id) ? "text-white border-transparent" : "bg-neutral-50 dark:bg-white/5 border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-300"}`}
-                        style={selectedRoles.has(role.id) ? { backgroundColor: role.color } : undefined}>
-                        {role.name}
-                      </button>
-                    ))}
-                  </div>
-                  {selectedRoles.size === 0 && (
-                    <p className="text-[11px] text-amber-500 mt-1">Никто не сможет видеть {isCategory ? "каналы группы" : "канал"}. Выберите хотя бы один тег.</p>
-                  )}
-                </div>
-              )}
-              {isRestricted && roles.length === 0 && (
-                <p className="text-xs text-neutral-400">Нет тегов. Создайте теги в настройках сообщества.</p>
-              )}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                  Ограничить доступ
+                  <InfoTooltip text="Канал увидят только те, у кого есть один из выбранных ниже тегов. Остальным он не покажется в списке." className="ml-1" />
+                </p>
+              </div>
+              <button onClick={() => setIsRestricted(!isRestricted)} className={`relative w-11 h-6 rounded-full transition-colors ${isRestricted ? "bg-violet-600 dark:bg-cyan-500" : "bg-neutral-300 dark:bg-neutral-600"}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${isRestricted ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
             </div>
 
-            {/* FIX-CATSET: голосовые настройки — noRecord + voiceLimit */}
-            {showVoiceSettings && (
-              <>
-                {isVoiceCategory && (
-                  <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 px-3 py-2.5">
-                    <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">🎙️ Голосовые настройки группы</p>
-                    <p className="text-[11px] text-emerald-600/70 dark:text-emerald-400/60 mt-0.5">При применении ко всем каналам — распространяются на все голосовые каналы в группе.</p>
-                  </div>
-                )}
-                <Toggle
-                  label="Отключить мгновенный повтор"
-                  info="Когда включено, запись буфера для мгновенного повтора не ведётся в этом канале."
-                  checked={noRecord}
-                  onChange={setNoRecord}
-                />
-                <div>
-                  <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1 block">
-                    Лимит участников
-                    <InfoTooltip text="Максимальное число людей в голосовом канале одновременно. Оставьте пустым — без ограничений." className="ml-1" />
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={99}
-                    placeholder="Без лимита"
-                    value={voiceLimit}
-                    onChange={e => {
-                      const v = e.target.value;
-                      if (v === "") setVoiceLimit("");
-                      else {
-                        const n = Math.max(1, Math.min(99, parseInt(v) || 1));
-                        setVoiceLimit(n);
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
-                  />
+            {isRestricted && roles.length > 0 && (
+              <div>
+                <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5 block">Теги с доступом</label>
+                <div className="flex flex-wrap gap-2">
+                  {roles.map(role => (
+                    <button key={role.id} onClick={() => toggleRole(role.id)} className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${selectedRoles.has(role.id) ? "text-white border-transparent" : "bg-neutral-50 dark:bg-white/5 border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-300"}`} style={selectedRoles.has(role.id) ? { backgroundColor: role.color } : undefined}>
+                      {role.name}
+                    </button>
+                  ))}
                 </div>
-              </>
+                {selectedRoles.size === 0 && (
+                  <p className="text-[11px] text-amber-500 mt-1">Никто не сможет видеть канал. Выберите хотя бы один тег.</p>
+                )}
+              </div>
+            )}
+            {isRestricted && roles.length === 0 && (
+              <p className="text-xs text-neutral-400">Нет тегов. Создайте теги в настройках группы.</p>
             )}
 
-            {/* Слоумод — только текстовые каналы */}
-            {showSlowmode && (
+            {/* Slowmode */}
+            <div>
               <CustomSelect
                 label="Слоумод (секунды между сообщениями)"
                 info="Пауза, которую участник должен выждать между своими сообщениями. На админов и модераторов не распространяется."
@@ -405,25 +255,7 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
                   { value: "600", label: "10 мин" },
                 ]}
               />
-            )}
-
-            {/* FIX-CATSET: применить настройки ко всем каналам группы */}
-            {isCategory && (
-              <div className="rounded-xl border border-dashed border-violet-300 dark:border-cyan-700 bg-violet-50/50 dark:bg-cyan-900/10 px-3 py-3 space-y-2">
-                <Toggle
-                  label="Применить ко всем каналам группы"
-                  info="При сохранении все настройки доступа, ролей и видимости будут применены к каждому каналу внутри этой группы, перезаписав их индивидуальные настройки."
-                  checked={propagateToChildren}
-                  onChange={setPropagateToChildren}
-                />
-                {propagateToChildren && (
-                  <p className="text-[11px] text-violet-600 dark:text-cyan-400">
-                    ⚠️ Настройки доступа будут применены ко всем каналам в группе. Индивидуальные настройки каналов будут перезаписаны.
-                  </p>
-                )}
-              </div>
-            )}
-
+            </div>
           </div>
         )}
 

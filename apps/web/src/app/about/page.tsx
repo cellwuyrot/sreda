@@ -1,201 +1,257 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import EditableText from "@/components/EditableText";
 import DesktopDownload from "@/components/DesktopDownload";
+import CosmicBackground from "@/components/about/CosmicBackground";
+import ProjectGlyph from "@/components/about/ProjectGlyph";
+import { ABOUT_SECTIONS, ABOUT_DEFAULTS, aboutKeys, type AboutSection } from "@/lib/about";
 import { LEGAL_DEFAULTS, LEGAL_SECTIONS, legalKeys } from "@/lib/legal";
 
-/* ─── Types ─── */
-interface AboutBlock {
-  id: string;
-  order: number;
-  title: string;
-  description: string;
-  mediaUrl: string | null;
-  mediaType: string;
-  layout: string;     // text-left | text-right | centered
-  textAlign: string;  // left | center | right
-  glowColor: string;
-  shape: string;      // rectangle | rounded | skewed-left | skewed-right | hexagon | diamond
-  spacingTop: number;
-  enabled: boolean;
-}
+/* ─────────────────────────── Project card ─────────────────────────── */
 
-/* ─── Clip-path map ─── */
-const CLIP: Record<string, string> = {
-  rectangle:      "none",
-  rounded:        "none",
-  "skewed-left":  "polygon(2% 0%, 100% 0%, 98% 100%, 0% 100%)",
-  "skewed-right": "polygon(0% 0%, 98% 0%, 100% 100%, 2% 100%)",
-  hexagon:        "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)",
-  diamond:        "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)",
-};
+function ProjectCard({ section, index }: { section: AboutSection; index: number }) {
+  const cardRef = useRef<HTMLAnchorElement>(null);
 
-const RADIUS: Record<string, string> = {
-  rectangle: "1rem",
-  rounded:   "2.5rem",
-};
-
-/* ─── Landing block ─── */
-function LandingBlock({ block, index }: { block: AboutBlock; index: number }) {
-  const centered = block.layout === "centered";
-  const textRight = block.layout === "text-right";
-  const hasMedia = !!block.mediaUrl;
-
-  const clipPath = CLIP[block.shape] ?? "none";
-  const borderRadius = RADIUS[block.shape] ?? "0";
-
-  const textSection = (
-    <div
-      className={`flex flex-col justify-center ${
-        centered ? "items-center text-center" : ""
-      }`}
-      style={{ textAlign: block.textAlign as ("left" | "right" | "center" | "justify") }}
-    >
-      <h2
-        className="text-3xl md:text-4xl lg:text-5xl font-black leading-tight"
-        style={{
-          background: `linear-gradient(135deg, #fff 0%, ${block.glowColor} 100%)`,
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
-          backgroundClip: "text",
-          filter: `drop-shadow(0 0 20px ${block.glowColor}88)`,
-        }}
-      >
-        {block.title}
-      </h2>
-      {block.description && (
-        <p
-          className="mt-5 text-base md:text-lg leading-relaxed text-white/70 max-w-xl"
-          style={{ margin: centered ? "1.25rem auto 0" : undefined }}
-        >
-          {block.description}
-        </p>
-      )}
-    </div>
-  );
-
-  const mediaSection = hasMedia ? (
-    <div className="relative flex items-center justify-center">
-      <div
-        className="overflow-hidden w-full max-h-[420px]"
-        style={{
-          clipPath,
-          borderRadius,
-          boxShadow: `0 0 60px -10px ${block.glowColor}66`,
-        }}
-      >
-        {block.mediaType === "video" ? (
-          <video
-            src={block.mediaUrl!}
-            autoPlay
-            muted
-            loop
-            playsInline
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={block.mediaUrl!}
-            alt={block.title}
-            className="w-full h-full object-cover"
-          />
-        )}
-      </div>
-      {/* Glow halo */}
-      <div
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background: `radial-gradient(ellipse at center, ${block.glowColor}22 0%, transparent 70%)`,
-        }}
-      />
-    </div>
-  ) : null;
+  // Move a soft "spotlight" toward the cursor for a premium, tactile feel.
+  const handleMouseMove = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    const el = cardRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty("--mx", `${((e.clientX - rect.left) / rect.width) * 100}%`);
+    el.style.setProperty("--my", `${((e.clientY - rect.top) / rect.height) * 100}%`);
+  };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 50 }}
+      initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.7, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1] }}
-      style={{ marginTop: block.spacingTop }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.6, delay: index * 0.1, ease: [0.25, 0.1, 0.25, 1] }}
+      className="h-full"
     >
-      {/* Block wrapper with gradient + glow */}
-      <div
-        className="relative overflow-hidden"
-        style={{
-          background: `linear-gradient(135deg, ${block.glowColor}18 0%, #0a0a0a 60%)`,
-          border: `1px solid ${block.glowColor}33`,
-          borderRadius: "1.5rem",
-          boxShadow: `0 0 40px -15px ${block.glowColor}55, inset 0 1px 0 ${block.glowColor}22`,
-        }}
+      <Link
+        ref={cardRef}
+        href={section.href}
+        onMouseMove={handleMouseMove}
+        className="group relative flex h-full min-h-[240px] flex-col overflow-hidden rounded-3xl
+          border border-neutral-200/70 dark:border-white/10
+          bg-white/70 dark:bg-white/[0.03] backdrop-blur-xl
+          p-7 lg:p-8 transition-all duration-500
+          hover:-translate-y-1 hover:border-neutral-300 dark:hover:border-white/20
+          hover:shadow-[0_20px_60px_-20px_var(--glow)]"
+        style={{ ["--glow" as string]: `${section.color}55` }}
       >
+        {/* Cursor spotlight */}
+        <span
+          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+          style={{
+            background: `radial-gradient(420px circle at var(--mx,50%) var(--my,50%), ${section.color}1f, transparent 60%)`,
+          }}
+        />
         {/* Top accent line */}
         <span
-          className="pointer-events-none absolute inset-x-0 top-0 h-px"
+          className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-40 group-hover:opacity-100 transition-opacity duration-500"
+          style={{ background: `linear-gradient(90deg, transparent, ${section.color}, transparent)` }}
+        />
+        {/* Corner constellation flourish */}
+        <svg
+          className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 opacity-[0.12] transition-transform duration-700 group-hover:rotate-45"
+          viewBox="0 0 100 100"
+          fill="none"
+          stroke={section.color}
+          strokeWidth={1}
+          aria-hidden
+        >
+          <circle cx="50" cy="50" r="30" />
+          <circle cx="50" cy="50" r="46" strokeDasharray="2 8" />
+          <circle cx="50" cy="20" r="2.5" fill={section.color} stroke="none" />
+          <circle cx="80" cy="50" r="1.8" fill={section.color} stroke="none" />
+        </svg>
+
+        {/* Icon badge */}
+        <div
+          className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-2xl
+            border transition-all duration-500 group-hover:scale-110"
           style={{
-            background: `linear-gradient(90deg, transparent 0%, ${block.glowColor}88 50%, transparent 100%)`,
+            color: section.color,
+            borderColor: `${section.color}40`,
+            backgroundColor: `${section.color}14`,
+            boxShadow: `0 0 24px -6px ${section.color}66`,
           }}
+        >
+          <ProjectGlyph name={section.key} className="h-8 w-8 tz-float-y" />
+        </div>
+
+        <EditableText
+          contentKey={aboutKeys.sectionTitle(section.key)}
+          defaultValue={section.title}
+          tag="h2"
+          className="text-xl lg:text-2xl font-display font-bold text-neutral-900 dark:text-white"
+        />
+
+        <EditableText
+          contentKey={aboutKeys.sectionDesc(section.key)}
+          defaultValue={section.description}
+          tag="p"
+          className="mt-3 flex-1 text-sm lg:text-[15px] leading-relaxed text-neutral-500 dark:text-gray-400"
+          multiline
         />
 
         <div
-          className={`relative z-10 p-8 md:p-12 ${
-            centered
-              ? "flex flex-col items-center"
-              : `grid gap-10 md:gap-16 items-center ${
-                  hasMedia
-                    ? "md:grid-cols-2"
-                    : "grid-cols-1"
-                }`
-          }`}
+          className="mt-6 inline-flex items-center gap-2 text-sm font-semibold transition-all duration-300
+            group-hover:gap-3"
+          style={{ color: section.color }}
         >
-          {centered ? (
-            <>
-              {textSection}
-              {hasMedia && <div className="mt-8 w-full">{mediaSection}</div>}
-            </>
-          ) : textRight ? (
-            <>
-              {hasMedia && mediaSection}
-              {textSection}
-            </>
-          ) : (
-            <>
-              {textSection}
-              {hasMedia && mediaSection}
-            </>
-          )}
+          Перейти в раздел
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
         </div>
-      </div>
+      </Link>
     </motion.div>
   );
 }
 
-/* ─── Legal section (unchanged from original) ─── */
+/* ─────────────────────────── Page ─────────────────────────── */
+
+export default function AboutPage() {
+  return (
+    <div className="relative min-h-screen overflow-x-hidden text-neutral-900 dark:text-white">
+      <CosmicBackground />
+
+      {/* Back button */}
+      <div className="fixed top-4 left-4 z-50">
+        <Link href="/">
+          <motion.button
+            className="flex items-center gap-2 rounded-xl border border-neutral-300 dark:border-white/10
+              bg-white/80 dark:bg-black/40 px-4 py-2 text-sm font-medium text-neutral-600 dark:text-gray-300
+              backdrop-blur-xl transition-all duration-300
+              hover:border-violet-300 dark:hover:border-cyan-400/40 hover:text-violet-600 dark:hover:text-cyan-400"
+            whileHover={{ scale: 1.05, x: -2 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Назад
+          </motion.button>
+        </Link>
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-24 lg:py-28">
+        {/* Hero */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center"
+        >
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="mb-6 inline-flex items-center gap-3"
+          >
+            <span className="h-px w-10 bg-violet-400/50 dark:bg-cyan-400/40" />
+            <EditableText
+              contentKey={aboutKeys.eyebrow}
+              defaultValue={ABOUT_DEFAULTS.eyebrow}
+              tag="span"
+              className="text-xs font-medium uppercase tracking-[0.3em] text-violet-500 dark:text-cyan-400/90"
+            />
+            <span className="h-px w-10 bg-violet-400/50 dark:bg-cyan-400/40" />
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+            className="mb-6 text-6xl md:text-8xl font-display font-bold leading-[1.05]"
+          >
+            <EditableText
+              contentKey={aboutKeys.title}
+              defaultValue={ABOUT_DEFAULTS.title}
+              tag="span"
+              className="glow-text bg-gradient-to-r from-violet-600 via-fuchsia-500 to-indigo-600
+                dark:from-cyan-300 dark:via-white dark:to-fantasy-purple bg-clip-text text-transparent"
+            />
+          </motion.h1>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+          >
+            <EditableText
+              contentKey={aboutKeys.subtitle}
+              defaultValue={ABOUT_DEFAULTS.subtitle}
+              tag="p"
+              className="mx-auto max-w-2xl text-lg leading-relaxed text-neutral-600 dark:text-gray-300/90"
+              multiline
+            />
+          </motion.div>
+        </motion.div>
+
+        {/* Ecosystem bento grid — spans the full width on desktop */}
+        <div className="mt-16 lg:mt-20 grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
+          {ABOUT_SECTIONS.map((section, i) => (
+            <ProjectCard key={section.key} section={section} index={i} />
+          ))}
+        </div>
+
+        {/* Desktop download */}
+        <DesktopDownload />
+
+        {/* Legal section */}
+        <LegalSection />
+
+        {/* Footer info */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.2 }}
+          className="mt-16 text-center text-sm text-neutral-400 dark:text-gray-600"
+        >
+          <EditableText contentKey={aboutKeys.footer} defaultValue={ABOUT_DEFAULTS.footer} tag="p" />
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Legal (unchanged behaviour) ─────────────────────────── */
+
+
 function LegalSection() {
   const [open, setOpen] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
-  const [overrides, setOverrides] = useState<Record<string, string>>({});
 
+  /* FIX-LEGAL: действующая редакция приходит из админки (Админ → Контент
+     сайта → Правовая информация). Значения из lib/legal.ts — резерв: пока
+     администратор ничего не менял (или запрос не дошёл), страница
+     показывает ту же редакцию, что и раньше, а не пустые блоки. */
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;
     fetch("/api/site-content")
       .then((r) => (r.ok ? r.json() : {}))
       .then((data: Record<string, string>) => {
-        if (alive && data) setOverrides(data);
+        if (alive && data && typeof data === "object") setOverrides(data);
       })
       .catch(() => {});
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
-
   const pick = (key: string, def: string) => {
     const v = overrides[key];
     return v && v.trim() ? v : def;
   };
   const legalSections = LEGAL_SECTIONS.map((s, i) => ({
-    title:   pick(legalKeys.sectionTitle(i), s.title),
+    title: pick(legalKeys.sectionTitle(i), s.title),
     content: pick(legalKeys.sectionContent(i), s.content),
   }));
 
@@ -203,34 +259,36 @@ function LegalSection() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ delay: 0.6 }}
+      transition={{ delay: 1 }}
       className="mt-20"
     >
+      {/* Divider */}
       <div className="mb-8 flex items-center gap-4">
-        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-        <span className="text-xs font-medium uppercase tracking-widest text-white/30">Юридическая информация</span>
-        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-neutral-300 dark:via-white/10 to-transparent" />
+        <span className="text-xs font-medium uppercase tracking-widest text-neutral-400 dark:text-gray-600">Юридическая информация</span>
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-neutral-300 dark:via-white/10 to-transparent" />
       </div>
 
+      {/* Toggle button */}
       <button
         onClick={() => setOpen(!open)}
-        className="group relative w-full overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-white/[0.13] hover:shadow-lg"
+        className="group relative w-full overflow-hidden rounded-2xl border border-neutral-200/80 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-neutral-300 dark:hover:border-white/[0.13] hover:shadow-lg dark:hover:shadow-none"
       >
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-gray-500 opacity-30 transition-opacity group-hover:opacity-60" />
+        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-neutral-400 dark:bg-gray-500 opacity-30 transition-opacity group-hover:opacity-60" />
         <div className="flex items-center justify-between p-5 pl-7">
           <div className="flex items-center gap-3">
-            <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5 text-neutral-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <div className="text-left">
-              <div className="text-sm font-semibold text-white">{pick(legalKeys.heading, LEGAL_DEFAULTS.heading)}</div>
-              <div className="mt-0.5 text-xs text-gray-500">{pick(legalKeys.subheading, LEGAL_DEFAULTS.subheading)}</div>
+              <div className="text-sm font-semibold text-neutral-800 dark:text-white">{pick(legalKeys.heading, LEGAL_DEFAULTS.heading)}</div>
+              <div className="mt-0.5 text-xs text-neutral-400 dark:text-gray-500">{pick(legalKeys.subheading, LEGAL_DEFAULTS.subheading)}</div>
             </div>
           </div>
           <motion.svg
             animate={{ rotate: open ? 180 : 0 }}
             transition={{ duration: 0.3 }}
-            className="h-5 w-5 flex-shrink-0 text-gray-500"
+            className="h-5 w-5 flex-shrink-0 text-neutral-400 dark:text-gray-500"
             fill="none" stroke="currentColor" viewBox="0 0 24 24"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -238,6 +296,7 @@ function LegalSection() {
         </div>
       </button>
 
+      {/* Expandable content */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -247,30 +306,34 @@ function LegalSection() {
             transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
             className="overflow-hidden"
           >
-            <div className="mt-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-xl p-6 md:p-8">
-              <p className="mb-6 text-sm leading-relaxed text-gray-400">
+            <div className="mt-3 rounded-2xl border border-neutral-200/80 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.02] backdrop-blur-xl p-6 md:p-8">
+              {/* Preamble */}
+              <p className="mb-6 text-sm leading-relaxed text-neutral-600 dark:text-gray-400">
                 {overrides[legalKeys.preamble]?.trim() ? (
                   <span className="whitespace-pre-line">{overrides[legalKeys.preamble]}</span>
                 ) : (
                   <>
-                    Настоящий документ представляет собой официальное публичное предложение (публичную оферту)
-                    проекта TRIOZ, доступного в сети Интернет по адресу{" "}
-                    <a href="https://trioz.ru" className="text-accent hover:underline">trioz.ru</a>.
-                  </>
+                Настоящий документ представляет собой официальное публичное предложение (публичную оферту) проекта TRIOZ, доступного в сети Интернет по адресу{" "}
+                <a href="https://trioz.ru" className="text-accent hover:underline">trioz.ru</a>,
+                адресованное любому физическому лицу, индивидуальному предпринимателю или юридическому лицу (далее — «Пользователь»).
+                В соответствии с пунктом 2 статьи 437 ГК РФ, принятие условий и использование Платформы является акцептом данной оферты.
+              </>
                 )}
               </p>
+
+              {/* Accordion sections */}
               <div className="space-y-2">
                 {legalSections.map((s, i) => (
-                  <div key={i} className="overflow-hidden rounded-xl border border-white/[0.05]">
+                  <div key={i} className="overflow-hidden rounded-xl border border-neutral-100 dark:border-white/[0.05]">
                     <button
                       onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/[0.02]"
+                      className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-white/[0.02]"
                     >
-                      <span className="text-sm font-medium text-gray-300">{s.title}</span>
+                      <span className="text-sm font-medium text-neutral-700 dark:text-gray-300">{s.title}</span>
                       <motion.svg
                         animate={{ rotate: expandedIdx === i ? 180 : 0 }}
                         transition={{ duration: 0.2 }}
-                        className="h-4 w-4 flex-shrink-0 text-gray-600"
+                        className="h-4 w-4 flex-shrink-0 text-neutral-400 dark:text-gray-600"
                         fill="none" stroke="currentColor" viewBox="0 0 24 24"
                       >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -285,7 +348,7 @@ function LegalSection() {
                           transition={{ duration: 0.3 }}
                           className="overflow-hidden"
                         >
-                          <div className="whitespace-pre-line px-4 pb-4 text-sm leading-relaxed text-gray-400">
+                          <div className="whitespace-pre-line px-4 pb-4 text-sm leading-relaxed text-neutral-500 dark:text-gray-400">
                             {s.content}
                           </div>
                         </motion.div>
@@ -294,129 +357,21 @@ function LegalSection() {
                   </div>
                 ))}
               </div>
-              <div className="mt-6 flex flex-col items-start justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row sm:items-center">
-                <div className="text-xs text-gray-600">Для юридических запросов:{" "}<a href="mailto:legal@trioz.ru" className="text-accent hover:underline">legal@trioz.ru</a></div>
-                <div className="text-xs text-gray-600">trioz.ru — Юридическая документация</div>
+
+              {/* Contact footer */}
+              <div className="mt-6 flex flex-col items-start justify-between gap-3 border-t border-neutral-100 dark:border-white/[0.05] pt-5 sm:flex-row sm:items-center">
+                <div className="text-xs text-neutral-400 dark:text-gray-600">
+                  Для юридических запросов:{" "}
+                  <a href="mailto:legal@trioz.ru" className="text-accent hover:underline">legal@trioz.ru</a>
+                </div>
+                <div className="text-xs text-neutral-400 dark:text-gray-600">
+                  trioz.ru — Юридическая документация
+                </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
-  );
-}
-
-/* ─── Page ─── */
-export default function AboutPage() {
-  const [blocks, setBlocks]   = useState<AboutBlock[]>([]);
-  const [bgUrl, setBgUrl]     = useState("");
-  const [bgColor, setBgColor] = useState("#000000");
-
-  useEffect(() => {
-    // Load blocks
-    fetch("/api/admin/about-blocks")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: AboutBlock[]) => setBlocks(data.filter((b) => b.enabled)))
-      .catch(() => {});
-
-    // Load background from site-content
-    fetch("/api/site-content")
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((data: Record<string, string>) => {
-        if (data["about.bg.url"])   setBgUrl(data["about.bg.url"]);
-        if (data["about.bg.color"]) setBgColor(data["about.bg.color"]);
-      })
-      .catch(() => {});
-  }, []);
-
-  const bgStyle: React.CSSProperties = {
-    backgroundColor: bgColor,
-    ...(bgUrl
-      ? {
-          backgroundImage: `url(${bgUrl})`,
-          backgroundRepeat: "repeat",
-          backgroundSize: "auto",
-          backgroundAttachment: "scroll",
-        }
-      : {}),
-  };
-
-  return (
-    <div
-      className="relative min-h-screen overflow-x-hidden text-white"
-      style={bgStyle}
-    >
-      {/* Dark overlay so text stays readable over any texture */}
-      <div className="pointer-events-none fixed inset-0 bg-black/40" style={{ zIndex: 0 }} />
-
-      {/* Back button */}
-      <div className="fixed top-4 left-4 z-50">
-        <Link href="/">
-          <motion.button
-            className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-4 py-2 text-sm font-medium text-gray-300 backdrop-blur-xl transition-all duration-300 hover:border-cyan-400/40 hover:text-cyan-400"
-            whileHover={{ scale: 1.05, x: -2 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Назад
-          </motion.button>
-        </Link>
-      </div>
-
-      <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pt-20 pb-24">
-        {/* Landing blocks */}
-        {blocks.length > 0 ? (
-          <div>
-            {blocks.map((block, i) => (
-              <LandingBlock key={block.id} block={block} index={i} />
-            ))}
-          </div>
-        ) : (
-          /* Fallback hero if no blocks configured */
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            className="py-24 text-center"
-          >
-            <h1
-              className="text-6xl md:text-8xl font-black leading-tight"
-              style={{
-                background: "linear-gradient(135deg, #fff 0%, #8b5cf6 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-                filter: "drop-shadow(0 0 30px #8b5cf688)",
-              }}
-            >
-              TrioZ
-            </h1>
-            <p className="mt-6 text-lg text-white/60 max-w-xl mx-auto">
-              Масштабная экосистема проектов в стиле dark fantasy и cyberpunk.
-            </p>
-          </motion.div>
-        )}
-
-        {/* Desktop download */}
-        <div className="mt-16">
-          <DesktopDownload />
-        </div>
-
-        {/* Legal section */}
-        <LegalSection />
-
-        {/* Footer */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="mt-16 text-center text-sm text-white/20"
-        >
-          &copy; {new Date().getFullYear()} T.Р.И.О.Z &mdash; Экосистема проектов
-        </motion.div>
-      </div>
-    </div>
   );
 }
