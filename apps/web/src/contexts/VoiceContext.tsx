@@ -2805,7 +2805,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       /* FIX-USER-DND: модератор перенёс нас в другой голосовой канал. */
       socket.on("voice:force-join", ({ channelId: targetId, channelName: targetName }: { channelId: string; channelName: string }) => {
         if (targetId === chId) return; // уже здесь
-        void joinVoice(targetId, targetName);
+        void joinVoiceRef.current(targetId, targetName);
       });
 
       socket.on("voice-user-dropped", () => {
@@ -3040,6 +3040,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, [session, isConnected, leaveVoice, createPeerConnection, renegotiateOutbound, cleanupPeer, startSpeakingDetection, attachNoiseSuppressor, teardownEqChain, playSound, setScreenVideo, syncRemoteScreens]);
+
+  /* FIX-FORCE-JOIN: реф на joinVoice — нужен внутри замыкания joinVoice, где 
+     socket создаётся до завершения useCallback. */
+  const joinVoiceRef = useRef(joinVoice);
+  useEffect(() => { joinVoiceRef.current = joinVoice; }, [joinVoice]);
 
   /* ── Mute / Deafen ── */
   // Force the microphone into a concrete muted/unmuted state and notify peers.
