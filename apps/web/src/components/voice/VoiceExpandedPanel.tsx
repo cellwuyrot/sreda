@@ -95,7 +95,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
   // where it was summoned. Personal volume is stored per-listener in
   // `voice.userVolumes`, so each user tunes everyone else independently — it
   // never affects what other people hear.
-  const [volumeMenu, setVolumeMenu] = useState<{ socketId: string; name: string; x: number; y: number } | null>(null);
+  const [volumeMenu, setVolumeMenu] = useState<{ socketId: string; name: string; x: number; y: number; stageKey?: string | null } | null>(null);
   // Moderation context menu for kick/ban in voice channel
   const [modMenu, setModMenu] = useState<{
     userId: string; socketId: string; name: string; x: number; y: number;
@@ -384,7 +384,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
               своей прокруткой, на узких — блок под сценой (см. классы выше). */}
           <div className="lg:w-64 flex-shrink-0 lg:border-l border-neutral-200 dark:border-white/10 flex flex-col min-h-0">
             <p className="px-3 pt-3 pb-1 text-[10px] text-neutral-400 dark:text-neutral-500 flex-shrink-0">
-              Клик — смотреть только этого · Ctrl+клик — добавить · ПКМ — громкость
+              ЛКМ — меню участника (громкость и действия) · Ctrl+клик — добавить поток на сцену
             </p>
             <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
               <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
@@ -400,7 +400,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                     if (isSelf) return;
                     e.preventDefault();
                     const cx = e.clientX, cy = e.clientY;
-                    setVolumeMenu({ socketId: u.socketId, name: u.userName, x: cx, y: cy });
+                    setVolumeMenu({ socketId: u.socketId, name: u.userName, x: cx, y: cy, stageKey: primaryStageKey });
                     // Fetch moderation permissions for this channel participant
                     if (voice.channelId && u.userId) {
                       fetch(`/api/voice/moderation-info?channelId=${encodeURIComponent(voice.channelId)}&targetUserId=${encodeURIComponent(u.userId)}`)
@@ -433,8 +433,15 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                       cameraTile={cameraTile}
                       isMenuOpen={isMenuOpen}
                       isOnStage={primaryStageKey != null && stageKeys.includes(primaryStageKey)}
-                      quality={voice.connectionQuality.get(u.socketId) ?? "unknown"}
-                      onClick={(e) => { if (primaryStageKey) pickStream(primaryStageKey, e.ctrlKey || e.metaKey); }}
+                      primaryStageKey={primaryStageKey}
+                      onClick={(e) => {
+                        // FIX-LMB: Ctrl+клик — добавить поток на сцену; обычный клик — меню
+                        if ((e.ctrlKey || e.metaKey) && primaryStageKey) {
+                          pickStream(primaryStageKey, true);
+                        } else {
+                          openMenu(e);
+                        }
+                      }}
                       onContextMenu={openMenu}
                     />
                   );
@@ -597,6 +604,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
             volume={voice.userVolumes.get(volumeMenu.socketId) ?? 100}
             onChange={(v) => voice.setUserVolume(volumeMenu.socketId, v)}
             onClose={() => setVolumeMenu(null)}
+            onWatchStream={volumeMenu.stageKey ? () => { focusStageKey(volumeMenu!.stageKey!); } : undefined}
           />
         )}
       </AnimatePresence>
@@ -656,7 +664,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
  * click, Escape, or scroll. Rendered through a portal so it floats above the
  * voice panel regardless of overflow/stacking contexts. */
 function VolumeMenu({
-  name, x, y, volume, onChange, onClose,
+  name, x, y, volume, onChange, onClose, onWatchStream,
 }: {
   name: string;
   x: number;
@@ -664,6 +672,8 @@ function VolumeMenu({
   volume: number;
   onChange: (v: number) => void;
   onClose: () => void;
+  /** FIX-LMB: если у участника есть поток — кнопка «Смотреть» показывает его на сцене */
+  onWatchStream?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
@@ -704,6 +714,20 @@ function VolumeMenu({
         <span className="text-xs font-medium text-neutral-900 dark:text-white truncate">{name}</span>
         <span className={`text-[11px] tabular-nums ${volume > 100 ? "text-amber-500 font-medium" : "text-neutral-500"}`}>{volume}%</span>
       </div>
+      {/* FIX-LMB: кнопка просмотра потока участника */}
+      {onWatchStream && (
+        <button
+          onClick={() => { onWatchStream(); onClose(); }}
+          className="w-full mb-2 flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-white/5 hover:bg-violet-50 dark:hover:bg-cyan-400/10 hover:text-violet-700 dark:hover:text-cyan-300 transition-colors"
+        >
+          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          Смотреть на сцене
+        </button>
+      )}
       <div className="flex items-center gap-2">
         <button
           onClick={() => onChange(volume === 0 ? 100 : 0)}
@@ -878,7 +902,7 @@ function StageTile({ tile, onRemove }: { tile: StageMedia; onRemove?: () => void
  * заменяет старую строку списка, поведение сохранено полностью. */
 function ParticipantTile({
   name, avatar, isSelf, isSpeaking, isScreenSharing, isMuted, volume, cameraTile,
-  isMenuOpen, isOnStage, quality, onClick, onContextMenu,
+  isMenuOpen, isOnStage, quality, primaryStageKey: _primaryStageKey, onClick, onContextMenu,
 }: {
   name: string;
   avatar: string | null;
@@ -891,6 +915,7 @@ function ParticipantTile({
   isMenuOpen: boolean;
   isOnStage: boolean;
   quality: ConnectionQuality;
+  primaryStageKey: string | null;
   onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
