@@ -348,6 +348,8 @@ model Channel {
   parentId         String?
   channelGroupType String?
   sortOrder        Int                    @default(0)
+  noRecord         Boolean                @default(false)
+  voiceLimit       Int?
   parent           Channel?               @relation("ChannelTree", fields: [parentId], references: [id], onDelete: SetNull)
   children         Channel[]              @relation("ChannelTree")
   group            Group                  @relation(fields: [groupId], references: [id], onDelete: Cascade)

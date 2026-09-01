@@ -1,0 +1,3 @@
+-- FIX-GROUPSETTINGS: noRecord + voiceLimit on Channel
+ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "noRecord" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "voiceLimit" INTEGER;
