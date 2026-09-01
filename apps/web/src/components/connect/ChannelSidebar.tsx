@@ -667,10 +667,7 @@ export default function ChannelSidebar({
                     /* FIX-DRAGORDER2: то же для групп голосовых каналов. */
                     <div key={cat.id} className={`!mt-2 ${dragCat.itemClass(cat.id)}`} {...dragCat.itemDataProps(cat.id)}>
                       <div className="flex items-center justify-between px-2 py-1 group/cat">
-                        {canManage && (
-                          <span {...dragCat.itemHandleProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-20 group-hover/cat:opacity-70 transition-opacity" title="Перетащить группу"><svg className="w-3 h-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
-                        )}
-                        <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
+                        <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} {...(canManage ? dragCat.itemHandleProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id)) : {})} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" style={canManage ? {cursor:'grab'} : undefined} aria-expanded={!isCollapsed}>
                           <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${!isCollapsed ? "rotate-90" : "rotate-0"}`} fill="none" viewBox="0 0 6 10">
                             <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
@@ -723,10 +720,7 @@ export default function ChannelSidebar({
                         return (
                           <div key={ch.id} className={`ml-4 ${dragCh.itemClass(ch.id)}${dragUser.channelDropClass(ch.id)}`} {...dragCh.itemDataProps(ch.id)} {...dragUser.channelDropProps(ch.id)}>
                             <div className="group flex items-center">
-                              {canManage && (
-                                <span {...dragCh.itemHandleProps(ch.id, children.map(c => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-20 group-hover:opacity-70 transition-opacity" title="Перетащить канал"><svg className="w-3 h-3 text-neutral-400" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
-                              )}
-                              <button
+                              <button {...(canManage ? dragCh.itemHandleProps(ch.id, children.map(c => c.id)) : {})} style={canManage ? {cursor:'grab'} : undefined}
                                 onClick={() => {
                                   /* Первый кл��к — подключиться и остаться там,
                                      где были: человек заходит в канал, чтобы
@@ -831,10 +825,7 @@ export default function ChannelSidebar({
                 <div key={ch.id} className={`${dragCh.itemClass(ch.id)}${dragUser.channelDropClass(ch.id)}`} {...dragCh.itemDataProps(ch.id)} {...dragUser.channelDropProps(ch.id)}>
                   {/* Channel button */}
                   <div className="group flex items-center">
-                    {canManage && (
-                      <span {...dragCh.itemHandleProps(ch.id, voiceChannels.filter(c => !c.parentId).map(c => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-20 group-hover:opacity-70 transition-opacity" title="Перетащить канал"><svg className="w-3 h-3 text-neutral-400" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
-                    )}
-                    <button
+                    <button {...(canManage ? dragCh.itemHandleProps(ch.id, voiceChannels.filter(c => !c.parentId).map(c => c.id)) : {})} style={canManage ? {cursor:'grab'} : undefined}
                       onClick={() => {
                         /* То же самое для канала вне категории. */
                         if (!isActive) { voiceActions?.joinVoice(ch.id, ch.name); return; }
