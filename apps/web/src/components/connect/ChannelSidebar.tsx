@@ -668,7 +668,7 @@ export default function ChannelSidebar({
                     <div key={cat.id} className={`!mt-2 ${dragCat.itemClass(cat.id)}`} {...dragCat.itemDataProps(cat.id)}>
                       <div className="flex items-center justify-between px-2 py-1 group/cat">
                         {canManage && (
-                          <span {...dragCat.itemHandleProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-0 group-hover/cat:opacity-60 transition-opacity" title="Перетащить группу"><svg className="w-3 h-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
+                          <span {...dragCat.itemHandleProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-20 group-hover/cat:opacity-70 transition-opacity" title="Перетащить группу"><svg className="w-3 h-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
                         )}
                         <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
                           <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${!isCollapsed ? "rotate-90" : "rotate-0"}`} fill="none" viewBox="0 0 6 10">
@@ -724,7 +724,7 @@ export default function ChannelSidebar({
                           <div key={ch.id} className={`ml-4 ${dragCh.itemClass(ch.id)}${dragUser.channelDropClass(ch.id)}`} {...dragCh.itemDataProps(ch.id)} {...dragUser.channelDropProps(ch.id)}>
                             <div className="group flex items-center">
                               {canManage && (
-                                <span {...dragCh.itemHandleProps(ch.id, children.map(c => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-0 group-hover:opacity-60 transition-opacity" title="Перетащить канал"><svg className="w-3 h-3 text-neutral-400" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
+                                <span {...dragCh.itemHandleProps(ch.id, children.map(c => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-20 group-hover:opacity-70 transition-opacity" title="Перетащить канал"><svg className="w-3 h-3 text-neutral-400" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
                               )}
                               <button
                                 onClick={() => {
@@ -832,7 +832,7 @@ export default function ChannelSidebar({
                   {/* Channel button */}
                   <div className="group flex items-center">
                     {canManage && (
-                      <span {...dragCh.itemHandleProps(ch.id, voiceChannels.filter(c => !c.parentId).map(c => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-0 group-hover:opacity-60 transition-opacity" title="Перетащить канал"><svg className="w-3 h-3 text-neutral-400" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
+                      <span {...dragCh.itemHandleProps(ch.id, voiceChannels.filter(c => !c.parentId).map(c => c.id))} className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 opacity-20 group-hover:opacity-70 transition-opacity" title="Перетащить канал"><svg className="w-3 h-3 text-neutral-400" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg></span>
                     )}
                     <button
                       onClick={() => {
