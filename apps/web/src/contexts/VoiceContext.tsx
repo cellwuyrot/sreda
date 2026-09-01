@@ -2062,6 +2062,62 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     } catch { /* ignore */ }
   }, []);
 
+  /* ── FIX-DEFAULTDEV: при первом запуске подбираем устройства по умолчанию ──────
+   * localStorage хранит выбор пользователя. Если его нет — берём первое устройство
+   * (браузер/ОС выдают default первым), а не оставляем null. Это решает проблему
+   * десктоп-оболочки, где null = «системное по умолчанию» работает в браузере,
+   * но Electron требует явного deviceId чтобы MediaDevices его зафиксировал. */
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+    const detect = async () => {
+      try {
+        // Запрашиваем пермишен на аудио (без пермишена labels = "", id = ""|"default")
+        // Тихо — не показываем диалог если пользователь уже отклонил.
+        let devices: MediaDeviceInfo[] = [];
+        try {
+          // Пробуем с пермишеном (лучше labels)
+          const test = await navigator.mediaDevices.getUserMedia({ audio: true });
+          test.getTracks().forEach(t => t.stop());
+        } catch { /* нет пермишена — enumerateDevices вернёт анонимные устройства */ }
+        devices = await navigator.mediaDevices.enumerateDevices();
+
+        const inputs  = devices.filter(d => d.kind === "audioinput");
+        const outputs = devices.filter(d => d.kind === "audiooutput");
+
+        setInputDevices(inputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Микрофон ${i + 1}` })));
+        setOutputDevices(outputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Динамики ${i + 1}` })));
+
+        // Только если пользователь ещё не выбирал вручную (нет сохранённого) —
+        // ставим «default» или первое реальное устройство.
+        const savedMic = localStorage.getItem("voice-mic-device");
+        const savedOut = localStorage.getItem("voice-output-device");
+
+        if (!savedMic && inputs.length > 0) {
+          // Electron/Chromium представляет системное устройство по умолчанию
+          // как deviceId === "default". Если его нет — берём первое.
+          const def = inputs.find(d => d.deviceId === "default") ?? inputs[0];
+          micDeviceIdRef.current = def.deviceId;
+          setMicDeviceIdState(def.deviceId);
+          // Не пишем в localStorage — это «авто», а не явный выбор пользователя.
+          // При следующей перезагрузке повторим обнаружение.
+        }
+        if (!savedOut && outputs.length > 0) {
+          const def = outputs.find(d => d.deviceId === "default") ?? outputs[0];
+          outputDeviceIdRef.current = def.deviceId;
+          setOutputDeviceIdState(def.deviceId);
+          applyOutputSink(def.deviceId);
+        }
+      } catch { /* ignore */ }
+    };
+    void detect();
+
+    // FIX-DEFAULTDEV: следим за подключением/отключением устройств
+    const handleDeviceChange = () => void detect();
+    navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /* ── FIX-AUDIO-DEV: направить всё воспроизведение на выбранное устройство вывода ──
    * Голос собеседников идёт через destination playback-контекста (setSinkId на
    * AudioContext, Chromium 110+); звук трансляции и эффекты — через свои
