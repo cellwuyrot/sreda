@@ -433,6 +433,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                       cameraTile={cameraTile}
                       isMenuOpen={isMenuOpen}
                       isOnStage={primaryStageKey != null && stageKeys.includes(primaryStageKey)}
+                      quality={voice.connectionQuality.get(u.socketId) ?? "unknown"}
                       primaryStageKey={primaryStageKey}
                       onClick={(e) => {
                         // FIX-LMB: Ctrl+клик — добавить поток на сцену; обычный клик — меню
