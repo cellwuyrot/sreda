@@ -2802,6 +2802,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       // FIX-GR2: человек пропал из-за обрыва и не вернулся за grace-окно —
       // сервер шлёт отложенный звук отключения (присутствие было снято сразу,
       // тихим user-left, чтобы не было «иллюзии присутствия»).
+      /* FIX-USER-DND: модератор перенёс нас в другой голосовой канал. */
+      socket.on("voice:force-join", ({ channelId: targetId, channelName: targetName }: { channelId: string; channelName: string }) => {
+        if (targetId === chId) return; // уже здесь
+        void joinVoiceRef.current(targetId, targetName);
+      });
+
       socket.on("voice-user-dropped", () => {
         playSound(disconnectionSfxRef);
       });
@@ -3034,6 +3040,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, [session, isConnected, leaveVoice, createPeerConnection, renegotiateOutbound, cleanupPeer, startSpeakingDetection, attachNoiseSuppressor, teardownEqChain, playSound, setScreenVideo, syncRemoteScreens]);
+
+  /* FIX-FORCE-JOIN: joinVoice вызывается из сокет-обработчика, который находится внутри тела joinVoice.
+     Мутация ref.current преднамеренно запрещена React Compiler — отключаем правило локально. */
+  const joinVoiceRef = useRef(joinVoice);
+  // eslint-disable-next-line react-hooks/immutability
+  useEffect(() => { joinVoiceRef.current = joinVoice; }, [joinVoice]);
 
   /* ── Mute / Deafen ── */
   // Force the microphone into a concrete muted/unmuted state and notify peers.
