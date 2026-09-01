@@ -138,4 +138,15 @@ export const IPC = {
   UPDATE_STATE: "desktop:update-state",
   /** VPN-ONECLICK: main → renderer: состояние туннеля изменилось. */
   VPN_STATE: "desktop:vpn-state",
+
+  /** WASAPI-SS: запустить нативный loopback-захват звука без PID приложения. */
+  WASAPI_START: "desktop:wasapi-start",
+  /** WASAPI-SS: остановить захват. */
+  WASAPI_STOP:  "desktop:wasapi-stop",
+  /** WASAPI-SS: main → renderer: захват готов, { sampleRate, channels }. */
+  WASAPI_READY: "desktop:wasapi-ready",
+  /** WASAPI-SS: main → renderer: очередной PCM-чанк (ArrayBuffer, interleaved float32). */
+  WASAPI_CHUNK: "desktop:wasapi-chunk",
+  /** WASAPI-SS: main → renderer: захват невозможен (строка причины). */
+  WASAPI_ERROR: "desktop:wasapi-error",
 } as const;

@@ -26,9 +26,6 @@ export interface DesktopConfig {
   replayShortcut?: string;
   /** FIX-REPLAY: папка для файлов повтора (пусто = «Видео/TrioZ Replays»; нет в старых сборках). */
   replayFolder?: string;
-  /** Кнопка мыши (0=лкм, 1=средняя, 2=пкм, 3=назад, 4=вперёд) для рации в глобальных биндах.
-   * null / undefined — отключено. */
-  pttMouseButton?: number | null;
 }
 
 type Unsubscribe = () => void;

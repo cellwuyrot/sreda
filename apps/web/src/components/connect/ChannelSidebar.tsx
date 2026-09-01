@@ -17,7 +17,6 @@ import ScreenSharePrivacyModal from "@/components/voice/ScreenSharePrivacyModal"
 import { isModuleType } from "@/lib/channelModules";
 import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
 import { useDragOrder } from "./useDragOrder"; // FIX-DRAGORDER
-import { useDragUser } from "./useDragUser"; // FIX-USER-DND
 /* GROUP-SKIN: шапка сообщества берётся из оформления группы. */
 import { bannerCss, parseGroupTheme } from "@/lib/groupTheme";
 
@@ -96,23 +95,7 @@ export default function ChannelSidebar({
     }).catch(() => {});
     onGroupRefresh?.();
   };
-  /* FIX-DND-SPLIT: три отдельных хука:
-     - dragCat: перестановка групп (категорий)
-     - dragCh:  перестановка каналов внутри группы
-     - dragUser: перенос пользователя между голосовыми каналами */
-  const drag    = useDragOrder({ enabled: !!canManage, onReorder: commitOrder });
-  const dragCat = useDragOrder({ enabled: !!canManage, onReorder: commitOrder });
-  const dragCh  = useDragOrder({ enabled: !!canManage, onReorder: commitOrder });
-  const dragUser = useDragUser({
-    enabled: !!canManage,
-    onMove: async (socketId, userId, targetChannelId) => {
-      await fetch("/api/voice/move-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUserId: userId, targetChannelId, groupId: groupDetail.id }),
-      }).catch(() => {});
-    },
-  });
+  const drag = useDragOrder({ enabled: !!canManage, onReorder: commitOrder });
 
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   /* Окно запуска демонстрации: то же, что в развёрнутой комнате. Кнопка здесь
@@ -544,7 +527,11 @@ export default function ChannelSidebar({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                     </svg>
                   </button>
-    
+                  <button onClick={() => onCreateChannel()} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать канал">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
                 </div>
               )}
             </div>
@@ -605,7 +592,7 @@ export default function ChannelSidebar({
 						)}
                         </div>
                         {!isCollapsed && children.map(sub => (
-                          <div key={sub.id} className={`ml-4${drag.itemClass(sub.id)}`} {.../* FIX-DRAG-UNIFIED: все текстовые каналы группы делят один список, поэтому перетаскивание работает даже когда категория содержит один канал. */ drag.itemProps(sub.id, flatList.map(c => c.id))}>
+                          <div key={sub.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5${drag.itemClass(sub.id)}`} {...drag.itemProps(sub.id, children.map(c => c.id))}>
                             <ChannelItem ch={sub} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[sub.id] ?? (groupMuted && channelMutes[sub.id] !== false)} onToggleMute={handleToggleChannelMute} />
                           </div>
                         ))}
@@ -613,7 +600,7 @@ export default function ChannelSidebar({
                     );
                   })}
                   {rootChannels.map(ch => (
-                    <div key={ch.id} className={drag.itemClass(ch.id)} {.../* FIX-DRAG-UNIFIED */ drag.itemProps(ch.id, flatList.map(c => c.id))}>
+                    <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, rootChannels.map(c => c.id))}>
                       <ChannelItem ch={ch} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[ch.id] ?? (groupMuted && channelMutes[ch.id] !== false)} onToggleMute={handleToggleChannelMute} />
                     </div>
                   ))}
@@ -654,7 +641,11 @@ export default function ChannelSidebar({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11.5v5M9.5 14h5" />
                     </svg>
                   </button>
-
+                  <button onClick={() => onCreateChannel({ groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать голосовой канал" title="Создать голосовой канал">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
                 </div>
               )}
             </div>
@@ -665,9 +656,9 @@ export default function ChannelSidebar({
                   const children = voiceChannels.filter((c) => c.parentId === cat.id);
                   return (
                     /* FIX-DRAGORDER2: то же для групп голосовых каналов. */
-                    <div key={cat.id} className={`!mt-2 ${dragCat.itemClass(cat.id)}`} {...dragCat.itemDataProps(cat.id)}>
+                    <div key={cat.id} className={`!mt-2${drag.itemClass(cat.id)}`} {...drag.itemProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id))}>
                       <div className="flex items-center justify-between px-2 py-1 group/cat">
-                        <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} {...(canManage ? dragCat.itemHandleProps(cat.id, categoryChannels.filter((c) => c.channelGroupType === "VOICE").map((c) => c.id)) : {})} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" style={canManage ? {cursor:'grab'} : undefined} aria-expanded={!isCollapsed}>
+                        <button onClick={() => toggleCategoryGroup(cat.id)} onContextMenu={(e) => { if (!canManage) return; e.preventDefault(); setEditingChannel(cat); }} className="flex items-center gap-1.5 flex-1 text-left text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide font-medium hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" aria-expanded={!isCollapsed}>
                           <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${!isCollapsed ? "rotate-90" : "rotate-0"}`} fill="none" viewBox="0 0 6 10">
                             <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
@@ -718,9 +709,9 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className={`ml-4 ${dragCh.itemClass(ch.id)}${dragUser.channelDropClass(ch.id)}`} {...dragCh.itemDataProps(ch.id)} {...dragUser.channelDropProps(ch.id)}>
+                          <div key={ch.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5 pl-1${drag.itemClass(ch.id)}`} {...drag.itemProps(ch.id, children.map(c => c.id))}>
                             <div className="group flex items-center">
-                              <button {...(canManage ? dragCh.itemHandleProps(ch.id, children.map(c => c.id)) : {})} style={canManage ? {cursor:'grab'} : undefined}
+                              <button
                                 onClick={() => {
                                   /* Первый кл��к — подключиться и остаться там,
                                      где были: человек заходит в канал, чтобы
@@ -795,16 +786,15 @@ export default function ChannelSidebar({
                                 {displayUsers
                                   .filter(u => !(isActive && u.userId === myProfileUser.id))
                                   .map(u => (
-                                    <div key={u.socketId} className={dragUser.userRowClass(u.socketId)} {...dragUser.userRowProps(u.socketId, u.userId)}>
-                                      <VoiceUserRow
-                                        name={u.userName}
-                                        avatar={u.avatar}
-                                        muted={u.muted}
-                                        speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
-                                        quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
-                                        sharingScreen={isActive ? voiceState?.screenSharerIds.has(u.socketId) ?? false : false}
-                                      />
-                                    </div>
+                                    <VoiceUserRow
+                                      key={u.socketId}
+                                      name={u.userName}
+                                      avatar={u.avatar}
+                                      muted={u.muted}
+                                      speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
+                                      quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
+                                      sharingScreen={isActive ? voiceState?.screenSharerIds.has(u.socketId) ?? false : false}
+                                    />
                                   ))}
                               </div>
                             )}
@@ -822,10 +812,10 @@ export default function ChannelSidebar({
               const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
               return (
-                <div key={ch.id} className={`${dragCh.itemClass(ch.id)}${dragUser.channelDropClass(ch.id)}`} {...dragCh.itemDataProps(ch.id)} {...dragUser.channelDropProps(ch.id)}>
+                <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, voiceChannels.filter((c) => !c.parentId).map((c) => c.id))}>
                   {/* Channel button */}
                   <div className="group flex items-center">
-                    <button {...(canManage ? dragCh.itemHandleProps(ch.id, voiceChannels.filter(c => !c.parentId).map(c => c.id)) : {})} style={canManage ? {cursor:'grab'} : undefined}
+                    <button
                       onClick={() => {
                         /* То же самое для канала вне категории. */
                         if (!isActive) { voiceActions?.joinVoice(ch.id, ch.name); return; }
@@ -895,9 +885,8 @@ export default function ChannelSidebar({
                         .map(u => (
                         <div
                           key={u.socketId}
-                          className={`group/user relative ${dragUser.userRowClass(u.socketId)}`}
+                          className="group/user relative"
                           onContextMenu={isActive && voiceActions ? (e) => { e.preventDefault(); setVolumeOpen(volumeOpen === u.socketId ? null : u.socketId); } : undefined}
-                          {...dragUser.userRowProps(u.socketId, u.userId)}
                         >
                           <VoiceUserRow
                             name={u.userName}

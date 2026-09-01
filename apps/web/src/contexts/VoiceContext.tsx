@@ -504,6 +504,98 @@ export const SCREEN_COMFORT_VIEWERS = 3;
 // never leaks the call audio unless the user knowingly opts in — and the launch
 // window warns about it explicitly. It used to default to ON, so a plain "share
 // my screen" produced the echo with no way to see why.
+
+// ── WASAPI-SS: хелпер получения WASAPI-дорожки в renderer ────────────────────────────────
+/**
+ * Запускает WASAPI-захват звука ОС через нативный аддон изолированно от voice pipeline.
+ * Исключает всё PID-дерево приложения, поэтому голоса участников не попадает
+ * в screen-share audio.
+ *
+ * @returns MediaStreamTrack или null (если не-Windows, нет аддона, ошибка захвата).
+ */
+async function acquireWasapiAudioTrack(
+  desktop: ReturnType<typeof getDesktopApi>,
+): Promise<{ track: MediaStreamTrack; cleanup: () => void } | null> {
+  if (
+    !desktop ||
+    !desktop.startWasapiCapture ||
+    !desktop.onWasapiReady ||
+    !desktop.onWasapiChunk ||
+    !desktop.onWasapiError ||
+    desktop.platform !== "win32"
+  ) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    let audioCtx: AudioContext | null = null;
+    let destNode: MediaStreamAudioDestinationNode | null = null;
+    let workletNode: AudioWorkletNode | null = null;
+    const unsubs: Array<() => void> = [];
+    let settled = false;
+
+    const timeout = setTimeout(() => settle(null), 3000);
+
+    function settle(result: { track: MediaStreamTrack; cleanup: () => void } | null) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      // Отписываемся от ready/error (chunk остаётся подписанным)
+      unsubs.forEach(fn => fn());
+      resolve(result);
+    }
+
+    const unsubReady = desktop.onWasapiReady(async (sampleRate: number, channels: number) => {
+      try {
+        audioCtx = new AudioContext({ sampleRate, latencyHint: "playback" });
+        await audioCtx.audioWorklet.addModule("/worklets/wasapi-injector.js");
+        workletNode = new AudioWorkletNode(audioCtx, "wasapi-injector", {
+          numberOfOutputs: 1,
+          outputChannelCount: [Math.min(2, channels)],
+        });
+        workletNode.port.postMessage({ type: "config", channels });
+        destNode = audioCtx.createMediaStreamDestination();
+        workletNode.connect(destNode);
+
+        // Подписка на чанки записывается здесь, не в settle
+        const unsubChunk = desktop.onWasapiChunk((data: Float32Array) => {
+          if (workletNode) {
+            // Transferable send (zero-copy)
+            workletNode.port.postMessage({ type: "chunk", data }, [data.buffer]);
+          }
+        });
+        unsubs.push(unsubChunk);
+
+        const track = destNode.stream.getAudioTracks()[0] ?? null;
+        if (!track) { settle(null); return; }
+
+        settle({
+          track,
+          cleanup: () => {
+            unsubChunk();
+            workletNode?.disconnect();
+            audioCtx?.close();
+            desktop.stopWasapiCapture?.();
+          },
+        });
+      } catch (err) {
+        console.error("[wasapi-ss] AudioContext/worklet init failed:", err);
+        settle(null);
+      }
+    });
+    unsubs.push(unsubReady);
+
+    const unsubErr = desktop.onWasapiError((msg: string) => {
+      console.warn("[wasapi-ss] capture error:", msg);
+      settle(null);
+    });
+    unsubs.push(unsubErr);
+
+    // Запускаем захват; main сам использует process.pid как excludePid
+    desktop.startWasapiCapture();
+  });
+}
+
 function readScreenAudioPref(): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -2299,12 +2391,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const constraints = buildScreenConstraints(quality);
       let stream: MediaStream;
       try {
+        // WASAPI-SS: на Windows в оболочке звук захватывает нативный WASAPI-адаптер
+        // (PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE) — Chromium-loopback
+        // НЕ используем, иначе весь системный микс включая голоса участников TZ.Connect
+        // попал бы обратно в стрим.
+        const isWasapiDesktop = !!(desktop?.startWasapiCapture && desktop?.platform === "win32");
         stream = await navigator.mediaDevices.getDisplayMedia({
-          // Звук запрашиваем ровно тогда, когда его выбрали: оболочка отдаёт
-          // системный микс только по этому же признаку, и рассинхрон запроса с
-          // ответом Electron не любит.
           video: constraints.video,
-          audio: audioPref,
+          audio: isWasapiDesktop ? false : audioPref,
         });
       } catch (err) {
         const name = (err as { name?: string } | null)?.name ?? "";
@@ -2330,6 +2424,27 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       }
 
       screenStreamRef.current = stream;
+
+      // WASAPI-SS: пробуем получить WASAPI audio track (только Windows-оболочка).
+      // Голосовой pipeline (микрофон) не затрагиваем.
+      // Если нативный захват недоступен (не-Windows, нет аддона, ошибка Windows API),
+      // просто продолжаем с видео без звука.
+      let wasapiCleanup: (() => void) | null = null;
+      if (isWasapiDesktop && audioPref) {
+        try {
+          const wasapiResult = await acquireWasapiAudioTrack(desktop);
+          if (wasapiResult) {
+            // Добавляем WASAPI audio track в stream и в screenStreamRef
+            stream.addTrack(wasapiResult.track);
+            wasapiCleanup = wasapiResult.cleanup;
+            console.log("[wasapi-ss] WASAPI audio track acquired and added to screen stream");
+          } else {
+            console.warn("[wasapi-ss] WASAPI capture unavailable — screen-share without audio");
+          }
+        } catch (wasapiErr) {
+          console.error("[wasapi-ss] acquireWasapiAudioTrack failed:", wasapiErr);
+        }
+      }
 
       /* Звук мог не приехать: браузер не умеет отдавать звук экрана (Firefox,
          Safari), а в оболочке loopback есть только на Windows. Отдельно ничего
@@ -2373,7 +2488,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       setLocalScreenStream(stream);
       setScreenVideo(stream);
       playSound(screenShareSfxRef);
-      videoTrack.onended = () => stopScreenShare();
+      videoTrack.onended = () => {
+        wasapiCleanup?.();
+        stopScreenShare();
+      };
     } finally {
       screenShareRequestingRef.current = false;
     }

@@ -342,11 +342,6 @@ export default function ProfilePage({ username }: { username?: string }) {
      источник тех же данных рано или поздно разошёлся бы с первым. */
   useEffect(() => {
     if (!target) return;
-    // FIX-PROFILESYNC: сбрасываем данные сразу при смене профиля,
-    // иначе шапка (в т.ч. баннер) показывает предыдущего человека
-    // пока идёт запрос — «теряется синхронизация» между профилями.
-    setHead(null);
-    setError(null);
     let alive = true;
     (async () => {
       const res = await fetch(`/api/profile/public?username=${encodeURIComponent(target)}`);

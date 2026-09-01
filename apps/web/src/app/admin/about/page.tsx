@@ -1,78 +1,68 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
+import InfoTooltip from "@/components/ui/InfoTooltip";
+import ProjectGlyph from "@/components/about/ProjectGlyph";
+import { ABOUT_SECTIONS, ABOUT_DEFAULTS, aboutKeys } from "@/lib/about";
 
-/* ─── Types ──────────────────────────────────────────────────── */
-interface AboutBlock {
-  id: string;
-  order: number;
-  title: string;
-  description: string;
-  mediaUrl: string | null;
-  mediaType: string;
-  layout: string;
-  textAlign: string;
-  glowColor: string;
-  shape: string;
-  spacingTop: number;
-  enabled: boolean;
+/* ─── Field descriptors: one entry per editable content key ─── */
+interface FieldDef {
+  key: string;
+  label: string;
+  def: string;
+  multiline?: boolean;
 }
 
-type BlockDraft = Omit<AboutBlock, "id" | "order">;
+interface FieldGroup {
+  title: string;
+  subtitle?: string;
+  color?: string;
+  glyph?: string;
+  fields: FieldDef[];
+}
 
-const BLANK: BlockDraft = {
-  title: "",
-  description: "",
-  mediaUrl: null,
-  mediaType: "image",
-  layout: "text-left",
-  textAlign: "left",
-  glowColor: "#8b5cf6",
-  shape: "rectangle",
-  spacingTop: 60,
-  enabled: true,
-};
-
-const LAYOUTS = [
-  { value: "text-left",  label: "Текст слева" },
-  { value: "text-right", label: "Текст справа" },
-  { value: "centered",   label: "По центру" },
+const GROUPS: FieldGroup[] = [
+  {
+    title: "Шапка раздела",
+    subtitle: "Верхний блок страницы «О проекте» — надзаголовок, крупный заголовок и описание.",
+    fields: [
+      { key: aboutKeys.eyebrow, label: "Надзаголовок", def: ABOUT_DEFAULTS.eyebrow },
+      { key: aboutKeys.title, label: "Заголовок", def: ABOUT_DEFAULTS.title },
+      { key: aboutKeys.subtitle, label: "Подзаголовок", def: ABOUT_DEFAULTS.subtitle, multiline: true },
+    ],
+  },
+  ...ABOUT_SECTIONS.map((s) => ({
+    title: s.title,
+    subtitle: `Блок экосистемы · ${s.href}`,
+    color: s.color,
+    glyph: s.key,
+    fields: [
+      { key: aboutKeys.sectionTitle(s.key), label: "Заголовок блока", def: s.title },
+      { key: aboutKeys.sectionDesc(s.key), label: "Описание блока", def: s.description, multiline: true },
+    ],
+  })),
+  {
+    title: "Подвал",
+    fields: [{ key: aboutKeys.footer, label: "Текст в подвале", def: ABOUT_DEFAULTS.footer }],
+  },
 ];
 
-const TEXT_ALIGNS = [
-  { value: "left",   label: "По левому" },
-  { value: "center", label: "По центру" },
-  { value: "right",  label: "По правому" },
-];
+const ALL_KEYS = GROUPS.flatMap((g) => g.fields.map((f) => f.key));
 
-const SHAPES = [
-  { value: "rectangle",    label: "Прямоугольник" },
-  { value: "rounded",      label: "Закруглённый" },
-  { value: "skewed-left",  label: "Наклон ←" },
-  { value: "skewed-right", label: "Наклон →" },
-  { value: "hexagon",      label: "Шестиугольник" },
-  { value: "diamond",      label: "Ромб" },
-];
-
-const GLOW_PRESETS = [
-  "#8b5cf6", "#06b6d4", "#ec4899", "#f97316",
-  "#10b981", "#ef4444", "#3b82f6", "#eab308", "#ffffff",
-];
-
-/* ─── Toast ──────────────────────────────────────────────────── */
 function Toast({ message, type }: { message: string; type: "success" | "error" }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
-      className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-medium text-white shadow-xl ${
-        type === "success" ? "bg-green-600" : "bg-red-600"
+      className={`fixed bottom-6 right-6 z-50 rounded-xl px-5 py-3 text-sm font-medium text-white shadow-lg ${
+        type === "success" ? "bg-green-500" : "bg-red-500"
       }`}
     >
       {message}
@@ -80,688 +70,211 @@ function Toast({ message, type }: { message: string; type: "success" | "error" }
   );
 }
 
-/* ─── BlockRow ──────────────────────────────────────────────── */
-function BlockRow({
-  block, index, total,
-  onEdit, onDelete, onMoveUp, onMoveDown, onToggle,
-}: {
-  block: AboutBlock;
-  index: number;
-  total: number;
-  onEdit: () => void;
-  onDelete: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  onToggle: () => void;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border transition-all ${
-        block.enabled
-          ? "border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900"
-          : "border-dashed border-neutral-300 dark:border-white/5 bg-neutral-50/50 dark:bg-neutral-900/40 opacity-60"
-      }`}
-    >
-      <div className="flex items-center gap-3 p-4">
-        {/* Accent stripe */}
-        <div className="w-1 h-12 rounded-full flex-shrink-0" style={{ background: block.glowColor }} />
-
-        {/* Thumb */}
-        <div
-          className="w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center"
-          style={{ background: `${block.glowColor}22`, border: `1px solid ${block.glowColor}44` }}
-        >
-          {block.mediaUrl ? (
-            block.mediaType === "video" ? (
-              <svg className="h-6 w-6" style={{ color: block.glowColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-              </svg>
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={block.mediaUrl} alt="" className="w-full h-full object-cover" />
-            )
-          ) : (
-            <svg className="h-6 w-6 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-neutral-900 dark:text-white truncate">
-            {block.title || "(без заголовка)"}
-          </p>
-          <p className="text-xs text-neutral-500 dark:text-gray-400 truncate mt-0.5">{block.description}</p>
-          <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-1">
-            {LAYOUTS.find((l) => l.value === block.layout)?.label}
-            {" · "}
-            {SHAPES.find((s) => s.value === block.shape)?.label}
-            {" · отступ "}{block.spacingTop}px
-          </p>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={onMoveUp} disabled={index === 0}
-            title="Вверх"
-            className="p-2 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-white disabled:opacity-20 transition-colors">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
-          </button>
-          <button onClick={onMoveDown} disabled={index === total - 1}
-            title="Вниз"
-            className="p-2 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-white disabled:opacity-20 transition-colors">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          <button onClick={onToggle}
-            title={block.enabled ? "Скрыть" : "Показать"}
-            className={`p-2 rounded-lg transition-colors ${
-              block.enabled
-                ? "text-green-500 hover:text-green-600"
-                : "text-neutral-400 hover:text-neutral-700 dark:hover:text-white"
-            }`}>
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {block.enabled ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-              )}
-            </svg>
-          </button>
-          <button onClick={onEdit}
-            title="Редактировать"
-            className="p-2 rounded-lg text-neutral-400 hover:text-violet-600 dark:hover:text-cyan-400 transition-colors">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button onClick={onDelete}
-            title="Удалить"
-            className="p-2 rounded-lg text-neutral-400 hover:text-red-500 transition-colors">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── BlockEditor modal ───────────────────────────────────────── */
-function BlockEditor({
-  draft, onChange, onSave, onClose, saving,
-  uploadMedia, uploading, uploadError,
-}: {
-  draft: BlockDraft;
-  onChange: (patch: Partial<BlockDraft>) => void;
-  onSave: () => void;
-  onClose: () => void;
-  saving: boolean;
-  uploadMedia: (file: File) => Promise<void>;
-  uploading: boolean;
-  uploadError: string;
-}) {
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const input = "w-full rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-4 py-2.5 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:border-violet-500 dark:focus:border-cyan-500 focus:outline-none transition-colors";
-  const label = "block text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1.5";
-  const chip = (active: boolean) =>
-    `py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
-      active
-        ? "border-violet-500 dark:border-cyan-500 bg-violet-500/10 dark:bg-cyan-500/10 text-violet-600 dark:text-cyan-400"
-        : "border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 text-neutral-600 dark:text-gray-300 hover:border-neutral-300 dark:hover:border-white/20"
-    }`;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.97 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.97 }}
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl p-6 space-y-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Редактор блока</h2>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors">
-            <svg className="h-5 w-5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Title */}
-        <div>
-          <label className={label}>Заголовок</label>
-          <input className={input} value={draft.title}
-            onChange={(e) => onChange({ title: e.target.value })}
-            placeholder="Заголовок блока" />
-        </div>
-
-        {/* Description */}
-        <div>
-          <label className={label}>Описание</label>
-          <textarea className={`${input} resize-y`} rows={4}
-            value={draft.description}
-            onChange={(e) => onChange({ description: e.target.value })}
-            placeholder="Текст описания..." />
-        </div>
-
-        {/* Media upload */}
-        <div>
-          <label className={label}>Медиафайл (фото или видео)</label>
-          <div
-            className="relative rounded-2xl border-2 border-dashed border-neutral-200 dark:border-white/10 p-4 text-center cursor-pointer hover:border-violet-400 dark:hover:border-cyan-500 transition-colors"
-            onClick={() => fileRef.current?.click()}
-          >
-            <input
-              ref={fileRef} type="file" className="hidden"
-              accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadMedia(f); }}
-            />
-            {uploading ? (
-              <p className="text-sm text-neutral-500">Загрузка…</p>
-            ) : draft.mediaUrl ? (
-              <div className="space-y-2">
-                {draft.mediaType === "video" ? (
-                  <video src={draft.mediaUrl} className="mx-auto max-h-32 rounded-xl object-cover" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={draft.mediaUrl} alt="" className="mx-auto max-h-32 rounded-xl object-cover" />
-                )}
-                <p className="text-xs text-neutral-400">Нажмите, чтобы заменить</p>
-              </div>
-            ) : (
-              <div className="py-4">
-                <svg className="mx-auto h-10 w-10 text-neutral-300 dark:text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
-                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <p className="mt-2 text-sm text-neutral-500">PNG, JPG, WebP, GIF, MP4, WebM · до 200 МБ</p>
-              </div>
-            )}
-          </div>
-          {uploadError && <p className="mt-1 text-xs text-red-500">{uploadError}</p>}
-          {draft.mediaUrl && (
-            <button
-              onClick={() => onChange({ mediaUrl: null })}
-              className="mt-1.5 text-xs text-red-500 hover:text-red-400"
-            >Убрать медиафайл</button>
-          )}
-        </div>
-
-        {/* Layout */}
-        <div>
-          <label className={label}>Расположение блока</label>
-          <div className="grid grid-cols-3 gap-2">
-            {LAYOUTS.map((l) => (
-              <button key={l.value} type="button"
-                className={chip(draft.layout === l.value)}
-                onClick={() => onChange({ layout: l.value })}>
-                {l.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Text align */}
-        <div>
-          <label className={label}>Выравнивание текста</label>
-          <div className="grid grid-cols-3 gap-2">
-            {TEXT_ALIGNS.map((a) => (
-              <button key={a.value} type="button"
-                className={chip(draft.textAlign === a.value)}
-                onClick={() => onChange({ textAlign: a.value })}>
-                {a.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Shape */}
-        <div>
-          <label className={label}>Форма блока</label>
-          <div className="grid grid-cols-3 gap-2">
-            {SHAPES.map((s) => (
-              <button key={s.value} type="button"
-                className={chip(draft.shape === s.value)}
-                onClick={() => onChange({ shape: s.value })}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Glow color */}
-        <div>
-          <label className={label}>Цвет свечения / градиента</label>
-          <div className="flex items-center gap-3">
-            <input type="color" value={draft.glowColor}
-              onChange={(e) => onChange({ glowColor: e.target.value })}
-              className="h-10 w-14 cursor-pointer rounded-xl border border-neutral-200 dark:border-white/10 bg-transparent p-1" />
-            <input className={`${input} flex-1`} value={draft.glowColor}
-              onChange={(e) => onChange({ glowColor: e.target.value })}
-              placeholder="#8b5cf6" />
-            <div
-              className="h-10 w-10 rounded-xl flex-shrink-0 border border-neutral-200 dark:border-white/10"
-              style={{ background: `radial-gradient(circle, ${draft.glowColor}88, transparent 70%)` }}
-            />
-          </div>
-          {/* Presets */}
-          <div className="flex gap-2 mt-2 flex-wrap">
-            {GLOW_PRESETS.map((c) => (
-              <button key={c} type="button"
-                onClick={() => onChange({ glowColor: c })}
-                className="h-6 w-6 rounded-full border-2 transition-transform hover:scale-110"
-                style={{ backgroundColor: c, borderColor: draft.glowColor === c ? "#fff" : "transparent" }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Spacing top */}
-        <div>
-          <label className={label}>Отступ сверху: <strong>{draft.spacingTop}px</strong></label>
-          <input type="range" min={0} max={400} step={4}
-            value={draft.spacingTop}
-            onChange={(e) => onChange({ spacingTop: Number(e.target.value) })}
-            className="w-full accent-violet-600 dark:accent-cyan-500" />
-          <div className="flex justify-between text-[11px] text-neutral-400 mt-0.5">
-            <span>0px</span><span>200px</span><span>400px</span>
-          </div>
-        </div>
-
-        {/* Enabled toggle */}
-        <div className="flex items-center justify-between rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-4 py-3">
-          <span className="text-sm font-medium text-neutral-900 dark:text-white">Показывать блок</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={draft.enabled}
-            onClick={() => onChange({ enabled: !draft.enabled })}
-            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
-              draft.enabled ? "bg-violet-600 dark:bg-cyan-500" : "bg-neutral-300 dark:bg-white/15"
-            }`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
-              draft.enabled ? "left-[22px]" : "left-0.5"
-            }`} />
-          </button>
-        </div>
-
-        {/* Buttons */}
-        <div className="flex justify-end gap-3 pt-2">
-          <button onClick={onClose}
-            className="px-5 py-2 rounded-xl text-sm text-neutral-600 dark:text-gray-300 border border-neutral-200 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
-            Отмена
-          </button>
-          <button onClick={onSave} disabled={saving}
-            className="px-5 py-2 rounded-xl text-sm font-medium text-white bg-violet-600 dark:bg-cyan-600 hover:bg-violet-500 dark:hover:bg-cyan-500 disabled:opacity-50 transition-colors">
-            {saving ? "Сохранение…" : "Сохранить"}
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-/* ─── Main page ─────────────────────────────────────────────── */
 export default function AdminAboutPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  const [blocks, setBlocks] = useState<AboutBlock[]>([]);
+  // Overrides currently stored, and the working form values (override or "").
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [initial, setInitial] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  // Background
-  const [bgUrl, setBgUrl]     = useState("");
-  const [bgColor, setBgColor] = useState("#000000");
-  const [bgUploading, setBgUploading] = useState(false);
-  const bgFileRef = useRef<HTMLInputElement>(null);
-
-  // Editor
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [draft, setDraft] = useState<BlockDraft>({ ...BLANK });
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState("");
-
-  const showToast = useCallback((message: string, type: "success" | "error") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  /* auth guard */
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/");
   }, [session, status, router]);
 
-  /* load */
   useEffect(() => {
-    if (status !== "authenticated") return;
-    void Promise.all([
-      fetch("/api/admin/about-blocks").then((r) => (r.ok ? r.json() : [])),
-      fetch("/api/site-content").then((r) => (r.ok ? r.json() : {})),
-    ]).then(([blockData, siteData]: [AboutBlock[], Record<string, string>]) => {
-      setBlocks(blockData);
-      if (siteData["about.bg.url"])   setBgUrl(siteData["about.bg.url"]);
-      if (siteData["about.bg.color"]) setBgColor(siteData["about.bg.color"]);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [status]);
+    fetch("/api/site-content")
+      .then((r) => r.json())
+      .then((data: Record<string, string>) => {
+        const next: Record<string, string> = {};
+        for (const k of ALL_KEYS) next[k] = data?.[k] ?? "";
+        setValues(next);
+        setInitial(next);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
 
-  /* reorder */
-  const move = async (index: number, dir: -1 | 1) => {
-    const next = [...blocks];
-    const target = index + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    const reordered = next.map((b, i) => ({ ...b, order: i }));
-    setBlocks(reordered);
-    await fetch("/api/admin/about-blocks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reordered.map((b) => ({ id: b.id, order: b.order }))),
-    }).catch(() => showToast("Ошибка при сохранении порядка", "error"));
+  const showToast = (message: string, type: "success" | "error") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
   };
 
-  /* toggle visibility */
-  const toggleBlock = async (block: AboutBlock) => {
-    const updated = { ...block, enabled: !block.enabled };
-    setBlocks((prev) => prev.map((b) => (b.id === block.id ? updated : b)));
-    await fetch(`/api/admin/about-blocks/${block.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updated),
-    }).catch(() => showToast("Ошибка", "error"));
-  };
+  const dirty = useMemo(
+    () => ALL_KEYS.some((k) => (values[k] ?? "") !== (initial[k] ?? "")),
+    [values, initial],
+  );
 
-  /* delete */
-  const deleteBlock = async (id: string) => {
-    if (!confirm("Удалить блок?")) return;
-    await fetch(`/api/admin/about-blocks/${id}`, { method: "DELETE" });
-    setBlocks((prev) => prev.filter((b) => b.id !== id));
-    showToast("Блок удалён", "success");
-  };
+  const set = (key: string, v: string) => setValues((p) => ({ ...p, [key]: v }));
 
-  /* open editor */
-  const openNew = () => {
-    setEditingId(null);
-    setDraft({ ...BLANK });
-    setUploadError("");
-    setEditorOpen(true);
-  };
-  const openEdit = (block: AboutBlock) => {
-    setEditingId(block.id);
-    setDraft({
-      title: block.title, description: block.description,
-      mediaUrl: block.mediaUrl, mediaType: block.mediaType,
-      layout: block.layout, textAlign: block.textAlign,
-      glowColor: block.glowColor, shape: block.shape,
-      spacingTop: block.spacingTop, enabled: block.enabled,
-    });
-    setUploadError("");
-    setEditorOpen(true);
-  };
-
-  /* save block */
-  const saveBlock = async () => {
+  const save = async () => {
     setSaving(true);
     try {
-      if (editingId) {
-        const res  = await fetch(`/api/admin/about-blocks/${editingId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(draft),
-        });
-        const upd: AboutBlock = await res.json();
-        setBlocks((prev) => prev.map((b) => (b.id === editingId ? upd : b)));
-      } else {
-        const res  = await fetch("/api/admin/about-blocks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(draft),
-        });
-        const created: AboutBlock = await res.json();
-        setBlocks((prev) => [...prev, created]);
+      // Persist only what changed. Empty value ⇒ remove the override (reset to default).
+      const changed = ALL_KEYS.filter((k) => (values[k] ?? "") !== (initial[k] ?? ""));
+      for (const key of changed) {
+        const value = (values[key] ?? "").trim();
+        if (value) {
+          await fetch("/api/site-content", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key, value }),
+          });
+        } else {
+          await fetch("/api/site-content", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key }),
+          });
+        }
       }
-      setEditorOpen(false);
-      showToast("Сохранено", "success");
+      setInitial({ ...values });
+      showToast("Изменения сохранены", "success");
     } catch {
-      showToast("Ошибка при сохранении", "error");
+      showToast("Не удалось сохранить", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  /* upload media */
-  const uploadMedia = async (file: File) => {
-    setUploading(true);
-    setUploadError("");
+  const resetAll = async () => {
+    if (!(await confirmDialog({ message: "Сбросить весь контент раздела «О проекте» к значениям по умолчанию?", confirmText: "Сбросить", danger: true }))) return;
+    setSaving(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("kind", "media");
-      const res  = await fetch("/api/admin/about-upload", { method: "POST", body: fd });
-      const data: { url?: string; type?: string; error?: string } = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Ошибка");
-      setDraft((prev) => ({ ...prev, mediaUrl: data.url ?? null, mediaType: data.type ?? "image" }));
-    } catch (e) {
-      setUploadError(e instanceof Error ? e.message : "Ошибка загрузки");
+      for (const key of ALL_KEYS) {
+        await fetch("/api/site-content", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key }),
+        });
+      }
+      const cleared: Record<string, string> = {};
+      for (const k of ALL_KEYS) cleared[k] = "";
+      setValues(cleared);
+      setInitial(cleared);
+      showToast("Контент сброшен к значениям по умолчанию", "success");
+    } catch {
+      showToast("Не удалось сбросить", "error");
     } finally {
-      setUploading(false);
+      setSaving(false);
     }
-  };
-
-  /* background upload */
-  const uploadBg = async (file: File) => {
-    setBgUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("kind", "bg");
-      const res  = await fetch("/api/admin/about-upload", { method: "POST", body: fd });
-      const data: { url?: string; error?: string } = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Ошибка");
-      setBgUrl(data.url ?? "");
-      await saveSiteKey("about.bg.url", data.url ?? "");
-      showToast("Фон загружен", "success");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Ошибка загрузки", "error");
-    } finally {
-      setBgUploading(false);
-    }
-  };
-
-  const saveSiteKey = async (key: string, value: string) => {
-    await fetch("/api/site-content", {
-      method: value ? "POST" : "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, value }),
-    });
-  };
-
-  const saveBgColor = async (color: string) => {
-    setBgColor(color);
-    await saveSiteKey("about.bg.color", color);
-  };
-
-  const removeBg = async () => {
-    setBgUrl("");
-    await saveSiteKey("about.bg.url", "");
-    showToast("Фон удалён", "success");
   };
 
   if (status === "loading" || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 dark:bg-neutral-950">
         <Spinner />
       </div>
     );
   }
   if (session?.user?.role !== "ADMIN") return null;
 
+  const inputClass =
+    "w-full rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-4 py-2.5 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 transition-colors focus:border-violet-500 dark:focus:border-cyan-500 focus:outline-none";
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 px-4 pb-28 pt-8">
       <div className="mx-auto max-w-3xl">
-
         {/* Header */}
-        <div className="mb-8">
-          <Link
-            href="/admin"
-            className="mb-2 inline-flex items-center gap-1 text-sm text-violet-600 dark:text-cyan-400 hover:opacity-80"
-          >
+        <div className="mb-6">
+          <Link href="/admin" className="mb-2 inline-flex items-center gap-1 text-sm text-violet-600 dark:text-cyan-400 transition-colors hover:opacity-80">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Админ-панель
           </Link>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">О проекте — лендинг</h1>
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">
+            Раздел «О проекте»{" "}
+            <InfoTooltip
+              side="bottom"
+              text="Пустое поле — значит, останется текст по умолчанию: он подсказан серым прямо в поле. Те же самые тексты можно править и на самой странице, если включить режим редактирования сайта."
+            />
+          </h1>
           <p className="mt-1 text-sm text-neutral-500 dark:text-gray-400">
-            Блоки и фон страницы{" "}
-            <Link href="/about" target="_blank" className="text-violet-600 dark:text-cyan-400 hover:underline">
-              /about ↗
-            </Link>
+            Тексты страницы{" "}
+            <Link href="/about" className="text-violet-600 dark:text-cyan-400 hover:underline">/about</Link>.
           </p>
         </div>
 
-        {/* Background section */}
-        <section className="mb-8 rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-6 space-y-5">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Фон страницы</h2>
-
-          {/* Color picker */}
-          <div className="flex items-center gap-4">
-            <div>
-              <p className="text-xs text-neutral-500 dark:text-gray-400 mb-1">Цвет фона (по умолчанию чёрный)</p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={bgColor}
-                  onChange={(e) => void saveBgColor(e.target.value)}
-                  className="h-10 w-14 cursor-pointer rounded-xl border border-neutral-200 dark:border-white/10 bg-transparent p-1"
-                />
-                <span className="text-sm font-mono text-neutral-600 dark:text-gray-300">{bgColor}</span>
-              </div>
-            </div>
+        {/* Groups */}
+        <div className="space-y-5">
+          {GROUPS.map((group) => (
             <div
-              className="h-16 w-24 rounded-xl border border-neutral-200 dark:border-white/10 flex-shrink-0"
-              style={{
-                backgroundColor: bgColor,
-                backgroundImage: bgUrl ? `url(${bgUrl})` : undefined,
-                backgroundRepeat: "repeat",
-                backgroundSize: "auto",
-              }}
-            />
-          </div>
-
-          {/* Texture upload */}
-          <div>
-            <p className="text-xs text-neutral-500 dark:text-gray-400 mb-2">Текстура фона (бесшовная, PNG/JPG · до 10 МБ)</p>
-            <div
-              className="relative rounded-2xl border-2 border-dashed border-neutral-200 dark:border-white/10 p-4 cursor-pointer text-center hover:border-violet-400 dark:hover:border-cyan-500 transition-colors"
-              onClick={() => bgFileRef.current?.click()}
+              key={group.title}
+              className="space-y-4 rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-6"
             >
-              <input
-                ref={bgFileRef} type="file"
-                accept="image/png,image/jpeg,image/webp" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadBg(f); }}
-              />
-              {bgUploading ? (
-                <p className="text-sm text-neutral-500">Загрузка…</p>
-              ) : bgUrl ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-neutral-500 dark:text-gray-400 truncate">{bgUrl}</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void removeBg(); }}
-                    className="text-xs text-red-500 hover:text-red-400 flex-shrink-0"
-                  >Удалить</button>
+              <div className="flex items-center gap-3">
+                {group.glyph && (
+                  <span
+                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border"
+                    style={{ color: group.color, borderColor: `${group.color}40`, backgroundColor: `${group.color}14` }}
+                  >
+                    <ProjectGlyph name={group.glyph} className="h-6 w-6" />
+                  </span>
+                )}
+                <div>
+                  <h2 className="text-base font-semibold text-neutral-900 dark:text-white">{group.title}</h2>
+                  {group.subtitle && <p className="mt-0.5 text-xs text-neutral-500 dark:text-gray-400">{group.subtitle}</p>}
                 </div>
-              ) : (
-                <p className="text-sm text-neutral-400 py-2">Загрузить текстуру фона</p>
-              )}
-            </div>
-          </div>
-        </section>
+              </div>
 
-        {/* Blocks section */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
-              Блоки ({blocks.length})
-            </h2>
-            <button
-              onClick={openNew}
-              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 dark:bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 dark:hover:bg-cyan-500 transition-colors"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Добавить блок
-            </button>
-          </div>
-
-          {blocks.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-neutral-200 dark:border-white/10 p-12 text-center">
-              <p className="text-neutral-400 dark:text-neutral-600">Блоков пока нет</p>
-              <button onClick={openNew} className="mt-3 text-sm text-violet-600 dark:text-cyan-400 hover:underline">
-                Создать первый блок
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {blocks.map((block, i) => (
-                <BlockRow
-                  key={block.id}
-                  block={block}
-                  index={i}
-                  total={blocks.length}
-                  onEdit={() => openEdit(block)}
-                  onDelete={() => void deleteBlock(block.id)}
-                  onMoveUp={() => void move(i, -1)}
-                  onMoveDown={() => void move(i, 1)}
-                  onToggle={() => void toggleBlock(block)}
-                />
+              {group.fields.map((f) => (
+                <div key={f.key} className="space-y-1.5">
+                  <label className="block text-sm text-neutral-500 dark:text-gray-400">{f.label}</label>
+                  {f.multiline ? (
+                    <textarea
+                      value={values[f.key] ?? ""}
+                      onChange={(e) => set(f.key, e.target.value)}
+                      placeholder={f.def}
+                      rows={3}
+                      className={`${inputClass} resize-y`}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={values[f.key] ?? ""}
+                      onChange={(e) => set(f.key, e.target.value)}
+                      placeholder={f.def}
+                      className={inputClass}
+                    />
+                  )}
+                </div>
               ))}
             </div>
-          )}
-        </section>
+          ))}
+        </div>
+
+        <div className="mt-6 flex items-center justify-between">
+          <button
+            onClick={resetAll}
+            disabled={saving}
+            className="text-sm text-neutral-500 transition-colors hover:text-red-500 disabled:opacity-50"
+          >
+            Сбросить всё к значениям по умолчанию
+          </button>
+        </div>
       </div>
 
-      {/* Editor modal */}
-      <AnimatePresence>
-        {editorOpen && (
-          <BlockEditor
-            draft={draft}
-            onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
-            onSave={() => void saveBlock()}
-            onClose={() => setEditorOpen(false)}
-            saving={saving}
-            uploadMedia={uploadMedia}
-            uploading={uploading}
-            uploadError={uploadError}
-          />
-        )}
-      </AnimatePresence>
+      {/* Sticky save bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 dark:border-white/10 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3">
+          <span className="text-xs text-neutral-500 dark:text-gray-400">
+            {dirty ? "Есть несохранённые изменения" : "Все изменения сохранены"}
+          </span>
+          <button
+            onClick={save}
+            disabled={saving || !dirty}
+            className="rounded-xl bg-violet-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+          >
+            {saving ? "Сохранение…" : "Сохранить изменения"}
+          </button>
+        </div>
+      </div>
 
-      <AnimatePresence>
-        {toast && <Toast message={toast.message} type={toast.type} />}
-      </AnimatePresence>
+      <AnimatePresence>{toast && <Toast message={toast.message} type={toast.type} />}</AnimatePresence>
     </div>
   );
 }
