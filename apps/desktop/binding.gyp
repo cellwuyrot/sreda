@@ -3,14 +3,12 @@
     "target_name": "wasapi_capture",
     "conditions": [["OS=='win'", {
       "sources": ["native/wasapi_capture.cpp"],
-      "include_dirs": [
-        "<!@(node -p \"require('node-addon-api').include_dir\")"
-      ],
       "libraries": ["-lole32", "-lwinmm", "-luuid", "-lmfuuid"],
-      "defines": ["NAPI_DISABLE_CPP_EXCEPTIONS", "UNICODE", "_UNICODE"],
+      "defines": ["UNICODE", "_UNICODE", "NAPI_VERSION=8"],
+      "include_dirs": [],
       "msvs_settings": {
         "VCCLCompilerTool": {
-          "ExceptionHandling": 0,
+          "ExceptionHandling": 1,
           "AdditionalOptions": ["/std:c++17"]
         },
         "VCLinkerTool": {

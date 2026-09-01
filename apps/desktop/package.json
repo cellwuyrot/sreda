@@ -23,15 +23,13 @@
     "dev": "npm run build && cross-env TRIOZ_DEV=1 electron .",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
-    "build:native": "node-gyp rebuild --target=33.2.1 --arch=x64 --dist-url=https://electronjs.org/headers",
-    "rebuild:native": "electron-rebuild -v 33.2.1 -f -w wasapi_capture"
+    "build:native": "npx node-gyp rebuild --target=33.2.1 --arch=x64 --dist-url=https://electronjs.org/headers"
   },
   "dependencies": {
     "@trioz/shared": "*",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.3.9",
-    "socket.io-client": "^4.8.3",
-    "node-addon-api": "^7.0.0"
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
@@ -43,12 +41,6 @@
     "esbuild": "^0.28.1",
     "eslint": "^8.57.1",
     "rimraf": "^5.0.10",
-    "typescript": "^5.6.3",
-    "node-gyp": "^10.0.0",
-    "@electron/rebuild": "^3.6.0"
-  },
-  "gypfile": true,
-  "build": {
-    "npmRebuild": true
+    "typescript": "^5.6.3"
   }
 }
