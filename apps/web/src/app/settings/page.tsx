@@ -1756,19 +1756,6 @@ export default function SettingsPage() {
                       onClear={() => void saveShortcut({ pushToTalkShortcut: "" })}
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
-                    <div>
-                      <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
-                        Рация — кнопка мыши
-                        <InfoTooltip text="Дополнительная кнопка мыши (средняя, 4, 5) как рация: работает во всей системе. Левая кнопка не поддерживается." />
-                      </p>
-                    </div>
-                    <MouseButtonRecorder
-                      value={formatMouseButton(desktopCfg?.pttMouseButton)}
-                      onCapture={capturePttMouseButton}
-                      onClear={() => void saveShortcut({ pttMouseButton: null })}
-                    />
-                  </div>
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-neutral-300 dark:border-white/15 px-4 py-6 text-center">
