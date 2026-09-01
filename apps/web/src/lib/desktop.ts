@@ -26,9 +26,6 @@ export interface DesktopConfig {
   replayShortcut?: string;
   /** FIX-REPLAY: папка для файлов повтора (пусто = «Видео/TrioZ Replays»; нет в старых сборках). */
   replayFolder?: string;
-  /** Кнопка мыши (0=лкм, 1=средняя, 2=пкм, 3=назад, 4=вперёд) для рации в глобальных биндах.
-   * null / undefined — отключено. */
-  pttMouseButton?: number | null;
 }
 
 type Unsubscribe = () => void;
@@ -161,6 +158,20 @@ export interface TriozDesktopApi {
    * в старых сборках оболочки и в браузере — обязателен feature-detect.
    */
   vpn?: DesktopVpnApi;
+  /**
+   * FIX-SS-ECHO: WASAPI Process Loopback — захват системного звука (без эха
+   * собственного микрофона) через нативный аддон. Доступно только в Windows-
+   * сборках с аддоном. Всегда вызывать через опциональную цепочку.
+   */
+  startWasapiCapture?(): void;
+  stopWasapiCapture?(): void;
+  /** Аддон готов к работе: возвращает sampleRate и channels. */
+  onWasapiReady?(cb: (sampleRate: number, channels: number) => void): Unsubscribe;
+  /** Порция PCM-данных (Float32Array, interleaved stereo, 48 kHz). */
+  onWasapiChunk?(cb: (data: Float32Array) => void): Unsubscribe;
+  /** Ошибка нативного аддона. */
+  onWasapiError?(cb: (message: string) => void): Unsubscribe;
+
 }
 
 declare global {
