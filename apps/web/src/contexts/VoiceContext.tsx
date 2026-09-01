@@ -2397,18 +2397,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       const constraints = buildScreenConstraints(quality);
       let stream: MediaStream;
-		// isWasapiDesktop нужен и после try/catch — объявляем снаружи.
-		const isWasapiDesktop = !!(desktop?.startWasapiCapture && desktop?.platform === "win32");
-		try {
-		  // WASAPI-SS: на Windows в оболочке звук захватывает нативный WASAPI-адаптер
-		  // (PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE) — Chromium-loopback
-		  // НЕ используем, иначе весь системный микс включая голоса участников TZ.Connect
-		  // попал бы обратно в стрим.
-		  stream = await navigator.mediaDevices.getDisplayMedia({
-			video: constraints.video,
-			audio: isWasapiDesktop ? false : audioPref,
-		  });
-		}
+      const isWasapiDesktop = !!(desktop?.startWasapiCapture && desktop?.platform === "win32");
+      try {
+        // WASAPI-SS: на Windows в оболочке звук захватывает нативный WASAPI-адаптер
+        // (PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE) — Chromium-loopback
+        // НЕ используем, иначе весь системный микс включая голоса участников TZ.Connect
+        // попал бы обратно в стрим.
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: constraints.video,
+          audio: isWasapiDesktop ? false : audioPref,
+        });
       } catch (err) {
         const name = (err as { name?: string } | null)?.name ?? "";
         if (shellPicksSource) {
