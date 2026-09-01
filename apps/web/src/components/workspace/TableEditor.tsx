@@ -1,6 +1,7 @@
+\
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TableCard } from "./types";
 import {
   colCount,
@@ -32,7 +33,14 @@ import InfoTooltip from "@/components/ui/InfoTooltip";
 const HANDLE_COL_W = 36;
 const ADD_COL_W = 32;
 
-/** 0 → "A", 27 → "AB" — spreadsheet-style column labels. */
+/** Rows below this count render all at once; above — virtual window. */
+const VIRTUAL_THRESHOLD = 100;
+/** Extra rows rendered above and below the visible range. */
+const OVERSCAN = 15;
+/** Max entries in the internal undo stack. */
+const MAX_TABLE_HISTORY = 25;
+
+/** 0 -> "A", 27 -> "AB" */
 function colLabel(index: number): string {
   let n = index + 1;
   let s = "";
@@ -45,11 +53,33 @@ function colLabel(index: number): string {
 }
 
 /**
- * Full-screen spreadsheet editor. The data is rendered as a single framed
- * table (shaded header, thin gridlines, zebra body rows) with lightweight
- * insert/remove handles for every row and column, a header-row toggle and
- * CSV / XLSX import & export. Column dividers and row dividers can be dragged
- * to resize, and the sizes persist on the card.
+ * WS-PERF: O(log n) binary-search over a sorted Float32Array of cumulative
+ * row offsets to find the first row whose cumulative offset >= `target`.
+ * Returns the row *index* (0-based).
+ */
+function bisectLeft(offsets: Float32Array, target: number): number {
+  let lo = 0;
+  let hi = offsets.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (offsets[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return Math.max(0, lo - 1);
+}
+
+/**
+ * Full-screen spreadsheet editor.
+ *
+ * WS-PERF improvements vs. the previous version:
+ * - Virtual row windowing: only OVERSCAN rows above/below the visible area
+ *   are rendered as <tr> elements. A 10 000-row table renders ~50 rows at
+ *   any time instead of 10 000. Two zero-height spacer rows keep the
+ *   scrollbar thumb accurate.
+ * - Internal Ctrl+Z / Ctrl+Y: table-cell edits never enter the *canvas*
+ *   undo stack (which would clone the full cells array 30 times). Instead,
+ *   the editor keeps its own lightweight stack of cell snapshots, capped at
+ *   MAX_TABLE_HISTORY entries.
  */
 export default function TableEditor({
   card,
@@ -61,17 +91,105 @@ export default function TableEditor({
   onClose: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const cells = card.cells;
   const cols = colCount(cells);
   const setCells = (next: string[][]) => patch({ cells: next });
 
-  // Effective per-column widths and per-row heights (defaults fill the gaps).
+  // ── Internal undo stack (cell edits only) ───────────────────────────────
+  const undoRef = useRef<string[][][]>([]);
+  const redoRef = useRef<string[][][]>([]);
+
+  const tblBeginHistory = useCallback(() => {
+    // Snapshot rows shallowly — each inner array is immutable after setCell
+    undoRef.current.push(cells.map((r) => r.slice()));
+    if (undoRef.current.length > MAX_TABLE_HISTORY) undoRef.current.shift();
+    redoRef.current = [];
+  }, [cells]);
+
+  const tblUndo = useCallback(() => {
+    const prev = undoRef.current.pop();
+    if (!prev) return;
+    redoRef.current.push(cells.map((r) => r.slice()));
+    setCells(prev);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells]);
+
+  const tblRedo = useCallback(() => {
+    const next = redoRef.current.pop();
+    if (!next) return;
+    undoRef.current.push(cells.map((r) => r.slice()));
+    setCells(next);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells]);
+
+  // ── Virtual scrolling state ──────────────────────────────────────────────
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerH, setContainerH] = useState(480);
+
+  // Effective per-column widths and per-row heights
   const widths = normalizeSizes(card.colWidths, cols, DEFAULT_COL_WIDTH);
   const heights = normalizeSizes(card.rowHeights, cells.length, DEFAULT_ROW_HEIGHT);
   const tableWidth = HANDLE_COL_W + widths.reduce((s, w) => s + w, 0) + ADD_COL_W;
   const hasCustomSizes = !!card.colWidths || !!card.rowHeights;
 
+  /** Cumulative row offsets: offsets[i] = top of row i in pixels. */
+  const rowOffsets = useMemo(() => {
+    const arr = new Float32Array(cells.length + 1);
+    for (let i = 0; i < cells.length; i++) arr[i + 1] = arr[i] + heights[i];
+    return arr;
+  }, [cells.length, heights]);
+
+  const totalRowH = rowOffsets[cells.length] ?? 0;
+
+  // Visible row window (with overscan)
+  const firstRow = useMemo(() => {
+    if (cells.length <= VIRTUAL_THRESHOLD) return 0;
+    return Math.max(0, bisectLeft(rowOffsets, scrollTop) - OVERSCAN);
+  }, [cells.length, rowOffsets, scrollTop]);
+
+  const lastRow = useMemo(() => {
+    if (cells.length <= VIRTUAL_THRESHOLD) return cells.length;
+    return Math.min(cells.length, bisectLeft(rowOffsets, scrollTop + containerH) + OVERSCAN + 1);
+  }, [cells.length, rowOffsets, scrollTop, containerH]);
+
+  const topSpacerH = rowOffsets[firstRow] ?? 0;
+  const bottomSpacerH = totalRowH - (rowOffsets[lastRow] ?? totalRowH);
+
+  // ── Scroll + resize observers ────────────────────────────────────────────
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h) setContainerH(h);
+    });
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, []);
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key === "z" && !e.shiftKey) { e.preventDefault(); tblUndo(); }
+      if (ctrl && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        tblRedo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, tblUndo, tblRedo]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
   const setColW = (ci: number, w: number) =>
     patch({ colWidths: setSize(card.colWidths, cols, ci, w, DEFAULT_COL_WIDTH, MIN_COL_WIDTH, MAX_COL_WIDTH) });
   const setRowH = (ri: number, h: number) =>
@@ -93,24 +211,12 @@ export default function TableEditor({
   };
   const resetSizes = () => patch({ colWidths: undefined, rowHeights: undefined });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const onImport = async (file?: File) => {
     if (!file) return;
     setError("");
     try {
       const grid = await readSpreadsheetFile(file);
-      if (grid.length === 0) {
-        setError("Файл пуст или не распознан.");
-        return;
-      }
-      // A freshly imported grid resets any previous custom column/row sizes.
+      if (grid.length === 0) { setError("Файл пуст или не распознан."); return; }
       patch({ cells: grid, colWidths: undefined, rowHeights: undefined });
     } catch {
       setError("Не удалось прочитать файл. Поддерживаются CSV и XLSX.");
@@ -143,7 +249,7 @@ export default function TableEditor({
             Таблица{" "}
             <InfoTooltip
               side="bottom"
-              text="Ширину столбцов и высоту строк можно тянуть мышью за границы — «Сбросить размеры» вернёт всё как было. Данные принимаются и отдаются в CSV и XLSX."
+              text="Ширину столбцов и высоту строк можно тянуть мышью за границы. Ctrl+Z / Ctrl+Y — отмена/повтор внутри редактора. CSV и XLSX для импорта и экспорта."
             />
           </span>
           <input
@@ -156,7 +262,8 @@ export default function TableEditor({
             <button type="button" onClick={() => patch({ hasHeader: !card.hasHeader })} className={headerBtn}>
               Заголовок: {card.hasHeader ? "вкл" : "выкл"}
             </button>
-            <button type="button" onClick={resetSizes} disabled={!hasCustomSizes} className={headerBtn} title="Сбросить ширину столбцов и высоту строк">
+            <button type="button" onClick={resetSizes} disabled={!hasCustomSizes} className={headerBtn}
+              title="Сбросить ширину столбцов и высоту строк">
               Сбросить размеры
             </button>
             <button type="button" onClick={() => fileRef.current?.click()} className={headerBtn}>
@@ -182,10 +289,7 @@ export default function TableEditor({
             type="file"
             accept={SPREADSHEET_ACCEPT}
             className="hidden"
-            onChange={(e) => {
-              onImport(e.target.files?.[0]);
-              e.target.value = "";
-            }}
+            onChange={(e) => { onImport(e.target.files?.[0]); e.target.value = ""; }}
           />
         </div>
 
@@ -195,26 +299,23 @@ export default function TableEditor({
           </div>
         )}
 
-        {/* Grid */}
-        <div className="min-h-0 flex-1 overflow-auto bg-neutral-50 p-4 dark:bg-neutral-950/40">
+        {/* Grid — scrollable container with virtual row windowing */}
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-auto bg-neutral-50 p-4 dark:bg-neutral-950/40"
+        >
           <div className="inline-block overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
             <table className="border-collapse text-[13px]" style={{ tableLayout: "fixed", width: tableWidth }}>
               <colgroup>
                 <col style={{ width: HANDLE_COL_W }} />
-                {widths.map((w, ci) => (
-                  <col key={ci} style={{ width: w }} />
-                ))}
+                {widths.map((w, ci) => <col key={ci} style={{ width: w }} />)}
                 <col style={{ width: ADD_COL_W }} />
               </colgroup>
               <thead>
-                {/* Column handles: label + insert-left / delete, plus a drag divider */}
                 <tr className="bg-neutral-100/80 dark:bg-neutral-800/60">
                   <th className="sticky left-0 z-10 border-b border-r border-neutral-200 bg-neutral-100/80 dark:border-neutral-700 dark:bg-neutral-800/60" />
                   {Array.from({ length: cols }).map((_, ci) => (
-                    <th
-                      key={ci}
-                      className="relative border-b border-l border-neutral-200 px-2 py-1 dark:border-neutral-700"
-                    >
+                    <th key={ci} className="relative border-b border-l border-neutral-200 px-2 py-1 dark:border-neutral-700">
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
                           {colLabel(ci)}
@@ -223,24 +324,14 @@ export default function TableEditor({
                           <button type="button" onClick={() => insertColAt(ci)} className={ctrlBtn} title="Вставить столбец слева">
                             <PlusIcon size={12} />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => removeColAt(ci)}
-                            disabled={cols <= 1}
-                            className={ctrlBtn}
-                            title="Удалить столбец"
-                          >
+                          <button type="button" onClick={() => removeColAt(ci)} disabled={cols <= 1}
+                            className={ctrlBtn} title="Удалить столбец">
                             <CloseIcon size={11} />
                           </button>
                         </span>
                       </div>
-                      <GridResizeHandle
-                        axis="x"
-                        size={widths[ci]}
-                        min={MIN_COL_WIDTH}
-                        max={MAX_COL_WIDTH}
-                        onResize={(w) => setColW(ci, w)}
-                      />
+                      <GridResizeHandle axis="x" size={widths[ci]} min={MIN_COL_WIDTH} max={MAX_COL_WIDTH}
+                        onResize={(w) => setColW(ci, w)} />
                     </th>
                   ))}
                   <th className="border-b border-l border-neutral-200 px-1 dark:border-neutral-700">
@@ -251,7 +342,15 @@ export default function TableEditor({
                 </tr>
               </thead>
               <tbody>
-                {cells.map((row, ri) => {
+                {/* WS-PERF: top virtual spacer */}
+                {topSpacerH > 0 && (
+                  <tr aria-hidden style={{ height: topSpacerH }}>
+                    <td colSpan={cols + 2} style={{ padding: 0 }} />
+                  </tr>
+                )}
+
+                {cells.slice(firstRow, lastRow).map((row, i) => {
+                  const ri = firstRow + i;
                   const isHeader = card.hasHeader && ri === 0;
                   return (
                     <tr
@@ -264,31 +363,21 @@ export default function TableEditor({
                       }
                     >
                       <td className="sticky left-0 z-10 relative border-b border-r border-neutral-200 bg-inherit text-center dark:border-neutral-800">
-                        <button
-                          type="button"
-                          onClick={() => removeRowAt(ri)}
-                          disabled={cells.length <= 1}
-                          className={`${ctrlBtn} mx-auto`}
-                          title="Удалить строку"
-                        >
+                        <button type="button" onClick={() => removeRowAt(ri)} disabled={cells.length <= 1}
+                          className={`${ctrlBtn} mx-auto`} title="Удалить строку">
                           <CloseIcon size={11} />
                         </button>
-                        <GridResizeHandle
-                          axis="y"
-                          size={heights[ri]}
-                          min={MIN_ROW_HEIGHT}
-                          max={MAX_ROW_HEIGHT}
-                          onResize={(h) => setRowH(ri, h)}
-                        />
+                        <GridResizeHandle axis="y" size={heights[ri]} min={MIN_ROW_HEIGHT} max={MAX_ROW_HEIGHT}
+                          onResize={(h) => setRowH(ri, h)} />
                       </td>
                       {row.map((cell, ci) => (
-                        <td
-                          key={ci}
-                          className="border-b border-l border-neutral-100 p-0 align-top dark:border-neutral-800/70"
-                        >
+                        <td key={ci} className="border-b border-l border-neutral-100 p-0 align-top dark:border-neutral-800/70">
                           <input
                             value={cell}
-                            onChange={(e) => setCells(setCell(cells, ri, ci, e.target.value))}
+                            onChange={(e) => {
+                              tblBeginHistory();
+                              setCells(setCell(cells, ri, ci, e.target.value));
+                            }}
                             placeholder={isHeader ? "Заголовок" : ""}
                             className={`h-full w-full bg-transparent px-2.5 py-1.5 outline-none placeholder:text-neutral-300 focus:bg-white dark:placeholder:text-neutral-600 dark:focus:bg-neutral-950/40 ${
                               isHeader
@@ -302,6 +391,14 @@ export default function TableEditor({
                     </tr>
                   );
                 })}
+
+                {/* WS-PERF: bottom virtual spacer */}
+                {bottomSpacerH > 0 && (
+                  <tr aria-hidden style={{ height: bottomSpacerH }}>
+                    <td colSpan={cols + 2} style={{ padding: 0 }} />
+                  </tr>
+                )}
+
                 {/* Add-row handle */}
                 <tr>
                   <td className="sticky left-0 z-10 border-r border-neutral-200 bg-white text-center dark:border-neutral-800 dark:bg-neutral-900">
@@ -318,7 +415,11 @@ export default function TableEditor({
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-2 text-[11px] text-neutral-400 dark:border-neutral-800 dark:text-neutral-500">
-          <span />
+          <span className="text-neutral-400 dark:text-neutral-500">
+            {cells.length > VIRTUAL_THRESHOLD && (
+              <span title="Виртуальный рендеринг активен">⚡ виртуализация</span>
+            )}
+          </span>
           <span className="tabular-nums">
             {cells.length} строк · {cols} столбцов
           </span>

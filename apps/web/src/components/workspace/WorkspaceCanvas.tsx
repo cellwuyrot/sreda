@@ -54,6 +54,8 @@ import { DEFAULT_SCENE, defaultLayers } from "@/lib/tzart";
 import { diffDirtyIds, mergeBoards, type MergeableBoard } from "@/lib/workspaceMerge";
 /* WS-ASSETS: разбор вложений и подстановка адреса — чистая часть в lib. */
 import { cardsToLift, parseDataUrl, withAssetUrl, type AssetCardLike } from "@/lib/workspaceAssets";
+/* WS-IDB: асинхронный кэш вместо блокирующего localStorage. */
+import { idbGet, idbSet } from "@/lib/workspaceIdb";
 import Minimap from "./Minimap";
 import ShortcutsHelp from "./ShortcutsHelp";
 import ImportTasksPanel from "./ImportTasksPanel";
@@ -853,7 +855,7 @@ export default function WorkspaceCanvas({
 
   const beginHistory = useCallback(() => {
     pastRef.current.push({ cards: cardsRef.current, edges: edgesRef.current });
-    if (pastRef.current.length > 80) pastRef.current.shift();
+    if (pastRef.current.length > 30) pastRef.current.shift(); // WS-PERF: 30 вместо 80 — каждая запись может весить МБ
     futureRef.current = [];
     setCanUndo(true);
     setCanRedo(false);
@@ -1025,7 +1027,8 @@ export default function WorkspaceCanvas({
       }
       if (!stored) {
         try {
-          const raw = localStorage.getItem(lsKey);
+          /* WS-IDB: сначала IDB, затем localStorage как запасной */
+          const raw = await idbGet(lsKey);
           if (raw) stored = JSON.parse(raw) as StoredState;
         } catch {
           /* ignore */
@@ -1041,7 +1044,9 @@ export default function WorkspaceCanvas({
     };
   }, [loadUrl, lsKey, remote, applyStored]);
 
-  // Сохранение: localStorage — быстрый локальный кэш, сервер — источник истины (дебаунс 1.2 с)
+  // Сохранение: IDB — быстрый локальный кэш, сервер — источник истины (дебаунс 1.2 с)
+  // WS-PERF: JSON.stringify и запись вынесены внутрь setTimeout — горячий путь
+  // (каждое нажатие / перетащивание) больше не блокирует отрисовку.
   useEffect(() => {
     if (!loaded) return;
     // Применённое из загрузки/синхронизации состояние не пишем обратно.
@@ -1049,17 +1054,16 @@ export default function WorkspaceCanvas({
       skipNextSaveRef.current = false;
       return;
     }
-    const payload: StoredState = { v: 3, boards: commitActiveBoards(), activeId, timer };
-    const json = JSON.stringify(payload);
-    try {
-      localStorage.setItem(lsKey, json);
-    } catch {
-      /* ignore (e.g. quota exceeded) */
-    }
     // read-only участники не сохраняют на сервер (сервер тоже отклонит запись).
-    if (readOnly) return;
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
     serverSaveTimer.current = setTimeout(() => {
+      /* WS-PERF: тяжёлый JSON.stringify выполняется один раз в 1.2 с,
+         а не при каждом нажатии клавиши / движении карточки. */
+      const payload: StoredState = { v: 3, boards: commitActiveBoards(), activeId, timer };
+      const json = JSON.stringify(payload);
+      /* WS-IDB: асинхронная запись не блокирует поток. */
+      void idbSet(lsKey, json);
+      if (readOnly) return;
       fetch(saveUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1409,10 +1413,16 @@ export default function WorkspaceCanvas({
 
   const patchCard = useCallback(
     (id: string, p: Partial<AnyCard>) => {
-      const t = Date.now();
-      const le = lastEditRef.current;
-      if (!(le.id === id && t - le.t < 600)) beginHistory();
-      lastEditRef.current = { id, t };
+      /* WS-PERF: ячейки таблицы не пишут в холст canvas — TableEditor держит
+         свой undo-стек. Без этого 80 копий 10k-строчной таблицы = десятки МБ. */
+      const TABLE_DATA_KEYS = new Set(["cells", "colWidths", "rowHeights"]);
+      const isTableDataEdit = Object.keys(p).every((k) => TABLE_DATA_KEYS.has(k));
+      if (!isTableDataEdit) {
+        const t = Date.now();
+        const le = lastEditRef.current;
+        if (!(le.id === id && t - le.t < 600)) beginHistory();
+        lastEditRef.current = { id, t };
+      }
       setCards((cs) => cs.map((c) => (c.id === id ? ({ ...c, ...p } as AnyCard) : c)));
     },
     [beginHistory],
@@ -2114,6 +2124,30 @@ export default function WorkspaceCanvas({
     () => edges.filter((e) => visibleSet.has(e.from) && visibleSet.has(e.to)),
     [edges, visibleSet],
   );
+  /* WS-PERF: Viewport culling — не создаём DOM для карточек за пределами экрана.
+   Буфер 500px в мировых пикселях убирает мерцание при плавном перемещении. */
+  const culledCards = useMemo(() => {
+    if (!boardSize.w || !boardSize.h || visibleCards.length < 50) return visibleCards;
+    const buf = 500;
+    const invScale = 1 / view.scale;
+    const minX = -view.x * invScale - buf;
+    const maxX = (-view.x + boardSize.w) * invScale + buf;
+    const minY = -view.y * invScale - buf;
+    const maxY = (-view.y + boardSize.h) * invScale + buf;
+    return visibleCards.filter((c) => {
+      const cw = cardWidth(c);
+      const ch = c.height ?? 400;
+      return c.x + cw >= minX && c.x <= maxX && c.y + ch >= minY && c.y <= maxY;
+    });
+  }, [visibleCards, view, boardSize]);
+
+  /* Рябра: рисуем ребро, если хотя бы один узел видим. */
+  const culledEdgeSet = useMemo(() => new Set(culledCards.map((c) => c.id)), [culledCards]);
+  const culledEdges = useMemo(
+    () => visibleEdges.filter((e) => culledEdgeSet.has(e.from) || culledEdgeSet.has(e.to)),
+    [visibleEdges, culledEdgeSet],
+  );
+
   const hiddenCount = cards.length - visibleCards.length;
 
   const openDoc = useMemo<DocumentCard | null>(() => {
@@ -2565,7 +2599,7 @@ export default function WorkspaceCanvas({
 
         <div className="absolute left-0 top-0" style={worldStyle}>
           <svg className="absolute left-0 top-0 overflow-visible" style={svgStyle}>
-            {visibleEdges.map((e) => {
+            {culledEdges.map((e) => {
               const src = cardById.get(e.from);
               const dst = cardById.get(e.to);
               if (!src || !dst) return null;
@@ -2602,7 +2636,8 @@ export default function WorkspaceCanvas({
             )}
           </svg>
 
-          {visibleCards.map((card) => (
+          {/* WS-PERF: только карточки в области видимости */}
+          {culledCards.map((card) => (
             <CanvasCard
               key={card.id}
               card={card}
