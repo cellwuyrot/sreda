@@ -164,6 +164,26 @@ const api = {
     onState: (cb: (state: VpnStatePayload) => void): Unsubscribe =>
       on(IPC.VPN_STATE, (state) => cb(state as VpnStatePayload)),
   },
+  // --- WASAPI-SS: нативный захват звука ОС (EXCLUDE PID приложения) ---
+  /**
+   * Запустить нативный WASAPI loopback-захват.
+   * Main-процесс автоматически исключает своё PID-дерево
+   * (PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE).
+   * Ответ приходит через onWasapiReady / onWasapiError.
+   */
+  startWasapiCapture: (): Promise<void> => ipcRenderer.invoke(IPC.WASAPI_START),
+  /** Остановить захват. */
+  stopWasapiCapture: (): void => { ipcRenderer.send(IPC.WASAPI_STOP); },
+  /** Подписка: захват готов (sampleRate, channels). Возвращает отписку. */
+  onWasapiReady: (cb: (sr: number, ch: number) => void): (() => void) =>
+    on(IPC.WASAPI_READY, (_e: IpcRendererEvent, p: { sampleRate: number; channels: number }) =>
+      cb(p.sampleRate, p.channels)),
+  /** Подписка: PCM-чанк (interleaved Float32Array). Возвращает отписку. */
+  onWasapiChunk: (cb: (data: Float32Array) => void): (() => void) =>
+    on(IPC.WASAPI_CHUNK, (_e: IpcRendererEvent, buf: ArrayBuffer) => cb(new Float32Array(buf))),
+  /** Подписка: захват невозможен. Возвращает отписку. */
+  onWasapiError: (cb: (msg: string) => void): (() => void) =>
+    on(IPC.WASAPI_ERROR, (_e: IpcRendererEvent, msg: string) => cb(msg)),
 };
 
 export type TriozDesktopApi = typeof api;
