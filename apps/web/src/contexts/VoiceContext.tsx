@@ -2067,6 +2067,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
    * AudioContext, Chromium 110+); звук трансляции и эффекты — через свои
    * <audio>-элементы. Применяем ко всем сразу; неподдерживаемые вызовы молча
    * игнорируются (setElementSink/setContextSink делают feature-detect). */
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const applyOutputSink = useCallback((deviceId: string | null) => {
     setContextSink(playbackCtxRef.current, deviceId);
     remoteAudiosRef.current.forEach(el => setElementSink(el, deviceId));
@@ -2076,6 +2077,57 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     setElementSink(screenShareSfxRef.current, deviceId);
     setUiSoundsSink(deviceId); // FIX-SFX: звуки действий — на то же устройство вывода
   }, []);
+  /* ── FIX-DEFAULTDEV: при первом запуске подбираем устройства по умолчанию ──────
+   * localStorage хранит выбор пользователя. Если его нет — берём первое устройство
+   * (браузер/ОС выдают default первым), а не оставляем null. Это решает проблему
+   * десктоп-оболочки, где null = «системное по умолчанию» работает в браузере,
+   * но Electron требует явного deviceId чтобы MediaDevices его зафиксировал. */
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+    const detect = async () => {
+      try {
+        // Запрашиваем пермишен на аудио (без пермишена labels = "", id = ""|"default")
+        // Тихо — не показываем диалог если пользователь уже откло нил.
+        try {
+          const test = await navigator.mediaDevices.getUserMedia({ audio: true });
+          test.getTracks().forEach(t => t.stop());
+        } catch { /* нет пермишена — enumerateDevices вернёт анонимные устройства */ }
+        const devices = await navigator.mediaDevices.enumerateDevices();
+
+        const inputs  = devices.filter(d => d.kind === "audioinput");
+        const outputs = devices.filter(d => d.kind === "audiooutput");
+
+        setInputDevices(inputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Микрофон ${i + 1}` })));
+        setOutputDevices(outputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Динамики ${i + 1}` })));
+
+        // Только если пользователь ещё не выбирал вручную (нет сохранённого) —
+        // ставим «default» или первое реальное устройство.
+        const savedMic = localStorage.getItem("voice-mic-device");
+        const savedOut = localStorage.getItem("voice-output-device");
+
+        if (!savedMic && inputs.length > 0) {
+          const def = inputs.find(d => d.deviceId === "default") ?? inputs[0];
+          micDeviceIdRef.current = def.deviceId;
+          setMicDeviceIdState(def.deviceId);
+          // Не пишем в localStorage — это авто, а не явный выбор пользователя.
+        }
+        if (!savedOut && outputs.length > 0) {
+          const def = outputs.find(d => d.deviceId === "default") ?? outputs[0];
+          outputDeviceIdRef.current = def.deviceId;
+          setOutputDeviceIdState(def.deviceId);
+          applyOutputSink(def.deviceId);
+        }
+      } catch { /* ignore */ }
+    };
+    void detect();
+
+    // Следим за подключением/отключением устройств
+    const handleDeviceChange = () => void detect();
+    navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyOutputSink]);
+
 
   const setOutputDevice = useCallback(async (deviceId: string | null) => {
     outputDeviceIdRef.current = deviceId;
