@@ -126,14 +126,12 @@ export function useDragOrder({
     };
   }, [enabled, reset]);
 
-  /* itemProps: полный набор (обратная совместимость). */
   const itemProps = (id: string, ids: string[]): DragItemProps => {
-    if (!enabled) return {};
+    if (!enabled || ids.length < 2) return {};
     return {
       "data-drag-id": id,
       onPointerDown: (e) => {
         if (e.pointerType !== "mouse" || e.button !== 0) return;
-        if (ids.length < 2) return;
         session.current = { id, ids: [...ids], x: e.clientX, y: e.clientY, started: false, over: null, before: false };
       },
       onClickCapture: (e) => {
@@ -144,36 +142,10 @@ export function useDragOrder({
     };
   };
 
-  /* itemDataProps: только data-drag-id для внешнего контейнера (без pointer-событий). */
-  const itemDataProps = (id: string) =>
-    enabled ? { "data-drag-id": id } : {};
-
-  /* itemHandleProps: только pointer-события — размещается на иконке захвата. */
-  const itemHandleProps = (id: string, ids: string[]): DragItemProps => {
-    if (!enabled) return {};
-    return {
-      onPointerDown: (e) => {
-        if (e.pointerType !== "mouse" || e.button !== 0) return;
-        e.stopPropagation(); // не даём всплыть в useDragUser
-        if (ids.length < 2) return;
-        session.current = { id, ids: [...ids], x: e.clientX, y: e.clientY, started: false, over: null, before: false };
-      },
-      onClickCapture: (e) => {
-        if (!suppressClick.current) return;
-        e.preventDefault();
-        e.stopPropagation();
-      },
-    };
-  };
-
-  /* Подсветка */
-  /* FIX-DRAG-CURSOR */
+  /* Подсветка отдельно от обработчиков: у рядов и плиток свои классы,
+     и подменять им style из хука нельзя — он там уже занят. */
   const itemClass = (id: string) =>
-    `${dragId === id ? "opacity-40" : ""}${overId === id ? " ring-1 ring-violet-500/70 dark:ring-cyan-400/70 rounded-lg" : ""}`;
+    `${dragId === id ? " opacity-40" : ""}${overId === id ? " ring-1 ring-violet-500/70 dark:ring-cyan-400/70 rounded-lg" : ""}`;
 
-  /* Класс для ярлыка-ручки (курсор grab) */
-  const handleClass = (id: string) =>
-    `cursor-grab active:cursor-grabbing${dragId === id ? " opacity-40" : ""}`;
-
-  return { dragId, overId, itemProps, itemDataProps, itemHandleProps, itemClass, handleClass };
+  return { dragId, overId, itemProps, itemClass };
 }
