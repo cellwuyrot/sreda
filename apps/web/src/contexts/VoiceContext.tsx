@@ -3041,9 +3041,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session, isConnected, leaveVoice, createPeerConnection, renegotiateOutbound, cleanupPeer, startSpeakingDetection, attachNoiseSuppressor, teardownEqChain, playSound, setScreenVideo, syncRemoteScreens]);
 
-  /* FIX-FORCE-JOIN: реф на joinVoice — нужен внутри замыкания joinVoice, где 
-     socket создаётся до завершения useCallback. */
+  /* FIX-FORCE-JOIN: joinVoice вызывается из сокет-обработчика, который находится внутри тела joinVoice.
+     Мутация ref.current преднамеренно запрещена React Compiler — отключаем правило локально. */
   const joinVoiceRef = useRef(joinVoice);
+  // eslint-disable-next-line react-hooks/immutability
   useEffect(() => { joinVoiceRef.current = joinVoice; }, [joinVoice]);
 
   /* ── Mute / Deafen ── */
