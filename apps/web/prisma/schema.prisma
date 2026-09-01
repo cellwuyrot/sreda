@@ -1545,6 +1545,23 @@ model ChannelWorkspaceState {
   updatedAt   DateTime @updatedAt
 }
 
+// WS-TABLE: хранилище больших таблиц вне WorkspaceState.
+// cells — JSON-строка string[][]. Привязана к cardId внутри Board.
+// ownerKey — userId для личной среды, "channel:<id>" — для групповой.
+// colWidths/rowHeights — JSON-строки number[] (могут быть null).
+model WorkspaceTable {
+  id         String   @id @default(cuid())
+  ownerKey   String
+  cardId     String
+  cells      String   @db.Text
+  colWidths  String?
+  rowHeights String?
+  updatedAt  DateTime @updatedAt
+
+  @@unique([ownerKey, cardId])
+  @@index([ownerKey])
+}
+
 // Раскладка списка сообществ: порядок и папки (JSON как строка).
 model GroupLayout {
   userId    String   @id
