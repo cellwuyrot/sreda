@@ -492,14 +492,24 @@ function persistEq(gains: readonly number[], preset: EqPresetId) {
 /** Сколько зрителей поток выдерживает без деления бюджета. */
 export const SCREEN_COMFORT_VIEWERS = 3;
 
-// The user's last "share source audio" choice from the native launch window,
-// persisted so the picker reopens on it. Defaults to on (share audio).
+// The user's last "share source audio" choice from the launch window, persisted
+// so the picker reopens on it.
+//
+// FIX-SS-ECHO: defaults to OFF (no shared audio) — deliberately. The desktop
+// shell can only capture the WHOLE system output mix: Electron/Chromium exposes
+// no per-application capture (`setDisplayMediaRequestHandler` accepts audio only
+// as 'loopback' | 'loopbackWithMute'). That mix contains the other participants'
+// voices, which TZ.Connect itself is playing through the speakers, so sharing it
+// feeds everyone's voice back to them as an echo. Off-by-default means a share
+// never leaks the call audio unless the user knowingly opts in — and the launch
+// window warns about it explicitly. It used to default to ON, so a plain "share
+// my screen" produced the echo with no way to see why.
 function readScreenAudioPref(): boolean {
-  if (typeof window === "undefined") return true;
+  if (typeof window === "undefined") return false;
   try {
-    return JSON.parse(localStorage.getItem("voice-screen-audio") ?? "true") !== false;
+    return JSON.parse(localStorage.getItem("voice-screen-audio") ?? "false") === true;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -2267,8 +2277,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
          в ответ на запрос медиа (см. apps/desktop/src/main/screenShare.ts).
          Ответа ждать нечего, поэтому и таймаутов здесь тоже больше нет. */
       const desktop = getDesktopApi();
-      // Системный (loopback) звук — это весь микс: голоса участников у зрителей
-      // дублируются, это осознанный компромисс, и выбор остаётся за человеком.
+      // FIX-SS-ECHO: системный (loopback) звук — это ВЕСЬ звук ПК, включая голоса
+      // собеседников, которые проигрывает сам TZ.Connect: у зрителей они
+      // возвращаются эхом. Поэтому звук теперь ВЫКЛЮЧЕН по умолчанию и включается
+      // вручную в окне запуска (с явным предупреждением) — см. readScreenAudioPref.
       const audioPref = readScreenAudioPref();
       // Источник из окна запуска. Есть он только в оболочке: перечислить окна
       // ОС браузеру нечем, там источник спрашивает системный диалог.
