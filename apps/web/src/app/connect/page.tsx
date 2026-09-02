@@ -1489,7 +1489,17 @@ function ConnectPageInner() {
       <AnimatePresence>
         {showGlobalSearch && <GlobalSearchModal onClose={() => setShowGlobalSearch(false)} />}
         {showCreateGroup && <CreateGroupModal onClose={() => setShowCreateGroup(false)} onCreated={fetchGroups} isPremium={hasPremium(session.user)} ownedCount={ownedCommunitiesCount} />}
-        {showJoinGroup && <JoinGroupModal onClose={() => setShowJoinGroup(false)} onJoined={fetchGroups} />}
+        {showJoinGroup && (
+          <JoinGroupModal
+            onClose={() => setShowJoinGroup(false)}
+            onJoined={(groupId) => {
+              /* FIX-ANDROID-JOIN: после вступления / обнаружения, что уже состоишь в группе —
+                 сразу открываем её, а не показываем ошибку. */
+              fetchGroups();
+              if (groupId) setSelectedGroup(groupId);
+            }}
+          />
+        )}
         {showCreateChannel && selectedGroup && (
           <CreateChannelModal
             groupId={selectedGroup}

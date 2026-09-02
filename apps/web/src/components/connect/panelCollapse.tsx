@@ -35,6 +35,13 @@ const NEXT_WITHOUT_MEMBERS: Record<PanelView, PanelView> = {
   collapsed: "sections",
 };
 
+/** Нет Premium — Sections выпадает из цикла; только Participants ↔ Collapsed. */
+const NEXT_MEMBERS_ONLY: Record<PanelView, PanelView> = {
+  members: "collapsed",
+  sections: "collapsed",   // недостижимое состояние — сразу в collapsed
+  collapsed: "members",
+};
+
 const HINT: Record<PanelView, string> = {
   members: "Показать разделы",
   sections: "Скрыть панель",
@@ -45,6 +52,12 @@ const HINT_WITHOUT_MEMBERS: Record<PanelView, string> = {
   members: "Показать разделы",
   sections: "Скрыть панель",
   collapsed: "Показать разделы",
+};
+
+const HINT_MEMBERS_ONLY: Record<PanelView, string> = {
+  members: "Свернуть панель",
+  sections: "Свернуть панель",
+  collapsed: "Показать участников",
 };
 
 export const VIEW_TITLE: Record<PanelView, string> = {
@@ -61,7 +74,7 @@ function isView(value: unknown): value is PanelView {
   return value === "members" || value === "sections" || value === "collapsed";
 }
 
-export function usePanelView(groupId: string, canSeeMembers: boolean) {
+export function usePanelView(groupId: string, canSeeMembers: boolean, hasSections = true) {
   const [view, setView] = useState<PanelView>("sections");
 
   useEffect(() => {
@@ -79,7 +92,13 @@ export function usePanelView(groupId: string, canSeeMembers: boolean) {
 
   const cycle = () => {
     setView((prev) => {
-      const next = (canSeeMembers ? NEXT : NEXT_WITHOUT_MEMBERS)[prev];
+      /* FIX-PREMIUM: без Premium секции недоступны — цикл только Participants ↔ Collapsed. */
+      const nextMap = !hasSections
+        ? NEXT_MEMBERS_ONLY
+        : canSeeMembers
+          ? NEXT
+          : NEXT_WITHOUT_MEMBERS;
+      const next = nextMap[prev];
       try {
         localStorage.setItem(viewKey(groupId), next);
       } catch {
@@ -89,11 +108,20 @@ export function usePanelView(groupId: string, canSeeMembers: boolean) {
     });
   };
 
+  /* Без Premium: если в saved-state был выбран «Разделы» — сбрасываем на «Участники». */
+  const effectiveView = !hasSections && view === "sections" ? "members" : view;
+
+  const hintMap = !hasSections
+    ? HINT_MEMBERS_ONLY
+    : canSeeMembers
+      ? HINT
+      : HINT_WITHOUT_MEMBERS;
+
   return {
-    view,
+    view: effectiveView,
     cycle,
-    collapsed: view === "collapsed",
-    hint: (canSeeMembers ? HINT : HINT_WITHOUT_MEMBERS)[view],
+    collapsed: effectiveView === "collapsed",
+    hint: hintMap[effectiveView],
   };
 }
 

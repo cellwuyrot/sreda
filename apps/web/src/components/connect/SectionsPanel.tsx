@@ -104,7 +104,8 @@ export default function SectionsPanel({
 }: SectionsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers);
+  /* FIX-PREMIUM: без Premium разделы полностью скрыты — только участники и сворачивание. */
+  const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers, ownerHasPremium ?? true);
 
   const [createParent, setCreateParent] = useState<string | null | undefined>(undefined);
   const [settingsBlock, setSettingsBlock] = useState<Channel | null>(null);
