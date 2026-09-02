@@ -325,6 +325,7 @@ export default function ModuleSettingsModal({ channelId, onClose, onSaved }: { c
             {isQa && (
               <>
                 <QaAccessBlock
+				  title="Кто может задавать вопросы"
                   name="qa-ask-access"
                   value={askAccess}
                   onChange={setAskAccess}
