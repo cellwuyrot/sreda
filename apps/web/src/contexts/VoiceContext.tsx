@@ -2942,6 +2942,28 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         void joinVoiceRef.current(targetId, targetName);
       });
 
+      // Модератор выкинул нас из голосового канала
+      socket.on("voice:kick", () => {
+        void leaveVoiceRef.current("модератор отключил от голосового канала");
+      });
+
+      // Модератор принудительно заглушает микрофон
+      socket.on("voice:force-mute", () => {
+        if (!isMutedRef.current) setMuted(true);
+      });
+
+      // Модератор принудительно заглушает микрофон + наушники
+      socket.on("voice:force-deafen", () => {
+        if (!isMutedRef.current) setMuted(true);
+        if (!isDeafenedRef.current) {
+          isDeafenedRef.current = true;
+          setIsDeafened(true);
+          if (masterGainRef.current) masterGainRef.current.gain.value = 0;
+          remoteAudiosRef.current.forEach((a, id) => { if (!userGainRef.current.has(id)) a.muted = true; });
+          screenAudiosRef.current.forEach(a => { a.muted = true; });
+        }
+      });
+
       socket.on("voice-user-dropped", () => {
         playSound(disconnectionSfxRef);
       });
