@@ -2948,13 +2948,24 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       });
 
       // Модератор принудительно заглушает микрофон
+      // Не ссылаемся на setMuted (она объявлена позже в файле) — инлайним логику через refs.
       socket.on("voice:force-mute", () => {
-        if (!isMutedRef.current) setMuted(true);
+        if (!isMutedRef.current) {
+          rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
+          localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
+          setIsMuted(true);
+          socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted: true });
+        }
       });
 
-      // Модератор принудительно заглушает микрофон + наушники
+      // Модератор принудительно заглушает микрофон + наушники (те же refs, без setMuted)
       socket.on("voice:force-deafen", () => {
-        if (!isMutedRef.current) setMuted(true);
+        if (!isMutedRef.current) {
+          rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
+          localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
+          setIsMuted(true);
+          socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted: true });
+        }
         if (!isDeafenedRef.current) {
           isDeafenedRef.current = true;
           setIsDeafened(true);
