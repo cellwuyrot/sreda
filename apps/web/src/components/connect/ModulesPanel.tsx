@@ -99,7 +99,8 @@ export default function ModulesPanel({
   ) : null;
   const drag = useDragOrder({ enabled: effectiveCanManage, onReorder: commitOrder });
   // Показ панели — общая механика с SectionsPanel, один источник истины.
-  const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers);
+  /* FIX-PREMIUM: без Premium разделы полностью скрыты — только участники+сворачивание. */
+  const { view, cycle, collapsed, hint } = usePanelView(groupId, canSeeMembers, ownerHasPremium);
   const stripOnly = collapsed && !isMobile;
 
   /* Пустой список модулей больше не прячет блок целиком: заголовок — ещё и вход

@@ -72,7 +72,6 @@ export function PlusMenu({
         onClick={() => { setOpen(!open); setMode("menu"); }}
         className={`w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-xl transition-colors ${open || formatActive ? "text-violet-500 dark:text-cyan-400 bg-[var(--cn-accent-dim)]" : "text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 hover:bg-[var(--cn-hover)]"}`}
         aria-label="Инструменты сообщения"
-        title="Инструменты сообщения"
         aria-expanded={open}
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

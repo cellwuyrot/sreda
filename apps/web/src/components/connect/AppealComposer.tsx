@@ -103,7 +103,6 @@ export default function AppealComposer({ mode = "floating" }: AppealComposerProp
           onClick={() => { setError(""); setOpen(true); }}
           className="fixed bottom-[calc(1rem+var(--tz-desktop-inset-bottom,0px))] right-4 z-[55] grid h-12 w-12 place-items-center rounded-full border border-violet-400/30 bg-violet-600 text-white shadow-[0_12px_35px_rgba(79,70,229,.35)] transition hover:scale-105 hover:bg-violet-500 focus:outline-none focus-visible:ring-4 focus-visible:ring-violet-400/30 dark:border-cyan-300/30 dark:bg-cyan-500 dark:text-neutral-950 dark:shadow-[0_12px_35px_rgba(34,211,238,.25)]"
           aria-label="Написать обращение администрации"
-          title="Обращение администрации"
         >
           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="5" width="18" height="14" rx="2" />

@@ -50,7 +50,7 @@ export function ChannelItem({ ch, selectedChannel, unreadCounts, mentionChannels
           )}
         </span>
         <span className="truncate flex-1">{ch.name}</span>
-        {isMuted && <span className="flex items-center opacity-50" title="Уведомления отключены"><BellOffIcon size={16} style={{ color: "inherit" }} /></span>}
+        {isMuted && <span className="flex items-center opacity-50"><BellOffIcon size={16} style={{ color: "inherit" }} /></span>}
         {(unreadCounts[ch.id] ?? 0) > 0 && (
           mentionChannels[ch.id] ? (
             <span className="ml-auto w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Вас упомянули" />

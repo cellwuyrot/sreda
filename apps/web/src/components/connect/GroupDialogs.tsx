@@ -122,7 +122,7 @@ export function CreateGroupModal({ onClose, onCreated, isPremium, ownedCount = 0
               Шаблон сообщества
               <InfoTooltip text="Шаблон сразу создаст готовый набор каналов. Без Premium доступно только базовое сообщество — это же проверяет и сервер." className="ml-1" />
             </p>
-            <span className="text-[10px] text-amber-500">Premium-шаблоны</span>
+            
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
             {COMMUNITY_TEMPLATES.map((template) => {
@@ -164,7 +164,7 @@ export function CreateGroupModal({ onClose, onCreated, isPremium, ownedCount = 0
   );
 }
 
-export function JoinGroupModal({ onClose, onJoined }: { onClose: () => void; onJoined: () => void }) {
+export function JoinGroupModal({ onClose, onJoined }: { onClose: () => void; onJoined: (groupId?: string) => void }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -176,8 +176,11 @@ export function JoinGroupModal({ onClose, onJoined }: { onClose: () => void; onJ
     const res = await fetch(`/api/invites/${code.trim()}`, { method: "POST" });
     const data = await res.json();
     setLoading(false);
+    /* FIX-ANDROID-JOIN: если пользователь уже состоит в группе — расцениваем
+       диалог и открываем группу, а не показываем ошибку. */
+    if (res.status === 409 && data.groupId) { onJoined(data.groupId); onClose(); return; }
     if (!res.ok) { setError(data.error || "Ошибка"); return; }
-    onJoined();
+    onJoined(data.groupId);
     onClose();
   };
 
