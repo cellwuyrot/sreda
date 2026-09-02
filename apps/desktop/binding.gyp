@@ -13,7 +13,7 @@
         },
         "VCLinkerTool": {
           "AdditionalDependencies": [
-            "ole32.lib", "uuid.lib", "winmm.lib", "mfuuid.lib"
+            "ole32.lib", "uuid.lib", "winmm.lib", "mfuuid.lib", "mmdevapi.lib"
           ]
         }
       }
