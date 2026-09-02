@@ -99,13 +99,15 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
     socketId: string; name: string; x: number; y: number;
     userId?: string;
     modChecked?: boolean;
-    canKick?: boolean; canBan?: boolean; groupId?: string;
+    canKickVoice?: boolean;
+    canForceMute?: boolean;
+    canForceDeafen?: boolean;
+    canMove?: boolean;
+    canBan?: boolean;
+    groupId?: string;
+    voiceChannels?: Array<{ id: string; name: string }>;
   } | null>(null);
-  // Moderation context menu for kick/ban in voice channel
-  const [modMenu, setModMenu] = useState<{
-    userId: string; socketId: string; name: string; x: number; y: number;
-    canKick: boolean; canBan: boolean; groupId: string;
-  } | null>(null);
+
 
   /* ── FIX-REPLAY: кнопка «сохранить мгновенный повтор» (только Premium).
      Хуки обязаны стоять ДО раннего return ниже (rules-of-hooks). */
@@ -388,9 +390,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
           {/* Участники — на широких экранах фиксированная колонка справа со
               своей прокруткой, на узких — блок под сценой (см. классы выше). */}
           <div className="lg:w-64 flex-shrink-0 lg:border-l border-neutral-200 dark:border-white/10 flex flex-col min-h-0">
-            <p className="px-3 pt-3 pb-1 text-[10px] text-neutral-400 dark:text-neutral-500 flex-shrink-0">
-              Клик — смотреть только этого · Ctrl+клик — добавить · ПКМ — громкость
-            </p>
+
             <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
               <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
                 {voice.users.map(u => {
@@ -405,21 +405,23 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                     if (isSelf) return;
                     e.preventDefault();
                     const cx = e.clientX, cy = e.clientY;
-                    // Показываем меню сразу, а права модерации подтягиваем асинхронно
                     setVolumeMenu({ socketId: u.socketId, name: u.userName, x: cx, y: cy, userId: u.userId });
                     if (voice.channelId && u.userId) {
                       fetch(`/api/voice/moderation-info?channelId=${encodeURIComponent(voice.channelId)}&targetUserId=${encodeURIComponent(u.userId)}`)
                         .then(r => r.ok ? r.json() : null)
                         .then(data => {
-                          // Обновляем то же меню дополнительными данными о модерации
                           setVolumeMenu(prev => {
                             if (!prev || prev.socketId !== u.socketId) return prev;
                             return {
                               ...prev,
                               modChecked: true,
-                              canKick: data?.canKick ?? false,
-                              canBan: data?.canBan ?? false,
-                              groupId: data?.groupId ?? undefined,
+                              canKickVoice:   data?.canKickVoice   ?? false,
+                              canForceMute:   data?.canForceMute   ?? false,
+                              canForceDeafen: data?.canForceDeafen ?? false,
+                              canMove:        data?.canMove        ?? false,
+                              canBan:         data?.canBan         ?? false,
+                              groupId:        data?.groupId        ?? undefined,
+                              voiceChannels:  data?.voiceChannels  ?? [],
                             };
                           });
                         })
@@ -603,7 +605,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
         </div>
       </motion.div>
 
-      {/* Объединённое меню: громкость + модерация (если есть права) */}
+      {/* Объединённое меню: громкость + модерация */}
       <AnimatePresence>
         {volumeMenu && (
           <VolumeMenu
@@ -614,18 +616,52 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
             volume={voice.userVolumes.get(volumeMenu.socketId) ?? 100}
             onChange={(v) => voice.setUserVolume(volumeMenu.socketId, v)}
             onClose={() => setVolumeMenu(null)}
-            canKick={volumeMenu.canKick}
+            modChecked={volumeMenu.modChecked}
+            canKickVoice={volumeMenu.canKickVoice}
+            canForceMute={volumeMenu.canForceMute}
+            canForceDeafen={volumeMenu.canForceDeafen}
+            canMove={volumeMenu.canMove}
             canBan={volumeMenu.canBan}
-            onKick={volumeMenu.canKick && volumeMenu.groupId && volumeMenu.userId ? async () => {
-              const gid = volumeMenu.groupId!;
+            voiceChannels={volumeMenu.voiceChannels}
+            onKickVoice={volumeMenu.canKickVoice && voice.channelId && volumeMenu.userId ? async () => {
               const uid = volumeMenu.userId!;
+              const cid = voice.channelId!;
               setVolumeMenu(null);
-              const res = await fetch(`/api/groups/${gid}/members?userId=${encodeURIComponent(uid)}`);
-              if (!res.ok) return;
-              const data = await res.json();
-              const member = Array.isArray(data) ? data.find((m: { user: { id: string }; id: string }) => m.user?.id === uid) : null;
-              if (!member) return;
-              await fetch(`/api/groups/${gid}/members/${member.id}`, { method: "DELETE" });
+              await fetch("/api/voice/kick-voice", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetUserId: uid, channelId: cid }),
+              });
+            } : undefined}
+            onForceMute={volumeMenu.canForceMute && voice.channelId && volumeMenu.userId ? async () => {
+              const uid = volumeMenu.userId!;
+              const cid = voice.channelId!;
+              setVolumeMenu(null);
+              await fetch("/api/voice/force-mute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetUserId: uid, channelId: cid, deafen: false }),
+              });
+            } : undefined}
+            onForceDeafen={volumeMenu.canForceDeafen && voice.channelId && volumeMenu.userId ? async () => {
+              const uid = volumeMenu.userId!;
+              const cid = voice.channelId!;
+              setVolumeMenu(null);
+              await fetch("/api/voice/force-mute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetUserId: uid, channelId: cid, deafen: true }),
+              });
+            } : undefined}
+            onMoveToChannel={volumeMenu.canMove && voice.channelId && volumeMenu.userId ? async (targetChannelId: string) => {
+              const uid = volumeMenu.userId!;
+              const gid = volumeMenu.groupId!;
+              setVolumeMenu(null);
+              await fetch("/api/voice/move-user", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetUserId: uid, targetChannelId, groupId: gid }),
+              });
             } : undefined}
             onBan={volumeMenu.canBan && volumeMenu.groupId && volumeMenu.userId ? async () => {
               const gid = volumeMenu.groupId!;
@@ -634,7 +670,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
               await fetch(`/api/groups/${gid}/bans`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId: uid, reasonPreset: "CUSTOM", reason: "Нарушение в голосовом канале" }),
+                body: JSON.stringify({ userId: uid, reasonPreset: "CUSTOM", reason: "Нарушение правил сообщества" }),
               });
             } : undefined}
           />
@@ -656,50 +692,64 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
   );
 }
 
-/* ── Personal-volume menu ──────────────────────────────────────────────────
- * A small Discord-style popover anchored at the cursor. It edits this
- * listener's personal volume for one participant (0–200%); the change is local
- * to this client and never affects what anyone else hears. Dismisses on outside
- * click, Escape, or scroll. Rendered through a portal so it floats above the
- * voice panel regardless of overflow/stacking contexts. */
+/* ── Personal-volume menu + moderation ─────────────────────────────────
+ * Discord-style popover. Volume slider always visible; below it — a
+ * moderation block that appears only when the caller has rights over the
+ * target (GUIDE / MODERATOR / ADMIN / OWNER). Actions available depend
+ * on the caller’s rank:
+ *   GUIDE+      → mute mic, move to channel, kick from voice
+ *   MODERATOR+  → above + force-deafen (mic + headphones)
+ *   ADMIN+      → above + ban from group */
 function VolumeMenu({
   name, x, y, volume, onChange, onClose,
-  canKick, canBan, onKick, onBan,
+  modChecked,
+  canKickVoice, canForceMute, canForceDeafen, canMove, canBan,
+  voiceChannels,
+  onKickVoice, onForceMute, onForceDeafen, onMoveToChannel, onBan,
 }: {
-  name: string;
-  x: number;
-  y: number;
+  name: string; x: number; y: number;
   volume: number;
   onChange: (v: number) => void;
   onClose: () => void;
-  canKick?: boolean;
+  modChecked?: boolean;
+  canKickVoice?: boolean;
+  canForceMute?: boolean;
+  canForceDeafen?: boolean;
+  canMove?: boolean;
   canBan?: boolean;
-  onKick?: () => void;
+  voiceChannels?: Array<{ id: string; name: string }>;
+  onKickVoice?: () => void;
+  onForceMute?: () => void;
+  onForceDeafen?: () => void;
+  onMoveToChannel?: (channelId: string) => void;
   onBan?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+  const [moveOpen, setMoveOpen] = useState(false);
 
-  // Keep the menu inside the viewport no matter where it was summoned.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const w = el.offsetWidth || 240;
     const h = el.offsetHeight || 96;
-    const left = Math.min(x, window.innerWidth - w - 8);
-    const top = Math.min(y, window.innerHeight - h - 8);
-    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
-  }, [x, y]);
+    setPos({
+      left: Math.max(8, Math.min(x, window.innerWidth  - w - 8)),
+      top:  Math.max(8, Math.min(y, window.innerHeight - h - 8)),
+    });
+  }, [x, y, moveOpen, modChecked]);
 
   useEffect(() => {
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    // Defer binding the outside-click listener so the summoning click/contextmenu
-    // does not immediately close the freshly-opened menu.
     const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
     window.addEventListener("keydown", onKey);
     return () => { clearTimeout(t); document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [onClose]);
+
+  const hasMod = modChecked && (canKickVoice || canForceMute || canForceDeafen || canMove || canBan);
 
   return createPortal(
     <motion.div
@@ -712,39 +762,32 @@ function VolumeMenu({
       className="w-60 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800 shadow-2xl p-3"
       onClick={e => e.stopPropagation()}
     >
+      {/* ─ Volume ─ */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-neutral-900 dark:text-white truncate">{name}</span>
+        <span className="text-xs font-medium text-neutral-900 dark:text-white truncate max-w-[140px]">{name}</span>
         <span className={`text-[11px] tabular-nums ${volume > 100 ? "text-amber-500 font-medium" : "text-neutral-500"}`}>{volume}%</span>
       </div>
       <div className="flex items-center gap-2">
         <button
           onClick={() => onChange(volume === 0 ? 100 : 0)}
           className="p-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors flex-shrink-0"
-          title={volume === 0 ? "Включить звук" : "Заглушить для себя"}
         >
           {volume === 0 ? (
             <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M11 5L6 9H2v6h4l5 4V5z" />
-              <line x1="16" y1="9" x2="22" y2="15" />
-              <line x1="22" y1="9" x2="16" y2="15" />
+              <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+              <line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/>
             </svg>
           ) : (
             <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M11 5L6 9H2v6h4l5 4V5z" />
-              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
             </svg>
           )}
         </button>
-        <input
-          type="range"
-          min={0}
-          max={200}
-          step={5}
-          value={volume}
-          onChange={(e) => onChange(Number(e.target.value))}
+        <input type="range" min={0} max={200} step={5} value={volume}
+          onChange={e => onChange(Number(e.target.value))}
           className="flex-1 accent-violet-500 dark:accent-cyan-400 cursor-pointer"
-          aria-label={`Громкость: ${name}`}
         />
       </div>
       <div className="mt-2 flex justify-between text-[10px] text-neutral-400">
@@ -752,30 +795,100 @@ function VolumeMenu({
         <button onClick={() => onChange(100)} className="hover:text-neutral-700 dark:hover:text-white transition-colors">Сброс</button>
         <span>200%</span>
       </div>
-      {(canKick || canBan) && (
-        <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-white/10 space-y-0.5">
-          <div className="text-[10px] text-neutral-400 px-0.5 mb-1">Модерация</div>
-          {canKick && onKick && (
-            <button
-              onClick={onKick}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-orange-500 hover:bg-orange-500/10 transition-colors"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M18 6L6 18"/><path d="M6 6l12 12"/>
+
+      {/* ─ Moderation ─ */}
+      {hasMod && (
+        <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-white/10 space-y-px">
+
+          {/* Force mute mic only — mic+slash icon */}
+          {canForceMute && onForceMute && (
+            <button onClick={onForceMute}
+              className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[12px] text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/8 transition-colors text-left">
+              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+                <path d="M17 16.95V19M5 10a7 7 0 0 0 9.9 6.37M19 10a7 7 0 0 1-.87 3.4"/>
+                <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                <line x1="2" y1="2" x2="22" y2="22"/>
               </svg>
-              Исключить из голосового
+              Заглушить микрофон
             </button>
           )}
-          {canBan && onBan && (
-            <button
-              onClick={onBan}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-red-500 hover:bg-red-500/10 transition-colors"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/>
+
+          {/* Force deafen — headphones+slash icon, different from mic above */}
+          {canForceDeafen && onForceDeafen && (
+            <button onClick={onForceDeafen}
+              className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[12px] text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/8 transition-colors text-left">
+              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                <path d="M3 14h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H4a1 1 0 0 1-1-1v-5"/>
+                <path d="M21 14h-2a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-5"/>
+                <path d="M3 14a9 9 0 0 1 9-9"/>
+                <path d="M21 14a9 9 0 0 0-5.45-8.24"/>
+                <line x1="2" y1="2" x2="22" y2="22"/>
               </svg>
-              Забанить из группы
+              Принудительно заглушить
             </button>
+          )}
+
+          {/* Move to channel — expands inline list */}
+          {canMove && onMoveToChannel && voiceChannels && voiceChannels.length > 0 && (
+            <div>
+              <button onClick={() => setMoveOpen(v => !v)}
+                className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[12px] text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/8 transition-colors text-left">
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                  <polyline points="10 17 15 12 10 7"/>
+                  <line x1="15" y1="12" x2="3" y2="12"/>
+                </svg>
+                <span className="flex-1">Перенести в канал</span>
+                <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={`transition-transform ${moveOpen ? "rotate-90" : ""}`}>
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+              {moveOpen && (
+                <div className="ml-5 mt-0.5 space-y-px">
+                  {voiceChannels.map(ch => (
+                    <button key={ch.id} onClick={() => onMoveToChannel(ch.id)}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-white/8 transition-colors text-left">
+                      <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                      </svg>
+                      <span className="truncate">{ch.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Kick from voice */}
+          {canKickVoice && onKickVoice && (
+            <button onClick={onKickVoice}
+              className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[12px] text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors text-left">
+              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              Отключить от канала
+            </button>
+          )}
+
+          {/* Ban from group — admin+ only, red */}
+          {canBan && onBan && (
+            <>
+              {canKickVoice && <div className="my-1 border-t border-neutral-100 dark:border-white/8" />}
+              <button onClick={onBan}
+                className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[12px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-left">
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+                Забанить из сообщества
+              </button>
+            </>
           )}
         </div>
       )}
@@ -783,6 +896,7 @@ function VolumeMenu({
     document.body,
   );
 }
+
 
 /* ── FIX-STAGE: раскладка сцены по числу выбранных потоков ─────────────────
  * Отдельная функция, а не разбросанные по JSX условия: раскладка — это чистое
@@ -1028,81 +1142,5 @@ function ParticipantTile({
           : (!isSelf && volume !== 100) && <span className="text-[9px] text-neutral-300">Громкость {volume}%</span>}
       </div>
     </div>
-  );
-}
-
-/* ── Voice moderation menu ─────────────────────────────────────────────────
- * Shown below the volume popover when the local user has kick/ban rights over
- * the target in this voice channel. Rendered through a portal. */
-function VoiceModerationMenu({
-  name, x, y, canKick, canBan, onKick, onBan, onClose,
-}: {
-  name: string;
-  x: number;
-  y: number;
-  canKick: boolean;
-  canBan: boolean;
-  onKick: () => void;
-  onBan: () => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: x, top: y });
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const w = el.offsetWidth || 200;
-    const h = el.offsetHeight || 80;
-    const left = Math.min(x, window.innerWidth - w - 8);
-    const top  = Math.min(y, window.innerHeight - h - 8);
-    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
-  }, [x, y]);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
-    const onKey  = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
-    window.addEventListener("keydown", onKey);
-    return () => { clearTimeout(t); document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
-  }, [onClose]);
-
-  return createPortal(
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.12 }}
-      style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: 10001 }}
-      className="w-52 rounded-xl border border-white/10 bg-neutral-800 shadow-2xl overflow-hidden"
-    >
-      <div className="px-3 py-2 text-xs text-neutral-400 font-medium border-b border-white/10 truncate">
-        Модерация: {name}
-      </div>
-      {canKick && (
-        <button
-          onClick={onKick}
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-orange-400 hover:bg-orange-500/10 transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M18 6L6 18" /><path d="M6 6l12 12" />
-          </svg>
-          Исключить из голосового
-        </button>
-      )}
-      {canBan && (
-        <button
-          onClick={onBan}
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="10" /><path d="M4.93 4.93l14.14 14.14" />
-          </svg>
-          Забанить из группы
-        </button>
-      )}
-    </motion.div>,
-    document.body,
   );
 }
