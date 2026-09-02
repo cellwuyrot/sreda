@@ -400,17 +400,29 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                     if (isSelf) return;
                     e.preventDefault();
                     const cx = e.clientX, cy = e.clientY;
-                    setVolumeMenu({ socketId: u.socketId, name: u.userName, x: cx, y: cy });
-                    // Fetch moderation permissions for this channel participant
+                    // Показываем меню сразу, а права модерации подтягиваем асинхронно
+                    setVolumeMenu({ socketId: u.socketId, name: u.userName, x: cx, y: cy, userId: u.userId });
                     if (voice.channelId && u.userId) {
                       fetch(`/api/voice/moderation-info?channelId=${encodeURIComponent(voice.channelId)}&targetUserId=${encodeURIComponent(u.userId)}`)
                         .then(r => r.ok ? r.json() : null)
                         .then(data => {
-                          if (data && (data.canKick || data.canBan)) {
-                            setModMenu({ userId: u.userId, socketId: u.socketId, name: u.userName, x: cx, y: cy, canKick: data.canKick, canBan: data.canBan, groupId: data.groupId });
-                          }
+                          // Обновляем то же меню дополнительными данными о модерации
+                          setVolumeMenu(prev => {
+                            if (!prev || prev.socketId !== u.socketId) return prev;
+                            return {
+                              ...prev,
+                              modChecked: true,
+                              canKick: data?.canKick ?? false,
+                              canBan: data?.canBan ?? false,
+                              groupId: data?.groupId ?? undefined,
+                            };
+                          });
                         })
-                        .catch(() => null);
+                        .catch(() => {
+                          setVolumeMenu(prev =>
+                            prev?.socketId === u.socketId ? { ...prev, modChecked: true } : prev
+                          );
+                        });
                     }
                   };
 
@@ -586,7 +598,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
         </div>
       </motion.div>
 
-      {/* Personal-volume context menu (opened by right-clicking a participant) */}
+      {/* Объединённое меню: громкость + модерация (если есть права) */}
       <AnimatePresence>
         {volumeMenu && (
           <VolumeMenu
@@ -597,39 +609,29 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
             volume={voice.userVolumes.get(volumeMenu.socketId) ?? 100}
             onChange={(v) => voice.setUserVolume(volumeMenu.socketId, v)}
             onClose={() => setVolumeMenu(null)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Voice moderation actions (kick/ban) shown when moderator right-clicks */}
-      <AnimatePresence>
-        {modMenu && (
-          <VoiceModerationMenu
-            key={modMenu.socketId + "-mod"}
-            name={modMenu.name}
-            x={modMenu.x}
-            y={modMenu.y + 100}
-            canKick={modMenu.canKick}
-            canBan={modMenu.canBan}
-            onKick={async () => {
-              setModMenu(null);
-              // Find memberId via group members — lazy lookup via bans endpoint alternative
-              const res = await fetch(`/api/groups/${modMenu.groupId}/members?userId=${encodeURIComponent(modMenu.userId)}`);
+            canKick={volumeMenu.canKick}
+            canBan={volumeMenu.canBan}
+            onKick={volumeMenu.canKick && volumeMenu.groupId && volumeMenu.userId ? async () => {
+              const gid = volumeMenu.groupId!;
+              const uid = volumeMenu.userId!;
+              setVolumeMenu(null);
+              const res = await fetch(`/api/groups/${gid}/members?userId=${encodeURIComponent(uid)}`);
               if (!res.ok) return;
               const data = await res.json();
-              const member = Array.isArray(data) ? data.find((m: { user: { id: string }; id: string }) => m.user?.id === modMenu.userId) : null;
+              const member = Array.isArray(data) ? data.find((m: { user: { id: string }; id: string }) => m.user?.id === uid) : null;
               if (!member) return;
-              await fetch(`/api/groups/${modMenu.groupId}/members/${member.id}`, { method: "DELETE" });
-            }}
-            onBan={async () => {
-              setModMenu(null);
-              await fetch(`/api/groups/${modMenu.groupId}/bans`, {
+              await fetch(`/api/groups/${gid}/members/${member.id}`, { method: "DELETE" });
+            } : undefined}
+            onBan={volumeMenu.canBan && volumeMenu.groupId && volumeMenu.userId ? async () => {
+              const gid = volumeMenu.groupId!;
+              const uid = volumeMenu.userId!;
+              setVolumeMenu(null);
+              await fetch(`/api/groups/${gid}/bans`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId: modMenu.userId, reasonPreset: "CUSTOM", reason: "Нарушение в голосовом канале" }),
+                body: JSON.stringify({ userId: uid, reasonPreset: "CUSTOM", reason: "Нарушение в голосовом канале" }),
               });
-            }}
-            onClose={() => setModMenu(null)}
+            } : undefined}
           />
         )}
       </AnimatePresence>
@@ -657,6 +659,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
  * voice panel regardless of overflow/stacking contexts. */
 function VolumeMenu({
   name, x, y, volume, onChange, onClose,
+  canKick, canBan, onKick, onBan,
 }: {
   name: string;
   x: number;
@@ -664,6 +667,10 @@ function VolumeMenu({
   volume: number;
   onChange: (v: number) => void;
   onClose: () => void;
+  canKick?: boolean;
+  canBan?: boolean;
+  onKick?: () => void;
+  onBan?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
@@ -740,6 +747,33 @@ function VolumeMenu({
         <button onClick={() => onChange(100)} className="hover:text-neutral-700 dark:hover:text-white transition-colors">Сброс</button>
         <span>200%</span>
       </div>
+      {(canKick || canBan) && (
+        <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-white/10 space-y-0.5">
+          <div className="text-[10px] text-neutral-400 px-0.5 mb-1">Модерация</div>
+          {canKick && onKick && (
+            <button
+              onClick={onKick}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-orange-500 hover:bg-orange-500/10 transition-colors"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M18 6L6 18"/><path d="M6 6l12 12"/>
+              </svg>
+              Исключить из голосового
+            </button>
+          )}
+          {canBan && onBan && (
+            <button
+              onClick={onBan}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-red-500 hover:bg-red-500/10 transition-colors"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/>
+              </svg>
+              Забанить из группы
+            </button>
+          )}
+        </div>
+      )}
     </motion.div>,
     document.body,
   );
