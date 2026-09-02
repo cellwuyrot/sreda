@@ -445,7 +445,6 @@ const MessageRow = memo(function MessageRow({
                   // click reveals the single message.
                   <div
                     className="mt-1 max-w-[420px] cursor-pointer select-none"
-                    title="Пользователь игнорируется — нажмите, чтобы показать сообщение"
                     onClick={() => setRevealedIgnored((prev) => new Set(prev).add(msg.id))}
                   >
                     <div className="space-y-1.5">
@@ -3133,7 +3132,7 @@ export default function MessageArea({
                   {/* Блок кода. Рядом с «код внутри строки» — они про разное:
                       одиночные кавычки для имени переменной, тройные для куска
                       программы, где важны переносы и отступы. */}
-                  <button type="button" onClick={wrapSelectionAsCode} className="px-2 py-1 text-xs font-mono text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Блок кода — переносы и отступы сохраняются">```</button>
+                  <button type="button" onClick={wrapSelectionAsCode} className="px-2 py-1 text-xs font-mono text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors">```</button>
                   <button type="button" onClick={() => insertFormat("- ", "")} className="px-2 py-1 text-xs text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Список">•</button>
                   <button type="button" onClick={() => insertFormat("#", "")} className="px-2 py-1 text-xs text-neutral-600 dark:text-neutral-300 hover:text-violet-600 dark:hover:text-cyan-400 hover:bg-violet-50 dark:hover:bg-white/10 rounded transition-colors" title="Упоминание канала">#</button>
                   <div className="w-px h-4 bg-neutral-200 dark:bg-white/10 mx-1" />
@@ -3225,7 +3224,6 @@ export default function MessageArea({
                               type="button"
                               onClick={() => setEditingAttachment(index)}
                               className="text-neutral-400 hover:text-violet-600 dark:hover:text-cyan-400"
-                              title="Редактировать рисунок"
                               aria-label="Редактировать рисунок"
                             >
                               <EditIcon size={14} style={{ color: "inherit" }} />
@@ -3423,7 +3421,6 @@ export default function MessageArea({
       {editingAttachment !== null && pendingAttachments[editingAttachment]?.isImage && (
         <DrawingEditor
           initialImage={pendingAttachments[editingAttachment].url}
-          title="Редактирование изображения"
           saveLabel="Сохранить и заменить"
           onSave={saveEditedAttachment}
           onClose={() => setEditingAttachment(null)}

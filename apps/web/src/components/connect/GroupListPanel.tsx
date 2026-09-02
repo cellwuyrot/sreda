@@ -548,7 +548,7 @@ export default function GroupListPanel(props: GroupListPanelProps) {
     return (
       <div key={key}>
         <div ref={setRowRef(key)}>
-          <div style={headStyle} onClick={() => toggleFolder(f.id)} role="button" title="Свернуть/развернуть папку">
+          <div style={headStyle} onClick={() => toggleFolder(f.id)} role="button">
             <span style={f.collapsed ? chevBaseStyle : chevOpenStyle}>▸</span>
             {f.collapsed ? (
               <div style={miniGridStyle}>

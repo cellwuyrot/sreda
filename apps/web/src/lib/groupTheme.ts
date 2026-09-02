@@ -525,6 +525,11 @@ export function applyGroupTheme(theme: GroupTheme | null): void {
 		clearGroupTheme();
 		return;
 	}
+	/* FIX-ANDROID-FONT: в Android WebView setProperty может бросать исключение, если
+	   значение содержит неподдерживаемые символы или слишком длинное значение CSS
+	   (характерно для base64-data-URL фонов). Обертываем, чтобы ошибка оформления
+	   не рушила загрузку страницы и не мешала вступить в группу. */
+	try {
 
 	root.dataset.tzGroup = "on";
 	root.dataset.tzGroupPriority = theme.priority ? "on" : "off";
@@ -558,6 +563,10 @@ export function applyGroupTheme(theme: GroupTheme | null): void {
 		delete root.dataset.tzGroupFont;
 	}
 	root.style.setProperty("--tz-group-font-scale", `${theme.font.scale / 100}`);
+	} catch (e) {
+		console.warn("[GroupTheme] applyGroupTheme failed (Android-safe):", e);
+		clearGroupTheme();
+	}
 }
 
 export function clearGroupTheme(): void {

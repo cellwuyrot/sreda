@@ -200,7 +200,7 @@ export default function WikiPanel({ channelId, channelName, canModerate, onBack 
     <button key={a.id} onClick={() => openArticle(a.id)}
       className={"w-full flex items-center gap-1.5 text-left px-2 py-1.5 rounded-lg text-sm " + (selectedId === a.id ? "bg-neutral-200 dark:bg-white/10" : "hover:bg-neutral-100 dark:hover:bg-white/5")}>
       <span className="flex-1 min-w-0 truncate">{a.title}</span>
-      {a.restricted && <span className="flex-shrink-0 text-amber-500" title="Видно только модераторам и старше"><LockGlyph /></span>}
+      {a.restricted && <span className="flex-shrink-0 text-amber-500"><LockGlyph /></span>}
     </button>
   );
 
@@ -272,7 +272,7 @@ export default function WikiPanel({ channelId, channelName, canModerate, onBack 
                     className={`flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm text-left ${glossaryShelf === s.id ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium" : "hover:bg-neutral-100 dark:hover:bg-white/5 text-neutral-700 dark:text-gray-300"}`}>
                     <BookOpenIcon size={13} style={{ color: "inherit" }} />
                     <span className="flex-1 min-w-0 truncate">{s.name}</span>
-                    {s.restricted && <span className="flex-shrink-0 text-amber-500" title="Видно только модераторам и старше"><LockGlyph /></span>}
+                    {s.restricted && <span className="flex-shrink-0 text-amber-500"><LockGlyph /></span>}
                     <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-200/70 dark:bg-white/10 text-neutral-500 dark:text-neutral-400">{shelfArticles(s.id).filter(a => a.term).length}</span>
                   </button>
                   {isMod && (
@@ -298,7 +298,7 @@ export default function WikiPanel({ channelId, channelName, canModerate, onBack 
                         <span className="text-[10px] text-neutral-400 w-3 flex-shrink-0">{closedShelf ? "▸" : "▾"}</span>
                         <span className="flex-shrink-0 inline-flex items-center">{s.kind === "DICTIONARY" ? <BookOpenIcon size={13} style={{ color: "inherit" }} /> : <BookIcon size={13} style={{ color: "inherit" }} />}</span>
                         <span className="flex-1 min-w-0 truncate text-sm font-medium text-neutral-800 dark:text-gray-100">{s.name}</span>
-                        {s.restricted && <span className="flex-shrink-0 text-amber-500" title="Видно только модераторам и старше"><LockGlyph /></span>}
+                        {s.restricted && <span className="flex-shrink-0 text-amber-500"><LockGlyph /></span>}
                         <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-200/70 dark:bg-white/10 text-neutral-500 dark:text-neutral-400">{items.length}</span>
                       </button>
                       {isMod && (
@@ -474,7 +474,7 @@ function GlossaryView({ entries, query }: { entries: { id: string; term?: string
             {groups[l].map(e => (
               <div key={e.id} className="rounded-lg border border-neutral-200 dark:border-white/10 overflow-hidden">
                 <button onClick={() => toggle(e.id)} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-neutral-50 dark:hover:bg-white/5">
-                  <span className="font-semibold flex items-center gap-1.5">{e.term}{e.restricted && <span className="text-amber-500" title="Видно только модераторам и старше"><LockGlyph /></span>}</span>
+                  <span className="font-semibold flex items-center gap-1.5">{e.term}{e.restricted && <span className="text-amber-500"><LockGlyph /></span>}</span>
                   <span className="text-neutral-400 text-sm">{busy === e.id ? "…" : (open[e.id] !== undefined ? "−" : "+")}</span>
                 </button>
                 {open[e.id] !== undefined && (

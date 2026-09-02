@@ -397,7 +397,6 @@ export default function ChannelSidebar({
                 <button
                   type="button"
                   onClick={() => onCreateChannel({ groupType: "TEXT", defaultType: "TEXT" })}
-                  title="Создать текстовый чат"
                   aria-label="Создать текстовый чат"
                   className="text-neutral-400 transition-colors hover:text-violet-600 dark:hover:text-cyan-400 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100"
                 >
@@ -517,7 +516,7 @@ export default function ChannelSidebar({
               </button>
               {canManage && textOpen && (
             <div className="flex gap-0.5 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100">
-              <button onClick={() => onCreateChannel({ createCategory: true, groupType: "TEXT" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать группу текстовых каналов" title="Создать группу текстовых каналов">
+              <button onClick={() => onCreateChannel({ createCategory: true, groupType: "TEXT" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать группу текстовых каналов">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M4 12h10M4 17h16" />
                 </svg>
@@ -562,7 +561,6 @@ export default function ChannelSidebar({
                             onClick={() => setEditingChannel(cat)}
                             className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
                             aria-label={`Настройки группы ${cat.name}`}
-                            title="Настройки группы каналов: имя, значок, доступ по ролям"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -583,7 +581,6 @@ export default function ChannelSidebar({
 								onClick={() => onDeleteChannel(cat.id)}
 								className="text-neutral-400 hover:text-red-500 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
 								aria-label={`Удалить группу ${cat.name}`}
-								title="Удалить группу каналов"
 							>
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 									<path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
@@ -632,7 +629,7 @@ export default function ChannelSidebar({
               </button>
               {canManage && voiceOpen && (
                 <div className="flex gap-0.5 opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100">
-                  <button onClick={() => onCreateChannel({ createCategory: true, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать папку для голосовых каналов" title="Папка для голосовых каналов">
+                  <button onClick={() => onCreateChannel({ createCategory: true, groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать папку для голосовых каналов">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       {/* FIX-VOICEPLUS: рядом стояли два визуально одинаковых «плюса»:
                           «группа голосовых каналов» и «голосовой канал». Функции разные,
@@ -641,7 +638,7 @@ export default function ChannelSidebar({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11.5v5M9.5 14h5" />
                     </svg>
                   </button>
-                  <button onClick={() => onCreateChannel({ groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать голосовой канал" title="Создать голосовой канал">
+                  <button onClick={() => onCreateChannel({ groupType: "VOICE", defaultType: "VOICE" })} className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors" aria-label="Создать голосовой канал">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
@@ -672,7 +669,6 @@ export default function ChannelSidebar({
                             onClick={() => setEditingChannel(cat)}
                             className="text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
                             aria-label={`Настройки группы ${cat.name}`}
-                            title="Настройки группы каналов: имя, значок, доступ по ролям"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -693,7 +689,6 @@ export default function ChannelSidebar({
 							onClick={() => onDeleteChannel(cat.id)}
 							className="text-neutral-400 hover:text-red-500 transition-colors opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 p-0.5"
 							aria-label={`Удалить группу ${cat.name}`}
-							title="Удалить группу каналов"
 						>
 							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 								<path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
@@ -750,7 +745,6 @@ export default function ChannelSidebar({
                                     onClick={() => setEditingChannel(ch)}
                                     className="p-1 text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors"
                                     aria-label={`Настройки канала ${ch.name}`}
-                                    title="Настройки голосового канала"
                                   >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -843,7 +837,6 @@ export default function ChannelSidebar({
                         onClick={() => setEditingChannel(ch)}
                         className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-all"
                         aria-label={`Настройки канала ${ch.name}`}
-                        title="Настройки голосового канала"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -1051,7 +1044,7 @@ export default function ChannelSidebar({
                   <span className={`text-[10px] tabular-nums ${pingTone}`}>{ping} мс</span>
                 )}
                 {voiceState.screenSharerIds.size > 0 && (
-                  <span className="h-6 px-1.5 rounded-md bg-blue-500/15 text-blue-500 dark:text-cyan-300 inline-flex items-center gap-1" title="Активные демонстрации">
+                  <span className="h-6 px-1.5 rounded-md bg-blue-500/15 text-blue-500 dark:text-cyan-300 inline-flex items-center gap-1">
                     <ScreenShareIcon />
                     <span className="text-[10px] font-semibold">{voiceState.screenSharerIds.size}</span>
                   </span>

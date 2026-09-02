@@ -73,7 +73,6 @@ export function ModuleSettingsButton({ channelId, className, onSaved }: { channe
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         className={className || "w-7 h-7 flex items-center justify-center rounded-md text-neutral-400 hover:text-neutral-700 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/10 transition-all flex-none"}
-        title="Настройки раздела: просмотр и редактирование"
         aria-label="Настройки раздела"
       >
         <GearIcon size={16} />
@@ -326,7 +325,6 @@ export default function ModuleSettingsModal({ channelId, onClose, onSaved }: { c
             {isQa && (
               <>
                 <QaAccessBlock
-                  title="Кто может задавать вопросы"
                   name="qa-ask-access"
                   value={askAccess}
                   onChange={setAskAccess}

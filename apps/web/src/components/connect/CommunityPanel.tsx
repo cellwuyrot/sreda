@@ -184,7 +184,7 @@ function ActivityTab({ groupId, currentUserId }: { groupId: string; currentUserI
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <p className="text-xs text-[var(--text-muted,#9aa0ab)]">
           Вклад участников
-          <InfoTooltip text="Считаются сообщения, время в голосовых каналах, решённые задачи, а также статьи и термины базы знаний. Голосовое время начали считать с того дня, когда в группе подключили этот раздел." side="bottom" className="ml-1" />
+          
         </p>
         <div className="flex items-center gap-1 rounded-lg bg-[var(--bg-secondary,#1a1d27)] p-0.5">
           {SORTS.map((s) => (
