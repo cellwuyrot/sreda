@@ -2195,12 +2195,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
     const detect = async () => {
       try {
-        // Запрашиваем пермишен на аудио (без пермишена labels = "", id = ""|"default")
-        // Тихо — не показываем диалог если пользователь уже откло нил.
-        try {
-          const test = await navigator.mediaDevices.getUserMedia({ audio: true });
-          test.getTracks().forEach(t => t.stop());
-        } catch { /* нет пермишена — enumerateDevices вернёт анонимные устройства */ }
+        // Не запрашиваем разрешение на микрофон заранее: браузер спросит только
+        // при реальном входе в голосовой канал. Анонимные deviceId достаточны
+        // для выбора устройства; читаемые labels появятся после joinVoice.
         const devices = await navigator.mediaDevices.enumerateDevices();
 
         const inputs  = devices.filter(d => d.kind === "audioinput");
