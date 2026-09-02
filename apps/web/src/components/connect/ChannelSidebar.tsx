@@ -589,7 +589,7 @@ export default function ChannelSidebar({
 						)}
                         </div>
                         {!isCollapsed && children.map(sub => (
-                          <div key={sub.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5${drag.itemClass(sub.id)}`} {...drag.itemProps(sub.id, children.map(c => c.id))}>
+                          <div key={sub.id} className={`ml-4${drag.itemClass(sub.id)}`} {...drag.itemProps(sub.id, children.map(c => c.id))}>
                             <ChannelItem ch={sub} selectedChannel={selectedChannel} unreadCounts={unreadCounts} mentionChannels={mentionChannels} canManage={canManage} onChannelClick={onChannelClick} onDeleteChannel={onDeleteChannel} onEditChannel={canManage ? setEditingChannel : undefined} isMuted={channelMutes[sub.id] ?? (groupMuted && channelMutes[sub.id] !== false)} onToggleMute={handleToggleChannelMute} />
                           </div>
                         ))}
@@ -704,7 +704,7 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className={`ml-4 border-l border-neutral-200 dark:border-white/5 pl-1${drag.itemClass(ch.id)}`} {...drag.itemProps(ch.id, children.map(c => c.id))}>
+                          <div key={ch.id} className={`ml-4 pl-1${drag.itemClass(ch.id)}`} {...drag.itemProps(ch.id, children.map(c => c.id))}>
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
