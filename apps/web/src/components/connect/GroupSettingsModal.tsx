@@ -996,7 +996,7 @@ export default function GroupSettingsModal({
 				return (
 					<>
 						{/* Форма бана */}
-						<Section>
+						<Section title="Забанить пользователя">
 							<div className="space-y-3">
 								<div>
 									<label className="text-xs font-medium text-neutral-500 dark:text-gray-400 mb-1 block">@ник пользователя</label>
