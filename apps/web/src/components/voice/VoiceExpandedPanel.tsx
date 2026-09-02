@@ -95,7 +95,12 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
   // where it was summoned. Personal volume is stored per-listener in
   // `voice.userVolumes`, so each user tunes everyone else independently — it
   // never affects what other people hear.
-  const [volumeMenu, setVolumeMenu] = useState<{ socketId: string; name: string; x: number; y: number } | null>(null);
+  const [volumeMenu, setVolumeMenu] = useState<{
+    socketId: string; name: string; x: number; y: number;
+    userId?: string;
+    modChecked?: boolean;
+    canKick?: boolean; canBan?: boolean; groupId?: string;
+  } | null>(null);
   // Moderation context menu for kick/ban in voice channel
   const [modMenu, setModMenu] = useState<{
     userId: string; socketId: string; name: string; x: number; y: number;
