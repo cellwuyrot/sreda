@@ -73,7 +73,6 @@ export default function PanelResizer({ width, min, max, onChange, resetWidth = 2
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onDoubleClick={onDoubleClick}
-      title="Перетащите, чтобы изменить ширину (двойной клик — сброс)"
       className="hidden md:block group relative w-px flex-shrink-0 cursor-col-resize self-stretch"
       style={{ background: "var(--cn-border)", touchAction: "none" }}
     >
