@@ -79,7 +79,7 @@ win:
       to: app/dist/main/wasapi_capture.node
   # .ico отдельно не держим: electron-builder делает его из png сам, а лишняя
   # копия картинки в git означала бы старый логотип при следующей смене.
-  icon: build/icon.png
+  icon: build/icon.ico
   # FIX-SEC: обновление ставится тихо и само (см. src/main/updater.ts), поэтому
   # подмена файла на раздающем сервере или перехват по пути — это выполнение
   # любого кода на машине пользователя. Единственная защита — подпись: без
@@ -102,7 +102,6 @@ nsis:
                                         # администратора и регистрирует служебный
                                         # компонент туннеля. Это единственное окно UAC
                                         # за всё время: включение VPN потом идёт без него.
-  include: build/installer.nsh          # регистрация и удаление служебного компонента
   allowToChangeInstallationDirectory: true  # даёт выбрать папку/диск
   createDesktopShortcut: true
   createStartMenuShortcut: true

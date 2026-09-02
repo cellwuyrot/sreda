@@ -79,9 +79,12 @@ const api = {
   setPipMode: (enabled: boolean): void => ipcRenderer.send(IPC.SET_PIP, enabled),
 
   /** Сообщить main-процессу, что активную демонстрацию можно свернуть в PiP. */
-  setScreenShareActive: (active: boolean): void => ipcRenderer.send(IPC.SET_SCREEN_SHARE_ACTIVE, active),
+  setScreenShareActive: (active: boolean): void =>
+    ipcRenderer.send(IPC.SET_SCREEN_SHARE_ACTIVE, active),
+
   /** FIX-OVL: передать состояние голосового чата для оверлея. */
-  sendVoiceOverlayState: (state: unknown): void => ipcRenderer.send(IPC.VOICE_OVERLAY_STATE, state),
+  sendVoiceOverlayState: (state: unknown): void =>
+    ipcRenderer.send(IPC.VOICE_OVERLAY_STATE, state),
 
   /** Системная кнопка сворачивания перевела окно в PiP. */
   onPipModeChange: (cb: (enabled: boolean) => void): Unsubscribe =>
@@ -89,15 +92,13 @@ const api = {
 
   /**
    * Сообщить оболочке выбор для следующей демонстрации — источник, качество,
-   * звук и тариф — прямо перед запросом медиа. Раньше это была затравка для
-   * окна запуска оболочки; теперь спрашивает приложение, а оболочка исполняет.
+   * звук и тариф — прямо перед запросом медиа.
    */
   prepareScreenShare: (ctx: ScreenShareContext): Promise<void> =>
     ipcRenderer.invoke(IPC.PREPARE_SCREEN_SHARE, ctx),
 
   /**
-   * Экраны и окна с превью — для окна запуска показа в приложении. Список
-   * доступен только оболочке: браузеру перечислить окна ОС нечем.
+   * Экраны и окна с превью — для окна запуска показа в приложении.
    */
   getScreenSources: (): Promise<ScreenSource[]> =>
     ipcRenderer.invoke(IPC.GET_SCREEN_SOURCES),
@@ -112,14 +113,15 @@ const api = {
   onSaveReplay: (cb: () => void): Unsubscribe => on(IPC.SAVE_REPLAY, () => cb()),
 
   /**
-   * FIX-REPLAY: записать файл повтора в настроенную папку (или «Видео/TrioZ
-   * Replays» по умолчанию). Возвращает полный путь файла или null при ошибке.
+   * FIX-REPLAY: записать файл повтора в настроенную папку.
+   * Возвращает полный путь файла или null при ошибке.
    */
   saveReplayFile: (data: ArrayBuffer, ext: string): Promise<string | null> =>
     ipcRenderer.invoke(IPC.REPLAY_WRITE, data, ext),
 
-  /** FIX-REPLAY: выбрать папку для повторов (диалог ОС); выбор сохраняется в конфиге. */
-  chooseReplayFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.REPLAY_CHOOSE_FOLDER),
+  /** FIX-REPLAY: выбрать папку для повторов (диалог ОС). */
+  chooseReplayFolder: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.REPLAY_CHOOSE_FOLDER),
 
   /** A `trioz://` deep link was opened. */
   onDeepLink: (cb: (payload: DeepLinkPayload) => void): Unsubscribe =>
@@ -130,14 +132,14 @@ const api = {
     on(IPC.NAVIGATE, (path) => cb(path as string)),
 
   /**
-   * A notification/DM arrived. Показывает его система; веб-часть может
-   * подписаться и дополнительно показать подсказку внутри страницы.
+   * A notification/DM arrived.
    */
   onNotification: (cb: (n: DesktopNotification) => void): Unsubscribe =>
     on(IPC.NOTIFICATION, (n) => cb(n as DesktopNotification)),
 
   /** UPD-BTN: что сейчас с обновлением. */
-  getUpdateState: (): Promise<DesktopUpdateState> => ipcRenderer.invoke(IPC.GET_UPDATE_STATE),
+  getUpdateState: (): Promise<DesktopUpdateState> =>
+    ipcRenderer.invoke(IPC.GET_UPDATE_STATE),
 
   /** UPD-BTN: обновление скачивается или готово к установке. */
   onUpdateState: (cb: (state: DesktopUpdateState) => void): Unsubscribe =>
@@ -146,44 +148,46 @@ const api = {
   /** UPD-BTN: поставить скачанное обновление. Приложение перезапустится само. */
   installUpdate: (): void => ipcRenderer.send(IPC.INSTALL_UPDATE),
 
-  /** FIX-ACT: обнаруженная активность пользователя на ПК («Слушает музыку в Spotify» или null). */
+  /** FIX-ACT: обнаруженная активность пользователя на ПК. */
   onActivity: (cb: (label: string | null) => void): Unsubscribe =>
-    on(IPC.ACTIVITY_CHANGED, (label) => cb(typeof label === "string" ? label : null)),
+    on(IPC.ACTIVITY_CHANGED, (label) =>
+      cb(typeof label === "string" ? label : null)),
 
   /**
-   * VPN-ONECLICK: реальный туннель по кнопке. `up` принимает готовый профиль
-   * (собран на устройстве, приватный ключ по сети не уходит), `down` снимает
-   * туннель, `status` отдаёт состояние при открытии окна, `onState` — живые
-   * изменения. Всего этого нет в старых сборках оболочки, поэтому веб-часть
-   * обязана делать feature-detect.
+   * VPN-ONECLICK: реальный туннель по кнопке.
    */
   vpn: {
-    up: (config: string): Promise<VpnStatePayload> => ipcRenderer.invoke(IPC.VPN_UP, config),
+    up: (config: string): Promise<VpnStatePayload> =>
+      ipcRenderer.invoke(IPC.VPN_UP, config),
     down: (): Promise<VpnStatePayload> => ipcRenderer.invoke(IPC.VPN_DOWN),
     status: (): Promise<VpnStatePayload> => ipcRenderer.invoke(IPC.VPN_STATUS),
     onState: (cb: (state: VpnStatePayload) => void): Unsubscribe =>
       on(IPC.VPN_STATE, (state) => cb(state as VpnStatePayload)),
   },
+
   // --- WASAPI-SS: нативный захват звука ОС (EXCLUDE PID приложения) ---
-  /**
-   * Запустить нативный WASAPI loopback-захват.
-   * Main-процесс автоматически исключает своё PID-дерево
-   * (PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE).
-   * Ответ приходит через onWasapiReady / onWasapiError.
-   */
+
+  /** Запустить нативный WASAPI loopback-захват. */
   startWasapiCapture: (): Promise<void> => ipcRenderer.invoke(IPC.WASAPI_START),
+
   /** Остановить захват. */
   stopWasapiCapture: (): void => { ipcRenderer.send(IPC.WASAPI_STOP); },
+
   /** Подписка: захват готов (sampleRate, channels). Возвращает отписку. */
-  onWasapiReady: (cb: (sr: number, ch: number) => void): (() => void) =>
-    on(IPC.WASAPI_READY, (_e: IpcRendererEvent, p: { sampleRate: number; channels: number }) =>
-      cb(p.sampleRate, p.channels)),
-  /** Подписка: PCM-чанк (interleaved Float32Array). Возвращает отписку. */
-  onWasapiChunk: (cb: (data: Float32Array) => void): (() => void) =>
-    on(IPC.WASAPI_CHUNK, (_e: IpcRendererEvent, buf: ArrayBuffer) => cb(new Float32Array(buf))),
-  /** Подписка: захват невозможен. Возвращает отписку. */
-  onWasapiError: (cb: (msg: string) => void): (() => void) =>
-    on(IPC.WASAPI_ERROR, (_e: IpcRendererEvent, msg: string) => cb(msg)),
+  onWasapiReady: (cb: (sampleRate: number, channels: number) => void): Unsubscribe =>
+    on(IPC.WASAPI_READY, (p) =>
+      cb(
+        (p as { sampleRate: number; channels: number }).sampleRate,
+        (p as { sampleRate: number; channels: number }).channels,
+      )),
+
+  /** Подписка: новый чанк PCM Float32Array. Возвращает отписку. */
+  onWasapiChunk: (cb: (buf: Float32Array) => void): Unsubscribe =>
+    on(IPC.WASAPI_CHUNK, (buf) => cb(new Float32Array(buf as ArrayBuffer))),
+
+  /** Подписка: ошибка захвата. Возвращает отписку. */
+  onWasapiError: (cb: (msg: string) => void): Unsubscribe =>
+    on(IPC.WASAPI_ERROR, (msg) => cb(msg as string)),
 };
 
 export type TriozDesktopApi = typeof api;
@@ -192,9 +196,7 @@ contextBridge.exposeInMainWorld("triozDesktop", api);
 
 /*
  * UPD-BTN: единственное, что оболочка рисует поверх страницы, — кнопка
- * обновления в правом верхнем углу. Нижняя плашка с уведомлениями убрана:
- * уведомления показывает система, а полоса в 28 точек просто отъедала высоту у
- * переписки и дублировала то, что и так видно в шторке.
+ * обновления в правом верхнем углу.
  */
 initUpdateButton(
   (handler) => on(IPC.UPDATE_STATE, (state) => handler(state as DesktopUpdateState)),

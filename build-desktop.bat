@@ -117,6 +117,18 @@ echo      rezhim noclient: sborka budet BEZ VPN.
 echo [4/9] Zavisimosti - npm install --ignore-scripts
 call npm install --ignore-scripts
 if errorlevel 1 goto deps_fail
+echo [4.5/9] Python setuptools - nuzhno dlya node-gyp s Python 3.12+
+rem   Python 3.12 udalil modul distutils iz standartnoj biblioteki.
+rem   node-gyp 9.x zavisiт ot nego cherez gyp/pylib/gyp/input.py.
+rem   setuptools vosstanalivayut distutils kak sovmestimuyu prosloiku.
+python -m pip install --quiet setuptools
+if errorlevel 1 (
+    echo      VNIMANIE: setuptools ne udalos' ustanovit'.
+    echo      Esli build:native upadet s "No module named 'distutils'"
+    echo      - zapustite vruchnuyu: pip install setuptools
+) else (
+    echo      ok : setuptools gotov ^(distutils vossozdana^)
+)
 echo [5/9] Electron - skripty byli otklyucheny, stavim vruchnuyu
 if not exist "node_modules\electron\install.js" goto no_electron
 call node node_modules\electron\install.js
@@ -242,3 +254,4 @@ exit /b 1
 :done
 echo Gotovo. Okno mozhno zakryt.
 exit /b 0
+​
