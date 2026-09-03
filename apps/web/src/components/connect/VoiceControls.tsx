@@ -192,3 +192,91 @@ export function VoiceUserRow({
     </div>
   );
 }
+
+// FIX-RESTORE: VoiceControlBtn и VoiceOccupantsStrip были потеряны
+// при перезаписи файла — восстанавливаем из контекста использования.
+
+/**
+ * Кнопка управления голосовым каналом (мьют, звук, шумодав, демонстрация, выход).
+ * active + color="red"   → красный фон (активный / нежелательный режим)
+ * active + color="green" → зелёный фон (активная функция)
+ */
+export function VoiceControlBtn({
+  active = false,
+  color = "red",
+  onClick,
+  title,
+  disabled = false,
+  children,
+}: {
+  active?: boolean;
+  color?: "red" | "green";
+  onClick?: () => void;
+  title?: string;
+  disabled?: boolean;
+  children?: ReactNode;
+}) {
+  const base =
+    "w-9 h-9 rounded-xl flex items-center justify-center transition-all flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:focus-visible:ring-cyan-400";
+
+  const colorClass = active
+    ? color === "red"
+      ? "bg-red-500/20 text-red-500 hover:bg-red-500/30"
+      : "bg-green-500/20 text-green-500 dark:text-green-400 hover:bg-green-500/30"
+    : "bg-neutral-100 dark:bg-white/8 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-white/12";
+
+  const disabledClass = disabled ? "opacity-40 pointer-events-none" : "";
+
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`${base} ${colorClass} ${disabledClass}`}
+    >
+      <span className="w-5 h-5 inline-flex items-center justify-center">
+        {children}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Компактная полоска аватаров участников голосового канала.
+ * Используется в превью голосовых каналов.
+ */
+export function VoiceOccupantsStrip({
+  users,
+  max = 5,
+}: {
+  users: Array<{ userId: string; userName: string; avatar?: string | null }>;
+  max?: number;
+}) {
+  const visible = users.slice(0, max);
+  const extra = users.length - max;
+  return (
+    <div className="flex items-center -space-x-1">
+      {visible.map((u) => (
+        <div
+          key={u.userId}
+          className="w-5 h-5 rounded-full bg-neutral-200 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[9px] font-bold text-neutral-600 dark:text-neutral-300 ring-1 ring-white dark:ring-neutral-900 flex-shrink-0"
+          title={u.userName}
+        >
+          {u.avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={u.avatar} alt="" width={20} height={20} className="w-full h-full object-cover" />
+          ) : (
+            u.userName.charAt(0).toUpperCase()
+          )}
+        </div>
+      ))}
+      {extra > 0 && (
+        <div className="w-5 h-5 rounded-full bg-neutral-200 dark:bg-white/10 flex items-center justify-center text-[9px] font-bold text-neutral-500 ring-1 ring-white dark:ring-neutral-900 flex-shrink-0">
+          +{extra}
+        </div>
+      )}
+    </div>
+  );
+}
