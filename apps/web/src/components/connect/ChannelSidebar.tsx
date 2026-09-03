@@ -19,6 +19,8 @@ import { isModuleType } from "@/lib/channelModules";
 import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
 import { useDragOrder } from "./useDragOrder";
 import { useDragUser } from "./useDragUser"; // FIX-DRAGORDER
+/* MODERATION: звания и порог модерации — из общего модуля, а не своей копией. */
+import { RANK_GUIDE, rankOf } from "@/lib/groupModeration";
 /* GROUP-SKIN: шапка сообщества берётся из оформления группы. */
 import { bannerCss, parseGroupTheme } from "@/lib/groupTheme";
 
@@ -66,6 +68,16 @@ export default function ChannelSidebar({
   onInvite, onProfileSettings, onOpenSettings, memberCount, onBack,
   voiceState, voiceActions, onVoiceExpand, onVoiceFocus, onGroupRefresh, onLeaveGroup,
 }: ChannelSidebarProps) {
+  /**
+   * MODERATION: вправе ли этот человек применять меры в голосовых каналах.
+   *
+   * Порог — «проводник», как и у всех остальных мер (см. lib/groupModeration).
+   * Признак нужен ровно для того, чтобы не предлагать меры тем, кому сервер
+   * всё равно откажет, и не ходить за правами на каждый правый щелчок
+   * обычного участника.
+   */
+  const canModerateVoice = rankOf(groupDetail.myRole) >= RANK_GUIDE;
+
   // FIX-PERF: Вычисление списков каналов вынесено в useMemo — пересчёт только
   // при изменении массива каналов или generalChannelId, а не при каждом рендере.
   // Какие типы — модули (показываются в блоке «Разделы», а не в общем списке
@@ -226,13 +238,20 @@ export default function ChannelSidebar({
     groupId: string | undefined; voiceChannels: Array<{ id: string; name: string }>;
     /** FIX-FORCELOCK: текущее состояние целевого пользователя */
     targetIsForceMuted: boolean; targetIsForceDeafened: boolean;
+    /** FIX-MODMENU-ERR: почему меры недоступны или почему действие не прошло. */
+    error?: string;
   };
   const [sidebarModMenu, setSidebarModMenu] = useState<SidebarModMenu | null>(null);
   // FIX-DND: заменяем HTML5 drag-events на поинтерный хук useDragUser
   const dragUser = useDragUser({
-    // FIX-DND-PERM: мод, не сидящий в войсе сам, тоже должен перетаскивать.
-    // voiceActions есть только когда ТЫ в войсе; canManage — признак модератора/владельца.
-    enabled: !!canManage || !!voiceActions,
+    /* FIX-DND-PERM: перетаскивать участников вправе модерация сообщества, и
+       сидит ли она сама в этом канале — неважно.
+
+       Прежнее условие (`canManage`) означало владельца или администратора:
+       модератор и проводник, которым власть над голосовыми каналами как раз и
+       выдают, перетащить никого не могли. Порог берётся из общей таблицы
+       званий; окончательное решение всё равно за сервером. */
+    enabled: canModerateVoice,
     onMove: async (socketId: string, userId: string, targetChannelId: string) => {
       if (!groupDetail) return;
       await fetch("/api/voice/move-user", {
@@ -242,6 +261,89 @@ export default function ChannelSidebar({
       }).catch(() => {});
     },
   });
+  /**
+   * FIX-MODMENU-ERR: одно место, через которое уходят все меры модерации.
+   *
+   * Раньше каждая кнопка делала `fetch(...).catch(() => {})` и закрывала меню
+   * до ответа. Отказ сервера — «нет прав», «звание не выше», «канал удалён» —
+   * не попадал никуда: ни в интерфейс, ни в журнал. Со стороны это ровно то же
+   * самое, что неработающая кнопка, и отличить одно от другого было нельзя.
+   * Теперь меню закрывается на успехе и остаётся с причиной на отказе.
+   */
+  const runModAction = useCallback(async (path: string, body: Record<string, unknown>) => {
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setSidebarModMenu(null);
+        return;
+      }
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      const reason =
+        res.status === 403
+          ? data?.error === "Rank too low"
+            ? "Звание участника не ниже вашего"
+            : "Недостаточно прав"
+          : res.status === 404
+            ? "Канал больше не существует"
+            : data?.error || `Сервер отказал (${res.status})`;
+      setSidebarModMenu(prev => (prev ? { ...prev, error: reason } : prev));
+    } catch {
+      setSidebarModMenu(prev => (prev ? { ...prev, error: "Нет связи с сервером" } : prev));
+    }
+  }, []);
+
+  /**
+   * Открыть меню модерации по правому щелчку на участнике голосового канала.
+   *
+   * FIX-MODMENU-OUTSIDE: меню больше не требует, чтобы модератор сам сидел в
+   * этом канале. Прежнее условие (`isActive`) означало, что заглушить
+   * расшумевшегося можно только зайдя к нему — при этом перетаскивать таких же
+   * участников из панели было можно, то есть одна и та же власть то была, то
+   * нет. Права всё равно проверяет сервер; интерфейс перестал добавлять к ним
+   * своё условие.
+   *
+   * FIX-MODMENU-ERR: неудачный запрос прав больше не закрывает меню молча.
+   * Прежде оно на мгновение появлялось и исчезало — то есть выглядело точно
+   * так же, как неработающий правый щелчок.
+   */
+  const openModMenu = useCallback(async (
+    e: React.MouseEvent,
+    user: { socketId: string; userId: string; userName: string; isForceMuted?: boolean; isForceDeafened?: boolean },
+    channelId: string,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSidebarModMenu({
+      socketId: user.socketId, userId: user.userId, userName: user.userName,
+      x: e.clientX, y: e.clientY + 4, channelId,
+      modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false,
+      canMove: false, canBan: false, groupId: groupDetail.id,
+      voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })),
+      targetIsForceMuted: !!user.isForceMuted, targetIsForceDeafened: !!user.isForceDeafened,
+    });
+    try {
+      const res = await fetch(
+        `/api/voice/moderation-info?channelId=${encodeURIComponent(channelId)}&targetUserId=${encodeURIComponent(user.userId)}`,
+      );
+      const data = res.ok ? await res.json().catch(() => null) : null;
+      setSidebarModMenu(prev => {
+        if (!prev || prev.socketId !== user.socketId) return prev;
+        if (!data) return { ...prev, modChecked: true, error: `Не удалось получить права (${res.status})` };
+        return { ...prev, modChecked: true, ...data };
+      });
+    } catch {
+      setSidebarModMenu(prev =>
+        prev && prev.socketId === user.socketId
+          ? { ...prev, modChecked: true, error: "Нет связи с сервером" }
+          : prev,
+      );
+    }
+  }, [groupDetail.id, voiceChannels]);
+
   /* FIX-MODMENU-CLICK: узел самого меню. Он нужен, чтобы отличить нажатие ВНУТРИ
      меню от нажатия мимо. Раньше слушатель закрывал меню на любом mousedown,
      включая нажатие на его же кнопку: React снимал портал ещё до mouseup, click
@@ -841,15 +943,7 @@ export default function ChannelSidebar({
                                       key={u.socketId}
                                       {...dragUser.userRowProps(u.socketId, u.userId)}
                                       className={`group/user relative ${dragUser.userRowClass(u.socketId)}`}
-                                      onContextMenu={isActive && voiceActions ? async (e) => {
-                                        e.preventDefault(); e.stopPropagation();
-                                        setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })), targetIsForceMuted: !!u.isForceMuted, targetIsForceDeafened: !!u.isForceDeafened });
-                                        try {
-                                          const r = await fetch(`/api/voice/moderation-info?channelId=${ch.id}&targetUserId=${u.userId}`);
-                                          if (r.ok) { const d = await r.json(); setSidebarModMenu(prev => prev && prev.socketId === u.socketId ? { ...prev, modChecked: true, ...d } : prev); }
-                                          else { setSidebarModMenu(null); }
-                                        } catch { setSidebarModMenu(null); }
-                                      } : undefined}
+                                      onContextMenu={canModerateVoice ? (e) => openModMenu(e, u, ch.id) : undefined}
                                     >
                                       <VoiceUserRow
                                         name={u.userName}
@@ -960,16 +1054,7 @@ export default function ChannelSidebar({
                           key={u.socketId}
                           {...dragUser.userRowProps(u.socketId, u.userId)}
                           className={`group/user relative ${dragUser.userRowClass(u.socketId)}`}
-                          onContextMenu={isActive && voiceActions ? async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })), targetIsForceMuted: !!u.isForceMuted, targetIsForceDeafened: !!u.isForceDeafened });
-                            try {
-                              const r = await fetch(`/api/voice/moderation-info?channelId=${ch.id}&targetUserId=${u.userId}`);
-                              if (r.ok) { const d = await r.json(); setSidebarModMenu(prev => prev && prev.socketId === u.socketId ? { ...prev, modChecked: true, ...d } : prev); }
-                              else { setSidebarModMenu(null); }
-                            } catch { setSidebarModMenu(null); }
-                          } : undefined}
+                          onContextMenu={canModerateVoice ? (e) => openModMenu(e, u, ch.id) : undefined}
                         >
                           <VoiceUserRow
                             name={u.userName}
@@ -1342,27 +1427,58 @@ export default function ChannelSidebar({
               </svg>
             </div>
           )}
+          {sidebarModMenu.error && (
+            <div className="px-3 py-2 text-[11px] text-red-500 border-t border-neutral-100 dark:border-white/5">
+              {sidebarModMenu.error}
+            </div>
+          )}
+          {sidebarModMenu.modChecked && !sidebarModMenu.canForceMute && !sidebarModMenu.canForceDeafen
+            && !sidebarModMenu.canMove && !sidebarModMenu.canKickVoice && !sidebarModMenu.error && (
+            /* FIX-MODMENU-ERR: пустое меню без объяснения читается как поломка.
+               Причина одна и та же: звание участника не ниже вашего. */
+            <div className="px-3 py-2 text-[11px] text-neutral-400 border-t border-neutral-100 dark:border-white/5">
+              Мер модерации к этому участнику у вас нет
+            </div>
+          )}
           {sidebarModMenu.modChecked && (sidebarModMenu.canForceMute || sidebarModMenu.canForceDeafen || sidebarModMenu.canMove || sidebarModMenu.canKickVoice) && (
             <div className="border-t border-neutral-100 dark:border-white/5 mt-1 pt-1">
-              {sidebarModMenu.canForceMute && !sidebarModMenu.targetIsForceMuted && (
+              {/* FIX-FORCELOCK-BOTH: заглушение и снятие показываются ВМЕСТЕ.
+
+                  Раньше пункт выбирался по флагу `isForceMuted` из снимка
+                  состава комнаты: заглушён — только «снять», не заглушён —
+                  только «заглушить». Снимок же устаревает (обрыв связи,
+                  переход в канал и обратно, событие, которое не дошло), и тогда
+                  единственный показанный пункт оказывался ровно не тем, который
+                  нужен. Именно так и получалось «заглушить могу, вернуть — нет».
+                  Обе меры на месте всегда; текущее состояние отмечено точкой. */}
+              {sidebarModMenu.canForceMute && (
                 <button type="button" role="menuitem"
-                  onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/force-mute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId, deafen: false }) }).catch(() => {}); }}
+                  onClick={() => { const m = sidebarModMenu; void runModAction("/api/voice/force-mute", { targetUserId: m.userId, channelId: m.channelId, deafen: false }); }}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                  Заглушить микрофон
+                  <span className="flex-1">Заглушить микрофон</span>
+                  {sidebarModMenu.targetIsForceMuted && !sidebarModMenu.targetIsForceDeafened && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-500 dark:bg-cyan-400" title="Уже заглушён" />
+                  )}
                 </button>
               )}
-              {sidebarModMenu.canForceDeafen && !sidebarModMenu.targetIsForceDeafened && (
+              {sidebarModMenu.canForceDeafen && (
                 <button type="button" role="menuitem"
-                  onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/force-mute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId, deafen: true }) }).catch(() => {}); }}
+                  onClick={() => { const m = sidebarModMenu; void runModAction("/api/voice/force-mute", { targetUserId: m.userId, channelId: m.channelId, deafen: true }); }}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                  Заглушить мик + наушники
+                  <span className="flex-1">Заглушить мик + наушники</span>
+                  {sidebarModMenu.targetIsForceDeafened && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-500 dark:bg-cyan-400" title="Уже заглушён" />
+                  )}
                 </button>
               )}
-              {sidebarModMenu.canForceMute && sidebarModMenu.targetIsForceMuted && (
+              {sidebarModMenu.canForceMute && (
+                /* Снятие полное — и микрофон, и наушники. Что именно было
+                   наложено, решает сервер по своему состоянию: клиентский
+                   снимок для этого недостаточно надёжен. */
                 <button type="button" role="menuitem"
-                  onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/force-unmute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId, deafen: m.targetIsForceDeafened }) }).catch(() => {}); }}
+                  onClick={() => { const m = sidebarModMenu; void runModAction("/api/voice/force-unmute", { targetUserId: m.userId, channelId: m.channelId }); }}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4" /></svg>
                   Снять заглушение
@@ -1373,7 +1489,7 @@ export default function ChannelSidebar({
                   <div className="px-3 py-1 text-[11px] text-neutral-400 border-t border-neutral-100 dark:border-white/5 mt-1">Перенести в канал</div>
                   {sidebarModMenu.voiceChannels.filter(vc => vc.id !== sidebarModMenu.channelId).map(vc => (
                     <button key={vc.id} type="button" role="menuitem"
-                      onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/move-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, targetChannelId: vc.id, groupId: m.groupId }) }).catch(() => {}); }}
+                      onClick={() => { const m = sidebarModMenu; void runModAction("/api/voice/move-user", { targetUserId: m.userId, targetChannelId: vc.id, groupId: m.groupId }); }}
                       className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5 text-[12px]">
                       <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0l-7-7m7 7l-7 7" /></svg>
                       <span className="truncate">{vc.name}</span>
@@ -1383,7 +1499,7 @@ export default function ChannelSidebar({
               )}
               {sidebarModMenu.canKickVoice && (
                 <button type="button" role="menuitem"
-                  onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/kick-voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId }) }).catch(() => {}); }}
+                  onClick={() => { const m = sidebarModMenu; void runModAction("/api/voice/kick-voice", { targetUserId: m.userId, channelId: m.channelId }); }}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-red-500 hover:bg-red-500/10 border-t border-neutral-100 dark:border-white/5 mt-1">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                   Выгнать из канала
