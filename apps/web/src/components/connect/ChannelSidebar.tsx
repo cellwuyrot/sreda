@@ -547,7 +547,7 @@ export default function ChannelSidebar({
                 <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${textOpen ? "rotate-90" : "rotate-0"}`} fill="currentColor" viewBox="0 0 6 10">
                   <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
-                Текстовые
+                Т��кстовые
                 {!textOpen && textChannels.some(c => (unreadCounts[c.id] ?? 0) > 0) && (
                   <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-500 dark:bg-cyan-400 flex-shrink-0" />
                 )}
@@ -737,7 +737,15 @@ export default function ChannelSidebar({
                       {!isCollapsed && children.map((ch) => {
                         const isActive = currentVoiceChannelId === ch.id;
                         const previewUsers = channelUsersMap[ch.id] ?? [];
-                        const connectedUsers = isActive && voiceState ? voiceState.users : [];
+                        // FIX-FORCELOCK-V2: voiceState.users не обновляется от voice-channel-users.
+                        // Мержим isForceMuted/isForceDeafened из sidebar-снапшота (channelUsersMap).
+                        const _snap1 = channelUsersMap[ch.id] ?? [];
+                        const connectedUsers = isActive && voiceState
+                          ? voiceState.users.map(u => {
+                              const s = _snap1.find(x => x.socketId === u.socketId);
+                              return s ? { ...u, isForceMuted: s.isForceMuted, isForceDeafened: s.isForceDeafened } : u;
+                            })
+                          : [];
                         const displayUsers = isActive ? connectedUsers : previewUsers;
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
@@ -855,7 +863,14 @@ export default function ChannelSidebar({
                 {voiceChannels.filter((c) => !c.parentId).map((ch) => {
               const isActive = currentVoiceChannelId === ch.id;
               const previewUsers = channelUsersMap[ch.id] ?? [];
-              const connectedUsers = isActive && voiceState ? voiceState.users : [];
+              // FIX-FORCELOCK-V2: мержим isForceMuted/isForceDeafened из sidebar-снапшота
+              const _snap2 = channelUsersMap[ch.id] ?? [];
+              const connectedUsers = isActive && voiceState
+                ? voiceState.users.map(u => {
+                    const s = _snap2.find(x => x.socketId === u.socketId);
+                    return s ? { ...u, isForceMuted: s.isForceMuted, isForceDeafened: s.isForceDeafened } : u;
+                  })
+                : [];
               const displayUsers = isActive ? connectedUsers : previewUsers;
               const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
