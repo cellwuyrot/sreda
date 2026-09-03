@@ -279,10 +279,12 @@ type MessageRowProps = {
   pinMessage: (messageId: string) => void;
   openUserCard: (anchor: HTMLElement, msg: Message, hover: boolean) => void;
   cancelUserCardHover: () => void;
+  /** FIX-BOARDPICKER: ID группы для загрузки холстов в BoardPickerModal */
+  groupId?: string;
 };
 
 const MessageRow = memo(function MessageRow({
-  msg, prefs, firstUnread, showDateDivider, isGrouped, animate, flashed, editing, editContent, currentUserId, isPrivilegedRole, canPin, channelId, channelName, channelMembers, roleTags, groupEmoji, groupEmojiList, ignoredIds, revealedIgnored, displayName, openUserCard, cancelUserCardHover, setReplyTo, onJumpToMessage, setEditContent, setRevealedIgnored, setLightboxSrc, openThread, toggleReaction, startEdit, saveEdit, cancelEdit, deleteMessage, pinMessage,
+  msg, prefs, firstUnread, showDateDivider, isGrouped, animate, flashed, editing, editContent, currentUserId, isPrivilegedRole, canPin, channelId, channelName, channelMembers, roleTags, groupEmoji, groupEmojiList, ignoredIds, revealedIgnored, displayName, openUserCard, cancelUserCardHover, setReplyTo, onJumpToMessage, setEditContent, setRevealedIgnored, setLightboxSrc, openThread, toggleReaction, startEdit, saveEdit, cancelEdit, deleteMessage, pinMessage, groupId,
 }: MessageRowProps) {
   const msgDate = new Date(msg.createdAt);
   /* FIX-EDITBLINK: Сообщение скрыто игнором — вместо содержимого заглушка.
@@ -318,7 +320,7 @@ const MessageRow = memo(function MessageRow({
                   onEdit={() => startEdit(msg)}
                   onDelete={() => deleteMessage(msg.id)}
                   onPin={canPin ? () => pinMessage(msg.id) : undefined}
-                  boardContext={{ authorName: msg.user.name, channelName, channelId, groupId: groupIdRef.current ?? undefined }}
+                  boardContext={{ authorName: msg.user.name, channelName, channelId, groupId }}
                   /* FIX-FWDBUF: в каналах кнопки пересылки раньше вообще не было —
                      окно со списком открыть было неоткуда. Теперь пересылка одинаковая
                      в каналах и ЛС: сообщение в буфер, дальше — «Переслать сюда». */
@@ -480,7 +482,7 @@ const MessageRow = memo(function MessageRow({
                     монтировании оно заново ходит за описанием страницы.
 
                     Скрытые игнором сообщения остаются заглушкой: вложения там
-                    показывать нельзя, в этом и ��мысл. */}
+                    пока��ывать нельзя, в этом и ��мысл. */}
                 {!hiddenByIgnore && (
                   <>
                     {parseAttachments(msg.attachments).map((att, i) => (
@@ -764,7 +766,7 @@ export default function MessageArea({
   const [slowmodeWait, setSlowmodeWait] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /* Узкий экран — значит телефон, в том числе оболочка Android. От этого зависит
-     только одно: какая запись голоса стоит в строке ввода (см. ниже). */
+     только одно: к��кая запись голоса стоит в строке ввода (см. ниже). */
   const isMobileViewport = useMobile();
   /** Предел длины зависит от подписки: без неё он вдвое меньше. */
   const isPremiumAccount = hasPremium(session?.user);
@@ -961,7 +963,7 @@ export default function MessageArea({
   }, []);
 
   /* Состояние переключаем сразу, запрос отправляем следом: игнор — жест
-     мгновенный, и ждать ответа сети, глядя на неизменившийся список, незачем.
+     мгновенный, и ждать ответа сети, глядя на неиз��енившийся список, незачем.
      Если запрос не прошёл, возвращаем как было. */
   const toggleIgnoreUser = useCallback((targetId: string) => {
     let adding = false;
@@ -3057,6 +3059,7 @@ export default function MessageArea({
                   cancelEdit={cancelEdit}
                   deleteMessage={deleteMessage}
                   pinMessage={pinMessage}
+                  groupId={groupIdRef.current ?? undefined}
                 />
               );
             })}
