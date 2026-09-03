@@ -3217,6 +3217,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   /* ── Mute / Deafen ── */
   // Force the microphone into a concrete muted/unmuted state and notify peers.
   // Shared by the mute button, push-to-talk, and desktop global hotkeys.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const setMuted = useCallback((muted: boolean) => {
     if (!rawStreamRef.current) return;
     rawStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !muted; });
