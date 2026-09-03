@@ -84,14 +84,27 @@ describe("cookieValue", () => {
 // ── getClientIp ───────────────────────────────────────────────────────────────
 
 describe("getClientIp", () => {
-  it("берёт первый IP из x-forwarded-for", () => {
+  /**
+   * ИНВАРИАНТ (FIX-SEC): из `X-Forwarded-For` берётся hop СПРАВА, а не слева.
+   *
+   * Заголовок присылает сам клиент, и левое значение — это то, что он про себя
+   * написал. Пока брали его, одна строка в запросе обнуляла и лимит попыток
+   * входа, и блокировку устройства: каждый запрос выглядел приходом с нового
+   * адреса. Доверять можно лишь тому, что дописал наш прокси, а он дописывает
+   * справа (см. lib/clientIp, TRUSTED_PROXY_HOPS).
+   */
+  it("ИНВАРИАНТ: берёт адрес, дописанный нашим прокси (справа)", () => {
     const req = { headers: new Headers({ "x-forwarded-for": "1.2.3.4, 5.6.7.8" }) };
-    expect(getClientIp(req)).toBe("1.2.3.4");
+    expect(getClientIp(req)).toBe("5.6.7.8");
   });
 
-  it("берёт x-real-ip если нет x-forwarded-for", () => {
-    const req = { headers: new Headers({ "x-real-ip": "9.9.9.9" }) };
-    expect(getClientIp(req)).toBe("9.9.9.9");
+  /* x-real-ip выставляет nginx из $remote_addr — подделать его снаружи нельзя,
+     поэтому он главнее списка hop'ов. */
+  it("x-real-ip главнее x-forwarded-for", () => {
+    expect(getClientIp({ headers: new Headers({ "x-real-ip": "9.9.9.9" }) })).toBe("9.9.9.9");
+    expect(
+      getClientIp({ headers: new Headers({ "x-real-ip": "9.9.9.9", "x-forwarded-for": "1.2.3.4" }) }),
+    ).toBe("9.9.9.9");
   });
 
   it("возвращает null если заголовков нет", () => {

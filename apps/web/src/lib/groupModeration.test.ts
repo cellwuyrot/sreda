@@ -249,16 +249,24 @@ describe("isActionAllowed", () => {
 // ── assignableRoles ───────────────────────────────────────────────────────────
 
 describe("assignableRoles", () => {
-  it("OWNER может назначать ADMIN, MODERATOR, MEMBER", () => {
-    expect(assignableRoles("OWNER")).toEqual(["ADMIN", "MODERATOR", "MEMBER"]);
+  /* Проводник (GUIDE) — временная роль с правами модератора и рангом 1.5, она
+     появилась позже этих проверок и стоит в списке назначаемых наравне с
+     остальными: раздают её те же, кто раздаёт роль модератора. */
+  it("OWNER может назначать ADMIN, MODERATOR, GUIDE, MEMBER", () => {
+    expect(assignableRoles("OWNER")).toEqual(["ADMIN", "MODERATOR", "GUIDE", "MEMBER"]);
   });
 
-  it("ADMIN может назначать MODERATOR, MEMBER", () => {
-    expect(assignableRoles("ADMIN")).toEqual(["MODERATOR", "MEMBER"]);
+  it("ADMIN может назначать MODERATOR, GUIDE, MEMBER", () => {
+    expect(assignableRoles("ADMIN")).toEqual(["MODERATOR", "GUIDE", "MEMBER"]);
   });
 
-  it("MODERATOR может назначать только MEMBER", () => {
-    expect(assignableRoles("MODERATOR")).toEqual(["MEMBER"]);
+  it("MODERATOR может назначать проводника и участника", () => {
+    expect(assignableRoles("MODERATOR")).toEqual(["GUIDE", "MEMBER"]);
+  });
+
+  /* Проводник ниже модератора, поэтому сам может выдать только роль участника. */
+  it("GUIDE может назначать только MEMBER", () => {
+    expect(assignableRoles("GUIDE")).toEqual(["MEMBER"]);
   });
 
   it("MEMBER не может назначать никого", () => {
