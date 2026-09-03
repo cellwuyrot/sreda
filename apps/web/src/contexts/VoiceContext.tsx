@@ -2657,6 +2657,19 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     pttKeyDownRef.current = false;
     setIsDeafened(false);
     isDeafenedRef.current = false;
+    /* FIX-FORCELOCK-KEEP: замок модератора при выходе из канала снимается с
+       клиента — но не отменяется.
+
+       Раньше он оставался в состоянии провайдера и жил дольше самого сервера:
+       состав комнаты у сервера умирает вместе с сокетом, а клиент помнил, что
+       микрофон трогать нельзя. Получалась ловушка без выхода — человек сидит
+       без микрофона, а модератору панель показывает его свободным. Теперь
+       единственный, кто помнит замок, — сервер (реестр по паре «канал +
+       человек»), и он же применяет его заново при входе. */
+    setIsForceMuted(false);
+    isForceMutedRef.current = false;
+    setIsForceDeafened(false);
+    isForceDeafenedRef.current = false;
     setIsSharingScreen(false);
     setScreenSharerId(null);
     setScreenShareName("");
