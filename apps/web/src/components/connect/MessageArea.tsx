@@ -481,7 +481,7 @@ const MessageRow = memo(function MessageRow({
                     Превью ссылки лежит здесь же и по той же причине: при
                     монтировании оно заново ходит за описанием страницы.
 
-                    Скрытые игнором сообщ��ния остаются заглушкой: вложения там
+                    Скрытые игнором сообщ����ния остаются заглушкой: вложения там
                     пока��ывать нельзя, в этом и ��мысл. */}
                 {!hiddenByIgnore && (
                   <>
@@ -584,7 +584,7 @@ const MessageRow = memo(function MessageRow({
     <Fragment>
       {/* Черта «Непрочитанные». Лента и так прокручивается к первому
           непрочитанному, но без метки непонятно, где кончается прочитанное:
-          человек видит середину переписки и не знает, вверх ему читать или
+          человек видит сер��дину переписки и не знает, вверх ему читать или
           вниз. Красная, чтобы отличаться от разделителя дат. */}
       {firstUnread && (
         <div className="flex items-center gap-3 mt-4 mb-1">
@@ -705,7 +705,7 @@ export default function MessageArea({
   const [replyTo, setReplyTo] = useState<{ id: string; name: string; content: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
-  /* Тариф обрезал историю: сервер присылает число дней, чтобы подпись в чате не
+  /* Тариф обрезал истори��: сервер присылает число дней, чтобы подпись в чате не
      расходилась с фактическим фильт��ом (см. lib/premiumLimits). */
   const [forwardToast, setForwardToast] = useState(false);
   const [forwardMsg, setForwardMsg] = useState<{ content: string; userName: string } | null>(null);
@@ -901,8 +901,11 @@ export default function MessageArea({
   const [groupEmojis, setGroupEmojis] = useState<GroupEmojiItem[]>([]);
   /* Идентификатор сообщества отдельно в ref: им пользуется обработчик события
      сокета, а зависеть от состояния он не может — иначе соединение
-     пересоздавалось бы при каждом обновлении снимка сообщества. */
+     ��ересоздавалось бы при каждом обновлении снимка сообщества. */
   const groupIdRef = useRef<string | null>(null);
+  // FIX-BOARDPICKER: groupIdRef нельзя читать в рендере (react-hooks/refs),
+  // поэтому дублируем значение в state — только для передачи в MessageRow.
+  const [groupIdForRender, setGroupIdForRender] = useState<string | undefined>(undefined);
   const [groupMeta, setGroupMeta] = useState<{
     groupId: string;
     roles: { id: string; name: string; color: string }[];
@@ -1274,7 +1277,7 @@ export default function MessageArea({
   }, [revealWindowTail]);
 
   /* Доводка живёт в layout-эффекте: обычный эффект выполняется после кадра, и
-     промежуточное положение успевает попасть на экран рывком. */
+     промежуточное положение успевает попасть на экран рывко��. */
   useLayoutEffect(() => {
     if (endScrollRef.current <= 0) return;
     endScrollRef.current -= 1;
@@ -1419,6 +1422,7 @@ export default function MessageArea({
       .then((ch) => {
         if (!ch?.groupId) return;
         groupIdRef.current = ch.groupId;
+        setGroupIdForRender(ch.groupId);
         // Fetch members + mute state in parallel
         Promise.all([
           fetch(`/api/groups/${ch.groupId}`).then((r) => r.ok ? r.json() : null),
@@ -1891,7 +1895,7 @@ export default function MessageArea({
     // FIX-GEO: вместе с точкой сохраняем адрес (улица, дом, город) из Google Geocoding.
     const geoAttachment = {
       url: `geo:${lat},${lng}`,
-      name: address || `Геолокация ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+      name: address || `Геолок��ция ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
       size: 0,
       type: "application/geo",
       isImage: false,
@@ -2765,10 +2769,6 @@ export default function MessageArea({
     );
   }
 
-  // FIX-BOARDPICKER: читаем ref вне JSX — ESLint react-hooks/refs запрещает
-  // обращаться к ref.current непосредственно в рендере.
-  const currentGroupId = groupIdRef.current ?? undefined;
-
   return (
     /* PREMIUM-SKIN: класс tz-skin-chat кладёт задний фон переписки, выбранный
        подписчиком. Пока ��формление выключено, переменная равна none и класс
@@ -2869,7 +2869,7 @@ export default function MessageArea({
           ) : (
             pinnedMessages.map(pm => (
               <div key={pm.id} className="px-4 py-2 flex items-start gap-2 hover:bg-black/5 dark:hover:bg-white/5 border-b border-[var(--cn-border)] last:border-0">
-              {/* FIX-PINJUMP: строка была простым блоком текста — нажатие никуда не вело.
+              {/* FIX-PINJUMP: ��трока была простым блоком текста — нажатие никуда не вело.
                   Переход использует тот же jumpToMessage, что и клик по ответу: он догружает
                   старую историю, если сообщение выше загруженного куска, а потом подсвечивает
                   найденную строку. Панель закрываем: иначе она накрывает верх переписки,
@@ -2896,7 +2896,7 @@ export default function MessageArea({
       )}
 
       {/* NEWS: под общей шапкой канала вместо переписки — лента постов.
-          Шапка, панель закреплённого и все окна ниже (пересылка, карточка
+          Шапка, панель закреплённого и все окна ниже (перес��лка, карточка
           участника, подтверждения) остаются общими: в новостях у канала то же
           имя, та же шестерёнка настроек и та же кнопка «назад», и разводить два
           набора одной и той же шапки значило бы чинить каждую правку дважды.
@@ -3063,7 +3063,7 @@ export default function MessageArea({
                   cancelEdit={cancelEdit}
                   deleteMessage={deleteMessage}
                   pinMessage={pinMessage}
-                  groupId={currentGroupId}
+                  groupId={groupIdForRender}
                 />
               );
             })}
