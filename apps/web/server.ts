@@ -89,6 +89,9 @@ interface VoiceUser {
      полезной нагрузке были только имя и идентификатор, поэтому клиенту нечего
      было рисовать, кроме первой буквы имени. */
   avatar: string | null;
+  /** FIX-FORCELOCK: состояние принудительной блокировки — видно всем в канале. */
+  isForceMuted?: boolean;
+  isForceDeafened?: boolean;
 }
 
 interface AuthenticatedSocket {
@@ -784,6 +787,35 @@ app.prepare().then(() => {
       io.to(`voice-${channelId}`).emit("voice-channel-users", { channelId, users });
     }
   }
+
+
+  // FIX-FORCELOCK: принудительное заглушение/разглушение с обновлением состояния комнаты.
+  // Вызывается из API-маршрутов force-mute / force-unmute после emitToUser.
+  (globalThis as Record<string, unknown>).__forceMuteUser = (channelId: string, targetUserId: string, deafen: boolean) => {
+    const room = voiceRooms.get(channelId);
+    if (!room) return;
+    for (const user of room.values()) {
+      if (user.userId === targetUserId) {
+        user.isForceMuted = true;
+        if (deafen) user.isForceDeafened = true;
+        break;
+      }
+    }
+    void broadcastVoiceChannelUsers(channelId);
+  };
+
+  (globalThis as Record<string, unknown>).__forceUnmuteUser = (channelId: string, targetUserId: string, includeDeafen: boolean) => {
+    const room = voiceRooms.get(channelId);
+    if (!room) return;
+    for (const user of room.values()) {
+      if (user.userId === targetUserId) {
+        user.isForceMuted = false;
+        if (includeDeafen) user.isForceDeafened = false;
+        break;
+      }
+    }
+    void broadcastVoiceChannelUsers(channelId);
+  };
 
   // Force-kick everyone out of a voice channel when it is deleted (called from API routes)
   (globalThis as Record<string, unknown>).__kickVoiceChannel = (channelId: string) => {

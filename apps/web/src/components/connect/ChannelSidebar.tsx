@@ -17,7 +17,8 @@ import { VoiceChannelIcon, ChatIcon, PrivateChatIcon, PrivateVoiceIcon } from "@
 import ScreenSharePrivacyModal from "@/components/voice/ScreenSharePrivacyModal";
 import { isModuleType } from "@/lib/channelModules";
 import { isServiceLinkedChannel } from "@/lib/serviceChannels"; // FIX-SRVLINK
-import { useDragOrder } from "./useDragOrder"; // FIX-DRAGORDER
+import { useDragOrder } from "./useDragOrder";
+import { useDragUser } from "./useDragUser"; // FIX-DRAGORDER
 /* GROUP-SKIN: шапка сообщества берётся из оформления группы. */
 import { bannerCss, parseGroupTheme } from "@/lib/groupTheme";
 
@@ -223,9 +224,22 @@ export default function ChannelSidebar({
     modChecked: boolean; canKickVoice: boolean; canForceMute: boolean;
     canForceDeafen: boolean; canMove: boolean; canBan: boolean;
     groupId: string | undefined; voiceChannels: Array<{ id: string; name: string }>;
+    /** FIX-FORCELOCK: текущее состояние целевого пользователя */
+    targetIsForceMuted: boolean; targetIsForceDeafened: boolean;
   };
   const [sidebarModMenu, setSidebarModMenu] = useState<SidebarModMenu | null>(null);
-  const [dragUserId, setDragUserId] = useState<string | null>(null);
+  // FIX-DND: заменяем HTML5 drag-events на поинтерный хук useDragUser
+  const dragUser = useDragUser({
+    enabled: !!voiceActions,
+    onMove: async (socketId: string, userId: string, targetChannelId: string) => {
+      if (!groupDetail) return;
+      await fetch("/api/voice/move-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: userId, targetChannelId, groupId: groupDetail.id }),
+      }).catch(() => {});
+    },
+  });
   // Закрытие ПКМ-меню модерации при клике мимо или Escape
   useEffect(() => {
     if (!sidebarModMenu) return;
@@ -728,9 +742,7 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className={`ml-4 pl-1${drag.itemClass(ch.id)}${dragUserId ? " ring-2 ring-violet-400/30 dark:ring-cyan-400/30 rounded-lg" : ""}`} {...drag.itemProps(ch.id, children.map(c => c.id))}
-                              onDragOver={dragUserId ? (e) => e.preventDefault() : undefined}
-                              onDrop={dragUserId ? async (e) => { e.preventDefault(); const uid = dragUserId; setDragUserId(null); await fetch("/api/voice/move-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: uid, targetChannelId: ch.id, groupId: groupDetail.id }) }).catch(() => {}); } : undefined}>
+                          <div key={ch.id} className={`ml-4 pl-1${drag.itemClass(ch.id)}${dragUser.dragging ? " ring-2 ring-violet-400/30 dark:ring-cyan-400/30 rounded-lg" : ""}${dragUser.channelDropClass(ch.id)}`} {...drag.itemProps(ch.id, children.map(c => c.id))} {...dragUser.channelDropProps(ch.id)}>
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
@@ -809,12 +821,11 @@ export default function ChannelSidebar({
                                     <div
                                       key={u.socketId}
                                       className="group/user relative"
-                                      draggable={isActive && !!voiceActions}
-                                      onDragStart={() => setDragUserId(u.userId)}
-                                      onDragEnd={() => setDragUserId(null)}
+                                      {...dragUser.userRowProps(u.socketId, u.userId)}
+                                      className={`group/user relative ${dragUser.userRowClass(u.socketId)}`}
                                       onContextMenu={isActive && voiceActions ? async (e) => {
                                         e.preventDefault(); e.stopPropagation();
-                                        setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })) });
+                                        setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })), targetIsForceMuted: !!u.isForceMuted, targetIsForceDeafened: !!u.isForceDeafened });
                                         try {
                                           const r = await fetch(`/api/voice/moderation-info?channelId=${ch.id}&targetUserId=${u.userId}`);
                                           if (r.ok) { const d = await r.json(); setSidebarModMenu(prev => prev && prev.socketId === u.socketId ? { ...prev, modChecked: true, ...d } : prev); }
@@ -829,6 +840,8 @@ export default function ChannelSidebar({
                                         speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
                                         quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
                                         sharingScreen={isActive ? voiceState?.screenSharerIds.has(u.socketId) ?? false : false}
+                                        isForceMuted={!!u.isForceMuted}
+                                        isForceDeafened={!!u.isForceDeafened}
                                       />
                                     </div>
                                   ))}
@@ -848,10 +861,7 @@ export default function ChannelSidebar({
               const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
               return (
-                <div key={ch.id} className={`${drag.itemClass(ch.id)}${dragUserId ? " ring-2 ring-violet-400/30 dark:ring-cyan-400/30 rounded-lg" : ""}`} {...drag.itemProps(ch.id, voiceChannels.filter((c) => !c.parentId).map((c) => c.id))}
-                    onDragOver={dragUserId ? (e) => e.preventDefault() : undefined}
-                    onDrop={dragUserId ? async (e) => { e.preventDefault(); const uid = dragUserId; setDragUserId(null); await fetch("/api/voice/move-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: uid, targetChannelId: ch.id, groupId: groupDetail.id }) }).catch(() => {}); } : undefined}
-                  >
+                <div key={ch.id} className={`${drag.itemClass(ch.id)}${dragUser.dragging ? " ring-2 ring-violet-400/30 dark:ring-cyan-400/30 rounded-lg" : ""}${dragUser.channelDropClass(ch.id)}`} {...drag.itemProps(ch.id, voiceChannels.filter((c) => !c.parentId).map((c) => c.id))} {...dragUser.channelDropProps(ch.id)}>
                   {/* Channel button */}
                   <div className="group flex items-center">
                     <button
@@ -924,13 +934,12 @@ export default function ChannelSidebar({
                         <div
                           key={u.socketId}
                           className="group/user relative"
-                          draggable={isActive && !!voiceActions}
-                          onDragStart={() => setDragUserId(u.userId)}
-                          onDragEnd={() => setDragUserId(null)}
+                          {...dragUser.userRowProps(u.socketId, u.userId)}
+                          className={`group/user relative ${dragUser.userRowClass(u.socketId)}`}
                           onContextMenu={isActive && voiceActions ? async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })) });
+                            setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })), targetIsForceMuted: !!u.isForceMuted, targetIsForceDeafened: !!u.isForceDeafened });
                             try {
                               const r = await fetch(`/api/voice/moderation-info?channelId=${ch.id}&targetUserId=${u.userId}`);
                               if (r.ok) { const d = await r.json(); setSidebarModMenu(prev => prev && prev.socketId === u.socketId ? { ...prev, modChecked: true, ...d } : prev); }
@@ -940,11 +949,13 @@ export default function ChannelSidebar({
                         >
                           <VoiceUserRow
                             name={u.userName}
-                            avatar={u.avatar} /* FIX-VAVATAR */
+                            avatar={u.avatar}
                             muted={u.muted}
                             speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
                             quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
                             sharingScreen={isActive ? voiceState?.screenSharerIds.has(u.socketId) ?? false : false}
+                            isForceMuted={!!u.isForceMuted}
+                            isForceDeafened={!!u.isForceDeafened}
                           />
                           {/* Per-user volume control (only when connected) */}
                           {isActive && voiceActions && (
@@ -1308,7 +1319,7 @@ export default function ChannelSidebar({
           )}
           {sidebarModMenu.modChecked && (sidebarModMenu.canForceMute || sidebarModMenu.canForceDeafen || sidebarModMenu.canMove || sidebarModMenu.canKickVoice) && (
             <div className="border-t border-neutral-100 dark:border-white/5 mt-1 pt-1">
-              {sidebarModMenu.canForceMute && (
+              {sidebarModMenu.canForceMute && !sidebarModMenu.targetIsForceMuted && (
                 <button type="button" role="menuitem"
                   onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/force-mute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId, deafen: false }) }).catch(() => {}); }}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5">
@@ -1316,7 +1327,7 @@ export default function ChannelSidebar({
                   Заглушить микрофон
                 </button>
               )}
-              {sidebarModMenu.canForceDeafen && (
+              {sidebarModMenu.canForceDeafen && !sidebarModMenu.targetIsForceDeafened && (
                 <button type="button" role="menuitem"
                   onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/force-mute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId, deafen: true }) }).catch(() => {}); }}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5">
@@ -1324,9 +1335,9 @@ export default function ChannelSidebar({
                   Заглушить мик + наушники
                 </button>
               )}
-              {sidebarModMenu.canForceMute && (
+              {sidebarModMenu.canForceMute && sidebarModMenu.targetIsForceMuted && (
                 <button type="button" role="menuitem"
-                  onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/force-unmute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId, deafen: m.canForceDeafen }) }).catch(() => {}); }}
+                  onClick={async () => { const m = sidebarModMenu; setSidebarModMenu(null); await fetch("/api/voice/force-unmute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: m.userId, channelId: m.channelId, deafen: m.targetIsForceDeafened }) }).catch(() => {}); }}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-700 dark:text-gray-200 hover:bg-neutral-100 dark:hover:bg-white/5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4" /></svg>
                   Снять заглушение
