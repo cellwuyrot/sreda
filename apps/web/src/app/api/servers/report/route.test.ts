@@ -31,6 +31,27 @@ function premiumUser(over: Record<string, unknown> = {}) {
   return { banned: false, bannedUntil: null, isPremium: true, role: "USER", ...over };
 }
 
+/**
+ * Строка пира для списка узла.
+ *
+ * Поля учёта трафика обязательны: с ними считается лимит, и без них расчёт
+ * получал бы недействительную дату периода. Раньше каждый тест перечислял
+ * поля сам, и после появления учёта половина файла отвалилась — набор полей
+ * теперь один на всех.
+ */
+function peerFor(user: Record<string, unknown>, over: Record<string, unknown> = {}) {
+  return {
+    publicKey: KEY,
+    address: "10.8.0.2",
+    exitIp: "",
+    rxBytes: 0,
+    txBytes: 0,
+    usageResetAt: new Date(),
+    user,
+    ...over,
+  };
+}
+
 async function call(body: unknown) {
   const { POST } = await import("@/app/api/servers/report/route");
   const res = await POST(
@@ -47,7 +68,18 @@ beforeEach(() => {
   mockFindNode.mockResolvedValue(row(vpnNode()));
   prismaMock.serverNode.update.mockResolvedValue(row({ id: "n1" }));
   prismaMock.serverNode.findFirst.mockResolvedValue(row(null));
-  prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", enabled: true, maxPeersPerNode: 200 }));
+  prismaMock.vpnSettings.upsert.mockResolvedValue(
+    row({
+      id: "default",
+      enabled: true,
+      maxPeersPerNode: 200,
+      // Условия тарифа: без них не посчитать ни лимит, ни расчётный период.
+      trafficLimitGb: 250,
+      usagePeriodDays: 30,
+      overLimitAction: "BLOCK",
+      throttleKbps: 2048,
+    }),
+  );
   prismaMock.vpnPeer.findMany.mockResolvedValue(row([]));
   prismaMock.vpnPeer.updateMany.mockResolvedValue(row({ count: 1 }));
 });
@@ -125,7 +157,7 @@ describe("список пиров для узла", () => {
    * прежний, выключатель был бы только надписью в панели.
    */
   it("ИНВАРИАНТ: сервис выключен — пустой список, а не прежние пиры", async () => {
-    prismaMock.vpnSettings.upsert.mockResolvedValue(row({ enabled: false, maxPeersPerNode: 200 }));
+    prismaMock.vpnSettings.upsert.mockResolvedValue(row({ enabled: false, maxPeersPerNode: 200, trafficLimitGb: 250, usagePeriodDays: 30, overLimitAction: "BLOCK", throttleKbps: 2048 }));
     const { body } = await call({ report: {} });
     expect(body.peers).toEqual([]);
     expect(prismaMock.vpnPeer.findMany).not.toHaveBeenCalled();
@@ -133,10 +165,13 @@ describe("список пиров для узла", () => {
 
   it("пир отдаётся адресом с маской /32", async () => {
     prismaMock.vpnPeer.findMany.mockResolvedValue(
-      row([{ publicKey: KEY, address: "10.8.0.2", exitIp: "203.0.113.7", user: premiumUser() }]),
+      row([peerFor(premiumUser(), { exitIp: "203.0.113.7" })]),
     );
     const { body } = await call({ report: {} });
-    expect(body.peers).toEqual([{ publicKey: KEY, allowedIp: "10.8.0.2/32", exitIp: "203.0.113.7" }]);
+    /* throttleKbps = 0 — «ограничений нет»: расход в пределах лимита. */
+    expect(body.peers).toEqual([
+      { publicKey: KEY, allowedIp: "10.8.0.2/32", exitIp: "203.0.113.7", throttleKbps: 0 },
+    ]);
   });
 
   it("выбираются только свои включённые пиры", async () => {
@@ -145,7 +180,16 @@ describe("список пиров для узла", () => {
     expect(args.where).toEqual({ nodeId: "n1", enabled: true });
   });
 
-  it("следующий отчёт — через минуту", async () => {
+  /* FIX-PEERWAIT: VPN-узел спрашивает о своих пирах каждые пять секунд, а не
+     раз в минуту: свежий пир ждёт включения туннеля, и минута ожидания читается
+     как «интернета нет». Минута осталась остальным узлам — им торопиться некуда. */
+  it("VPN-узел спрашивает пиров чаще: следующий отчёт через пять секунд", async () => {
+    const { body } = await call({ report: {} });
+    expect(body.nextReportInMs).toBe(5_000);
+  });
+
+  it("узлу не-VPN следующий отчёт — через минуту", async () => {
+    mockFindNode.mockResolvedValue(row(vpnNode({ kind: "MEDIA" })));
     const { body } = await call({ report: {} });
     expect(body.nextReportInMs).toBe(60_000);
   });
@@ -154,8 +198,8 @@ describe("список пиров для узла", () => {
 describe("право на доступ проверяется в момент выдачи списка", () => {
   function peers() {
     return [
-      { publicKey: KEY, address: "10.8.0.2", exitIp: "", user: premiumUser() },
-      { publicKey: KEY2, address: "10.8.0.3", exitIp: "", user: premiumUser({ isPremium: false }) },
+      peerFor(premiumUser()),
+      peerFor(premiumUser({ isPremium: false }), { publicKey: KEY2, address: "10.8.0.3" }),
     ];
   }
 
@@ -172,23 +216,14 @@ describe("право на доступ проверяется в момент в
   });
 
   it("ИНВАРИАНТ: пир забаненного на узел не уходит", async () => {
-    prismaMock.vpnPeer.findMany.mockResolvedValue(
-      row([{ publicKey: KEY, address: "10.8.0.2", exitIp: "", user: premiumUser({ banned: true }) }]),
-    );
+    prismaMock.vpnPeer.findMany.mockResolvedValue(row([peerFor(premiumUser({ banned: true }))]));
     const { body } = await call({ report: {} });
     expect(body.peers).toEqual([]);
   });
 
   it("истёкший бан доступ не отбирает", async () => {
     prismaMock.vpnPeer.findMany.mockResolvedValue(
-      row([
-        {
-          publicKey: KEY,
-          address: "10.8.0.2",
-          exitIp: "",
-          user: premiumUser({ banned: true, bannedUntil: new Date(Date.now() - 60_000) }),
-        },
-      ]),
+      row([peerFor(premiumUser({ banned: true, bannedUntil: new Date(Date.now() - 60_000) }))]),
     );
     const { body } = await call({ report: {} });
     expect(body.peers).toHaveLength(1);
@@ -196,7 +231,7 @@ describe("право на доступ проверяется в момент в
 
   it("администратору доступ остаётся и без подписки", async () => {
     prismaMock.vpnPeer.findMany.mockResolvedValue(
-      row([{ publicKey: KEY, address: "10.8.0.2", exitIp: "", user: premiumUser({ isPremium: false, role: "ADMIN" }) }]),
+      row([peerFor(premiumUser({ isPremium: false, role: "ADMIN" }))]),
     );
     const { body } = await call({ report: {} });
     expect(body.peers).toHaveLength(1);
@@ -247,5 +282,169 @@ describe("рукопожатия из отчёта", () => {
     const many = Array.from({ length: 600 }, () => ({ publicKey: KEY, atMs: 1_750_000_000_000 }));
     await call({ report: {}, handshakes: many });
     expect(prismaMock.vpnPeer.updateMany.mock.calls.length).toBeLessThanOrEqual(500);
+  });
+});
+
+describe("учёт трафика из отчёта", () => {
+  /** Настройки с лимитом: расчёт периода и порога живёт в lib/connectionUsage. */
+  function settings(over: Record<string, unknown> = {}) {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(
+      row({
+        id: "default",
+        enabled: true,
+        maxPeersPerNode: 200,
+        trafficLimitGb: 250,
+        usagePeriodDays: 30,
+        overLimitAction: "BLOCK",
+        throttleKbps: 2048,
+        ...over,
+      }),
+    );
+  }
+
+  /** Пир этого узла с уже накопленным расходом и свежим периодом. */
+  function peerRow(over: Record<string, unknown> = {}) {
+    prismaMock.vpnPeer.findFirst.mockResolvedValue(
+      row({
+        id: "p1",
+        rxBytes: 1000,
+        txBytes: 500,
+        lastRx: 800,
+        lastTx: 400,
+        usageResetAt: new Date(),
+        ...over,
+      }),
+    );
+    prismaMock.vpnPeer.update.mockResolvedValue(row({ id: "p1" }));
+  }
+
+  /** Данные последней записи расхода. */
+  function written() {
+    return (prismaMock.vpnPeer.update.mock.calls[0][0] as {
+      data: Record<string, number | Date>;
+    }).data;
+  }
+
+  beforeEach(() => settings());
+
+  /**
+   * ИНВАРИАНТ: в расход идёт ПРИРОСТ счётчика, а не само его значение. Узел
+   * присылает накопительные счётчики интерфейса; складывать их целиком значило
+   * бы списывать человеку один и тот же трафик на каждом отчёте.
+   */
+  it("ИНВАРИАНТ: считается прирост счётчика", async () => {
+    peerRow();
+    await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1_800, tx: 1_400 }] });
+    const data = written();
+    expect(data.rxBytes).toBe(1000 + 1000);
+    expect(data.txBytes).toBe(500 + 1000);
+    expect(data.lastRx).toBe(1_800);
+    expect(data.lastTx).toBe(1_400);
+  });
+
+  it("счётчик упал (интерфейс перезапустили) — прирост берётся целиком", async () => {
+    peerRow();
+    await call({ report: {}, transfers: [{ publicKey: KEY, rx: 100, tx: 50 }] });
+    const data = written();
+    expect(data.rxBytes).toBe(1000 + 100);
+    expect(data.txBytes).toBe(500 + 50);
+  });
+
+  /**
+   * ИНВАРИАНТ: отметка «учёт дошёл» ставится тем же запросом, что и цифры.
+   * Без неё клиент не может отличить честный ноль от молчащего узла — и
+   * показывал бы «израсходовано 0», пока трафик идёт мимо счёта.
+   */
+  it("ИНВАРИАНТ: ставится отметка свежести учёта", async () => {
+    peerRow();
+    await call({ report: {}, transfers: [{ publicKey: KEY, rx: 900, tx: 500 }] });
+    expect(written().usageUpdatedAt).toBeInstanceOf(Date);
+  });
+
+  it("срок периода вышел — счётчики начинаются заново", async () => {
+    peerRow({ usageResetAt: new Date("2026-01-01T00:00:00.000Z") });
+    await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1_800, tx: 1_400 }] });
+    const data = written();
+    expect(data.rxBytes).toBe(1_000);
+    expect(data.txBytes).toBe(1_000);
+    expect(data.usageResetAt).toBeInstanceOf(Date);
+    expect(data.usageUpdatedAt).toBeInstanceOf(Date);
+  });
+
+  it("чужой или негодный ключ в расход не идёт", async () => {
+    prismaMock.vpnPeer.findFirst.mockResolvedValue(row(null));
+    await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1, tx: 1 }, { publicKey: "мусор", rx: 1, tx: 1 }] });
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
+  });
+
+  it("у не-VPN узла расход не принимается", async () => {
+    mockFindNode.mockResolvedValue(row(vpnNode({ kind: "APP" })));
+    peerRow();
+    await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1_800, tx: 1_400 }] });
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("лимит трафика в списке пиров", () => {
+  const GB = 1024 ** 3;
+
+  function settingsWithLimit(over: Record<string, unknown> = {}) {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(
+      row({
+        id: "default",
+        enabled: true,
+        maxPeersPerNode: 200,
+        trafficLimitGb: 250,
+        usagePeriodDays: 30,
+        overLimitAction: "BLOCK",
+        throttleKbps: 2048,
+        ...over,
+      }),
+    );
+  }
+
+  /** Пир, у которого расход уже вышел за лимит. */
+  function overLimitPeer(role: string) {
+    prismaMock.vpnPeer.findMany.mockResolvedValue(
+      row([peerFor(premiumUser({ role }), { rxBytes: 200 * GB, txBytes: 100 * GB })]),
+    );
+  }
+
+  /**
+   * ИНВАРИАНТ: подписка от лимита не освобождает. Ни Premium, ни «Ускоренный
+   * интернет»: по части соединения это одна и та же услуга с одним лимитом.
+   */
+  it("ИНВАРИАНТ: подписчик за лимитом выпадает из списка узла", async () => {
+    settingsWithLimit();
+    overLimitPeer("USER");
+    const res = await call({ report: {} });
+    expect(res.body.peers).toEqual([]);
+  });
+
+  /**
+   * ИНВАРИАНТ: безлимит — признак роли в проекте, и только его. Сервис нужно
+   * проверять, в том числе прогоняя через него больше подписочного лимита.
+   */
+  it("ИНВАРИАНТ: у администрации проекта (ADMIN) лимита нет", async () => {
+    settingsWithLimit();
+    overLimitPeer("ADMIN");
+    const res = await call({ report: {} });
+    expect(res.body.peers).toHaveLength(1);
+    expect(res.body.peers[0].throttleKbps).toBe(0);
+  });
+
+  it("правило «снизить скорость»: подписчик остаётся, но с потолком", async () => {
+    settingsWithLimit({ overLimitAction: "THROTTLE" });
+    overLimitPeer("USER");
+    const res = await call({ report: {} });
+    expect(res.body.peers).toHaveLength(1);
+    expect(res.body.peers[0].throttleKbps).toBe(2048);
+  });
+
+  it("правило «снизить скорость»: администрацию не режем", async () => {
+    settingsWithLimit({ overLimitAction: "THROTTLE" });
+    overLimitPeer("ADMIN");
+    const res = await call({ report: {} });
+    expect(res.body.peers[0].throttleKbps).toBe(0);
   });
 });

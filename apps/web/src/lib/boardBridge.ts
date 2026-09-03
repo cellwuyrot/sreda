@@ -41,6 +41,15 @@ export type BoardInboxItem = {
   createdAt: string;
   /** FIX-BOARDPICKER: конкретный холст назначения (id борда внутри рабочей среды). */
   boardId?: string;
+  /**
+   * FIX-BOARDTARGET: canvas-канал, чью рабочую среду выбрали в пикере.
+   *
+   * Область («личная» или «групповая») отвечает лишь на вопрос, чей это холст,
+   * а canvas-каналов в сообществе бывает несколько. Без адреса канала элемент
+   * забирал тот групповой холст, который в этот момент открыт, — то есть выбор
+   * в пикере ни на что не влиял.
+   */
+  targetChannelId?: string;
 };
 
 const LS_KEY = "tz-board-inbox";
@@ -78,6 +87,8 @@ export function sendMessageToBoard(input: {
   boardId?: string;
   /** FIX-BOARDPICKER: явное указание области; иначе выводится из channelId. */
   scope?: BoardScope;
+  /** FIX-BOARDTARGET: canvas-канал выбранной рабочей среды. */
+  targetChannelId?: string;
 }): BoardInboxItem {
   const item: BoardInboxItem = {
     id: `bi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -102,19 +113,33 @@ export function boardItemScope(item: BoardInboxItem): BoardScope {
 }
 
 /**
- * Забрать накопившееся для СВОЕЙ области (вызывается при открытии доски).
+ * FIX-BOARDTARGET: этому ли холсту адресован элемент.
  *
- * Чужие по области элементы ОСТАЮТСЯ в очереди и дождутся своего холста:
- * выбросить их значило бы терять то, что человек уже отправил.
+ * Область совпала — необходимое условие, но не достаточное: canvas-каналов в
+ * сообществе бывает несколько, и элемент с адресом канала берёт только он.
+ * Элемент без адреса (личная среда, старая очередь) остаётся «для любого своей
+ * области» — иначе накопленное до этой правки уже никто бы не забрал.
  */
-export function drainBoardInbox(scope?: BoardScope): BoardInboxItem[] {
+export function boardItemMatches(
+  item: BoardInboxItem,
+  scope?: BoardScope,
+  channelId?: string | null,
+): boolean {
+  if (scope && boardItemScope(item) !== scope) return false;
+  if (item.targetChannelId && item.targetChannelId !== channelId) return false;
+  return true;
+}
+
+/**
+ * Забрать накопившееся для СВОЕГО холста (вызывается при его открытии).
+ *
+ * Чужие элементы ОСТАЮТСЯ в очереди и дождутся своего холста: выбросить их
+ * значило бы терять то, что человек уже отправил.
+ */
+export function drainBoardInbox(scope?: BoardScope, channelId?: string | null): BoardInboxItem[] {
   const queue = readQueue();
-  if (!scope) {
-    writeQueue([]);
-    return queue;
-  }
-  const mine = queue.filter((i) => boardItemScope(i) === scope);
-  writeQueue(queue.filter((i) => boardItemScope(i) !== scope));
+  const mine = queue.filter((i) => boardItemMatches(i, scope, channelId));
+  writeQueue(queue.filter((i) => !boardItemMatches(i, scope, channelId)));
   return mine;
 }
 
@@ -131,6 +156,7 @@ export function peekBoardInbox(): BoardInboxItem[] {
 export function subscribeBoardInbox(
   cb: (item: BoardInboxItem) => void,
   scope?: BoardScope,
+  channelId?: string | null,
 ): () => void {
   if (typeof window === "undefined") return () => {};
 
@@ -138,7 +164,7 @@ export function subscribeBoardInbox(
     const item = (e as CustomEvent<BoardInboxItem>).detail;
     if (!item) return;
     /* Чужой элемент не трогаем и из очереди НЕ убираем. */
-    if (scope && boardItemScope(item) !== scope) return;
+    if (!boardItemMatches(item, scope, channelId)) return;
     writeQueue(readQueue().filter((i) => i.id !== item.id));
     cb(item);
   };
@@ -146,7 +172,7 @@ export function subscribeBoardInbox(
   // Другая вкладка положила элемент в очередь → забираем своё накопившееся.
   const onStorage = (e: StorageEvent) => {
     if (e.key !== LS_KEY) return;
-    drainBoardInbox(scope).forEach(cb);
+    drainBoardInbox(scope, channelId).forEach(cb);
   };
 
   window.addEventListener(EVENT_NAME, onLocal);

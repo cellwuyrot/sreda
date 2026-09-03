@@ -260,7 +260,12 @@ export default function MessageHoverToolbar({
       messageId: message.id,
       authorName: boardContext?.authorName,
       channelName: boardContext?.channelName,
-      channelId: sel.channelId ?? boardContext?.channelId,
+      /* Канал ОТКУДА пришло сообщение — он идёт в подпись карточки. Раньше сюда
+         подставлялся выбранный в пикере canvas-канал, и подпись начинала врать:
+         имя оставалось от чата, а идентификатор был уже от холста. */
+      channelId: boardContext?.channelId,
+      /* FIX-BOARDTARGET: канал, КУДА нести. Пусто — личная рабочая среда. */
+      targetChannelId: sel.channelId,
       boardId: sel.boardId,
       scope: sel.scope,
     });

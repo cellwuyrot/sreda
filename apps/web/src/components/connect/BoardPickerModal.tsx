@@ -148,9 +148,11 @@ export default function BoardPickerModal({
                 );
               })}
 
-              {list.group.length === 0 && !groupId && (
+              {list.group.length === 0 && (
                 <p className="px-4 py-2 text-[11px] text-neutral-400 dark:text-neutral-500">
-                  Холсты групп доступны в групповом чате
+                  {groupId
+                    ? "В этом сообществе ещё нет разделов-холстов"
+                    : "Холсты сообществ доступны в групповом чате"}
                 </p>
               )}
             </>

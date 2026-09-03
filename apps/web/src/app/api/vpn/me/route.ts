@@ -21,7 +21,7 @@ import {
 import { NODE_ONLINE_WINDOW_MS } from "@/lib/serverMesh";
 import { hasPremium } from "@/lib/premium";
 import { hasActiveVpnPlan } from "@/lib/vpnPlan";
-import { usageView } from "@/lib/connectionUsage";
+import { usageView, isUsageUnlimited } from "@/lib/connectionUsage";
 import { LINK_NAME_LOWER, LINK_PLAN_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 
 /**
@@ -235,16 +235,18 @@ export async function GET() {
   /* NETLINK: тариф, расход и серверы отдаются ВСЕГДА, а не только когда есть пир.
      Кнопка у клиента показывает срок и лимит до первого включения тоже: именно тогда
      человек и решает, нужна ли ему подписка. Отсутствующие поля вместо нулей заставляют
-     клиент угадывать, а угадывать он не умеет. */
-  // FIX-ADMIN-UNLIMITED: администраторы проекта (user.role === "ADMIN") получают
-  // безлимитный VPN. Это отдельный уровень от администраторов групп/сообществ.
-  const isProjectAdmin = user?.role === "ADMIN";
-  const effectiveSettings = isProjectAdmin
-    ? { ...settings, trafficLimitGb: 0 }
-    : settings;
+     клиент угадывать, а угадывать он не умеет.
+
+     NETLINK-STAFF: безлимит даёт только роль в проекте (ADMIN) — то же правило,
+     что и у премиума по роли. Подписки от лимита не освобождают: и Premium, и
+     «Ускоренный интернет» по части соединения — одна и та же услуга с одним
+     лимитом. Признак считается общей функцией, а не на месте: то же условие
+     нужно при отдаче списка пиров узлу и в админской сводке, а разойдясь, три
+     копии разойдутся в сторону безлимита. */
+  const unlimited = isUsageUnlimited(user);
   const traffic = {
-    ...usageView(peer, effectiveSettings),
-    limitGb: effectiveSettings.trafficLimitGb,
+    ...usageView(peer, settings, new Date(), unlimited),
+    limitGb: unlimited ? 0 : settings.trafficLimitGb,
     overLimitAction: settings.overLimitAction,
     throttleKbps: settings.throttleKbps,
   };
@@ -272,16 +274,23 @@ export async function GET() {
 
      Узел работает «на вытягивание»: он получает список пиров в ответе на свой
      отчёт и тут же приводит интерфейс к нему. Значит отчёт, пришедший ПОЗЖЕ
-     последнего изменения записи, означает, что пир на узле уже стоит. Обратное
-     сравнение — отчёт старше записи — означает, что ключ ещё едет, и включать
-     туннель рано: WireGuard на неизвестный ключ молчит, и клиент отправит
-     рукопожатия в пустоту (см. FIX-PEERWAIT в api/servers/report/route.ts).
+     последнего изменения КОНФИГУРАЦИИ пира, означает, что пир на узле уже
+     стоит. Обратное сравнение — отчёт старше конфигурации — означает, что ключ
+     ещё едет, и включать туннель рано: WireGuard на неизвестный ключ молчит, и
+     клиент отправит рукопожатия в пустоту (см. FIX-PEERWAIT в
+     api/servers/report/route.ts).
 
-     Отдельного поля «применено» здесь нет намеренно: `lastSeenAt` обновляется
-     тем же запросом, который отдаёт узлу пиров, поэтому оно уже является этой
-     отметкой. Лишний столбец пришлось бы поддерживать в согласии с ним. */
+     FIX-PEERAPPLY: сравнение идёт с `configAt`, а не с `updatedAt`. Прежнее
+     сравнение отравляло само себя: учёт трафика обновляет запись пира каждым
+     отчётом узла — и всегда на несколько миллисекунд позже, чем тот же запрос
+     записал `lastSeenAt`. Поэтому после первого же учтённого килобайта условие
+     не могло стать истинным никогда, и повторное включение туннеля из оболочки
+     упиралось в «Сервер не успел принять доступ»: первое включение проходило
+     (пира на интерфейсе ещё нет — счётчики по нему не приходят), второе — нет.
+     `configAt` меняется только там, где меняется сама конфигурация: при
+     регистрации ключа и при переезде на другой сервер. */
   const peerApplied =
-    !!peer.node.lastSeenAt && peer.node.lastSeenAt.getTime() > peer.updatedAt.getTime();
+    !!peer.node.lastSeenAt && peer.node.lastSeenAt.getTime() > peer.configAt.getTime();
 
   return NextResponse.json({
     serviceEnabled: settings.enabled,
@@ -381,7 +390,16 @@ export async function POST(req: NextRequest) {
       /* `enabled: true` — на случай, когда пира когда-то выключили: иначе
          перевыпуск ключа возвращал бы профиль, по которому туннель не поднимется
          (узлу такой пир не отдаётся), и причина была бы совершенно не видна. */
-      data: { publicKey, label: label || existing.label, lastHandshakeAt: null, enabled: true, routing },
+      /* FIX-PEERAPPLY: `configAt` — отметка «конфигурация сменилась», по ней
+         клиент ждёт, пока узел узнает о новом ключе. */
+      data: {
+        publicKey,
+        label: label || existing.label,
+        lastHandshakeAt: null,
+        enabled: true,
+        routing,
+        configAt: new Date(),
+      },
     });
     return NextResponse.json({
       peer: peerView(updated, existing.node, nodeTunnel(existing.node), settings),
@@ -420,6 +438,8 @@ export async function POST(req: NextRequest) {
       lastHandshakeAt: null,
       enabled: true,
       routing,
+      // FIX-PEERAPPLY: сменились ключ, узел и адрес — ждём отчёта узла заново.
+      configAt: new Date(),
     },
   });
 
@@ -528,6 +548,8 @@ export async function PATCH(req: NextRequest) {
       /* Рукопожатие старого узла к новому отношения не имеет: оставленное
          значение показывало бы «на связи» у только что переехавшего пира. */
       lastHandshakeAt: null,
+      // FIX-PEERAPPLY: переезд — это смена конфигурации; ждём отчёта нового узла.
+      configAt: new Date(),
     },
     include: {
       node: {
