@@ -661,6 +661,20 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                 body: JSON.stringify({ targetUserId: uid, channelId: cid, deafen: true }),
               });
             } : undefined}
+            /* FIX-FORCELOCK-BOTH: снятие заглушения. В панели его не было вовсе:
+               заглушить участника можно было отсюда, а вернуть ему микрофон —
+               только из боковой панели, и то лишь пока её снимок состава комнаты
+               не устарел. Мера без снятия — необратимое наказание. */
+            onForceUnmute={volumeMenu.canForceMute && voice.channelId && volumeMenu.userId ? async () => {
+              const uid = volumeMenu.userId!;
+              const cid = voice.channelId!;
+              setVolumeMenu(null);
+              await fetch("/api/voice/force-unmute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetUserId: uid, channelId: cid }),
+              });
+            } : undefined}
             onMoveToChannel={volumeMenu.canMove && voice.channelId && volumeMenu.userId ? async (targetChannelId: string) => {
               const uid = volumeMenu.userId!;
               const gid = volumeMenu.groupId!;
@@ -713,7 +727,7 @@ function VolumeMenu({
   modChecked,
   canKickVoice, canForceMute, canForceDeafen, canMove, canBan,
   voiceChannels,
-  onKickVoice, onForceMute, onForceDeafen, onMoveToChannel, onBan,
+  onKickVoice, onForceMute, onForceDeafen, onForceUnmute, onMoveToChannel, onBan,
 }: {
   name: string; x: number; y: number;
   volume: number;
@@ -729,6 +743,8 @@ function VolumeMenu({
   onKickVoice?: () => void;
   onForceMute?: () => void;
   onForceDeafen?: () => void;
+  /** FIX-FORCELOCK-BOTH: снять заглушение — и микрофон, и наушники. */
+  onForceUnmute?: () => void;
   onMoveToChannel?: (channelId: string) => void;
   onBan?: () => void;
 }) {
@@ -843,6 +859,22 @@ function VolumeMenu({
                 <line x1="2" y1="2" x2="22" y2="22"/>
               </svg>
               Принудительно заглушить
+            </button>
+          )}
+
+          {/* FIX-FORCELOCK-BOTH: снятие показывается рядом с наложением, а не
+              вместо него: состояние участника у панели может устареть, а
+              выбирать по устаревшему признаку — значит прятать ровно тот пункт,
+              который нужен. Что именно снять, решает сервер по своему состоянию. */}
+          {canForceMute && onForceUnmute && (
+            <button onClick={onForceUnmute}
+              className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[12px] text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/8 transition-colors text-left">
+              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+              Снять заглушение
             </button>
           )}
 

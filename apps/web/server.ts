@@ -103,6 +103,33 @@ interface AuthenticatedSocket {
 const voiceRooms = new Map<string, Map<string, VoiceUser>>();
 
 /**
+ * FIX-FORCELOCK-KEEP: принудительные заглушения живут отдельно от состава комнаты.
+ *
+ * Состав комнаты держится по socketId и умирает вместе с сокетом: обрыв связи,
+ * перезагрузка страницы, переход в другой канал и обратно — и запись участника
+ * создаётся заново, уже без пометок. А клиент заглушённого свои пометки помнил,
+ * потому что сбрасывать их некому: сам он снять заглушение не может по замыслу.
+ *
+ * Получалась ловушка, из которой не было выхода ни с одной стороны: человек
+ * сидит без микрофона, а модератору панель показывает его незаглушённым и
+ * предлагает «заглушить» — то есть снять заглушение нечем. Ровно на это и
+ * жаловались: «заглушить получается, вернуть обратно — нет».
+ *
+ * Поэтому замок хранится по паре «канал + человек» и переживает переподключение:
+ * при входе в канал он применяется заново, и обе стороны видят одно и то же.
+ * Снимается он только тем, что его снимает по-настоящему — force-unmute.
+ */
+type ForceLock = { muted: boolean; deafened: boolean };
+const voiceForceLocks = new Map<string, ForceLock>();
+
+const forceLockKey = (channelId: string, userId: string) => `${channelId}:${userId}`;
+
+function readForceLock(channelId: string, userId: string): ForceLock {
+  return voiceForceLocks.get(forceLockKey(channelId, userId)) ?? { muted: false, deafened: false };
+}
+
+
+/**
  * SCREEN-PRIVATE / SCREEN-VIEWERS: состояние активных демонстраций экрана.
  * Ключ — socketId ведущего. `allow` = null означает публичный показ; иначе это
  * список userId, которым трансляция видна (остальным не приходит даже событие
@@ -789,50 +816,63 @@ app.prepare().then(() => {
   }
 
 
-  // FIX-FORCELOCK-V2: после обновления voiceRooms шлём событие напрямую всем сокетам
-  // целевого пользователя через userSockets — это надёжнее emitToUser из API-маршрута,
-  // который может не найти io через getIO() в контексте Next.js App Router.
-  (globalThis as Record<string, unknown>).__forceMuteUser = (channelId: string, targetUserId: string, deafen: boolean) => {
+  /** Событие всем живым сокетам человека: заглушение касается его устройств, а
+      не одной вкладки, из которой он вошёл. */
+  const emitToUserSockets = (userId: string, event: string) => {
+    for (const sid of Array.from(userSockets.get(userId) ?? [])) {
+      io.to(sid).emit(event, {});
+    }
+  };
+
+  /** Применить замок к записи участника в комнате, если он там сейчас есть. */
+  const applyLockToRoom = (channelId: string, userId: string, lock: ForceLock) => {
     const room = voiceRooms.get(channelId);
     if (!room) return;
     for (const user of room.values()) {
-      if (user.userId === targetUserId) {
-        user.isForceMuted = true;
-        if (deafen) user.isForceDeafened = true;
-        // Прямая доставка: перебираем все активные сокеты пользователя
-        const sockets = userSockets.get(targetUserId);
-        if (sockets) {
-          const evt = deafen ? "voice:force-deafen" : "voice:force-mute";
-          for (const sid of Array.from(sockets)) {
-            io.to(sid).emit(evt, {});
-          }
-        }
-        break;
+      if (user.userId === userId) {
+        user.isForceMuted = lock.muted;
+        user.isForceDeafened = lock.deafened;
       }
     }
+  };
+
+  /* FIX-FORCELOCK-V2: доставка идёт напрямую по сокетам пользователя, а не через
+     комнату `dm-<id>`: так событие доходит и в том случае, когда маршрут App
+     Router не нашёл io через getIO().
+
+     FIX-FORCELOCK-KEEP: замок пишется в отдельный реестр и НЕ зависит от того,
+     сидит ли человек в канале прямо сейчас. Заглушить можно и того, кто на
+     секунду отвалился: вернётся — замок применится при входе. */
+  (globalThis as Record<string, unknown>).__forceMuteUser = (channelId: string, targetUserId: string, deafen: boolean) => {
+    const previous = readForceLock(channelId, targetUserId);
+    /* Наложение «мик + наушники» поверх «мика» усиливает замок; обратно —
+       не ослабляет: снятие делает только force-unmute. */
+    const lock: ForceLock = { muted: true, deafened: previous.deafened || deafen };
+    voiceForceLocks.set(forceLockKey(channelId, targetUserId), lock);
+    applyLockToRoom(channelId, targetUserId, lock);
+    emitToUserSockets(targetUserId, deafen ? "voice:force-deafen" : "voice:force-mute");
     void broadcastVoiceChannelUsers(channelId);
   };
 
-  (globalThis as Record<string, unknown>).__forceUnmuteUser = (channelId: string, targetUserId: string, includeDeafen: boolean) => {
-    const room = voiceRooms.get(channelId);
-    if (!room) return;
-    for (const user of room.values()) {
-      if (user.userId === targetUserId) {
-        user.isForceMuted = false;
-        if (includeDeafen) user.isForceDeafened = false;
-        // Прямая доставка разблокировки
-        const sockets = userSockets.get(targetUserId);
-        if (sockets) {
-          const evt = includeDeafen ? "voice:force-undeafen" : "voice:force-unmute";
-          for (const sid of Array.from(sockets)) {
-            io.to(sid).emit(evt, {});
-          }
-        }
-        break;
-      }
-    }
+  /**
+   * Снятие замка целиком.
+   *
+   * Раньше снималось ровно то, что попросил клиент (`includeDeafen`), а клиент
+   * брал это из своего снимка состава комнаты. Снимок устаревал — и человек
+   * оставался без наушников после «снять заглушение», причём с его стороны это
+   * выглядело как поломка связи. Теперь снимается всё: полумеры здесь
+   * невозможно ни объяснить, ни заметить.
+   */
+  (globalThis as Record<string, unknown>).__forceUnmuteUser = (channelId: string, targetUserId: string) => {
+    voiceForceLocks.delete(forceLockKey(channelId, targetUserId));
+    applyLockToRoom(channelId, targetUserId, { muted: false, deafened: false });
+    emitToUserSockets(targetUserId, "voice:force-undeafen");
     void broadcastVoiceChannelUsers(channelId);
   };
+
+  /** Текущий замок — маршруту он нужен, чтобы решить, какое звание требовать. */
+  (globalThis as Record<string, unknown>).__voiceForceLock = (channelId: string, targetUserId: string): ForceLock =>
+    readForceLock(channelId, targetUserId);
 
   /* FIX-MOVEDELIVERY: перенос участника в другой голосовой канал.
 
@@ -1122,13 +1162,28 @@ app.prepare().then(() => {
       }
       if (socket.data.voiceJoinSerial !== joinSerial) return;
 
+      /* FIX-FORCELOCK-KEEP: замок из реестра применяется ко входящему.
+
+         Запись участника создаётся заново на каждый вход, поэтому без реестра
+         принудительное заглушение снималось само — обрывом связи или переходом
+         в канал и обратно. Наказание, которое отменяется перезагрузкой
+         страницы, — это не наказание, а недоразумение.
+
+         Событие уходит и самому человеку: его клиент мог сбросить замок при
+         выходе из канала, и без напоминания микрофон вернулся бы к нему сам. */
+      const lock = readForceLock(channelId, authData.userId);
       const user: VoiceUser = {
         socketId: socket.id,
         userId: authData.userId,
         userName: authData.userName,
-        muted: false,
+        muted: lock.muted,
         avatar: authData.avatar,
+        isForceMuted: lock.muted,
+        isForceDeafened: lock.deafened,
       };
+      if (lock.muted) {
+        socket.emit(lock.deafened ? "voice:force-deafen" : "voice:force-mute", {});
+      }
 
       if (!voiceRooms.has(channelId)) {
         voiceRooms.set(channelId, new Map());
