@@ -21,6 +21,9 @@ export interface VoiceUser {
   muted: boolean;
   /** FIX-VAVATAR: аватар приходит с сервера вместе с присутствием. */
   avatar?: string | null;
+  /** FIX-FORCELOCK: принудительная заглушка модератором — видна всем участникам канала. */
+  isForceMuted?: boolean;
+  isForceDeafened?: boolean;
 }
 
 export interface GroupDetail {
