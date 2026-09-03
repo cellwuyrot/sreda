@@ -408,8 +408,15 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                     setVolumeMenu({ socketId: u.socketId, name: u.userName, x: cx, y: cy, userId: u.userId });
                     if (voice.channelId && u.userId) {
                       fetch(`/api/voice/moderation-info?channelId=${encodeURIComponent(voice.channelId)}&targetUserId=${encodeURIComponent(u.userId)}`)
-                        .then(r => r.ok ? r.json() : null)
+                        .then(r => {
+                          if (!r.ok) {
+                            console.error("[VoiceMod] moderation-info HTTP", r.status, "ch:", voice.channelId, "target:", u.userId);
+                            return null;
+                          }
+                          return r.json();
+                        })
                         .then(data => {
+                          console.log("[VoiceMod] moderation-info:", data);
                           setVolumeMenu(prev => {
                             if (!prev || prev.socketId !== u.socketId) return prev;
                             return {
@@ -425,7 +432,8 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
                             };
                           });
                         })
-                        .catch(() => {
+                        .catch(err => {
+                          console.error("[VoiceMod] moderation-info fetch error:", err);
                           setVolumeMenu(prev =>
                             prev?.socketId === u.socketId ? { ...prev, modChecked: true } : prev
                           );
@@ -797,6 +805,15 @@ function VolumeMenu({
       </div>
 
       {/* ─ Moderation ─ */}
+      {/* ── Loading indicator while moderation rights are being fetched ── */}
+      {modChecked === undefined && (
+        <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-white/10 flex items-center justify-center py-1.5">
+          <svg className="animate-spin text-neutral-400" width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83"/>
+          </svg>
+        </div>
+      )}
+
       {hasMod && (
         <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-white/10 space-y-px">
 
