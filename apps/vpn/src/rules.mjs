@@ -125,7 +125,19 @@ export function acceptPeers(list) {
     if (seen.has(publicKey)) continue;
     seen.add(publicKey);
     const exitIp = typeof peer.exitIp === "string" && isIpv4(peer.exitIp.trim()) ? peer.exitIp.trim() : "";
-    out.push(exitIp ? { publicKey, allowedIp, exitIp } : { publicKey, allowedIp });
+    /* NETLINK-THROTTLE: потолок скорости в Кбит/с для того, кто вышел за лимит
+       при правиле «снизить скорость». Раньше поле здесь молча отбрасывалось —
+       и правило не исполнялось нигде: главный сервер сквозной трафик не видит,
+       а узел про потолок не знал. То есть вышедший за лимит подписчик оставался
+       с полной скоростью, то есть с безлимитом по факту. */
+    const throttleKbps =
+      typeof peer.throttleKbps === "number" && Number.isFinite(peer.throttleKbps) && peer.throttleKbps > 0
+        ? Math.trunc(peer.throttleKbps)
+        : 0;
+    const accepted = { publicKey, allowedIp };
+    if (exitIp) accepted.exitIp = exitIp;
+    if (throttleKbps > 0) accepted.throttleKbps = throttleKbps;
+    out.push(accepted);
   }
   return out;
 }
@@ -301,4 +313,120 @@ export function mssCommands(iface, mtu) {
   ];
 
   return [...chainFor(mss, false), ...chainFor(mss6, true)];
+}
+
+/* ───────────────────── Потолок скорости (NETLINK-THROTTLE) ───────────────────── */
+
+/**
+ * NETLINK-THROTTLE: кому и до какой скорости резать канал.
+ *
+ * Правило «при исчерпании лимита снизить скорость» до этого не исполнялось
+ * нигде. Главный сервер сквозной трафик не видит и формировать его не может —
+ * он только сообщает узлу число (`throttleKbps` в списке пиров). Узел это число
+ * отбрасывал, и на деле выбор «снизить скорость» означал «не делать ничего»:
+ * человек с исчерпанным лимитом продолжал качать на полной скорости, то есть
+ * получал безлимит в обход правила.
+ *
+ * Возвращает набор в устойчивом порядке — по адресу, чтобы подпись набора не
+ * менялась от порядка пиров в ответе сервера.
+ */
+export function throttleRules(peers) {
+  return (Array.isArray(peers) ? peers : [])
+    .filter((peer) => Number(peer?.throttleKbps) > 0 && typeof peer?.allowedIp === "string")
+    .map((peer) => ({
+      src: String(peer.allowedIp).split("/")[0],
+      kbps: Math.trunc(Number(peer.throttleKbps)),
+    }))
+    .filter((rule) => isIpv4(rule.src))
+    .sort((a, b) => a.src.localeCompare(b.src));
+}
+
+/** Подпись набора: не трогаем `tc`, пока состав и потолки не изменились. */
+export function throttleSignature(rules) {
+  return rules.map((rule) => `${rule.src}@${rule.kbps}`).join("|");
+}
+
+/**
+ * Запас на всплеск для полисера, в килобайтах.
+ *
+ * Полисер без запаса рубит по одному пакету и убивает TCP: окно не успевает
+ * вырасти, и скорость проваливается заметно ниже назначенной. Восьмая часть
+ * секунды трафика — обычная величина для такого случая; ниже 32 КБ не опускаем,
+ * иначе на медленном потолке запас меньше нескольких пакетов.
+ */
+export function policeBurstKb(kbps) {
+  return Math.max(32, Math.round(Number(kbps) / 8));
+}
+
+/**
+ * Команды `tc` для набора потолков.
+ *
+ * Две стороны считаются отдельно, потому что в Linux это два разных механизма:
+ *
+ *   • **отдача клиенту** (его «скачивание») — это исходящий трафик интерфейса
+ *     туннеля, и он формируется классами HTB с фильтром по адресу получателя;
+ *   • **приём от клиента** (его «отдача») — это входящий трафик, у которого
+ *     очереди нет вовсе: формировать нечего, поэтому лишнее просто отбрасывается
+ *     полисером на входе.
+ *
+ * Набор пересобирается целиком, а не правится по месту. Причина не в лени:
+ * `tc filter` нельзя надёжно заменить по совпадению, у него для этого нужен
+ * заранее назначенный дескриптор, а состав пиров меняется от отчёта к отчёту.
+ * Полная пересборка стоит нескольких вызовов `tc` и происходит только при
+ * изменении набора (см. `throttleSignature`).
+ *
+ * Незаданный потолок — это отсутствие ограничения, а не «очень большой потолок»:
+ * при пустом наборе формирование снимается с интерфейса целиком, и трафик идёт
+ * так, как шёл до нас.
+ */
+export function throttleCommands(iface, rules) {
+  /* Снятие прежнего набора. Обеих очередей может не быть — это не ошибка. */
+  const reset = [
+    { args: ["qdisc", "del", "dev", iface, "root"], ignoreError: true },
+    { args: ["qdisc", "del", "dev", iface, "ingress"], ignoreError: true },
+  ];
+  if (rules.length === 0) return reset;
+
+  const commands = [
+    ...reset,
+    /* Класс по умолчанию (1:999) — для всех, кого не режем. Он не ограничивает:
+       10 Гбит/с здесь означает «сколько сможет», а не настоящий потолок. */
+    { args: ["qdisc", "add", "dev", iface, "root", "handle", "1:", "htb", "default", "999"] },
+    { args: ["class", "add", "dev", iface, "parent", "1:", "classid", "1:999", "htb", "rate", "10gbit"] },
+    /* Очередь на входе — площадка для полисеров ниже. */
+    { args: ["qdisc", "add", "dev", iface, "handle", "ffff:", "ingress"] },
+  ];
+
+  rules.forEach((rule, index) => {
+    /* Дескрипторы начинаются с 10: младшие номера заняты корнем и классом по
+       умолчанию, а держать их подряд удобнее при чтении `tc -s class show`. */
+    const classId = index + 10;
+    const rate = `${rule.kbps}kbit`;
+    commands.push(
+      {
+        args: [
+          "class", "add", "dev", iface, "parent", "1:", "classid", `1:${classId}`,
+          "htb", "rate", rate, "ceil", rate,
+        ],
+      },
+      /* Внутри класса — честная очередь: иначе одна тяжёлая загрузка внутри
+         потолка задавит в нём же весь остальной трафик человека. */
+      { args: ["qdisc", "add", "dev", iface, "parent", `1:${classId}`, "handle", `${classId}:`, "fq_codel"] },
+      {
+        args: [
+          "filter", "add", "dev", iface, "protocol", "ip", "parent", "1:", "prio", "1",
+          "u32", "match", "ip", "dst", `${rule.src}/32`, "flowid", `1:${classId}`,
+        ],
+      },
+      {
+        args: [
+          "filter", "add", "dev", iface, "parent", "ffff:", "protocol", "ip", "prio", "1",
+          "u32", "match", "ip", "src", `${rule.src}/32`,
+          "police", "rate", rate, "burst", `${policeBurstKb(rule.kbps)}k`, "drop", "flowid", ":1",
+        ],
+      },
+    );
+  });
+
+  return commands;
 }
