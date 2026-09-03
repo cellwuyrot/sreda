@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { sendMessageToBoard } from "@/lib/boardBridge";
+import BoardPickerModal, { type BoardSelection } from "@/components/connect/BoardPickerModal";
 import { TriozEmojiGrid, type GroupEmojiOption } from "@/components/ui/TriozEmoji";
 
 export type ToolbarAttachment = { url: string; name?: string; mime?: string };
@@ -141,7 +142,7 @@ export default function MessageHoverToolbar({
   children,
 }: {
   message: ToolbarMessage;
-  /** Свои эмодзи сообщества — их можно ставить реакцией так же, как обычные. */
+  /** Свои эмодзи сообщества — их можно став��ть реакцией так же, как обычные. */
   groupEmojis?: GroupEmojiOption[];
   canEdit?: boolean;
   canDelete?: boolean;
@@ -155,7 +156,7 @@ export default function MessageHoverToolbar({
   threadCount?: number;
   onReact?: (emoji: string) => void;
   /** Контекст для «Отправить на доску»; если не задан — кнопка скрыта */
-  boardContext?: { authorName?: string; channelName?: string; channelId?: string } | null;
+  boardContext?: { authorName?: string; channelName?: string; channelId?: string; /** FIX-BOARDPICKER: для загрузки холстов группы */ groupId?: string } | null;
   /** HOVER-GRACE: курсор зашёл на сам бар — список замораживает таймер скрытия. */
   onHoverStart?: () => void;
   /** Курсор ушёл с бара — таймер скрытия запускается заново. */
@@ -165,6 +166,8 @@ export default function MessageHoverToolbar({
 }) {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [reactionOpen, setReactionOpen] = useState(false);
+  // FIX-BOARDPICKER: открытие модалки выбора холста
+  const [pickerOpen, setPickerOpen] = useState(false);
   // Открывать сетку реакций вверх, когда снизу не хватает пикселей
   // (например, у последнего сообщения в чате — иначе эмодзи обрезаются).
   const [reactionUp, setReactionUp] = useState(false);
@@ -248,18 +251,25 @@ export default function MessageHoverToolbar({
     flash((await copyImageToClipboard(firstImage.url)) ? "Картинка скопирована" : "Ошибка");
   };
 
-  const handleSendToBoard = () => {
+  // FIX-BOARDPICKER: открываем пикер вместо мгновенной отправки без выбора
+  const handleSendToBoard = () => setPickerOpen(true);
+
+  const handleBoardSelected = (sel: BoardSelection) => {
     sendMessageToBoard({
       content: contentText,
       messageId: message.id,
       authorName: boardContext?.authorName,
       channelName: boardContext?.channelName,
-      channelId: boardContext?.channelId,
+      channelId: sel.channelId ?? boardContext?.channelId,
+      boardId: sel.boardId,
+      scope: sel.scope,
     });
+    setPickerOpen(false);
     flash("На доске");
   };
 
   return (
+    <>
     <div
       ref={rootRef}
       className="tz-msg-toolbar"
@@ -329,5 +339,14 @@ export default function MessageHoverToolbar({
         </button>
       )}
     </div>
+    {/* FIX-BOARDPICKER: модальный выбор холста */}
+    {pickerOpen && boardContext !== undefined && boardContext !== null && (
+      <BoardPickerModal
+        groupId={boardContext.groupId}
+        onSelect={handleBoardSelected}
+        onClose={() => setPickerOpen(false)}
+      />
+    )}
+    </>
   );
 }
