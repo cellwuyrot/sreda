@@ -74,6 +74,9 @@ export interface VoiceState {
   userVolumes: Map<string, number>;
   connectionQuality: Map<string, "good" | "medium" | "poor" | "unknown">;
   localPing: number | null;
+  /** FIX-FORCELOCK: принудительная блокировка от модератора */
+  isForceMuted?: boolean;
+  isForceDeafened?: boolean;
 }
 
 export interface VoiceActions {
