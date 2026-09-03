@@ -30,37 +30,50 @@ describe("fileExtension", () => {
 });
 
 describe("resolveAttachment", () => {
+  /* Отказ выражается значением `null`, а не полем `allowed: false`: разрешённое
+     вложение всегда несёт с собой вид и тип, и разводить «разрешено» и «чем
+     оно оказалось» на два поля значило бы позволить их рассогласовать. */
   /**
    * ИНВАРИАНТ: пустой или обезличенный MIME не повод отказать, если расширение
    * известно. Именно так ведёт себя Windows с .md и .rar.
    */
   it("md без MIME разрешён по расширению", () => {
-    const r = resolveAttachment("", "notes.md");
-    expect(r.allowed).toBe(true);
-    expect(r.kind).toBe("document");
+    expect(resolveAttachment("", "notes.md")).toEqual({
+      kind: "document",
+      ext: "md",
+      mime: "text/markdown",
+      byExtension: true,
+    });
   });
 
   it("rar под application/octet-stream разрешён", () => {
-    const r = resolveAttachment("application/octet-stream", "archive.rar");
-    expect(r.allowed).toBe(true);
-    expect(r.extension).toBe("rar");
+    expect(resolveAttachment("application/octet-stream", "archive.rar")).toMatchObject({
+      kind: "document",
+      ext: "rar",
+    });
   });
 
   it("zip по-прежнему разрешён", () => {
-    expect(resolveAttachment("application/zip", "pack.zip").allowed).toBe(true);
+    expect(resolveAttachment("application/zip", "pack.zip")).toMatchObject({ kind: "document", ext: "zip" });
   });
 
   it("картинка узнаётся как картинка, а не как документ", () => {
-    expect(resolveAttachment("image/png", "shot.png").kind).toBe("image");
+    expect(resolveAttachment("image/png", "shot.png")?.kind).toBe("image");
+  });
+
+  /* Safari сохраняет заметку как text/plain — и без уточнения по расширению
+     получатель скачал бы .md-файл под именем .txt. */
+  it("text/plain у .md уточняется до markdown", () => {
+    expect(resolveAttachment("text/plain", "notes.md")).toMatchObject({ ext: "md", mime: "text/markdown" });
   });
 
   /**
    * ИНВАРИАНТ: расширение как фоллбэк — это не «разрешить всё». Исполняемые
    * файлы и скрипты обязаны отклоняться так же, как до правки.
    */
-  it("исполняемый файл отклоняется", () => {
-    expect(resolveAttachment("application/octet-stream", "setup.exe").allowed).toBe(false);
-    expect(resolveAttachment("text/x-sh", "run.sh").allowed).toBe(false);
+  it("ИНВАРИАНТ: исполняемый файл отклоняется", () => {
+    expect(resolveAttachment("application/octet-stream", "setup.exe")).toBeNull();
+    expect(resolveAttachment("text/x-sh", "run.sh")).toBeNull();
   });
 });
 
