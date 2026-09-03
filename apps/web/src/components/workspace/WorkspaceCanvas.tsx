@@ -2769,6 +2769,8 @@ export default function WorkspaceCanvas({
       {/* FIX-BOARDSCOPE: личная среда берёт только ЛС, общая — только каналы. */}
       <BoardInboxListener
         scope={remote ? "group" : "personal"}
+        // FIX-BOARDTARGET: групповых холстов несколько — берём адресованное этому каналу
+        channelId={remote?.channelId ?? null}
         // FIX-BOARDPICKER: если item адресован другому борду — переключаемся перед добавлением
         onItem={(item) => {
           if (item.boardId && item.boardId !== activeIdRef.current) {

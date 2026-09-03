@@ -79,6 +79,8 @@ interface TrafficState {
   limitGb?: number;
   overLimitAction?: string;
   throttleKbps?: number;
+  /** NETLINK-FRESH: когда расход последний раз приходил с узла. */
+  measuredAt?: string | null;
 }
 
 interface ServerChoice {
@@ -475,6 +477,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const share = Number(traffic?.share) || 0;
   const overLimit = traffic?.overLimit === true;
   const throttleMbits = Math.max(1, Math.round((Number(traffic?.throttleKbps) || 0) / 1024));
+  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt;
 
   return (
     <div className="relative p-6 text-neutral-900 dark:text-white">
@@ -644,7 +647,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               <strong className="text-neutral-900 dark:text-white">
                 {remainingBytes === null ? "Без ограничения" : `Осталось ${formatTraffic(remainingBytes)}`}
               </strong>{" "}
-              · израсходовано {formatTraffic(usedBytes)}
+              {/* NETLINK-FRESH: пока учёта с узла не было, цифры расхода нет — и
+                  ноль здесь был бы уверенным неверным ответом. */}
+              {measured ? `· израсходовано ${formatTraffic(usedBytes)}` : "· расход с узла ещё не приходил"}
             </p>
             {overLimit && (
               <p className="mt-2 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">

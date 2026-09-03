@@ -136,6 +136,16 @@ beforeEach(() => {
   vi.mocked(nodeTunnel).mockReturnValue(MOCK_WG);
   prismaMock.vpnPeer.findUnique.mockResolvedValue(null);
   prismaMock.vpnPeer.upsert.mockResolvedValue(MOCK_PEER as never);
+  /* NETLINK: GET собирает ещё и список серверов с их загруженностью. Без этой
+     заглушки ответ падал на разборе пустого результата — проверка «нет пира»
+     ломалась о совершенно посторонний запрос. */
+  prismaMock.serverNode.findMany.mockResolvedValue([] as never);
+  prismaMock.user.findUnique.mockResolvedValue({
+    isPremium: true,
+    role: "USER",
+    vpnAccess: null,
+    vpnAccessUntil: null,
+  } as never);
 });
 
 // ── Контракт безопасности: privateKey ──────────────────────────────────────

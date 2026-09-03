@@ -24,6 +24,13 @@ export function useDragUser({
 }) {
   const [dragging, setDragging] = useState<{ socketId: string; userId: string } | null>(null);
   const [overChannelId, setOverChannelId] = useState<string | null>(null);
+  /* FIX-DND-SESSION: канал под курсором нужен и в обработчиках, и в разметке.
+     В разметку он идёт состоянием (подсветка канала-цели), а в обработчики —
+     рефом. Раньше обработчики читали состояние, из-за чего `overChannelId`
+     стоял в зависимостях эффекта: первое же движение мыши над каналом меняло
+     состояние, эффект перезапускался, его очистка вызывала reset() — и перенос
+     обрывался ровно в тот момент, когда курсор доходил до цели. */
+  const overChannelRef = useRef<string | null>(null);
   const session = useRef<{
     socketId: string;
     userId: string;
@@ -36,6 +43,7 @@ export function useDragUser({
 
   const reset = useCallback(() => {
     session.current = null;
+    overChannelRef.current = null;
     setDragging(null);
     setOverChannelId(null);
     if (typeof document !== "undefined") {
@@ -67,12 +75,13 @@ export function useDragUser({
         }
         el = el.parentElement;
       }
+      overChannelRef.current = found;
       setOverChannelId(found);
     };
 
     const onUp = (e: PointerEvent) => {
       const s = session.current;
-      const channelId = overChannelId;
+      const channelId = overChannelRef.current;
       reset();
       if (!s || !s.started) return;
       suppressClick.current = true;
@@ -88,7 +97,7 @@ export function useDragUser({
         el = el.parentElement;
       }
       if (!targetChannelId) {
-        // Fallback: use last known overId from state
+        // Fallback: последний канал, над которым проходил курсор
         targetChannelId = channelId;
       }
       if (targetChannelId) {
@@ -105,7 +114,7 @@ export function useDragUser({
       window.removeEventListener("pointercancel", reset);
       reset();
     };
-  }, [enabled, reset, overChannelId]);
+  }, [enabled, reset]);
 
   /* Props to spread on a user row (drag source) */
   const userRowProps = (socketId: string, userId: string) => {
