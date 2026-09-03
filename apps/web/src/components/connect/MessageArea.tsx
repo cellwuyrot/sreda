@@ -318,7 +318,7 @@ const MessageRow = memo(function MessageRow({
                   onEdit={() => startEdit(msg)}
                   onDelete={() => deleteMessage(msg.id)}
                   onPin={canPin ? () => pinMessage(msg.id) : undefined}
-                  boardContext={{ authorName: msg.user.name, channelName, channelId }}
+                  boardContext={{ authorName: msg.user.name, channelName, channelId, groupId: groupIdRef.current ?? undefined }}
                   /* FIX-FWDBUF: в каналах кнопки пересылки раньше вообще не было —
                      окно со списком открыть было неоткуда. Теперь пересылка одинаковая
                      в каналах и ЛС: сообщение в буфер, дальше — «Переслать сюда». */
@@ -480,7 +480,7 @@ const MessageRow = memo(function MessageRow({
                     монтировании оно заново ходит за описанием страницы.
 
                     Скрытые игнором сообщения остаются заглушкой: вложения там
-                    показывать нельзя, в этом и смысл. */}
+                    показывать нельзя, в этом и ��мысл. */}
                 {!hiddenByIgnore && (
                   <>
                     {parseAttachments(msg.attachments).map((att, i) => (
@@ -704,7 +704,7 @@ export default function MessageArea({
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   /* Тариф обрезал историю: сервер присылает число дней, чтобы подпись в чате не
-     расходилась с фактическим фильтром (см. lib/premiumLimits). */
+     расходилась с фактическим фильт��ом (см. lib/premiumLimits). */
   const [forwardToast, setForwardToast] = useState(false);
   const [forwardMsg, setForwardMsg] = useState<{ content: string; userName: string } | null>(null);
   const [forwardTargets, setForwardTargets] = useState<ForwardTarget[]>([]);
@@ -2765,7 +2765,7 @@ export default function MessageArea({
 
   return (
     /* PREMIUM-SKIN: класс tz-skin-chat кладёт задний фон переписки, выбранный
-       подписчиком. Пока оформление выключено, переменная равна none и класс
+       подписчиком. Пока ��формление выключено, переменная равна none и класс
        ничего не меняет. */
     <div {...dropPaste.dropProps} className="tz-skin-chat flex-1 flex flex-col h-full min-w-0 relative">
       {dropPaste.isDragOver && (
@@ -2943,7 +2943,7 @@ export default function MessageArea({
           {/* Редактор — отдельный экран во весь экран (он сам себя так и
               размещает), поэтому держим его здесь, рядом с кнопкой, а не среди
               окон переписки. Он же и правит существующий пост: экран поста
-              сообщает наверх выбранную запись (onEditPost выше), а различие
+              ��ообщает наверх выбранную запись (onEditPost выше), а различие
               «создание или правка» для редактора — это один проп post.
 
               key разводит два случая: начальное состояние полей редактор берёт
@@ -3481,7 +3481,7 @@ export default function MessageArea({
         <UserContextMenu
           user={{
             ...userMenu.user,
-            /* lastSeen у автора сообщения приходит не всегда — прежняя карточка
+            /* lastSeen у автора сообщения приходит не всегда — преж��яя карточка
                добирала его из списка участников канала, и без этого строка
                «был(а) …» пропала бы. */
             lastSeen: userMenu.user.lastSeen ?? channelMembers.find((m) => m.id === userMenu.user.id)?.lastSeen ?? null,
