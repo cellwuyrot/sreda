@@ -106,6 +106,8 @@ interface VoiceState {
   channelName:     string | null;
   isMuted:         boolean;
   isDeafened:      boolean;
+  isForceMuted:    boolean;
+  isForceDeafened: boolean;
   users:           VoiceUser[];
   speakingUsers:   Set<string>;
   localSpeaking:   boolean;
@@ -655,6 +657,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [channelName,   setChannelName]   = useState<string | null>(null);
   const [isMuted,       setIsMuted]       = useState(false);
   const [isDeafened,    setIsDeafened]    = useState(false);
+  // FIX-FORCELOCK: принудительная блокировка от модератора — самостоятельно не снять
+  const [isForceMuted,   setIsForceMuted]   = useState(false);
+  const [isForceDeafened,setIsForceDeafened]= useState(false);
   const [users,         setUsers]         = useState<VoiceUser[]>([]);
   /* SCREEN-PRIVATE: состав канала нужен вне рендера (при добавлении дорожек
      новому участнику), поэтому дублируем его в ref. */
@@ -958,6 +963,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const iceConfigRef        = useRef<RTCConfiguration>(DEFAULT_ICE);
   const isMutedRef          = useRef(isMuted);
   const isDeafenedRef       = useRef(isDeafened);
+  const isForceMutedRef     = useRef(false);
+  const isForceDeafenedRef  = useRef(false);
   // FIX-R10: remember whether the mic was muted before deafen, to restore it.
   const wasMutedBeforeDeafenRef = useRef(false);
   const isConnectedRef      = useRef(isConnected);
@@ -1008,6 +1015,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   /* Keep mute/connection refs in sync (used by desktop-hotkey handlers) */
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { isDeafenedRef.current = isDeafened; }, [isDeafened]);
+  useEffect(() => { isForceMutedRef.current = isForceMuted; }, [isForceMuted]);
+  useEffect(() => { isForceDeafenedRef.current = isForceDeafened; }, [isForceDeafened]);
   useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
 
   /* Keep premium status in sync so new peer connections pick the right bitrate.
@@ -2950,6 +2959,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       // Модератор принудительно заглушает микрофон
       // Не ссылаемся на setMuted (она объявлена позже в файле) — инлайним логику через refs.
       socket.on("voice:force-mute", () => {
+        // FIX-FORCELOCK: ставим флаг — самостоятельно не снять
+        isForceMutedRef.current = true;
+        setIsForceMuted(true);
         if (!isMutedRef.current) {
           rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
           localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
@@ -2960,6 +2972,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       // Модератор принудительно заглушает микрофон + наушники (те же refs, без setMuted)
       socket.on("voice:force-deafen", () => {
+        // FIX-FORCELOCK: ставим оба флага
+        isForceMutedRef.current = true;
+        setIsForceMuted(true);
+        isForceDeafenedRef.current = true;
+        setIsForceDeafened(true);
         if (!isMutedRef.current) {
           rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
           localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
@@ -2972,6 +2989,40 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           if (masterGainRef.current) masterGainRef.current.gain.value = 0;
           remoteAudiosRef.current.forEach((a, id) => { if (!userGainRef.current.has(id)) a.muted = true; });
           screenAudiosRef.current.forEach(a => { a.muted = true; });
+        }
+      });
+
+      // Модератор снял принудительное заглушение микрофона
+      socket.on("voice:force-unmute", () => {
+        isForceMutedRef.current = false;
+        setIsForceMuted(false);
+        // Разблокируем трек — пользователь сам решит включать ли
+        rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
+        localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
+        isMutedRef.current = false;
+        setIsMuted(false);
+        socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted: false });
+      });
+
+      // Модератор снял принудительное заглушение микрофона + наушников
+      socket.on("voice:force-undeafen", () => {
+        isForceMutedRef.current = false;
+        setIsForceMuted(false);
+        isForceDeafenedRef.current = false;
+        setIsForceDeafened(false);
+        // Разблокируем микрофон
+        rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
+        localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
+        isMutedRef.current = false;
+        setIsMuted(false);
+        socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted: false });
+        // Разблокируем наушники
+        if (isDeafenedRef.current) {
+          isDeafenedRef.current = false;
+          setIsDeafened(false);
+          if (masterGainRef.current) masterGainRef.current.gain.value = 1;
+          remoteAudiosRef.current.forEach((a, id) => { if (!userGainRef.current.has(id)) a.muted = false; });
+          screenAudiosRef.current.forEach(a => { a.muted = false; });
         }
       });
 
@@ -3232,6 +3283,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const toggleMute = useCallback(() => {
     const next = !isMutedRef.current;
+    // FIX-FORCELOCK: нельзя самостоятельно включить микрофон, если заглушение наложено модератором
+    if (!next && isForceMutedRef.current) return;
     setMuted(next);
     // FIX-SFX: локальный звук только для нажавшего. Push-to-talk сюда не
     // попадает (он работает через setMuted напрямую), поэтому удержание PTT
@@ -3251,6 +3304,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const toggleDeafen = useCallback(() => {
     const next = !isDeafened;
+    // FIX-FORCELOCK: нельзя самостоятельно снять наушники, если оглушение наложено модератором
+    if (!next && isForceDeafenedRef.current) return;
     setIsDeafened(next);
     isDeafenedRef.current = next;
     // Voice is played through the master gain node — muting it here silences
@@ -3741,7 +3796,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   }, [remoteCameras, isCameraOn, users, session]);
 
   const value: VoiceCtx = {
-    isConnected, voiceStatus, connectionStage, channelId, channelName, isMuted, isDeafened,
+    isConnected, voiceStatus, connectionStage, channelId, channelName, isMuted, isDeafened, isForceMuted, isForceDeafened,
     users, speakingUsers, localSpeaking, error,
     micGainDb, setMicGain,
     isSharingScreen, screenSharerId, screenSharerIds, screenShareName: activeScreenName,
