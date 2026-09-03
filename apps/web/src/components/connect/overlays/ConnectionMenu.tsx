@@ -55,6 +55,8 @@ interface ConnectionState {
     limitGb?: number;
     overLimitAction?: string;
     throttleKbps?: number;
+    /** NETLINK-FRESH: когда расход последний раз приходил с узла. */
+    measuredAt?: string | null;
   } | null;
   servers?: ServerChoice[] | null;
   peer?: { enabled?: boolean; nodeId?: string; node?: { name?: string; region?: string } | null } | null;
@@ -192,6 +194,10 @@ export default function ConnectionMenu({
   const overLimit = traffic?.overLimit === true;
   const share = typeof traffic?.share === "number" ? Math.max(0, Math.min(100, traffic.share)) : 0;
   const throttleMbits = typeof traffic?.throttleKbps === "number" ? Math.round((traffic.throttleKbps / 1024) * 10) / 10 : 0;
+  /* NETLINK-FRESH: расход показываем цифрой только когда он ДЕЙСТВИТЕЛЬНО пришёл
+     с узла. Пока учёта не было, «израсходовано 0 ГБ» — не осторожная оценка, а
+     неправда: трафик в это время идёт, просто мимо счёта. */
+  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt;
   const planLabel = plan?.label || (entitled ? "Доступ есть" : `Нет подписки ${LINK_PLAN_QUOTED}`);
   const active = !!peer && serviceEnabled && entitled && !overLimit;
   const tone = share >= 100 ? "bg-red-500" : share >= 80 ? "bg-amber-500" : "bg-green-500";
@@ -295,12 +301,16 @@ export default function ConnectionMenu({
                   )}
                   <p className="mt-1 text-xs font-medium">
                     {limitGb === null || limitGb === 0
-                      ? `Израсходовано ${formatTraffic(usedBytes)}`
+                      ? measured
+                        ? `Израсходовано ${formatTraffic(usedBytes)}`
+                        : "Расход пока не учтён"
                       : overLimit
                         ? "Лимит исчерпан"
                         : `Осталось ${formatTraffic(remainingBytes ?? 0)}`}
                     <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
-                      · израсходовано {formatTraffic(usedBytes)}
+                      {measured
+                        ? `· израсходовано ${formatTraffic(usedBytes)}`
+                        : "· узел ещё не присылал расход"}
                     </span>
                   </p>
                   {overLimit && (

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { findNodeByToken } from "@/lib/serverMesh";
 import { getVpnSettings, isPeerEntitled, isValidWireGuardKey } from "@/lib/vpn";
-import { isTrafficBlocked, periodExpired, usageView } from "@/lib/connectionUsage";
+import { isTrafficBlocked, isUsageUnlimited, periodExpired, usageView } from "@/lib/connectionUsage";
 
 // SERVER-MESH: точка отчёта дочернего узла.
 //
@@ -163,18 +163,31 @@ export async function POST(req: Request) {
 
       /* Ленивый сброс периода — здесь, в единственном месте, где счётчики
          растут. Отдельная задача по расписанию для этого не нужна и только добавила
-         бы молчаливо ломающуюся деталь. */
+         бы молчаливо ломающуюся деталь.
+
+         NETLINK-FRESH: `usageUpdatedAt` ставится тем же запросом. Это единственная
+         отметка «учёт по этому подключению доходит»: без неё нулевой расход при
+         молчащем узле выглядел в клиенте так же, как честный ноль. */
       const expired = periodExpired(peer.usageResetAt, settings.usagePeriodDays);
+      const measuredAt = new Date();
       await prisma.vpnPeer
         .update({
           where: { id: peer.id },
           data: expired
-            ? { rxBytes: deltaRx, txBytes: deltaTx, lastRx: rawRx, lastTx: rawTx, usageResetAt: new Date() }
+            ? {
+                rxBytes: deltaRx,
+                txBytes: deltaTx,
+                lastRx: rawRx,
+                lastTx: rawTx,
+                usageResetAt: measuredAt,
+                usageUpdatedAt: measuredAt,
+              }
             : {
                 rxBytes: peer.rxBytes + deltaRx,
                 txBytes: peer.txBytes + deltaTx,
                 lastRx: rawRx,
                 lastTx: rawTx,
+                usageUpdatedAt: measuredAt,
               },
         })
         .catch(() => null);
@@ -234,8 +247,10 @@ export async function POST(req: Request) {
           .filter((peer) => isPeerEntitled(peer.user))
           /* NETLINK: исчерпанный лимит при правиле «отключить» снимает соединение
              тем же способом, что и кончившаяся подписка: пир перестаёт попадать
-             в список узла. Запись остаётся — новый период вернёт доступ сам. */
-          .filter((peer) => !isTrafficBlocked(peer, vpnSettings))
+             в список узла. Запись остаётся — новый период вернёт доступ сам.
+             NETLINK-STAFF: безлимит — только у администрации проекта; ни Premium,
+             ни «Ускоренный интернет» от лимита не освобождают. */
+          .filter((peer) => !isTrafficBlocked(peer, vpnSettings, new Date(), isUsageUnlimited(peer.user)))
           .map((peer) => ({
             publicKey: peer.publicKey,
             allowedIp: `${peer.address}/32`,
@@ -245,7 +260,8 @@ export async function POST(req: Request) {
                правиле «снизить скорость». 0 — ограничений нет. Формирует трафик сам
                узел: через главный сервер этот трафик не проходит вообще. */
             throttleKbps:
-              vpnSettings.overLimitAction === "THROTTLE" && usageView(peer, vpnSettings).overLimit
+              vpnSettings.overLimitAction === "THROTTLE" &&
+              usageView(peer, vpnSettings, new Date(), isUsageUnlimited(peer.user)).overLimit
                 ? vpnSettings.throttleKbps
                 : 0,
           }));
