@@ -504,11 +504,7 @@ export default function DMConversationList({
                       </svg>
                     </span>
                   )}
-                  {hasUnread && (
-                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full ring-2 ring-[var(--cn-sidebar)]">
-                      {conv.unread! > 99 ? "99+" : conv.unread}
-                    </span>
-                  )}
+  {/* badge moved to right column */}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm truncate flex items-center gap-1.5 ${hasUnread ? "font-bold text-neutral-900 dark:text-white" : "font-medium text-neutral-900 dark:text-white"}`}>
@@ -546,11 +542,18 @@ export default function DMConversationList({
                     <p className="text-xs text-neutral-400">Нет сообщений</p>
                   )}
                 </div>
-                {conv.lastMessageAt && (
-                  <span className="text-[10px] text-neutral-400 flex-shrink-0">
-                    {timeAgo(conv.lastMessageAt)}
-                  </span>
-                )}
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  {conv.lastMessageAt && (
+                    <span className="text-[10px] text-neutral-400">
+                      {timeAgo(conv.lastMessageAt)}
+                    </span>
+                  )}
+                  {hasUnread && (
+                    <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full">
+                      {conv.unread! > 99 ? "99+" : conv.unread}
+                    </span>
+                  )}
+                </div>
               </button>
             );
   };
