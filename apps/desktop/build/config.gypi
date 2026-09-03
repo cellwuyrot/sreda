@@ -435,7 +435,7 @@
     "global_prefix": "C:\\Users\\Андрей\\AppData\\Roaming\\npm",
     "init_module": "C:\\Users\\Андрей\\.npm-init.js",
     "legacy_peer_deps": "true",
-    "local_prefix": "D:\\sreda",
+    "local_prefix": "D:\\sreda\\sreda",
     "node_gyp": "C:\\Program Files\\nodejs\\node_modules\\npm\\node_modules\\node-gyp\\bin\\node-gyp.js",
     "npm_version": "10.9.8",
     "prefix": "C:\\Users\\Андрей\\AppData\\Roaming\\npm",

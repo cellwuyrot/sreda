@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{B478332C-815D-DA08-120C-AEC2742DBF4D}</ProjectGuid>
+    <ProjectGuid>{03856A7B-BA59-8B52-DC46-F331261083A9}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>wasapi_capture</RootNamespace>
     <IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
@@ -140,7 +140,7 @@
     <ClCompile Include="..\native\wasapi_capture.cpp">
       <ObjectFileName>$(IntDir)\native\wasapi_capture.obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="D:\sreda\node_modules\node-gyp\src\win_delay_load_hook.cc"/>
+    <ClCompile Include="D:\sreda\sreda\node_modules\node-gyp\src\win_delay_load_hook.cc"/>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
   <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets"/>
