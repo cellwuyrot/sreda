@@ -11,8 +11,9 @@
  * цифру со своей и решит, что мы считаем в свою пользу.
  */
 
-export const BYTES_IN_GB = 1024 ** 3;
+import { isAdminRole } from "@/lib/roles";
 
+export const BYTES_IN_GB = 1024 ** 3;
 /** Стандартный лимит. То же значение стоит в `@default` схемы. */
 export const DEFAULT_TRAFFIC_LIMIT_GB = 250;
 export const MAX_TRAFFIC_LIMIT_GB = 100_000;
@@ -47,6 +48,8 @@ export interface UsageSubject {
   rxBytes: number;
   txBytes: number;
   usageResetAt: Date | string;
+  /** NETLINK-FRESH: когда узел последний раз присылал счётчики этого пира. */
+  usageUpdatedAt?: Date | string | null;
 }
 
 export interface TrafficSettingsSubject {
@@ -54,6 +57,27 @@ export interface TrafficSettingsSubject {
   usagePeriodDays: number;
   overLimitAction: string;
   throttleKbps: number;
+}
+
+/**
+ * NETLINK-STAFF: кому лимит не писан.
+ *
+ * Безлимит — признак РОЛИ В ПРОЕКТЕ, а не подписки. Ни Premium, ни
+ * «Ускоренный интернет» безлимита не дают: по части соединения это одна и та же
+ * услуга с одним лимитом, и обе подписки платят за него одинаково. Администрации
+ * проекта лимит снят, потому что сервис нужно проверять — в том числе прогоняя
+ * через него больше, чем полагается подписчику.
+ *
+ * Роль ровно одна — ADMIN, как и у премиума по роли (см. lib/premium). Речь
+ * именно об администрации ПРОЕКТА: владелец или администратор сообщества здесь
+ * никаких прав не получает, это разные иерархии.
+ *
+ * Правило живёт здесь, рядом с самим расчётом: развилка «этому считаем, этому
+ * нет» в трёх местах (список пиров для узла, личное окно, админская сводка)
+ * разошлась бы, и разошлась бы молча — в сторону безлимита.
+ */
+export function isUsageUnlimited(subject?: { role?: string | null } | null): boolean {
+  return isAdminRole(subject?.role);
 }
 
 export interface UsageView {
@@ -66,6 +90,16 @@ export interface UsageView {
   /** Доля расхода 0…100 для полоски. Без лимита — 0. */
   share: number;
   overLimit: boolean;
+  /** NETLINK-STAFF: лимита нет вовсе — по роли в проекте или по настройке. */
+  unlimited: boolean;
+  /**
+   * NETLINK-FRESH: когда цифра расхода последний раз приходила с узла, ISO.
+   *
+   * `null` означает «учёт по этому подключению ещё не приходил» — и это НЕ то
+   * же самое, что «израсходовано 0». Разница важная: нулём мы бы уверенно
+   * сообщали неправду, пока трафик идёт мимо учёта.
+   */
+  measuredAt: string | null;
   /** Начало и конец текущего расчётного периода, ISO. */
   periodStart: string;
   periodEnd: string;
@@ -102,8 +136,10 @@ export function usageView(
   peer: UsageSubject | null | undefined,
   settings: TrafficSettingsSubject,
   now: Date = new Date(),
+  /** NETLINK-STAFF: снять лимит для этого человека (администрация проекта). */
+  unlimited = false,
 ): UsageView {
-  const limitBytes = settings.trafficLimitGb > 0 ? settings.trafficLimitGb * BYTES_IN_GB : 0;
+  const limitBytes = !unlimited && settings.trafficLimitGb > 0 ? settings.trafficLimitGb * BYTES_IN_GB : 0;
   const resetAt = peer ? toDate(peer.usageResetAt) : now;
   /* Срок вышел — показываем нули и новый период сразу, не дожидаясь записи
      в базу: иначе человек видел бы «лимит исчерпан» уже после обновления периода. */
@@ -112,12 +148,15 @@ export function usageView(
   const periodStart = !peer || expired ? now : resetAt;
   const remainingBytes = limitBytes > 0 ? Math.max(0, limitBytes - usedBytes) : null;
   const share = limitBytes > 0 ? Math.min(100, Math.round((usedBytes / limitBytes) * 100)) : 0;
+  const measuredAt = peer?.usageUpdatedAt ? toDate(peer.usageUpdatedAt) : null;
   return {
     usedBytes,
     limitBytes,
     remainingBytes,
     share,
     overLimit: limitBytes > 0 && usedBytes >= limitBytes,
+    unlimited: limitBytes === 0,
+    measuredAt: measuredAt ? measuredAt.toISOString() : null,
     periodStart: periodStart.toISOString(),
     periodEnd: new Date(periodEndMs(periodStart, settings.usagePeriodDays)).toISOString(),
   };
@@ -134,10 +173,11 @@ export function isTrafficBlocked(
   peer: UsageSubject | null | undefined,
   settings: TrafficSettingsSubject,
   now: Date = new Date(),
+  unlimited = false,
 ): boolean {
   if (!peer) return false;
   if (settings.overLimitAction === "THROTTLE") return false;
-  return usageView(peer, settings, now).overLimit;
+  return usageView(peer, settings, now, unlimited).overLimit;
 }
 
 /** «12,4 ГБ» / «860 МБ» — без терабайтов и байтов, которые здесь не встречаются. */

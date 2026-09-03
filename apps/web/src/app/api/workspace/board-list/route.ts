@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { getGroupRole } from "@/lib/connectPermissions";
 
 /**
  * FIX-BOARDPICKER: список холстов для модалки выбора доски.
@@ -54,23 +55,29 @@ export async function GET(req: Request) {
   // Групповые canvas-каналы
   let group: Array<{ channelId: string; channelName: string; boards: BoardMeta[] }> = [];
   if (groupId) {
-    const canvasChannels = await prisma.channel.findMany({
-      where: { groupId, type: "CANVAS" },
-      select: { id: true, name: true },
-      orderBy: { createdAt: "asc" },
-    });
+    /* Список холстов сообщества — не публичные данные: по нему видны названия
+       разделов и досок. Отдаём только участнику, как и любой другой ответ про
+       содержимое сообщества. */
+    const role = await getGroupRole(session.user.id, groupId);
+    if (role) {
+      const canvasChannels = await prisma.channel.findMany({
+        where: { groupId, type: "CANVAS" },
+        select: { id: true, name: true },
+        orderBy: { createdAt: "asc" },
+      });
 
-    const states = await prisma.channelWorkspaceState.findMany({
-      where: { channelId: { in: canvasChannels.map((c) => c.id) } },
-      select: { channelId: true, data: true },
-    });
-    const stateMap = new Map(states.map((s) => [s.channelId, s.data]));
+      const states = await prisma.channelWorkspaceState.findMany({
+        where: { channelId: { in: canvasChannels.map((c) => c.id) } },
+        select: { channelId: true, data: true },
+      });
+      const stateMap = new Map(states.map((s) => [s.channelId, s.data]));
 
-    group = canvasChannels.map((ch) => ({
-      channelId: ch.id,
-      channelName: ch.name,
-      boards: parseBoards(stateMap.get(ch.id)),
-    }));
+      group = canvasChannels.map((ch) => ({
+        channelId: ch.id,
+        channelName: ch.name,
+        boards: parseBoards(stateMap.get(ch.id)),
+      }));
+    }
   }
 
   return NextResponse.json({

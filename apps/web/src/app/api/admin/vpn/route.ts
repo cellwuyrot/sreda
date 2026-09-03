@@ -13,6 +13,7 @@ import {
   isOverLimitAction,
   periodExpired,
   usageView,
+  isUsageUnlimited,
 } from "@/lib/connectionUsage";
 
 // VPN-PANEL: управление сервисом VPN. Только ADMIN — редактор сюда не
@@ -60,7 +61,12 @@ export async function GET() {
       rxBytes: true,
       txBytes: true,
       usageResetAt: true,
+      usageUpdatedAt: true,
       lastHandshakeAt: true,
+      /* NETLINK-STAFF: у администрации проекта лимита нет — иначе сводка
+         показывала бы администраторов «вышедшими за лимит», хотя ограничение к
+         ним не применяется вовсе. */
+      user: { select: { role: true } },
     },
   });
 
@@ -69,7 +75,7 @@ export async function GET() {
   let overLimitCount = 0;
   let activeCount = 0;
   for (const peer of peers) {
-    const view = usageView(peer, settings);
+    const view = usageView(peer, settings, new Date(), isUsageUnlimited(peer.user));
     usedTotal += view.usedBytes;
     if (view.overLimit) overLimitCount += 1;
     /* «Активен» — было рукопожатие за последние пять минут. Считать активным

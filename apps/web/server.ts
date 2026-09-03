@@ -834,6 +834,21 @@ app.prepare().then(() => {
     void broadcastVoiceChannelUsers(channelId);
   };
 
+  /* FIX-MOVEDELIVERY: перенос участника в другой голосовой канал.
+
+     Доставка та же, что у принудительного заглушения: перебираем живые сокеты
+     пользователя через userSockets. Так перенос доходит и в том случае, когда
+     маршрут App Router не нашёл io через getIO(). */
+  (globalThis as Record<string, unknown>).__moveVoiceUser = (
+    targetUserId: string,
+    channelId: string,
+    channelName: string,
+  ) => {
+    for (const sid of Array.from(userSockets.get(targetUserId) ?? [])) {
+      io.to(sid).emit("voice:force-join", { channelId, channelName });
+    }
+  };
+
   // Force-kick everyone out of a voice channel when it is deleted (called from API routes)
   (globalThis as Record<string, unknown>).__kickVoiceChannel = (channelId: string) => {
     const room = `voice-${channelId}`;

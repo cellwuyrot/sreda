@@ -33,11 +33,14 @@ export function boardItemToNoteText(item: BoardInboxItem): string {
 export default function BoardInboxListener({
   onItem,
   scope,
+  channelId,
 }: {
   /** Создайте здесь заметку на доске штатным механизмом канваса */
   onItem: (item: BoardInboxItem) => void;
   /** FIX-BOARDSCOPE: берём только то, что адресовано этому холсту. */
   scope?: BoardScope;
+  /** FIX-BOARDTARGET: canvas-канал этой рабочей среды (null — личная). */
+  channelId?: string | null;
 }) {
   // Стабильная ссылка, чтобы не переподписываться на каждый рендер.
   const onItemRef = useRef(onItem);
@@ -47,10 +50,10 @@ export default function BoardInboxListener({
 
   useEffect(() => {
     // 1) Забрать накопившееся своей области, пока доска была закрыта.
-    drainBoardInbox(scope).forEach((item) => onItemRef.current(item));
+    drainBoardInbox(scope, channelId).forEach((item) => onItemRef.current(item));
     // 2) Живая подписка (текущая и соседние вкладки).
-    return subscribeBoardInbox((item) => onItemRef.current(item), scope);
-  }, [scope]);
+    return subscribeBoardInbox((item) => onItemRef.current(item), scope, channelId);
+  }, [scope, channelId]);
 
   return null;
 }

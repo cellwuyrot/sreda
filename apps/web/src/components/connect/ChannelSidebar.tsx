@@ -242,10 +242,19 @@ export default function ChannelSidebar({
       }).catch(() => {});
     },
   });
+  /* FIX-MODMENU-CLICK: узел самого меню. Он нужен, чтобы отличить нажатие ВНУТРИ
+     меню от нажатия мимо. Раньше слушатель закрывал меню на любом mousedown,
+     включая нажатие на его же кнопку: React снимал портал ещё до mouseup, click
+     по исчезнувшему узлу не возникал вовсе — и «Заглушить микрофон», «Заглушить
+     мик + наушники», «Перенести в канал» просто ничего не делали. */
+  const modMenuRef = useRef<HTMLDivElement | null>(null);
   // Закрытие ПКМ-меню модерации при клике мимо или Escape
   useEffect(() => {
     if (!sidebarModMenu) return;
-    const close = () => setSidebarModMenu(null);
+    const close = (e: MouseEvent) => {
+      if (modMenuRef.current?.contains(e.target as Node)) return;
+      setSidebarModMenu(null);
+    };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarModMenu(null); };
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onKey);
@@ -1302,6 +1311,7 @@ export default function ChannelSidebar({
       {/* ПКМ-меню модерации прямо в боковой панели */}
       {sidebarModMenu && typeof document !== "undefined" && createPortal(
         <div
+          ref={modMenuRef}
           className="fixed z-[9999] min-w-[210px] py-1 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-sm"
           style={{ left: Math.min(sidebarModMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 230), top: sidebarModMenu.y }}
           onClick={e => e.stopPropagation()}
