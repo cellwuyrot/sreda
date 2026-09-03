@@ -820,7 +820,6 @@ export default function ChannelSidebar({
                                   .map(u => (
                                     <div
                                       key={u.socketId}
-                                      className="group/user relative"
                                       {...dragUser.userRowProps(u.socketId, u.userId)}
                                       className={`group/user relative ${dragUser.userRowClass(u.socketId)}`}
                                       onContextMenu={isActive && voiceActions ? async (e) => {
@@ -933,7 +932,6 @@ export default function ChannelSidebar({
                         .map(u => (
                         <div
                           key={u.socketId}
-                          className="group/user relative"
                           {...dragUser.userRowProps(u.socketId, u.userId)}
                           className={`group/user relative ${dragUser.userRowClass(u.socketId)}`}
                           onContextMenu={isActive && voiceActions ? async (e) => {
