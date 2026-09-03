@@ -481,7 +481,7 @@ const MessageRow = memo(function MessageRow({
                     Превью ссылки лежит здесь же и по той же причине: при
                     монтировании оно заново ходит за описанием страницы.
 
-                    Скрытые игнором сообщения остаются заглушкой: вложения там
+                    Скрытые игнором сообщ��ния остаются заглушкой: вложения там
                     пока��ывать нельзя, в этом и ��мысл. */}
                 {!hiddenByIgnore && (
                   <>
@@ -676,7 +676,7 @@ export default function MessageArea({
   const [newsRefresh, setNewsRefresh] = useState(0);
 
   /* Смена канала: право забываем до ответа сервера. Компонент при переходе не
-     размонтируется, и без сброса в новом разделе на секунду висела бы кнопка
+     размонтируется, и ��ез сброса в новом разделе на секунду висела бы кнопка
      «Написать», доставшаяся от прежнего — с отказом по нажатию. Правка тоже
      сбрасывается: пост из прежнего раздела к новому отношения не имеет. */
   useEffect(() => {
@@ -962,7 +962,7 @@ export default function MessageArea({
     });
   }, []);
 
-  /* Состояние переключаем сразу, запрос отправляем следом: игнор — жест
+  /* Состояние переключаем сразу, запрос отправляем следом: игн��р — жест
      мгновенный, и ждать ответа сети, глядя на неиз��енившийся список, незачем.
      Если запрос не прошёл, возвращаем как было. */
   const toggleIgnoreUser = useCallback((targetId: string) => {
@@ -1284,7 +1284,7 @@ export default function MessageArea({
 
   /* Запрос истории привязан к каналу: при быстром переключении ответ по
      прежнему каналу мог прийти ПОСЛЕ ответа по новому и затереть ленту чужими
-     сообщениями. Держим отменяющий сигнал текущего канала — эффект ниже рвёт
+     сообщениями. Держим от��еняющий сигнал текущего канала — эффект ниже рвёт
      его при уходе, и опоздавший ответ до setMessages уже не доходит. */
   const fetchAbortRef = useRef<AbortController | null>(null);
 
@@ -1403,7 +1403,7 @@ export default function MessageArea({
   // Mute state ref
   const isMutedRef = useRef(false);
   /* FIX-NEWS-MUTE: то же самое значение, но в состоянии: ref годится обработчику
-     входящего сообщения (ему перерисовка не нужна), но кнопка в шапке обязана
+     ��ходящего сообщения (ему перерисовка не нужна), но кнопка в шапке обязана
      менять вид сразу после нажатия. */
   const [channelMuted, setChannelMuted] = useState(false);
 
@@ -2765,6 +2765,10 @@ export default function MessageArea({
     );
   }
 
+  // FIX-BOARDPICKER: читаем ref вне JSX — ESLint react-hooks/refs запрещает
+  // обращаться к ref.current непосредственно в рендере.
+  const currentGroupId = groupIdRef.current ?? undefined;
+
   return (
     /* PREMIUM-SKIN: класс tz-skin-chat кладёт задний фон переписки, выбранный
        подписчиком. Пока ��формление выключено, переменная равна none и класс
@@ -3059,7 +3063,7 @@ export default function MessageArea({
                   cancelEdit={cancelEdit}
                   deleteMessage={deleteMessage}
                   pinMessage={pinMessage}
-                  groupId={groupIdRef.current ?? undefined}
+                  groupId={currentGroupId}
                 />
               );
             })}
@@ -3100,7 +3104,7 @@ export default function MessageArea({
               {warnAlert.reason && (
                 <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{warnAlert.reason}</p>
               )}
-              <p className="text-xs text-red-400 mt-1">Примите к сведению. Исчезнет через 1 минуту или после следующего сообщения.</p>
+              <p className="text-xs text-red-400 mt-1">Примите к сведению. Исчезнет через 1 минуту или после с��едующего сообщения.</p>
             </div>
             <button type="button" onClick={() => setWarnAlert(null)} className="text-red-400 hover:text-red-600 ml-1">&times;</button>
           </div>
