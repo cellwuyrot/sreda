@@ -660,7 +660,7 @@ export default function ChannelSidebar({
                 <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${textOpen ? "rotate-90" : "rotate-0"}`} fill="currentColor" viewBox="0 0 6 10">
                   <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
-                Т����кстовые
+                Текстовые
                 {!textOpen && textChannels.some(c => (unreadCounts[c.id] ?? 0) > 0) && (
                   <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-500 dark:bg-cyan-400 flex-shrink-0" />
                 )}

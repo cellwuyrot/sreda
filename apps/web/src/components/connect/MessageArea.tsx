@@ -1895,7 +1895,7 @@ export default function MessageArea({
     // FIX-GEO: вместе с точкой сохраняем адрес (улица, дом, город) из Google Geocoding.
     const geoAttachment = {
       url: `geo:${lat},${lng}`,
-      name: address || `Геолок��ция ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+      name: address || `Геолокация ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
       size: 0,
       type: "application/geo",
       isImage: false,
@@ -3104,7 +3104,7 @@ export default function MessageArea({
               {warnAlert.reason && (
                 <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{warnAlert.reason}</p>
               )}
-              <p className="text-xs text-red-400 mt-1">Примите к сведению. Исчезнет через 1 минуту или после с��едующего сообщения.</p>
+              <p className="text-xs text-red-400 mt-1">Примите к сведению. Исчезнет через 1 минуту или после следующего сообщения.</p>
             </div>
             <button type="button" onClick={() => setWarnAlert(null)} className="text-red-400 hover:text-red-600 ml-1">&times;</button>
           </div>
