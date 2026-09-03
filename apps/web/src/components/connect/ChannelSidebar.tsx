@@ -230,7 +230,9 @@ export default function ChannelSidebar({
   const [sidebarModMenu, setSidebarModMenu] = useState<SidebarModMenu | null>(null);
   // FIX-DND: заменяем HTML5 drag-events на поинтерный хук useDragUser
   const dragUser = useDragUser({
-    enabled: !!voiceActions,
+    // FIX-DND-PERM: мод, не сидящий в войсе сам, тоже должен перетаскивать.
+    // voiceActions есть только когда ТЫ в войсе; canManage — признак модератора/владельца.
+    enabled: !!canManage || !!voiceActions,
     onMove: async (socketId: string, userId: string, targetChannelId: string) => {
       if (!groupDetail) return;
       await fetch("/api/voice/move-user", {
@@ -547,7 +549,7 @@ export default function ChannelSidebar({
                 <svg className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-200 ${textOpen ? "rotate-90" : "rotate-0"}`} fill="currentColor" viewBox="0 0 6 10">
                   <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
-                Т��кстовые
+                Т����кстовые
                 {!textOpen && textChannels.some(c => (unreadCounts[c.id] ?? 0) > 0) && (
                   <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-500 dark:bg-cyan-400 flex-shrink-0" />
                 )}
@@ -1356,7 +1358,7 @@ export default function ChannelSidebar({
                   Снять заглушение
                 </button>
               )}
-              {sidebarModMenu.canMove && sidebarModMenu.voiceChannels.length > 1 && (
+              {sidebarModMenu.canMove && sidebarModMenu.voiceChannels.length > 0 && (
                 <>
                   <div className="px-3 py-1 text-[11px] text-neutral-400 border-t border-neutral-100 dark:border-white/5 mt-1">Перенести в канал</div>
                   {sidebarModMenu.voiceChannels.filter(vc => vc.id !== sidebarModMenu.channelId).map(vc => (
