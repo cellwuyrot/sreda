@@ -39,6 +39,8 @@ export type BoardInboxItem = {
   messageId?: string;
   /** ISO-время попадания в очередь */
   createdAt: string;
+  /** FIX-BOARDPICKER: конкретный холст назначения (id борда внутри рабочей среды). */
+  boardId?: string;
 };
 
 const LS_KEY = "tz-board-inbox";
@@ -72,6 +74,10 @@ export function sendMessageToBoard(input: {
   channelName?: string;
   channelId?: string;
   messageId?: string;
+  /** FIX-BOARDPICKER: конкретный холст назначения. */
+  boardId?: string;
+  /** FIX-BOARDPICKER: явное указание области; иначе выводится из channelId. */
+  scope?: BoardScope;
 }): BoardInboxItem {
   const item: BoardInboxItem = {
     id: `bi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -80,7 +86,8 @@ export function sendMessageToBoard(input: {
     ...input,
     /* Канал передаёт только групповой чат; у личных сообщений канала нет,
        и именно по этому признаку разводим области. */
-    scope: input.channelId ? "group" : "personal",
+    scope: input.scope ?? (input.channelId ? "group" : "personal"),
+    boardId: input.boardId,
   };
   writeQueue([...readQueue(), item]);
   if (typeof window !== "undefined") {

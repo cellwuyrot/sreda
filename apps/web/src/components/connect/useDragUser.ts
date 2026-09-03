@@ -113,13 +113,15 @@ export function useDragUser({
     return {
       onPointerDown: (e: React.PointerEvent) => {
         if (e.pointerType !== "mouse" || e.button !== 0) return;
+        e.preventDefault();   // FIX-DND: блокирует выделение текста и нативный браузерный drag
         e.stopPropagation(); // prevent channel/group drag from starting
         session.current = { socketId, userId, x: e.clientX, y: e.clientY, started: false };
       },
       onClickCapture: (e: React.MouseEvent) => {
         if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); }
       },
-      style: { cursor: "grab" } as React.CSSProperties,
+      // FIX-DND: userSelect+touchAction не дают браузеру перехватить pointer до начала drag
+      style: { cursor: "grab", userSelect: "none", touchAction: "none" } as React.CSSProperties,
     };
   };
 

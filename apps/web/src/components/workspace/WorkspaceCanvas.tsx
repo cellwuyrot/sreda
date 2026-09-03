@@ -828,7 +828,7 @@ export default function WorkspaceCanvas({
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clientIdRef = useRef("ws-" + Math.random().toString(36).slice(2));
   // GROUP-WORKSPACE: не сохраняем состояние, только что применённое из загрузки
-  // или чужой правки — иначе два открытых клиента зациклили бы взаимные записи.
+  // или чужой правки — инач�� два открытых клиента зациклили бы взаимные записи.
   const skipNextSaveRef = useRef(false);
 
   useEffect(() => {
@@ -2769,7 +2769,13 @@ export default function WorkspaceCanvas({
       {/* FIX-BOARDSCOPE: личная среда берёт только ЛС, общая — только каналы. */}
       <BoardInboxListener
         scope={remote ? "group" : "personal"}
-        onItem={(item) => addNoteFromInbox(boardItemToNoteText(item))}
+        // FIX-BOARDPICKER: если item адресован другому борду — переключаемся перед добавлением
+        onItem={(item) => {
+          if (item.boardId && item.boardId !== activeIdRef.current) {
+            switchBoard(item.boardId);
+          }
+          addNoteFromInbox(boardItemToNoteText(item));
+        }}
       />
 
       {importOpen && (

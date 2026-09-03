@@ -262,7 +262,7 @@ const membershipCache = new LRUCache<string, { ok: boolean; expires: number }>({
    заблокированный продолжал читать переписку по сокету. 15 секунд — разумный
    размен: нагрузка на базу по-прежнему сбита кешем, а окно доступа короче
    вчетверо. Права после исключения сбрасывать точечно здесь нечем: кеш живёт
-   в памяти процесса сокет-сервера, а исключение происходит в процессе Next. */
+   в памяти процесса сокет-сервера, �� исключение происходит в процессе Next. */
 const MEMBERSHIP_TTL_MS = 15_000;
 
 async function isGroupMember(userId: string, groupId: string): Promise<boolean> {
@@ -789,8 +789,9 @@ app.prepare().then(() => {
   }
 
 
-  // FIX-FORCELOCK: принудительное заглушение/разглушение с обновлением состояния комнаты.
-  // Вызывается из API-маршрутов force-mute / force-unmute после emitToUser.
+  // FIX-FORCELOCK-V2: после обновления voiceRooms шлём событие напрямую всем сокетам
+  // целевого пользователя через userSockets — это надёжнее emitToUser из API-маршрута,
+  // который может не найти io через getIO() в контексте Next.js App Router.
   (globalThis as Record<string, unknown>).__forceMuteUser = (channelId: string, targetUserId: string, deafen: boolean) => {
     const room = voiceRooms.get(channelId);
     if (!room) return;
@@ -798,6 +799,14 @@ app.prepare().then(() => {
       if (user.userId === targetUserId) {
         user.isForceMuted = true;
         if (deafen) user.isForceDeafened = true;
+        // Прямая доставка: перебираем все активные сокеты пользователя
+        const sockets = userSockets.get(targetUserId);
+        if (sockets) {
+          const evt = deafen ? "voice:force-deafen" : "voice:force-mute";
+          for (const sid of Array.from(sockets)) {
+            io.to(sid).emit(evt, {});
+          }
+        }
         break;
       }
     }
@@ -811,6 +820,14 @@ app.prepare().then(() => {
       if (user.userId === targetUserId) {
         user.isForceMuted = false;
         if (includeDeafen) user.isForceDeafened = false;
+        // Прямая доставка разблокировки
+        const sockets = userSockets.get(targetUserId);
+        if (sockets) {
+          const evt = includeDeafen ? "voice:force-undeafen" : "voice:force-unmute";
+          for (const sid of Array.from(sockets)) {
+            io.to(sid).emit(evt, {});
+          }
+        }
         break;
       }
     }
