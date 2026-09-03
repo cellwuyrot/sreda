@@ -226,6 +226,19 @@ export default function ChannelSidebar({
   };
   const [sidebarModMenu, setSidebarModMenu] = useState<SidebarModMenu | null>(null);
   const [dragUserId, setDragUserId] = useState<string | null>(null);
+  // Закрытие ПКМ-меню модерации при клике мимо или Escape
+  useEffect(() => {
+    if (!sidebarModMenu) return;
+    const close = () => setSidebarModMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarModMenu(null); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [sidebarModMenu]);
+
 
   // FIX-PERF: Реф для актуального списка голосовых каналов — позволяет читать
   // свежие данные внутри замыканий эффекта без добавления voiceChannels в deps,
@@ -715,7 +728,9 @@ export default function ChannelSidebar({
                         const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
                         return (
-                          <div key={ch.id} className={`ml-4 pl-1${drag.itemClass(ch.id)}`} {...drag.itemProps(ch.id, children.map(c => c.id))}>
+                          <div key={ch.id} className={`ml-4 pl-1${drag.itemClass(ch.id)}${dragUserId ? " ring-2 ring-violet-400/30 dark:ring-cyan-400/30 rounded-lg" : ""}`} {...drag.itemProps(ch.id, children.map(c => c.id))}
+                              onDragOver={dragUserId ? (e) => e.preventDefault() : undefined}
+                              onDrop={dragUserId ? async (e) => { e.preventDefault(); const uid = dragUserId; setDragUserId(null); await fetch("/api/voice/move-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: uid, targetChannelId: ch.id, groupId: groupDetail.id }) }).catch(() => {}); } : undefined}>
                             <div className="group flex items-center">
                               <button
                                 onClick={() => {
@@ -791,15 +806,31 @@ export default function ChannelSidebar({
                                 {displayUsers
                                   .filter(u => !(isActive && u.userId === myProfileUser.id))
                                   .map(u => (
-                                    <VoiceUserRow
+                                    <div
                                       key={u.socketId}
-                                      name={u.userName}
-                                      avatar={u.avatar}
-                                      muted={u.muted}
-                                      speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
-                                      quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
-                                      sharingScreen={isActive ? voiceState?.screenSharerIds.has(u.socketId) ?? false : false}
-                                    />
+                                      className="group/user relative"
+                                      draggable={isActive && !!voiceActions}
+                                      onDragStart={() => setDragUserId(u.userId)}
+                                      onDragEnd={() => setDragUserId(null)}
+                                      onContextMenu={isActive && voiceActions ? async (e) => {
+                                        e.preventDefault(); e.stopPropagation();
+                                        setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })) });
+                                        try {
+                                          const r = await fetch(`/api/voice/moderation-info?channelId=${ch.id}&targetUserId=${u.userId}`);
+                                          if (r.ok) { const d = await r.json(); setSidebarModMenu(prev => prev && prev.socketId === u.socketId ? { ...prev, modChecked: true, ...d } : prev); }
+                                          else { setSidebarModMenu(null); }
+                                        } catch { setSidebarModMenu(null); }
+                                      } : undefined}
+                                    >
+                                      <VoiceUserRow
+                                        name={u.userName}
+                                        avatar={u.avatar}
+                                        muted={u.muted}
+                                        speaking={isActive ? voiceState?.speakingUsers.has(u.socketId) ?? false : false}
+                                        quality={isActive ? voiceState?.connectionQuality.get(u.socketId) : undefined}
+                                        sharingScreen={isActive ? voiceState?.screenSharerIds.has(u.socketId) ?? false : false}
+                                      />
+                                    </div>
                                   ))}
                               </div>
                             )}
@@ -817,7 +848,10 @@ export default function ChannelSidebar({
               const shareCount = isActive && voiceState ? voiceState.screenSharerIds.size : 0;
 
               return (
-                <div key={ch.id} className={drag.itemClass(ch.id)} {...drag.itemProps(ch.id, voiceChannels.filter((c) => !c.parentId).map((c) => c.id))}>
+                <div key={ch.id} className={`${drag.itemClass(ch.id)}${dragUserId ? " ring-2 ring-violet-400/30 dark:ring-cyan-400/30 rounded-lg" : ""}`} {...drag.itemProps(ch.id, voiceChannels.filter((c) => !c.parentId).map((c) => c.id))}
+                    onDragOver={dragUserId ? (e) => e.preventDefault() : undefined}
+                    onDrop={dragUserId ? async (e) => { e.preventDefault(); const uid = dragUserId; setDragUserId(null); await fetch("/api/voice/move-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: uid, targetChannelId: ch.id, groupId: groupDetail.id }) }).catch(() => {}); } : undefined}
+                  >
                   {/* Channel button */}
                   <div className="group flex items-center">
                     <button
@@ -890,7 +924,19 @@ export default function ChannelSidebar({
                         <div
                           key={u.socketId}
                           className="group/user relative"
-                          onContextMenu={isActive && voiceActions ? (e) => { e.preventDefault(); setVolumeOpen(volumeOpen === u.socketId ? null : u.socketId); } : undefined}
+                          draggable={isActive && !!voiceActions}
+                          onDragStart={() => setDragUserId(u.userId)}
+                          onDragEnd={() => setDragUserId(null)}
+                          onContextMenu={isActive && voiceActions ? async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSidebarModMenu({ socketId: u.socketId, userId: u.userId, userName: u.userName, x: e.clientX, y: e.clientY + 4, channelId: ch.id, modChecked: false, canKickVoice: false, canForceMute: false, canForceDeafen: false, canMove: false, canBan: false, groupId: groupDetail.id, voiceChannels: voiceChannels.map(vc => ({ id: vc.id, name: vc.name })) });
+                            try {
+                              const r = await fetch(`/api/voice/moderation-info?channelId=${ch.id}&targetUserId=${u.userId}`);
+                              if (r.ok) { const d = await r.json(); setSidebarModMenu(prev => prev && prev.socketId === u.socketId ? { ...prev, modChecked: true, ...d } : prev); }
+                              else { setSidebarModMenu(null); }
+                            } catch { setSidebarModMenu(null); }
+                          } : undefined}
                         >
                           <VoiceUserRow
                             name={u.userName}
