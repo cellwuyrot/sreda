@@ -33,6 +33,17 @@ export async function POST(req: Request) {
   const targetRank = targetMembership ? effectiveRank(targetMembership) : ROLE_RANK.MEMBER;
   if (targetRank >= callerRank) return NextResponse.json({ error: "Rank too low" }, { status: 403 });
 
+  // Уведомляем саму цель (для VoiceContext — блокирует микрофон/наушники)
   emitToUser(targetUserId, deafen ? "voice:force-deafen" : "voice:force-mute", {});
+
+  // FIX-FORCELOCK: обновляем состояние в voiceRooms и рассылаем всем участникам
+  // канала обновлённый список (включая isForceMuted/isForceDeafened).
+  const fn = (globalThis as Record<string, unknown>).__forceMuteUser;
+  if (typeof fn === "function") {
+    (fn as (channelId: string, targetUserId: string, deafen: boolean) => void)(
+      channelId, targetUserId, deafen
+    );
+  }
+
   return NextResponse.json({ ok: true });
 }
