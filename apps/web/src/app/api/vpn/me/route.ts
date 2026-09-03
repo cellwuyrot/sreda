@@ -236,9 +236,15 @@ export async function GET() {
      Кнопка у клиента показывает срок и лимит до первого включения тоже: именно тогда
      человек и решает, нужна ли ему подписка. Отсутствующие поля вместо нулей заставляют
      клиент угадывать, а угадывать он не умеет. */
+  // FIX-ADMIN-UNLIMITED: администраторы проекта (user.role === "ADMIN") получают
+  // безлимитный VPN. Это отдельный уровень от администраторов групп/сообществ.
+  const isProjectAdmin = user?.role === "ADMIN";
+  const effectiveSettings = isProjectAdmin
+    ? { ...settings, trafficLimitGb: 0 }
+    : settings;
   const traffic = {
-    ...usageView(peer, settings),
-    limitGb: settings.trafficLimitGb,
+    ...usageView(peer, effectiveSettings),
+    limitGb: effectiveSettings.trafficLimitGb,
     overLimitAction: settings.overLimitAction,
     throttleKbps: settings.throttleKbps,
   };

@@ -279,10 +279,12 @@ type MessageRowProps = {
   pinMessage: (messageId: string) => void;
   openUserCard: (anchor: HTMLElement, msg: Message, hover: boolean) => void;
   cancelUserCardHover: () => void;
+  /** FIX-BOARDPICKER: ID группы для загрузки холстов в BoardPickerModal */
+  groupId?: string;
 };
 
 const MessageRow = memo(function MessageRow({
-  msg, prefs, firstUnread, showDateDivider, isGrouped, animate, flashed, editing, editContent, currentUserId, isPrivilegedRole, canPin, channelId, channelName, channelMembers, roleTags, groupEmoji, groupEmojiList, ignoredIds, revealedIgnored, displayName, openUserCard, cancelUserCardHover, setReplyTo, onJumpToMessage, setEditContent, setRevealedIgnored, setLightboxSrc, openThread, toggleReaction, startEdit, saveEdit, cancelEdit, deleteMessage, pinMessage,
+  msg, prefs, firstUnread, showDateDivider, isGrouped, animate, flashed, editing, editContent, currentUserId, isPrivilegedRole, canPin, channelId, channelName, channelMembers, roleTags, groupEmoji, groupEmojiList, ignoredIds, revealedIgnored, displayName, openUserCard, cancelUserCardHover, setReplyTo, onJumpToMessage, setEditContent, setRevealedIgnored, setLightboxSrc, openThread, toggleReaction, startEdit, saveEdit, cancelEdit, deleteMessage, pinMessage, groupId,
 }: MessageRowProps) {
   const msgDate = new Date(msg.createdAt);
   /* FIX-EDITBLINK: Сообщение скрыто игнором — вместо содержимого заглушка.
@@ -318,7 +320,7 @@ const MessageRow = memo(function MessageRow({
                   onEdit={() => startEdit(msg)}
                   onDelete={() => deleteMessage(msg.id)}
                   onPin={canPin ? () => pinMessage(msg.id) : undefined}
-                  boardContext={{ authorName: msg.user.name, channelName, channelId }}
+                  boardContext={{ authorName: msg.user.name, channelName, channelId, groupId }}
                   /* FIX-FWDBUF: в каналах кнопки пересылки раньше вообще не было —
                      окно со списком открыть было неоткуда. Теперь пересылка одинаковая
                      в каналах и ЛС: сообщение в буфер, дальше — «Переслать сюда». */
@@ -479,8 +481,8 @@ const MessageRow = memo(function MessageRow({
                     Превью ссылки лежит здесь же и по той же причине: при
                     монтировании оно заново ходит за описанием страницы.
 
-                    Скрытые игнором сообщения остаются заглушкой: вложения там
-                    показывать нельзя, в этом и смысл. */}
+                    Скрытые игнором сообщ����ния остаются заглушкой: вложения там
+                    пока��ывать нельзя, в этом и ��мысл. */}
                 {!hiddenByIgnore && (
                   <>
                     {parseAttachments(msg.attachments).map((att, i) => (
@@ -582,7 +584,7 @@ const MessageRow = memo(function MessageRow({
     <Fragment>
       {/* Черта «Непрочитанные». Лента и так прокручивается к первому
           непрочитанному, но без метки непонятно, где кончается прочитанное:
-          человек видит середину переписки и не знает, вверх ему читать или
+          человек видит сер��дину переписки и не знает, вверх ему читать или
           вниз. Красная, чтобы отличаться от разделителя дат. */}
       {firstUnread && (
         <div className="flex items-center gap-3 mt-4 mb-1">
@@ -674,7 +676,7 @@ export default function MessageArea({
   const [newsRefresh, setNewsRefresh] = useState(0);
 
   /* Смена канала: право забываем до ответа сервера. Компонент при переходе не
-     размонтируется, и без сброса в новом разделе на секунду висела бы кнопка
+     размонтируется, и ��ез сброса в новом разделе на секунду висела бы кнопка
      «Написать», доставшаяся от прежнего — с отказом по нажатию. Правка тоже
      сбрасывается: пост из прежнего раздела к новому отношения не имеет. */
   useEffect(() => {
@@ -703,8 +705,8 @@ export default function MessageArea({
   const [replyTo, setReplyTo] = useState<{ id: string; name: string; content: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
-  /* Тариф обрезал историю: сервер присылает число дней, чтобы подпись в чате не
-     расходилась с фактическим фильтром (см. lib/premiumLimits). */
+  /* Тариф обрезал истори��: сервер присылает число дней, чтобы подпись в чате не
+     расходилась с фактическим фильт��ом (см. lib/premiumLimits). */
   const [forwardToast, setForwardToast] = useState(false);
   const [forwardMsg, setForwardMsg] = useState<{ content: string; userName: string } | null>(null);
   const [forwardTargets, setForwardTargets] = useState<ForwardTarget[]>([]);
@@ -764,7 +766,7 @@ export default function MessageArea({
   const [slowmodeWait, setSlowmodeWait] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /* Узкий экран — значит телефон, в том числе оболочка Android. От этого зависит
-     только одно: какая запись голоса стоит в строке ввода (см. ниже). */
+     только одно: к��кая запись голоса стоит в строке ввода (см. ниже). */
   const isMobileViewport = useMobile();
   /** Предел длины зависит от подписки: без неё он вдвое меньше. */
   const isPremiumAccount = hasPremium(session?.user);
@@ -899,8 +901,11 @@ export default function MessageArea({
   const [groupEmojis, setGroupEmojis] = useState<GroupEmojiItem[]>([]);
   /* Идентификатор сообщества отдельно в ref: им пользуется обработчик события
      сокета, а зависеть от состояния он не может — иначе соединение
-     пересоздавалось бы при каждом обновлении снимка сообщества. */
+     ��ересоздавалось бы при каждом обновлении снимка сообщества. */
   const groupIdRef = useRef<string | null>(null);
+  // FIX-BOARDPICKER: groupIdRef нельзя читать в рендере (react-hooks/refs),
+  // поэтому дублируем значение в state — только для передачи в MessageRow.
+  const [groupIdForRender, setGroupIdForRender] = useState<string | undefined>(undefined);
   const [groupMeta, setGroupMeta] = useState<{
     groupId: string;
     roles: { id: string; name: string; color: string }[];
@@ -960,8 +965,8 @@ export default function MessageArea({
     });
   }, []);
 
-  /* Состояние переключаем сразу, запрос отправляем следом: игнор — жест
-     мгновенный, и ждать ответа сети, глядя на неизменившийся список, незачем.
+  /* Состояние переключаем сразу, запрос отправляем следом: игн��р — жест
+     мгновенный, и ждать ответа сети, глядя на неиз��енившийся список, незачем.
      Если запрос не прошёл, возвращаем как было. */
   const toggleIgnoreUser = useCallback((targetId: string) => {
     let adding = false;
@@ -1272,7 +1277,7 @@ export default function MessageArea({
   }, [revealWindowTail]);
 
   /* Доводка живёт в layout-эффекте: обычный эффект выполняется после кадра, и
-     промежуточное положение успевает попасть на экран рывком. */
+     промежуточное положение успевает попасть на экран рывко��. */
   useLayoutEffect(() => {
     if (endScrollRef.current <= 0) return;
     endScrollRef.current -= 1;
@@ -1282,7 +1287,7 @@ export default function MessageArea({
 
   /* Запрос истории привязан к каналу: при быстром переключении ответ по
      прежнему каналу мог прийти ПОСЛЕ ответа по новому и затереть ленту чужими
-     сообщениями. Держим отменяющий сигнал текущего канала — эффект ниже рвёт
+     сообщениями. Держим от��еняющий сигнал текущего канала — эффект ниже рвёт
      его при уходе, и опоздавший ответ до setMessages уже не доходит. */
   const fetchAbortRef = useRef<AbortController | null>(null);
 
@@ -1401,7 +1406,7 @@ export default function MessageArea({
   // Mute state ref
   const isMutedRef = useRef(false);
   /* FIX-NEWS-MUTE: то же самое значение, но в состоянии: ref годится обработчику
-     входящего сообщения (ему перерисовка не нужна), но кнопка в шапке обязана
+     ��ходящего сообщения (ему перерисовка не нужна), но кнопка в шапке обязана
      менять вид сразу после нажатия. */
   const [channelMuted, setChannelMuted] = useState(false);
 
@@ -1417,6 +1422,7 @@ export default function MessageArea({
       .then((ch) => {
         if (!ch?.groupId) return;
         groupIdRef.current = ch.groupId;
+        setGroupIdForRender(ch.groupId);
         // Fetch members + mute state in parallel
         Promise.all([
           fetch(`/api/groups/${ch.groupId}`).then((r) => r.ok ? r.json() : null),
@@ -1889,7 +1895,7 @@ export default function MessageArea({
     // FIX-GEO: вместе с точкой сохраняем адрес (улица, дом, город) из Google Geocoding.
     const geoAttachment = {
       url: `geo:${lat},${lng}`,
-      name: address || `Геолокация ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+      name: address || `Геолок��ция ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
       size: 0,
       type: "application/geo",
       isImage: false,
@@ -2765,7 +2771,7 @@ export default function MessageArea({
 
   return (
     /* PREMIUM-SKIN: класс tz-skin-chat кладёт задний фон переписки, выбранный
-       подписчиком. Пока оформление выключено, переменная равна none и класс
+       подписчиком. Пока ��формление выключено, переменная равна none и класс
        ничего не меняет. */
     <div {...dropPaste.dropProps} className="tz-skin-chat flex-1 flex flex-col h-full min-w-0 relative">
       {dropPaste.isDragOver && (
@@ -2863,7 +2869,7 @@ export default function MessageArea({
           ) : (
             pinnedMessages.map(pm => (
               <div key={pm.id} className="px-4 py-2 flex items-start gap-2 hover:bg-black/5 dark:hover:bg-white/5 border-b border-[var(--cn-border)] last:border-0">
-              {/* FIX-PINJUMP: строка была простым блоком текста — нажатие никуда не вело.
+              {/* FIX-PINJUMP: ��трока была простым блоком текста — нажатие никуда не вело.
                   Переход использует тот же jumpToMessage, что и клик по ответу: он догружает
                   старую историю, если сообщение выше загруженного куска, а потом подсвечивает
                   найденную строку. Панель закрываем: иначе она накрывает верх переписки,
@@ -2890,7 +2896,7 @@ export default function MessageArea({
       )}
 
       {/* NEWS: под общей шапкой канала вместо переписки — лента постов.
-          Шапка, панель закреплённого и все окна ниже (пересылка, карточка
+          Шапка, панель закреплённого и все окна ниже (перес��лка, карточка
           участника, подтверждения) остаются общими: в новостях у канала то же
           имя, та же шестерёнка настроек и та же кнопка «назад», и разводить два
           набора одной и той же шапки значило бы чинить каждую правку дважды.
@@ -2943,7 +2949,7 @@ export default function MessageArea({
           {/* Редактор — отдельный экран во весь экран (он сам себя так и
               размещает), поэтому держим его здесь, рядом с кнопкой, а не среди
               окон переписки. Он же и правит существующий пост: экран поста
-              сообщает наверх выбранную запись (onEditPost выше), а различие
+              ��ообщает наверх выбранную запись (onEditPost выше), а различие
               «создание или правка» для редактора — это один проп post.
 
               key разводит два случая: начальное состояние полей редактор берёт
@@ -3057,6 +3063,7 @@ export default function MessageArea({
                   cancelEdit={cancelEdit}
                   deleteMessage={deleteMessage}
                   pinMessage={pinMessage}
+                  groupId={groupIdForRender}
                 />
               );
             })}
@@ -3097,7 +3104,7 @@ export default function MessageArea({
               {warnAlert.reason && (
                 <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{warnAlert.reason}</p>
               )}
-              <p className="text-xs text-red-400 mt-1">Примите к сведению. Исчезнет через 1 минуту или после следующего сообщения.</p>
+              <p className="text-xs text-red-400 mt-1">Примите к сведению. Исчезнет через 1 минуту или после с��едующего сообщения.</p>
             </div>
             <button type="button" onClick={() => setWarnAlert(null)} className="text-red-400 hover:text-red-600 ml-1">&times;</button>
           </div>
@@ -3481,7 +3488,7 @@ export default function MessageArea({
         <UserContextMenu
           user={{
             ...userMenu.user,
-            /* lastSeen у автора сообщения приходит не всегда — прежняя карточка
+            /* lastSeen у автора сообщения приходит не всегда — преж��яя карточка
                добирала его из списка участников канала, и без этого строка
                «был(а) …» пропала бы. */
             lastSeen: userMenu.user.lastSeen ?? channelMembers.find((m) => m.id === userMenu.user.id)?.lastSeen ?? null,
