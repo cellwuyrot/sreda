@@ -41,6 +41,21 @@ import {
   routingAllowedIps,
 } from "@/lib/vpn";
 
+/**
+ * FIX-AWG: годный набор параметров маскировки — все одиннадцать полей.
+ *
+ * Полнота здесь не придирчивость: половина набора хуже, чем ни одного. Пустой
+ * набор — это законный обычный WireGuard, а четыре поля из одиннадцати означают,
+ * что клиент и узел посчитают размеры служебных пакетов по-разному, и
+ * рукопожатие не сойдётся никогда. Поэтому неполный набор отбрасывается целиком
+ * (см. awgProblem), и тесты ниже проверяют именно это.
+ */
+const AWG_FULL = {
+  Jc: 4, Jmin: 20, Jmax: 800,
+  S1: 30, S2: 100, S3: 40, S4: 50,
+  H1: 1148195868, H2: 1148195869, H3: 1148195870, H4: 1148195871,
+};
+
 /** Настоящий публичный ключ WireGuard: 32 байта в base64. */
 const KEY = Buffer.alloc(32, 7).toString("base64");
 const KEY2 = Buffer.alloc(32, 9).toString("base64");
@@ -411,13 +426,16 @@ describe("nodeTunnel", () => {
    * профиль без Jc/S1/H1, и рукопожатия отбрасывались молча.
    */
   it("ИНВАРИАНТ: маскировка выдаётся и при старой пометке PLAIN", () => {
-    const obfuscation = JSON.stringify({ Jc: 4 });
-    expect(nodeTunnel({ endpointHost: "", lastReport: report, transport: "PLAIN", obfuscation }).obfuscation).toEqual({
-      Jc: 4,
-    });
+    const obfuscation = JSON.stringify(AWG_FULL);
+    const expected = Object.fromEntries(
+      Object.entries(AWG_FULL).map(([key, value]) => [key, key.startsWith("H") ? String(value) : value]),
+    );
+    expect(
+      nodeTunnel({ endpointHost: "", lastReport: report, transport: "PLAIN", obfuscation }).obfuscation,
+    ).toEqual(expected);
     expect(
       nodeTunnel({ endpointHost: "", lastReport: report, transport: "OBFUSCATED", obfuscation }).obfuscation,
-    ).toEqual({ Jc: 4 });
+    ).toEqual(expected);
   });
 
   it("без параметров узла маскировки в профиле нет", () => {
@@ -426,30 +444,52 @@ describe("nodeTunnel", () => {
 });
 
 describe("parseObfuscation", () => {
-  it("числа в границах проходят, вне границ — нет", () => {
-    expect(parseObfuscation(JSON.stringify({ Jc: 4, Jmin: 20 }))).toEqual({ Jc: 4, Jmin: 20 });
-    expect(parseObfuscation(JSON.stringify({ Jc: 99 }))).toBeNull();
-    expect(parseObfuscation(JSON.stringify({ S1: -1 }))).toBeNull();
+  it("полный набор в границах проходит", () => {
+    const parsed = parseObfuscation(JSON.stringify(AWG_FULL));
+    expect(parsed).toMatchObject({ Jc: 4, Jmin: 20, Jmax: 800, S1: 30, S2: 100 });
   });
 
-  it("заголовки принимаются числом и диапазоном", () => {
-    expect(parseObfuscation(JSON.stringify({ H1: 1148195868, H2: "10-20" }))).toEqual({
-      H1: "1148195868",
-      H2: "10-20",
-    });
+  it("значение вне границ роняет весь набор", () => {
+    expect(parseObfuscation(JSON.stringify({ ...AWG_FULL, Jc: 99 }))).toBeNull();
+    expect(parseObfuscation(JSON.stringify({ ...AWG_FULL, S1: -1 }))).toBeNull();
+  });
+
+  /**
+   * ИНВАРИАНТ (FIX-AWG): набор проверяется ЦЕЛИКОМ, а не по одному полю.
+   * Неполный набор отбрасывается: клиент получит рабочий профиль без маскировки,
+   * и это безусловно лучше, чем профиль, по которому не подключиться никогда.
+   */
+  it("ИНВАРИАНТ: неполный набор отбрасывается целиком", () => {
+    expect(parseObfuscation(JSON.stringify({ Jc: 4, Jmin: 20 }))).toBeNull();
+    const { H4: _dropped, ...withoutH4 } = AWG_FULL;
+    expect(parseObfuscation(JSON.stringify(withoutH4))).toBeNull();
+  });
+
+  it("заголовки приводятся к строке", () => {
+    const parsed = parseObfuscation(JSON.stringify(AWG_FULL));
+    expect(parsed).toMatchObject({ H1: "1148195868", H4: "1148195871" });
   });
 
   it("подписи ограничены длиной", () => {
-    expect(parseObfuscation(JSON.stringify({ I1: "<b 0xf00>" }))).toEqual({ I1: "<b 0xf00>" });
-    expect(parseObfuscation(JSON.stringify({ I1: "x".repeat(513) }))).toBeNull();
+    expect(parseObfuscation(JSON.stringify({ ...AWG_FULL, I1: "<b 0xf00>" }))).toMatchObject({ I1: "<b 0xf00>" });
+    /* Слишком длинная подпись отбрасывается поштучно — остальной набор годен. */
+    const parsed = parseObfuscation(JSON.stringify({ ...AWG_FULL, I1: "x".repeat(513) }));
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("I1");
   });
 
   /**
    * ИНВАРИАНТ: значения приходят с чужой машины. Мусор молча отбрасывается, но и
    * падать из-за одного кривого поля нельзя: остальное всё равно годно.
    */
-  it("ИНВАРИАНТ: мусор отбрасывается, годное остаётся", () => {
-    expect(parseObfuscation(JSON.stringify({ Jc: 4, Jmax: "нет", PrivateKey: "секрет" }))).toEqual({ Jc: 4 });
+  it("ИНВАРИАНТ: посторонние поля не попадают в профиль", () => {
+    const parsed = parseObfuscation(JSON.stringify({ ...AWG_FULL, PrivateKey: "секрет" }));
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("PrivateKey");
+  });
+
+  it("нечисловое значение обязательного поля роняет набор", () => {
+    expect(parseObfuscation(JSON.stringify({ ...AWG_FULL, Jmax: "нет" }))).toBeNull();
   });
 
   it("пусто, битый JSON и массив — null", () => {
