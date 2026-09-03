@@ -36,6 +36,9 @@ import {
   peerChanges,
   rulesSignature,
   SNAT_CHAIN,
+  throttleCommands,
+  throttleRules,
+  throttleSignature,
 } from "./rules.mjs";
 
 const run = promisify(execFile);
@@ -280,6 +283,49 @@ async function applyExitRules(peers) {
   log(`внешние адреса: закреплено правил ${rules.length} (цепочка ${SNAT_CHAIN} первой в POSTROUTING)`);
 }
 
+/* ───────────────────── Потолок скорости (NETLINK-THROTTLE) ───────────────────── */
+
+/**
+ * NETLINK-THROTTLE: исполнение правила «при исчерпании лимита снизить скорость».
+ *
+ * Число приходит с главного сервера в списке пиров (`throttleKbps`), потому что
+ * лимит считает он. Исполнить это может только узел: сквозной трафик через
+ * главный сервер не проходит вообще. До этой правки узел число игнорировал, и
+ * выбор «снизить скорость» на деле означал «ничего не делать» — человек с
+ * исчерпанным лимитом качал на полной скорости.
+ *
+ * `tc` дёргается только при изменении набора: пересборка на каждом отчёте (а он
+ * приходит каждые пять секунд) сбрасывала бы очереди без всякой надобности.
+ */
+let appliedThrottleSignature = "";
+
+async function applyThrottle(peers) {
+  const rules = throttleRules(peers);
+  const signature = throttleSignature(rules);
+  if (signature === appliedThrottleSignature) return;
+
+  for (const command of throttleCommands(CONFIG.iface, rules)) {
+    try {
+      await run("tc", command.args);
+    } catch (err) {
+      /* Снятие прежнего набора «не получилось» — это норма: его могло не быть.
+         А вот отказ на установке скрывать нельзя: молчание здесь означает, что
+         лимит не исполняется, и об этом надо знать по журналу, а не по счёту
+         за трафик. */
+      if (!command.ignoreError) {
+        throw new Error(`tc ${command.args.join(" ")}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+
+  appliedThrottleSignature = signature;
+  log(
+    rules.length === 0
+      ? "ограничение скорости снято со всех"
+      : `ограничение скорости: ${rules.map((r) => `${r.src} до ${r.kbps} Кбит/с`).join(", ")}`,
+  );
+}
+
 /* ─────────────────────────────── Отчёт ─────────────────────────────── */
 
 /**
@@ -369,6 +415,10 @@ async function tick(publicKey) {
     );
     await applyMss().catch((err) =>
       log("не удалось подогнать размер пакета:", err instanceof Error ? err.message : err),
+    );
+    // NETLINK-THROTTLE: потолки скорости приезжают тем же отчётом, что и пиры.
+    await applyThrottle(peers).catch((err) =>
+      log("не удалось применить ограничение скорости:", err instanceof Error ? err.message : err),
     );
   }
   return Number(answer?.nextReportInMs) || CONFIG.intervalMs;

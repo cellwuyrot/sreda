@@ -23,36 +23,55 @@ import {
   parseDump,
   parseInterfaceParams,
   peerChanges,
+  policeBurstKb,
   rulesSignature,
   SNAT_CHAIN,
+  throttleCommands,
+  throttleRules,
+  throttleSignature,
 } from "./rules.mjs";
 
+/* Публичные ключи WireGuard — 44 символа base64 с «=» на конце. Разбор их
+   проверяет, поэтому в тестах нужны настоящие по форме, а не «KEY1»: с
+   короткими строками проверялось бы не поведение, а собственная опечатка. */
+const KEY1 = `${"A".repeat(43)}=`;
+const KEY2 = `${"B".repeat(43)}=`;
+const KEY3 = `${"C".repeat(43)}=`;
+
 /** Строка dump: ключ, preshared, endpoint, allowed-ips, рукопожатие, rx, tx, keepalive. */
-function dumpLine(publicKey, allowedIps, handshake = "0") {
-  return [publicKey, "(none)", "1.2.3.4:51820", allowedIps, handshake, "0", "0", "off"].join("\t");
+function dumpLine(publicKey, allowedIps, handshake = "0", rx = "0", tx = "0") {
+  return [publicKey, "(none)", "1.2.3.4:51820", allowedIps, handshake, rx, tx, "off"].join("\t");
 }
 
 const IFACE_LINE = ["privkey", "pubkey", "51820", "off"].join("\t");
 
 describe("parseDump", () => {
   it("первая строка — сам интерфейс, в пиры не попадает", () => {
-    const peers = parseDump([IFACE_LINE, dumpLine("KEY1", "10.8.0.2/32")].join("\n"));
-    expect([...peers.keys()]).toEqual(["KEY1"]);
+    const peers = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32")].join("\n"));
+    expect([...peers.keys()]).toEqual([KEY1]);
   });
 
   it("читает адреса и время рукопожатия", () => {
-    const peers = parseDump([IFACE_LINE, dumpLine("KEY1", "10.8.0.2/32", "1750000000")].join("\n"));
-    expect(peers.get("KEY1")).toEqual({ allowedIps: "10.8.0.2/32", handshakeUnix: 1750000000 });
+    const peers = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32", "1750000000")].join("\n"));
+    expect(peers.get(KEY1)).toMatchObject({ allowedIps: "10.8.0.2/32", handshakeUnix: 1750000000 });
+  });
+
+  /* NETLINK: счётчики трафика — то, из чего главный сервер считает расход.
+     Читаются они из тех же строк, поэтому проверяются здесь же: сдвиг колонок
+     на одну означал бы, что в расход идёт время рукопожатия. */
+  it("читает накопительные счётчики трафика", () => {
+    const peers = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32", "0", "4096", "2048")].join("\n"));
+    expect(peers.get(KEY1)).toMatchObject({ rxBytes: 4096, txBytes: 2048 });
   });
 
   it("«(none)» — это пустой список, а не адрес", () => {
-    const peers = parseDump([IFACE_LINE, dumpLine("KEY1", "(none)")].join("\n"));
-    expect(peers.get("KEY1").allowedIps).toBe("");
+    const peers = parseDump([IFACE_LINE, dumpLine(KEY1, "(none)")].join("\n"));
+    expect(peers.get(KEY1).allowedIps).toBe("");
   });
 
   it("рукопожатия не было — ноль", () => {
-    const peers = parseDump([IFACE_LINE, dumpLine("KEY1", "10.8.0.2/32", "0")].join("\n"));
-    expect(peers.get("KEY1").handshakeUnix).toBe(0);
+    const peers = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32", "0")].join("\n"));
+    expect(peers.get(KEY1).handshakeUnix).toBe(0);
   });
 
   it("пустой вывод — пустая карта, а не падение", () => {
@@ -61,8 +80,8 @@ describe("parseDump", () => {
   });
 
   it("обрезанные строки пропускаются", () => {
-    const peers = parseDump([IFACE_LINE, "KEY1\t(none)", dumpLine("KEY2", "10.8.0.3/32")].join("\n"));
-    expect([...peers.keys()]).toEqual(["KEY2"]);
+    const peers = parseDump([IFACE_LINE, `${KEY1}\t(none)`, dumpLine(KEY2, "10.8.0.3/32")].join("\n"));
+    expect([...peers.keys()]).toEqual([KEY2]);
   });
 });
 
@@ -115,13 +134,33 @@ describe("parseInterfaceParams", () => {
 describe("acceptPeers", () => {
   it("оставляет только пиров с ключом и адресом", () => {
     const peers = acceptPeers([
-      { publicKey: "KEY1", allowedIp: "10.8.0.2/32" },
+      { publicKey: KEY1, allowedIp: "10.8.0.2/32" },
       { publicKey: "", allowedIp: "10.8.0.3/32" },
-      { publicKey: "KEY3" },
+      { publicKey: KEY3 },
+      { publicKey: "KEY-НЕ-КЛЮЧ", allowedIp: "10.8.0.4/32" },
       null,
       "мусор",
     ]);
-    expect(peers).toEqual([{ publicKey: "KEY1", allowedIp: "10.8.0.2/32" }]);
+    expect(peers).toEqual([{ publicKey: KEY1, allowedIp: "10.8.0.2/32" }]);
+  });
+
+  /**
+   * ИНВАРИАНТ: потолок скорости доходит до узла. Он приезжает от главного
+   * сервера и раньше молча отбрасывался здесь — из-за этого правило «снизить
+   * скорость» не исполнялось вовсе, и вышедший за лимит оставался с полной
+   * скоростью, то есть с безлимитом по факту.
+   */
+  it("ИНВАРИАНТ: потолок скорости сохраняется, мусорный отбрасывается", () => {
+    const peers = acceptPeers([
+      { publicKey: KEY1, allowedIp: "10.8.0.2/32", throttleKbps: 2048 },
+      { publicKey: KEY2, allowedIp: "10.8.0.3/32", throttleKbps: 0 },
+      { publicKey: KEY3, allowedIp: "10.8.0.4/32", throttleKbps: "быстро" },
+    ]);
+    expect(peers).toEqual([
+      { publicKey: KEY1, allowedIp: "10.8.0.2/32", throttleKbps: 2048 },
+      { publicKey: KEY2, allowedIp: "10.8.0.3/32" },
+      { publicKey: KEY3, allowedIp: "10.8.0.4/32" },
+    ]);
   });
 
   it("не массив — пустой список", () => {
@@ -132,8 +171,8 @@ describe("acceptPeers", () => {
 
 describe("peerChanges", () => {
   it("нового пира добавляем", () => {
-    const changes = peerChanges(new Map(), [{ publicKey: "KEY1", allowedIp: "10.8.0.2/32" }]);
-    expect(changes.toSet).toEqual([{ publicKey: "KEY1", allowedIp: "10.8.0.2/32" }]);
+    const changes = peerChanges(new Map(), [{ publicKey: KEY1, allowedIp: "10.8.0.2/32" }]);
+    expect(changes.toSet).toEqual([{ publicKey: KEY1, allowedIp: "10.8.0.2/32" }]);
     expect(changes.toRemove).toEqual([]);
     expect(changes.total).toBe(1);
   });
@@ -143,16 +182,16 @@ describe("peerChanges", () => {
    * переназначал бы всех — работа впустую и лишний шум в логах узла.
    */
   it("ИНВАРИАНТ: совпадающий пир не переназначается", () => {
-    const present = parseDump([IFACE_LINE, dumpLine("KEY1", "10.8.0.2/32")].join("\n"));
-    const changes = peerChanges(present, [{ publicKey: "KEY1", allowedIp: "10.8.0.2/32" }]);
+    const present = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32")].join("\n"));
+    const changes = peerChanges(present, [{ publicKey: KEY1, allowedIp: "10.8.0.2/32" }]);
     expect(changes.toSet).toEqual([]);
     expect(changes.toRemove).toEqual([]);
   });
 
   it("сменился адрес — переназначаем", () => {
-    const present = parseDump([IFACE_LINE, dumpLine("KEY1", "10.8.0.2/32")].join("\n"));
-    const changes = peerChanges(present, [{ publicKey: "KEY1", allowedIp: "10.8.0.9/32" }]);
-    expect(changes.toSet).toEqual([{ publicKey: "KEY1", allowedIp: "10.8.0.9/32" }]);
+    const present = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32")].join("\n"));
+    const changes = peerChanges(present, [{ publicKey: KEY1, allowedIp: "10.8.0.9/32" }]);
+    expect(changes.toSet).toEqual([{ publicKey: KEY1, allowedIp: "10.8.0.9/32" }]);
   });
 
   /**
@@ -161,15 +200,15 @@ describe("peerChanges", () => {
    * присылает пустой список, и узел разрывает все туннели сам.
    */
   it("ИНВАРИАНТ: лишний пир снимается", () => {
-    const present = parseDump([IFACE_LINE, dumpLine("KEY1", "10.8.0.2/32"), dumpLine("KEY2", "10.8.0.3/32")].join("\n"));
-    const changes = peerChanges(present, [{ publicKey: "KEY1", allowedIp: "10.8.0.2/32" }]);
-    expect(changes.toRemove).toEqual(["KEY2"]);
+    const present = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32"), dumpLine(KEY2, "10.8.0.3/32")].join("\n"));
+    const changes = peerChanges(present, [{ publicKey: KEY1, allowedIp: "10.8.0.2/32" }]);
+    expect(changes.toRemove).toEqual([KEY2]);
   });
 
   it("пустой список снимает всех", () => {
-    const present = parseDump([IFACE_LINE, dumpLine("KEY1", "10.8.0.2/32"), dumpLine("KEY2", "10.8.0.3/32")].join("\n"));
+    const present = parseDump([IFACE_LINE, dumpLine(KEY1, "10.8.0.2/32"), dumpLine(KEY2, "10.8.0.3/32")].join("\n"));
     const changes = peerChanges(present, []);
-    expect(changes.toRemove).toEqual(["KEY1", "KEY2"]);
+    expect(changes.toRemove).toEqual([KEY1, KEY2]);
     expect(changes.total).toBe(0);
   });
 });
@@ -359,5 +398,114 @@ describe("FIX-MSS6: подгонка размера пакета для IPv4 и 
     const commands = mssCommands("wg0", 1420);
     expect(commands.some((c) => c.args.includes("-F") && !c.ipv6)).toBe(true);
     expect(commands.some((c) => c.args.includes("-D") && c.repeat === 4)).toBe(true);
+  });
+});
+
+/* ───────────────────── Потолок скорости (NETLINK-THROTTLE) ───────────────────── */
+
+describe("throttleRules", () => {
+  it("берёт только тех, кому назначен потолок", () => {
+    const rules = throttleRules([
+      { publicKey: KEY1, allowedIp: "10.8.0.5/32", throttleKbps: 2048 },
+      { publicKey: KEY2, allowedIp: "10.8.0.3/32" },
+      { publicKey: KEY3, allowedIp: "10.8.0.4/32", throttleKbps: 0 },
+    ]);
+    expect(rules).toEqual([{ src: "10.8.0.5", kbps: 2048 }]);
+  });
+
+  /**
+   * ИНВАРИАНТ: порядок устойчивый. От него зависит подпись набора, а от подписи —
+   * решение «трогать ли `tc`». При неустойчивом порядке узел пересобирал бы
+   * очереди на каждом отчёте, то есть каждые пять секунд.
+   */
+  it("ИНВАРИАНТ: порядок не зависит от порядка пиров в ответе", () => {
+    const a = throttleRules([
+      { allowedIp: "10.8.0.9/32", throttleKbps: 512 },
+      { allowedIp: "10.8.0.2/32", throttleKbps: 1024 },
+    ]);
+    const b = throttleRules([
+      { allowedIp: "10.8.0.2/32", throttleKbps: 1024 },
+      { allowedIp: "10.8.0.9/32", throttleKbps: 512 },
+    ]);
+    expect(throttleSignature(a)).toBe(throttleSignature(b));
+  });
+
+  it("не массив и мусор внутри — пустой набор", () => {
+    expect(throttleRules(undefined)).toEqual([]);
+    expect(throttleRules([null, "мусор", { throttleKbps: 100 }, { allowedIp: "нет адреса", throttleKbps: 100 }])).toEqual([]);
+  });
+
+  it("подпись меняется при смене потолка", () => {
+    const before = throttleRules([{ allowedIp: "10.8.0.5/32", throttleKbps: 2048 }]);
+    const after = throttleRules([{ allowedIp: "10.8.0.5/32", throttleKbps: 512 }]);
+    expect(throttleSignature(before)).not.toBe(throttleSignature(after));
+  });
+});
+
+describe("throttleCommands", () => {
+  const line = (command) => command.args.join(" ");
+
+  /**
+   * ИНВАРИАНТ: пустой набор СНИМАЕТ формирование, а не ставит «большой потолок».
+   * Иначе узел, у которого никого не режут, всё равно гонял бы весь трафик
+   * через HTB — и его собственная скорость упиралась бы в наш класс.
+   */
+  it("ИНВАРИАНТ: пустой набор снимает формирование целиком", () => {
+    const commands = throttleCommands("awg0", []);
+    expect(commands.map(line)).toEqual([
+      "qdisc del dev awg0 root",
+      "qdisc del dev awg0 ingress",
+    ]);
+    expect(commands.every((c) => c.ignoreError)).toBe(true);
+  });
+
+  /**
+   * ИНВАРИАНТ: режутся ОБЕ стороны. Ограничить только отдачу клиенту значит
+   * оставить ему полную скорость на выгрузку — а это тот же трафик и тот же
+   * лимит.
+   */
+  it("ИНВАРИАНТ: и отдача клиенту, и приём от него", () => {
+    const lines = throttleCommands("awg0", [{ src: "10.8.0.5", kbps: 2048 }]).map(line);
+    expect(lines).toContain(
+      "filter add dev awg0 protocol ip parent 1: prio 1 u32 match ip dst 10.8.0.5/32 flowid 1:10",
+    );
+    expect(lines).toContain(
+      "filter add dev awg0 parent ffff: protocol ip prio 1 u32 match ip src 10.8.0.5/32 police rate 2048kbit burst 256k drop flowid :1",
+    );
+  });
+
+  it("прежний набор снимается перед установкой нового", () => {
+    const commands = throttleCommands("awg0", [{ src: "10.8.0.5", kbps: 2048 }]);
+    expect(commands.slice(0, 2).map(line)).toEqual([
+      "qdisc del dev awg0 root",
+      "qdisc del dev awg0 ingress",
+    ]);
+    /* Снятие может не получиться (набора не было) — это не отказ. А установка
+       обязана получиться, иначе лимит не исполняется. */
+    expect(commands.slice(2).some((c) => c.ignoreError)).toBe(false);
+  });
+
+  it("каждому пиру свой класс и своя честная очередь", () => {
+    const lines = throttleCommands("awg0", [
+      { src: "10.8.0.2", kbps: 1024 },
+      { src: "10.8.0.5", kbps: 2048 },
+    ]).map(line);
+    expect(lines).toContain("class add dev awg0 parent 1: classid 1:10 htb rate 1024kbit ceil 1024kbit");
+    expect(lines).toContain("class add dev awg0 parent 1: classid 1:11 htb rate 2048kbit ceil 2048kbit");
+    expect(lines).toContain("qdisc add dev awg0 parent 1:10 handle 10: fq_codel");
+    expect(lines).toContain("qdisc add dev awg0 parent 1:11 handle 11: fq_codel");
+  });
+
+  it("нерезаный трафик идёт классом по умолчанию", () => {
+    const lines = throttleCommands("awg0", [{ src: "10.8.0.5", kbps: 2048 }]).map(line);
+    expect(lines).toContain("qdisc add dev awg0 root handle 1: htb default 999");
+    expect(lines).toContain("class add dev awg0 parent 1: classid 1:999 htb rate 10gbit");
+  });
+});
+
+describe("policeBurstKb", () => {
+  it("запас — восьмая часть секунды, но не меньше 32 КБ", () => {
+    expect(policeBurstKb(2048)).toBe(256);
+    expect(policeBurstKb(128)).toBe(32);
   });
 });
