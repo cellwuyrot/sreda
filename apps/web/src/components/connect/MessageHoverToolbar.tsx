@@ -269,6 +269,7 @@ export default function MessageHoverToolbar({
   };
 
   return (
+    <>
     <div
       ref={rootRef}
       className="tz-msg-toolbar"
@@ -346,5 +347,6 @@ export default function MessageHoverToolbar({
         onClose={() => setPickerOpen(false)}
       />
     )}
+    </>
   );
 }
