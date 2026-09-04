@@ -1525,3 +1525,13 @@ html[data-tz-still] *::after {
   animation-iteration-count: 1 !important;
   animation-duration: 0.01ms !important;
 }
+
+/* LINK-PREVIEW: skeleton animation */
+@keyframes tz-skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .35; }
+}
+.tz-skeleton {
+  background: #1a1d27;
+  animation: tz-skeleton-pulse 1.6s ease-in-out infinite;
+}
