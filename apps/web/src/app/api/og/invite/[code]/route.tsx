@@ -5,10 +5,7 @@ import path from "path";
 import prisma from "@/lib/prisma";
 
 // FIX-INVITE-OG: персональная OG-обложка приглашения в сообщество (1200×630).
-// В отличие от общего /api/og (edge, статические пресеты), этот роут работает
-// в Node-рантайме: ему нужны Prisma (данные группы) и чтение иконки с диска
-// (иконка внедряется data-URL-ом — без сетевого self-fetch за прокси).
-// Данные публичны по ссылке-приглашению, как и GET /api/invites/[code].
+// Node runtime — нужны Prisma (данные группы) и fs (иконка с диска).
 
 function plural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10;
@@ -18,15 +15,38 @@ function plural(n: number, one: string, few: string, many: string): string {
   return many;
 }
 
-const ACCENT = "#00f0ff"; // фирменный циан TZ.Connect
-const VIOLET = "#8b5cf6";
+// ─── Triskelion logo (same shape as /api/og) ───────────────────────────────
+const ARM =
+  "M5,6 L5,-30 L22,-30 L26,-34 L26,-43 L22,-47 L-22,-47 L-26,-43 L-26,-34 L-22,-30 L-5,-30 L-5,6Z";
+
+function logoSvg(fill: string, opacity = 1): string {
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">` +
+    `<g transform="translate(50,52)" fill="${fill}" opacity="${opacity}">` +
+    `<path d="${ARM}" transform="rotate(0)"/>` +
+    `<path d="${ARM}" transform="rotate(120)"/>` +
+    `<path d="${ARM}" transform="rotate(240)"/>` +
+    `</g></svg>`
+  );
+}
+
+function logoDataUrl(fill = "white", opacity = 1): string {
+  return `data:image/svg+xml,${encodeURIComponent(logoSvg(fill, opacity))}`;
+}
+
+// ─── Brand accent (TZ.Connect cyan → violet) ──────────────────────────────
+const ACCENT  = "#06b6d4"; // cyan
+const ACCENT2 = "#6366f1"; // indigo
+const A  = "6,182,212";
+const A2 = "99,102,241";
 
 async function loadIconDataUrl(icon: string | null): Promise<string | null> {
-  // Только загруженные в наш /uploads растровые иконки; gif пропускаем —
-  // satori не гарантирует его декодирование.
   if (!icon || !icon.startsWith("/uploads/") || icon.includes("..")) return null;
   const ext = icon.split(".").pop()?.toLowerCase();
-  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : null;
+  const mime =
+    ext === "png"  ? "image/png"  :
+    ext === "webp" ? "image/webp" :
+    ext === "jpg" || ext === "jpeg" ? "image/jpeg" : null;
   if (!mime) return null;
   try {
     const buf = await readFile(path.join(process.cwd(), "public", icon));
@@ -36,15 +56,24 @@ async function loadIconDataUrl(icon: string | null): Promise<string | null> {
   }
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ code: string }> }) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ code: string }> },
+) {
   const { code } = await params;
 
   let invite: {
     expiresAt: Date | null;
     maxUses: number;
     uses: number;
-    group: { name: string; description: string; icon: string | null; _count: { members: number; channels: number } };
+    group: {
+      name: string;
+      description: string;
+      icon: string | null;
+      _count: { members: number; channels: number };
+    };
   } | null = null;
+
   try {
     invite = await prisma.invite.findUnique({
       where: { code },
@@ -54,7 +83,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cod
         uses: true,
         group: {
           select: {
-            name: true, description: true, icon: true,
+            name: true,
+            description: true,
+            icon: true,
             _count: { select: { members: true, channels: true } },
           },
         },
@@ -69,14 +100,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cod
     (invite.expiresAt !== null && invite.expiresAt < new Date()) ||
     (invite.maxUses > 0 && invite.uses >= invite.maxUses);
 
-  const name = dead || !invite ? "Приглашение недоступно" : invite.group.name;
+  const name        = dead || !invite ? "Приглашение недоступно" : invite.group.name;
   const description = dead || !invite
     ? "Ссылка истекла или была отозвана"
     : invite.group.description?.trim() || "Сообщество на платформе TZ.Connect";
-  const members = dead || !invite ? 0 : invite.group._count.members;
+  const members  = dead || !invite ? 0 : invite.group._count.members;
   const channels = dead || !invite ? 0 : invite.group._count.channels;
-  const iconSrc = dead || !invite ? null : await loadIconDataUrl(invite.group.icon);
-  const letter = (name.trim().charAt(0) || "T").toUpperCase();
+  const iconSrc  = dead || !invite ? null : await loadIconDataUrl(invite.group.icon);
+  const letter   = (name.trim().charAt(0) || "T").toUpperCase();
+
+  const logoSrc = logoDataUrl("white", 0.92);
 
   return new ImageResponse(
     (
@@ -86,120 +119,254 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cod
           height: 630,
           display: "flex",
           alignItems: "center",
-          background: "linear-gradient(135deg, #07070b 0%, #10101a 45%, #0a0a12 100%)",
+          background: "#07090f",
           position: "relative",
           overflow: "hidden",
-          padding: "0 90px",
+          padding: "0 80px",
+          fontFamily: "system-ui, -apple-system, sans-serif",
         }}
       >
-        {/* Ауры акцентов */}
-        <div style={{ position: "absolute", top: -220, right: -160, width: 640, height: 640, borderRadius: "50%", background: `radial-gradient(circle, ${ACCENT}14 0%, transparent 70%)`, display: "flex" }} />
-        <div style={{ position: "absolute", bottom: -260, left: -180, width: 700, height: 700, borderRadius: "50%", background: `radial-gradient(circle, ${VIOLET}16 0%, transparent 70%)`, display: "flex" }} />
-        {/* Сетка */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: `linear-gradient(${ACCENT}07 1px, transparent 1px), linear-gradient(90deg, ${ACCENT}07 1px, transparent 1px)`, backgroundSize: "60px 60px", display: "flex" }} />
-        {/* Орбитальные кольца */}
-        <div style={{ position: "absolute", top: -120, right: -120, width: 460, height: 460, borderRadius: "50%", border: `2px solid ${ACCENT}22`, display: "flex" }} />
-        <div style={{ position: "absolute", top: -80, right: -80, width: 380, height: 380, borderRadius: "50%", border: `1px solid ${ACCENT}14`, display: "flex" }} />
-        <div style={{ position: "absolute", bottom: -150, left: -150, width: 520, height: 520, borderRadius: "50%", border: `2px solid ${VIOLET}1e`, display: "flex" }} />
-        {/* Верхняя акцентная линия */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: `linear-gradient(90deg, transparent, ${ACCENT}, ${VIOLET}, transparent)`, display: "flex" }} />
-        {/* Ромбы-декор */}
-        <div style={{ position: "absolute", top: 64, left: 64, width: 14, height: 14, background: ACCENT, transform: "rotate(45deg)", opacity: 0.35, display: "flex" }} />
-        <div style={{ position: "absolute", top: 102, left: 100, width: 8, height: 8, background: VIOLET, transform: "rotate(45deg)", opacity: 0.3, display: "flex" }} />
-        <div style={{ position: "absolute", bottom: 90, right: 88, width: 12, height: 12, background: VIOLET, transform: "rotate(45deg)", opacity: 0.3, display: "flex" }} />
-
-        {/* Аватар сообщества */}
+        {/* ── Background gradients ── */}
         <div
           style={{
-            width: 232,
-            height: 232,
-            borderRadius: 52,
+            position: "absolute", inset: 0, display: "flex",
+            background:
+              `radial-gradient(ellipse at 80% 20%, rgba(${A},.20) 0%, transparent 50%),` +
+              `radial-gradient(ellipse at 15% 85%, rgba(${A2},.18) 0%, transparent 52%),` +
+              `#07090f`,
+          }}
+        />
+        {/* ── Grid ── */}
+        <div
+          style={{
+            position: "absolute", inset: 0, display: "flex",
+            backgroundImage:
+              `linear-gradient(rgba(${A},.05) 1px, transparent 1px),` +
+              `linear-gradient(90deg, rgba(${A},.05) 1px, transparent 1px)`,
+            backgroundSize: "60px 60px",
+          }}
+        />
+        {/* ── Vignette ── */}
+        <div
+          style={{
+            position: "absolute", inset: 0, display: "flex",
+            background: "radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.7) 100%)",
+          }}
+        />
+
+        {/* ── Top accent bar ── */}
+        <div
+          style={{
+            position: "absolute", top: 0, left: 0, right: 0, height: 2, display: "flex",
+            background: `linear-gradient(90deg, transparent, ${ACCENT} 40%, ${ACCENT2} 60%, transparent)`,
+          }}
+        />
+
+        {/* ── Rings ── */}
+        <div style={{ position: "absolute", top: -160, right: -160, width: 580, height: 580, borderRadius: "50%", border: `1px solid rgba(${A},.1)`, display: "flex" }} />
+        <div style={{ position: "absolute", top: -100, right: -100, width: 440, height: 440, borderRadius: "50%", border: `1px solid rgba(${A},.07)`, display: "flex" }} />
+        <div style={{ position: "absolute", bottom: -180, left: -180, width: 620, height: 620, borderRadius: "50%", border: `1px solid rgba(${A2},.08)`, display: "flex" }} />
+
+        {/* ── Corner brackets ── */}
+        <div style={{ position: "absolute", top: 24, left: 24, width: 26, height: 26, borderTop: `1.5px solid rgba(${A},.35)`, borderLeft: `1.5px solid rgba(${A},.35)`, display: "flex" }} />
+        <div style={{ position: "absolute", top: 24, right: 24, width: 26, height: 26, borderTop: `1.5px solid rgba(${A2},.35)`, borderRight: `1.5px solid rgba(${A2},.35)`, display: "flex" }} />
+        <div style={{ position: "absolute", bottom: 24, left: 24, width: 26, height: 26, borderBottom: `1.5px solid rgba(${A},.35)`, borderLeft: `1.5px solid rgba(${A},.35)`, display: "flex" }} />
+        <div style={{ position: "absolute", bottom: 24, right: 24, width: 26, height: 26, borderBottom: `1.5px solid rgba(${A2},.35)`, borderRight: `1.5px solid rgba(${A2},.35)`, display: "flex" }} />
+
+        {/* ── Diamond accents ── */}
+        <div style={{ position: "absolute", top: 64, left: 64, width: 12, height: 12, background: ACCENT, transform: "rotate(45deg)", opacity: 0.3, display: "flex" }} />
+        <div style={{ position: "absolute", top: 100, left: 98, width: 7, height: 7, background: ACCENT2, transform: "rotate(45deg)", opacity: 0.2, display: "flex" }} />
+        <div style={{ position: "absolute", bottom: 88, right: 88, width: 10, height: 10, background: ACCENT2, transform: "rotate(45deg)", opacity: 0.25, display: "flex" }} />
+
+        {/* ─────────── Community avatar ─────────── */}
+        <div
+          style={{
+            width: 220,
+            height: 220,
+            borderRadius: 48,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             flexShrink: 0,
-            border: `3px solid ${ACCENT}55`,
-            boxShadow: `0 0 80px ${ACCENT}30`,
-            background: iconSrc ? "#0d0d14" : `linear-gradient(135deg, ${VIOLET} 0%, #4f46e5 100%)`,
+            border: `2px solid rgba(${A},.45)`,
+            boxShadow: `0 0 60px rgba(${A},.22), 0 0 120px rgba(${A2},.12)`,
+            background: iconSrc
+              ? "#0d0f18"
+              : `linear-gradient(135deg, ${ACCENT2}, #4f46e5)`,
             overflow: "hidden",
           }}
         >
           {iconSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={iconSrc} alt="" width={232} height={232} style={{ width: 232, height: 232, objectFit: "cover" }} />
+            <img
+              src={iconSrc}
+              alt=""
+              width={220}
+              height={220}
+              style={{ width: 220, height: 220, objectFit: "cover", display: "flex" }}
+            />
           ) : (
-            <div style={{ fontSize: 118, fontWeight: 800, color: "white", display: "flex" }}>{letter}</div>
+            <div style={{ fontSize: 108, fontWeight: 800, color: "white", display: "flex" }}>
+              {letter}
+            </div>
           )}
         </div>
 
-        {/* Текстовая колонка */}
-        <div style={{ display: "flex", flexDirection: "column", marginLeft: 64, flex: 1, minWidth: 0 }}>
+        {/* ─────────── Text column ─────────── */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            marginLeft: 60,
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          {/* Eyebrow */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              gap: 12,
               color: ACCENT,
-              fontSize: 22,
-              letterSpacing: "0.28em",
+              fontSize: 20,
+              letterSpacing: "0.24em",
               textTransform: "uppercase",
             }}
           >
-            <div style={{ width: 10, height: 10, background: ACCENT, transform: "rotate(45deg)", display: "flex" }} />
-            <div style={{ display: "flex" }}>Приглашение в сообщество</div>
+            {/* Mini triskelion */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={logoDataUrl(ACCENT, 0.8)}
+              width={18}
+              height={18}
+              style={{ display: "flex" }}
+              alt=""
+            />
+            <div style={{ display: "flex" }}>Приглашение · TZ.Connect</div>
           </div>
 
+          {/* Group name */}
           <div
             style={{
-              fontSize: name.length > 22 ? 56 : 72,
-              fontWeight: 800,
-              color: "white",
-              marginTop: 18,
+              fontSize: name.length > 22 ? 52 : 68,
+              fontWeight: 900,
+              color: "#f0f2ff",
+              marginTop: 16,
               lineHeight: 1.08,
-              letterSpacing: "-0.02em",
-              display: "block",
-              lineClamp: 2,
-              textShadow: `0 0 60px ${ACCENT}25`,
+              letterSpacing: "-0.025em",
+              display: "flex",
+              textShadow: `0 0 50px rgba(${A},.25)`,
             }}
           >
             {name}
           </div>
 
+          {/* Divider */}
           <div
             style={{
-              fontSize: 27,
-              color: "#9aa3b5",
-              marginTop: 18,
-              lineHeight: 1.4,
-              display: "block",
-              lineClamp: 2,
+              width: 120,
+              height: 1.5,
+              marginTop: 16,
+              marginBottom: 16,
+              display: "flex",
+              background: `linear-gradient(90deg, ${ACCENT}, ${ACCENT2}, transparent)`,
+            }}
+          />
+
+          {/* Description */}
+          <div
+            style={{
+              fontSize: 24,
+              color: "rgba(192,200,214,.85)",
+              lineHeight: 1.45,
+              display: "flex",
             }}
           >
-            {description.slice(0, 150)}
+            {description.slice(0, 120)}
           </div>
 
-          {/* Статистика */}
+          {/* Stats */}
           {!dead && (
-            <div style={{ display: "flex", gap: 14, marginTop: 30 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 22px", borderRadius: 16, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#e6ecf5", fontSize: 24 }}>
-                <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#22c55e", display: "flex" }} />
-                <div style={{ display: "flex" }}>{members} {plural(members, "участник", "участника", "участников")}</div>
+            <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "11px 20px",
+                  borderRadius: 12,
+                  background: "rgba(6,182,212,.08)",
+                  border: `1px solid rgba(${A},.2)`,
+                  color: "#e0e8f4",
+                  fontSize: 22,
+                }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "flex", boxShadow: "0 0 6px #22c55e" }} />
+                <div style={{ display: "flex" }}>
+                  {members} {plural(members, "участник", "участника", "участников")}
+                </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 22px", borderRadius: 16, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#e6ecf5", fontSize: 24 }}>
-                <div style={{ width: 9, height: 9, borderRadius: "50%", background: ACCENT, display: "flex" }} />
-                <div style={{ display: "flex" }}>{channels} {plural(channels, "канал", "канала", "каналов")}</div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "11px 20px",
+                  borderRadius: 12,
+                  background: `rgba(${A2},.08)`,
+                  border: `1px solid rgba(${A2},.2)`,
+                  color: "#e0e8f4",
+                  fontSize: 22,
+                }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: ACCENT2, display: "flex", boxShadow: `0 0 6px ${ACCENT2}` }} />
+                <div style={{ display: "flex" }}>
+                  {channels} {plural(channels, "канал", "канала", "каналов")}
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Подвал */}
-        <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-          <div style={{ width: 26, height: 26, borderRadius: "50%", border: `2px solid ${ACCENT}60`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: ACCENT }}>◈</div>
-          <div style={{ fontSize: 17, color: "#6b7280", letterSpacing: "0.12em", display: "flex" }}>trioz.ru · TZ.Connect</div>
+        {/* ── Footer ── */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 28, left: 0, right: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoSrc}
+            width={16}
+            height={16}
+            style={{ display: "flex", opacity: 0.4 }}
+            alt=""
+          />
+          <div
+            style={{
+              fontSize: 14,
+              color: `rgba(${A},.38)`,
+              letterSpacing: "0.14em",
+              display: "flex",
+            }}
+          >
+            TRIOZ.RU · TZ.CONNECT
+          </div>
+          <div
+            style={{
+              width: 4, height: 4, borderRadius: "50%",
+              background: ACCENT2, opacity: 0.4, display: "flex",
+            }}
+          />
         </div>
       </div>
     ),
-    { width: 1200, height: 630 }
+    { width: 1200, height: 630 },
   );
 }
