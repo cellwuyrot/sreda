@@ -557,7 +557,7 @@ export default function AboutPage() {
   }, []);
 
   const renderBlock = (block: AboutBlockRow) => {
-    const d = block.data as Record<string, unknown>;
+    const d = block.data as unknown;
     switch (block.type) {
       case "hero":     return <HeroBlock     key={block.id} data={d as HeroData} />;
       case "video":    return <VideoBlock     key={block.id} data={d as VideoData} />;
