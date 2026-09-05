@@ -6,7 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
-import { LEGAL_CONTACTS, LEGAL_DEFAULTS, LEGAL_SECTIONS, legalKeys } from "@/lib/legal";
+import {
+  legacyLegalOverrides,
+  LEGAL_CONTACTS,
+  LEGAL_DEFAULTS,
+  LEGAL_SECTIONS,
+  legalKeys,
+} from "@/lib/legal";
 
 /* FIX-LEGAL: Админ → Контент сайта → Правовая информация.
 
@@ -71,10 +77,24 @@ export default function AdminLegalPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(0);
+  /* Текст, который сейчас показывается на сайте из старого блока
+     «Правовая информация» (таблица AboutBlock). Без этого редактор
+     выглядел пустым, хотя на /about текст есть. */
+  const [legacy, setLegacy] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/");
   }, [session, status, router]);
+
+  useEffect(() => {
+    fetch("/api/about-blocks")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: Array<{ type?: string; data?: unknown }>) => {
+        const row = Array.isArray(rows) ? rows.find((b) => b?.type === "legal") : null;
+        setLegacy(legacyLegalOverrides(row?.data));
+      })
+      .catch(() => setLegacy({}));
+  }, []);
 
   useEffect(() => {
     fetch("/api/site-content")
@@ -130,7 +150,11 @@ export default function AdminLegalPage() {
     }
   };
 
-  const field = (f: FieldDef) => (
+  const field = (f: FieldDef) => {
+    const fromBlock = (legacy[f.key] ?? "").trim();
+    const placeholder = fromBlock || f.def;
+
+    return (
     <div key={f.key} className="space-y-1.5">
       <label className="block text-xs font-medium text-gray-400">{f.label}</label>
       {f.rows ? (
@@ -138,22 +162,27 @@ export default function AdminLegalPage() {
           value={values[f.key] ?? ""}
           onChange={(e) => set(f.key, e.target.value)}
           rows={f.rows}
-          placeholder={f.def}
+          placeholder={placeholder}
           className="input-field w-full font-mono text-xs leading-relaxed"
         />
       ) : (
         <input
           value={values[f.key] ?? ""}
           onChange={(e) => set(f.key, e.target.value)}
-          placeholder={f.def}
+          placeholder={placeholder}
           className="input-field w-full"
         />
       )}
       {!(values[f.key] ?? "").trim() && (
-        <p className="text-[11px] text-gray-600">Пусто — на сайте показывается текст по умолчанию.</p>
+        <p className="text-[11px] text-gray-600">
+          {fromBlock
+            ? "Пусто — на сайте показывается текст из старого блока (виден в поле серым)."
+            : "Пусто — на сайте показывается текст по умолчанию."}
+        </p>
       )}
     </div>
-  );
+    );
+  };
 
   if (loading || status === "loading") {
     return (
@@ -219,7 +248,9 @@ export default function AdminLegalPage() {
                 className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
               >
                 <span className="min-w-0 truncate text-sm text-white">
-                  {(values[titleKey] ?? "").trim() || s.title}
+                  {(values[titleKey] ?? "").trim() ||
+                    (legacy[titleKey] ?? "").trim() ||
+                    s.title}
                 </span>
                 <span className="shrink-0 text-xs text-gray-500">{open ? "свернуть" : "править"}</span>
               </button>
