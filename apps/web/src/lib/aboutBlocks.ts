@@ -112,7 +112,7 @@ export interface CtaData {
 
 // ─── Default data per block type ─────────────────────────────────────────────
 
-export const BLOCK_DEFAULTS: Record<BlockType, Record<string, unknown>> = {
+export const BLOCK_DEFAULTS: Record<BlockType, any> = {
   hero: {
     badge: 'Платформа открыта',
     title: 'TRIOZ',
