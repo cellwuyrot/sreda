@@ -17,6 +17,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  LEGAL_CONTACTS,
   LEGAL_DEFAULTS,
   LEGAL_SECTIONS,
   legalKeys,
@@ -82,5 +83,71 @@ describe("resolveLegalContent", () => {
     const content = resolveLegalContent();
     expect(content.contactEmail).toContain("@");
     expect(content.contactUrl).toMatch(/^https?:\/\//);
+  });
+
+  /* Почты. Раньше на сайте был один жёстко вбитый адрес без подписи:
+     медийных и сервисных контактов не было вовсе, а правка требовала
+     изменения кода. */
+  it("ИНВАРИАНТ: каждый канал обращений имеет подпись и почту", () => {
+    const content = resolveLegalContent();
+
+    expect(content.contacts).toHaveLength(LEGAL_CONTACTS.length);
+    expect(content.contacts.length).toBeGreaterThanOrEqual(2);
+
+    for (const contact of content.contacts) {
+      expect(contact.label.trim()).not.toBe("");
+      expect(contact.hint.trim()).not.toBe("");
+      expect(contact.email).toContain("@");
+    }
+
+    // На сайте обязательно есть и правовая, и медийная почта.
+    const keys = content.contacts.map((c) => c.key);
+    expect(keys).toContain("legal");
+    expect(keys).toContain("media");
+
+    // Почты не дублируются — иначе список теряет смысл.
+    const emails = content.contacts.map((c) => c.email);
+    expect(new Set(emails).size).toBe(emails.length);
+  });
+
+  it("почты и подписи из админки перебивают значения по умолчанию", () => {
+    const content = resolveLegalContent({
+      [legalKeys.contactEmail("legal")]: "pravo@trioz.ru",
+      [legalKeys.contactLabel("media")]: "Пресс-служба",
+      [legalKeys.contactEmail("media")]: "press@trioz.ru",
+      [legalKeys.contactUrl]: "https://trioz.ru/about",
+    });
+
+    const byKey = Object.fromEntries(content.contacts.map((c) => [c.key, c]));
+
+    expect(byKey.legal.email).toBe("pravo@trioz.ru");
+    expect(byKey.media.label).toBe("Пресс-служба");
+    expect(byKey.media.email).toBe("press@trioz.ru");
+    expect(content.contactUrl).toBe("https://trioz.ru/about");
+
+    // Почта юридического канала — та же, что в коротких ссылках подвала.
+    expect(content.contactEmail).toBe("pravo@trioz.ru");
+
+    // Нетронутые каналы остаются из кода.
+    expect(byKey.support.email).toBe(
+      LEGAL_CONTACTS.find((c) => c.key === "support")!.email,
+    );
+  });
+
+  it("ИНВАРИАНТ: пустое поле почты не оставляет сайт без контакта", () => {
+    const content = resolveLegalContent({
+      [legalKeys.contactEmail("legal")]: "",
+      [legalKeys.contactEmail("media")]: "   ",
+      [legalKeys.contactLabel("support")]: "\n \n",
+      [legalKeys.contactUrl]: "",
+    });
+
+    const byKey = Object.fromEntries(content.contacts.map((c) => [c.key, c]));
+    const defaults = Object.fromEntries(LEGAL_CONTACTS.map((c) => [c.key, c]));
+
+    expect(byKey.legal.email).toBe(defaults.legal.email);
+    expect(byKey.media.email).toBe(defaults.media.email);
+    expect(byKey.support.label).toBe(defaults.support.label);
+    expect(content.contactUrl).toBe(LEGAL_DEFAULTS.contactUrl);
   });
 });
