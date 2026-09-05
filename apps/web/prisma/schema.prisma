@@ -2440,20 +2440,14 @@ model EmailDomainWhitelist {
 /// Каждый блок = заголовок + описание + опциональное медиа (фото/видео),
 /// настраиваемый макет, форма, свечение и отступ.
 model AboutBlock {
-  id          String   @id @default(cuid())
-  order       Int      @default(0)
-  title       String   @default("")
-  description String   @default("") @db.Text
-  mediaUrl    String?
-  mediaType   String   @default("image")    // image | video
-  layout      String   @default("text-left") // text-left | text-right | centered
-  textAlign   String   @default("left")      // left | center | right
-  glowColor   String   @default("#8b5cf6")
-  shape       String   @default("rectangle") // rectangle | rounded | skewed-left | skewed-right | hexagon | diamond
-  spacingTop  Int      @default(60)
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  type      String   // hero | video | stats | gallery | bento | timeline | team | cta
+  position  Int      @default(0)
+  data      String   @default("{}") @db.Text
+  visible   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([order])
+  @@index([position])
+  @@index([type])
 }
