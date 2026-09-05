@@ -1,0 +1,16 @@
+// ────────────────────────────────────────────────────────────────────────────
+// Добавьте эту модель в конец вашего prisma/schema.prisma
+// ────────────────────────────────────────────────────────────────────────────
+
+model AboutBlock {
+  id        String   @id @default(cuid())
+  type      String   // hero | video | stats | gallery | bento | timeline | team | cta
+  position  Int      @default(0)
+  data      String   @db.Text   // JSON-строка с данными блока
+  visible   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([position])
+  @@index([type])
+}
