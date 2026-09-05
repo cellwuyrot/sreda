@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
-import { LEGAL_DEFAULTS, LEGAL_SECTIONS, legalKeys } from "@/lib/legal";
+import { LEGAL_CONTACTS, LEGAL_DEFAULTS, LEGAL_SECTIONS, legalKeys } from "@/lib/legal";
 
 /* FIX-LEGAL: Админ → Контент сайта → Правовая информация.
 
@@ -32,8 +32,32 @@ const HEAD_FIELDS: FieldDef[] = [
   },
 ];
 
+/* Опубликованные почты. Раньше адреса жили только в разметке /about
+   (один legal@trioz.ru), поэтому медийной и сервисной почты на сайте не было,
+   а правка требовала изменения кода. Теперь это настройки siteConfig. */
+const CONTACT_FIELDS: FieldDef[] = [
+  ...LEGAL_CONTACTS.flatMap((c) => [
+    {
+      key: legalKeys.contactLabel(c.key),
+      label: `Название канала «${c.label}»`,
+      def: c.label,
+    },
+    {
+      key: legalKeys.contactEmail(c.key),
+      label: `Почта — ${c.label} (${c.hint})`,
+      def: c.email,
+    },
+  ]),
+  {
+    key: legalKeys.contactUrl,
+    label: "Адрес сайта в контактах",
+    def: LEGAL_DEFAULTS.contactUrl,
+  },
+];
+
 const ALL_KEYS = [
   ...HEAD_FIELDS.map((f) => f.key),
+  ...CONTACT_FIELDS.map((f) => f.key),
   ...LEGAL_SECTIONS.flatMap((_s, i) => [legalKeys.sectionTitle(i), legalKeys.sectionContent(i)]),
 ];
 
@@ -156,6 +180,30 @@ export default function AdminLegalPage() {
       <div className="glass-card space-y-4 p-5">
         <h2 className="text-sm font-semibold text-white">Шапка документа</h2>
         {HEAD_FIELDS.map(field)}
+      </div>
+
+      <div className="mt-5 glass-card space-y-4 p-5">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Опубликованные почты</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Показываются дважды на /about: подписанным списком в блоке
+            правовой информации и короткими ссылками в самом низу страницы.
+          </p>
+        </div>
+        {CONTACT_FIELDS.map(field)}
+      </div>
+
+      <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-gray-400">
+        🧱 Этот раздел и «О проекте» — независимые источники и оба видны на{" "}
+        <Link href="/about" className="text-accent hover:underline">
+          /about
+        </Link>
+        : блоки из{" "}
+        <Link href="/admin/content" className="text-accent hover:underline">
+          О проекте
+        </Link>{" "}
+        рисуются в теле страницы, а текст соглашения и почты с этой страницы —
+        в подвале. Один раздел не отключает другой.
       </div>
 
       <div className="mt-5 space-y-2">
