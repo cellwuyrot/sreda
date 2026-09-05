@@ -613,20 +613,6 @@ function PrivacySection() {
   );
 }
 
-// ---------- Build default blocks for fallback ----------
-
-function makeDefaultBlocks(): AboutBlockRow[] {
-  return BLOCK_TYPES.map((type: BlockType, i: number) => ({
-    id: `default-${type}`,
-    type,
-    position: i,
-    data: BLOCK_DEFAULTS[type] as unknown,
-    visible: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }));
-}
-
 // ---------- Page ----------
 
 export default function AboutPage() {
