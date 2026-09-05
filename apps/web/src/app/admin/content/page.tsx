@@ -951,18 +951,18 @@ export default function AdminContentPage() {
                     {BLOCK_LABELS[block.type as BlockType]?.slice(2)}
                   </div>
                   <div className="text-xs text-neutral-600 truncate">
-                    {block.type === "hero" && ((block.data as HeroData).title || "—")}
+                    {block.type === "hero" && ((block.data as unknown as HeroData).title || "—")}
                     {block.type === "gallery" &&
-                      `${((block.data as GalleryData).items ?? []).length} медиафайлов`}
+                      `${((block.data as unknown as GalleryData).items ?? []).length} медиафайлов`}
                     {block.type === "bento" &&
-                      `${((block.data as BentoData).items ?? []).length} карточек`}
+                      `${((block.data as unknown as BentoData).items ?? []).length} карточек`}
                     {block.type === "stats" &&
-                      `${((block.data as StatsData).items ?? []).length} показателей`}
+                      `${((block.data as unknown as StatsData).items ?? []).length} показателей`}
                     {block.type === "timeline" &&
-                      `${((block.data as TimelineData).items ?? []).length} этапов`}
+                      `${((block.data as unknown as TimelineData).items ?? []).length} этапов`}
                     {block.type === "team" &&
-                      `${((block.data as TeamData).members ?? []).length} участников`}
-                    {block.type === "cta" && ((block.data as CtaData).title || "—")}
+                      `${((block.data as unknown as TeamData).members ?? []).length} участников`}
+                    {block.type === "cta" && ((block.data as unknown as CtaData).title || "—")}
                   </div>
                 </div>
 
