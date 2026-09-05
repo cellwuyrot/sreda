@@ -1,9 +1,12 @@
+
 "use client";
 
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
+import DesktopDownload from "@/components/DesktopDownload";
+import { LEGAL_SECTIONS, LEGAL_DEFAULTS } from "@/lib/legal";
 import {
   BLOCK_DEFAULTS,
   BLOCK_TYPES,
@@ -344,7 +347,7 @@ function TeamBlock({ data }: { data: TeamData }) {
                 className="mb-4 flex h-16 w-16 items-center justify-center rounded-full text-3xl border-2"
                 style={{ background: `${m.color ?? "#6366f1"}14`, borderColor: `${m.color ?? "#6366f1"}40` }}
               >
-                {m.emoji ?? "👤"}
+                {m.emoji ?? "\u{1F464}"}
               </div>
             )}
             <div className="mb-1 text-[15px] font-bold text-white">{m.name}</div>
@@ -398,6 +401,50 @@ function CtaBlock({ data }: { data: CtaData }) {
   );
 }
 
+// ---------- Privacy / Legal section ----------
+
+function PrivacySection() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="px-6 md:px-10 lg:px-16 py-16 border-t border-indigo-500/10">
+      <motion.div {...fadeUp()}>
+        <SectionLabel>Правовая информация</SectionLabel>
+        <SectionTitle className="text-3xl md:text-4xl">{LEGAL_DEFAULTS.heading}</SectionTitle>
+        <p className="mb-6 text-sm text-neutral-500">{LEGAL_DEFAULTS.subheading}</p>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2.5 text-sm font-medium text-neutral-300 hover:bg-white/[0.07] transition-colors mb-6"
+        >
+          <svg className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          {open ? "Скрыть" : "Читать полностью"}
+        </button>
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="space-y-8 pb-4">
+                {LEGAL_SECTIONS.map((section, i) => (
+                  <div key={i}>
+                    <h3 className="text-base font-bold text-white mb-3">{section.title}</h3>
+                    <div className="text-sm leading-relaxed text-neutral-500 whitespace-pre-line">{section.content}</div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </section>
+  );
+}
+
 // ---------- Build default blocks for fallback ----------
 
 function makeDefaultBlocks(): AboutBlockRow[] {
@@ -423,7 +470,6 @@ export default function AboutPage() {
     fetch("/api/about-blocks")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: AboutBlockRow[]) => {
-        // If DB has no blocks yet, show defaults so the page is never blank
         setBlocks(data.length > 0 ? data : makeDefaultBlocks());
       })
       .catch(() => {
@@ -499,6 +545,14 @@ export default function AboutPage() {
           <>{blocks.map(renderBlock)}</>
         )}
       </AnimatePresence>
+
+      {/* ── Download section ───────────────────────────────────── */}
+      <div className="px-6 md:px-10 lg:px-16">
+        <DesktopDownload />
+      </div>
+
+      {/* ── Privacy / Legal section ────────────────────────────── */}
+      <PrivacySection />
 
       <footer className="border-t border-indigo-500/10 px-6 py-8 flex items-center justify-between text-xs text-neutral-700">
         <div className="flex items-center gap-2">

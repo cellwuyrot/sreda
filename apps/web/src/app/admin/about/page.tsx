@@ -1,15 +1,590 @@
+
 "use client";
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
-import type { AboutBlockRow, BlockType } from "@/lib/aboutBlocks";
+import type {
+  AboutBlockRow,
+  BlockType,
+  HeroData,
+  VideoData,
+  StatsData,
+  StatsItem,
+  GalleryData,
+  GalleryItem,
+  BentoData,
+  BentoItem,
+  TimelineData,
+  TimelineItem,
+  TeamData,
+  TeamMember,
+  CtaData,
+} from "@/lib/aboutBlocks";
 import { BLOCK_DEFAULTS, BLOCK_LABELS, BLOCK_TYPES } from "@/lib/aboutBlocks";
 
-// ─── Tiny Toast ──────────────────────────────────────────────────────────────
+// ─── tiny UI helpers ──────────────────────────────────────────────────────────
+
+const inputCls =
+  "w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-indigo-500/60 focus:outline-none transition-colors";
+const labelCls =
+  "block mb-1 text-[11px] font-semibold uppercase tracking-widest text-neutral-500";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-4">
+      <label className={labelCls}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function Inp({ value, onChange, placeholder, type = "text" }: {
+  value?: string | number;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  return (
+    <input
+      className={inputCls}
+      type={type}
+      value={value ?? ""}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+function TextArea({ value, onChange, rows = 3, placeholder }: {
+  value?: string;
+  onChange: (v: string) => void;
+  rows?: number;
+  placeholder?: string;
+}) {
+  return (
+    <textarea
+      className={inputCls + " resize-y"}
+      rows={rows}
+      value={value ?? ""}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+// ─── Block-specific visual editors ──────────────────────────────────────────
+
+function HeroEditor({ data, onChange }: { data: HeroData; onChange: (d: HeroData) => void }) {
+  const upd = (patch: Partial<HeroData>) => onChange({ ...data, ...patch });
+  return (
+    <>
+      <Field label="Badge (верхняя строка-метка)">
+        <Inp value={data.badge} onChange={(v) => upd({ badge: v })} placeholder="Платформа открыта" />
+      </Field>
+      <Field label="Главный заголовок">
+        <Inp value={data.title} onChange={(v) => upd({ title: v })} placeholder="TRIOZ" />
+      </Field>
+      <Field label="Подзаголовок">
+        <Inp value={data.subtitle} onChange={(v) => upd({ subtitle: v })} placeholder="Экосистема проектов" />
+      </Field>
+      <Field label="Описание (краткий текст)">
+        <TextArea value={data.description} onChange={(v) => upd({ description: v })} rows={3} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Кнопка 1 — текст">
+          <Inp value={data.primaryCta?.label} onChange={(v) => upd({ primaryCta: { ...data.primaryCta!, label: v } })} placeholder="Начать" />
+        </Field>
+        <Field label="Кнопка 1 — ссылка (href)">
+          <Inp value={data.primaryCta?.href} onChange={(v) => upd({ primaryCta: { ...data.primaryCta!, href: v } })} placeholder="/connect" />
+        </Field>
+        <Field label="Кнопка 2 — текст">
+          <Inp value={data.secondaryCta?.label} onChange={(v) => upd({ secondaryCta: { ...data.secondaryCta, label: v } })} />
+        </Field>
+        <Field label="Кнопка 2 — href или video для скролла к видео">
+          <Inp
+            value={data.secondaryCta?.action === "video" ? "video" : data.secondaryCta?.href ?? ""}
+            onChange={(v) =>
+              upd({
+                secondaryCta: {
+                  label: data.secondaryCta?.label ?? "",
+                  ...(v === "video" ? { action: "video" } : { href: v }),
+                },
+              })
+            }
+            placeholder="/projects или video"
+          />
+        </Field>
+      </div>
+    </>
+  );
+}
+
+function VideoEditor({ data, onChange }: { data: VideoData; onChange: (d: VideoData) => void }) {
+  const upd = (patch: Partial<VideoData>) => onChange({ ...data, ...patch });
+  return (
+    <>
+      <Field label="YouTube ID (например: dQw4w9WgXcQ)">
+        <Inp value={data.youtubeId} onChange={(v) => upd({ youtubeId: v, url: "" })} placeholder="dQw4w9WgXcQ" />
+      </Field>
+      <Field label="Или прямой URL видеофайла (.mp4 / .webm)">
+        <Inp value={data.url} onChange={(v) => upd({ url: v, youtubeId: "" })} placeholder="/uploads/about/video.mp4" />
+      </Field>
+      <Field label="Подпись под видео">
+        <Inp value={data.title} onChange={(v) => upd({ title: v })} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Длительность (для отображения)">
+          <Inp value={data.duration} onChange={(v) => upd({ duration: v })} placeholder="3:47" />
+        </Field>
+        <Field label="Тег (emoji + текст)">
+          <Inp value={data.tag} onChange={(v) => upd({ tag: v })} placeholder="🎬 Трейлер" />
+        </Field>
+      </div>
+    </>
+  );
+}
+
+function StatsEditor({ data, onChange }: { data: StatsData; onChange: (d: StatsData) => void }) {
+  const items = data.items ?? [];
+  const updItem = (i: number, patch: Partial<StatsItem>) =>
+    onChange({ ...data, items: items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
+  return (
+    <>
+      <p className="mb-3 text-xs text-neutral-600">Цифры и подписи под ними (например: 1200+ / участников)</p>
+      {items.map((it, i) => (
+        <div key={i} className="flex gap-2 items-end mb-2">
+          <div className="w-32">
+            <Field label={`Значение ${i + 1}`}>
+              <Inp value={it.value} onChange={(v) => updItem(i, { value: v })} placeholder="1200+" />
+            </Field>
+          </div>
+          <div className="flex-1">
+            <Field label="Подпись">
+              <Inp value={it.label} onChange={(v) => updItem(i, { label: v })} placeholder="участников" />
+            </Field>
+          </div>
+          <button
+            className="mb-4 px-2 text-red-500 hover:text-red-400 text-xl leading-none"
+            onClick={() => onChange({ ...data, items: items.filter((_, j) => j !== i) })}
+          >×</button>
+        </div>
+      ))}
+      <button
+        className="mt-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+        onClick={() => onChange({ ...data, items: [...items, { value: "", label: "" }] })}
+      >+ Добавить показатель</button>
+    </>
+  );
+}
+
+function GalleryEditor({
+  data, onChange, blockId,
+}: { data: GalleryData; onChange: (d: GalleryData) => void; blockId: string }) {
+  const items = data.items ?? [];
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/about-media", { method: "POST", body: fd });
+      if (!res.ok) throw new Error("upload failed");
+      const json = (await res.json()) as { url: string; mediaType: string };
+      const newItem: GalleryItem = {
+        id: Date.now().toString(),
+        mediaType: json.mediaType as GalleryItem["mediaType"],
+        url: json.url,
+        caption: file.name.replace(/\.[^.]+$/, ""),
+      };
+      onChange({ ...data, items: [...items, newItem] });
+    } catch {
+      alert("Ошибка загрузки файла");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const updItem = (id: string, patch: Partial<GalleryItem>) =>
+    onChange({ ...data, items: items.map((it) => (it.id === id ? { ...it, ...patch } : it)) });
+  const removeItem = (id: string) =>
+    onChange({ ...data, items: items.filter((it) => it.id !== id) });
+
+  // blockId used to scope uploads if needed
+  void blockId;
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Заголовок галереи">
+          <Inp value={data.title} onChange={(v) => onChange({ ...data, title: v })} />
+        </Field>
+        <Field label="Подзаголовок">
+          <Inp value={data.subtitle} onChange={(v) => onChange({ ...data, subtitle: v })} />
+        </Field>
+      </div>
+
+      {/* Drag & Drop upload zone */}
+      <div
+        className="mb-4 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/10 p-6 cursor-pointer hover:border-indigo-500/40 transition-colors"
+        onClick={() => fileRef.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const f = e.dataTransfer.files[0];
+          if (f) upload(f);
+        }}
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          accept="image/*,video/*,.gif"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload(f);
+          }}
+        />
+        {uploading ? (
+          <div className="flex items-center gap-2 text-sm text-indigo-400">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+            Загружаем...
+          </div>
+        ) : (
+          <>
+            <div className="mb-2 text-2xl">📁</div>
+            <p className="text-sm text-neutral-500">Перетащите файл или нажмите для выбора</p>
+            <p className="text-xs text-neutral-700 mt-1">JPG, PNG, WebP, GIF, MP4, WebM · до 200 MB</p>
+          </>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.id} className="flex gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+            <div className="h-14 w-20 flex-shrink-0 overflow-hidden rounded-md bg-neutral-900">
+              {item.mediaType === "video" ? (
+                <video src={item.url} className="h-full w-full object-cover" muted />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.url} alt="" className="h-full w-full object-cover" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0 grid grid-cols-2 gap-2">
+              <input
+                className={inputCls + " text-xs"}
+                value={item.caption ?? ""}
+                placeholder="Подпись"
+                onChange={(e) => updItem(item.id, { caption: e.target.value })}
+              />
+              <input
+                className={inputCls + " text-xs"}
+                value={item.tag ?? ""}
+                placeholder="Тег (необязательно)"
+                onChange={(e) => updItem(item.id, { tag: e.target.value })}
+              />
+            </div>
+            <button
+              className="text-red-500 hover:text-red-400 text-xl leading-none self-start"
+              onClick={() => removeItem(item.id)}
+            >×</button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function BentoEditor({ data, onChange }: { data: BentoData; onChange: (d: BentoData) => void }) {
+  const items = data.items ?? [];
+  const updItem = (i: number, patch: Partial<BentoItem>) =>
+    onChange({ ...data, items: items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Заголовок раздела">
+          <Inp value={data.title} onChange={(v) => onChange({ ...data, title: v })} />
+        </Field>
+        <Field label="Подзаголовок">
+          <Inp value={data.subtitle} onChange={(v) => onChange({ ...data, subtitle: v })} />
+        </Field>
+      </div>
+      {items.map((it, i) => (
+        <div key={it.key} className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-white">{it.icon} {it.title || "Карточка"}</span>
+            <button
+              className="text-red-500 hover:text-red-400 text-sm"
+              onClick={() => onChange({ ...data, items: items.filter((_, j) => j !== i) })}
+            >Удалить</button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <Field label="Иконка (emoji)">
+              <Inp value={it.icon} onChange={(v) => updItem(i, { icon: v })} placeholder="💬" />
+            </Field>
+            <Field label="Заголовок карточки">
+              <Inp value={it.title} onChange={(v) => updItem(i, { title: v })} />
+            </Field>
+            <Field label="Цвет (hex)">
+              <div className="flex items-center gap-2">
+                <Inp value={it.color} onChange={(v) => updItem(i, { color: v })} placeholder="#6366f1" />
+                <div
+                  className="h-7 w-7 flex-shrink-0 rounded-lg border border-white/10"
+                  style={{ background: it.color ?? "#6366f1" }}
+                />
+              </div>
+            </Field>
+          </div>
+          <Field label="Описание">
+            <TextArea rows={2} value={it.description} onChange={(v) => updItem(i, { description: v })} />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Ссылка (href)">
+              <Inp value={it.href} onChange={(v) => updItem(i, { href: v })} placeholder="/connect" />
+            </Field>
+            <Field label="Ширина">
+              <button
+                className={`w-full rounded-lg px-3 py-2 text-xs font-semibold border transition-colors ${
+                  it.wide
+                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                    : "border-white/10 text-neutral-500"
+                }`}
+                onClick={() => updItem(i, { wide: !it.wide })}
+              >
+                {it.wide ? "✓ Широкая (2 колонки)" : "Обычная (1 колонка)"}
+              </button>
+            </Field>
+          </div>
+        </div>
+      ))}
+      <button
+        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+        onClick={() =>
+          onChange({
+            ...data,
+            items: [
+              ...items,
+              { key: Date.now().toString(), icon: "✨", title: "Новый раздел", description: "", color: "#6366f1" },
+            ],
+          })
+        }
+      >+ Добавить карточку</button>
+    </>
+  );
+}
+
+function TimelineEditor({
+  data, onChange,
+}: { data: TimelineData; onChange: (d: TimelineData) => void }) {
+  const items = data.items ?? [];
+  const updItem = (i: number, patch: Partial<TimelineItem>) =>
+    onChange({ ...data, items: items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
+  return (
+    <>
+      <Field label="Заголовок секции">
+        <Inp value={data.title} onChange={(v) => onChange({ ...data, title: v })} />
+      </Field>
+      {items.map((it, i) => (
+        <div key={i} className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
+          <div className="grid grid-cols-4 gap-2 mb-2">
+            <Field label="Год">
+              <Inp value={it.year} onChange={(v) => updItem(i, { year: v })} placeholder="2024" />
+            </Field>
+            <div className="col-span-2">
+              <Field label="Заголовок этапа">
+                <Inp value={it.title} onChange={(v) => updItem(i, { title: v })} />
+              </Field>
+            </div>
+            <Field label="Цвет">
+              <div className="flex items-center gap-2">
+                <Inp value={it.color} onChange={(v) => updItem(i, { color: v })} placeholder="#6366f1" />
+                <div
+                  className="h-7 w-7 flex-shrink-0 rounded-lg border border-white/10"
+                  style={{ background: it.color ?? "#6366f1" }}
+                />
+              </div>
+            </Field>
+          </div>
+          <Field label="Описание">
+            <TextArea rows={2} value={it.description} onChange={(v) => updItem(i, { description: v })} />
+          </Field>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-xs text-neutral-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={!!it.current}
+                onChange={(e) => updItem(i, { current: e.target.checked })}
+                className="accent-indigo-500"
+              />
+              Текущий этап (пульсирующий маркер)
+            </label>
+            <button
+              className="text-red-500 hover:text-red-400 text-xs"
+              onClick={() => onChange({ ...data, items: items.filter((_, j) => j !== i) })}
+            >Удалить</button>
+          </div>
+        </div>
+      ))}
+      <button
+        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+        onClick={() =>
+          onChange({
+            ...data,
+            items: [
+              ...items,
+              { year: new Date().getFullYear().toString(), title: "Новый этап", color: "#6366f1" },
+            ],
+          })
+        }
+      >+ Добавить этап</button>
+    </>
+  );
+}
+
+function TeamEditor({ data, onChange }: { data: TeamData; onChange: (d: TeamData) => void }) {
+  const members = data.members ?? [];
+  const updMember = (i: number, patch: Partial<TeamMember>) =>
+    onChange({ ...data, members: members.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
+  return (
+    <>
+      <Field label="Заголовок секции">
+        <Inp value={data.title} onChange={(v) => onChange({ ...data, title: v })} />
+      </Field>
+      {members.map((m, i) => (
+        <div key={m.id} className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-white">{m.emoji ?? "👤"} {m.name || "Участник"}</span>
+            <button
+              className="text-red-500 hover:text-red-400 text-sm"
+              onClick={() => onChange({ ...data, members: members.filter((_, j) => j !== i) })}
+            >Удалить</button>
+          </div>
+          <div className="grid grid-cols-4 gap-2 mb-2">
+            <Field label="Emoji">
+              <Inp value={m.emoji} onChange={(v) => updMember(i, { emoji: v })} placeholder="👤" />
+            </Field>
+            <div className="col-span-2">
+              <Field label="Имя">
+                <Inp value={m.name} onChange={(v) => updMember(i, { name: v })} placeholder="Иван Иванов" />
+              </Field>
+            </div>
+            <Field label="Роль">
+              <Inp value={m.role} onChange={(v) => updMember(i, { role: v })} placeholder="Разработчик" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Аватар URL (необязательно)">
+              <Inp value={m.avatarUrl} onChange={(v) => updMember(i, { avatarUrl: v })} placeholder="/uploads/..." />
+            </Field>
+            <Field label="Цвет">
+              <div className="flex items-center gap-2">
+                <Inp value={m.color} onChange={(v) => updMember(i, { color: v })} placeholder="#6366f1" />
+                <div
+                  className="h-7 w-7 flex-shrink-0 rounded-lg border border-white/10"
+                  style={{ background: m.color ?? "#6366f1" }}
+                />
+              </div>
+            </Field>
+          </div>
+        </div>
+      ))}
+      <button
+        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mr-4"
+        onClick={() =>
+          onChange({
+            ...data,
+            members: [
+              ...members,
+              { id: Date.now().toString(), name: "Новый участник", role: "", emoji: "👤", color: "#6366f1" },
+            ],
+          })
+        }
+      >+ Добавить участника</button>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Field label="Текст кнопки &quot;Присоединиться&quot;">
+          <Inp value={data.joinLabel} onChange={(v) => onChange({ ...data, joinLabel: v })} placeholder="Присоединиться" />
+        </Field>
+        <Field label="Ссылка кнопки">
+          <Inp value={data.joinHref} onChange={(v) => onChange({ ...data, joinHref: v })} placeholder="/connect" />
+        </Field>
+      </div>
+    </>
+  );
+}
+
+function CtaEditor({ data, onChange }: { data: CtaData; onChange: (d: CtaData) => void }) {
+  const upd = (patch: Partial<CtaData>) => onChange({ ...data, ...patch });
+  return (
+    <>
+      <Field label="Главный заголовок CTA">
+        <Inp value={data.title} onChange={(v) => upd({ title: v })} placeholder="Станьте частью TRIOZ" />
+      </Field>
+      <Field label="Подзаголовок">
+        <Inp value={data.subtitle} onChange={(v) => upd({ subtitle: v })} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Кнопка 1 — текст">
+          <Inp value={data.primaryCta?.label} onChange={(v) => upd({ primaryCta: { ...data.primaryCta!, label: v } })} />
+        </Field>
+        <Field label="Кнопка 1 — ссылка">
+          <Inp value={data.primaryCta?.href} onChange={(v) => upd({ primaryCta: { ...data.primaryCta!, href: v } })} placeholder="/auth/signin" />
+        </Field>
+        <Field label="Кнопка 2 — текст">
+          <Inp value={data.secondaryCta?.label} onChange={(v) => upd({ secondaryCta: { ...data.secondaryCta!, label: v } })} />
+        </Field>
+        <Field label="Кнопка 2 — ссылка">
+          <Inp value={data.secondaryCta?.href} onChange={(v) => upd({ secondaryCta: { ...data.secondaryCta!, href: v } })} placeholder="/projects" />
+        </Field>
+      </div>
+    </>
+  );
+}
+
+// Dispatches the right form component based on block type
+function BlockEditorForm({
+  block,
+  blockData,
+  onChange,
+}: {
+  block: AboutBlockRow;
+  blockData: unknown;
+  onChange: (d: unknown) => void;
+}) {
+  const d = blockData;
+  switch (block.type) {
+    case "hero":
+      return <HeroEditor data={d as HeroData} onChange={onChange as (d: HeroData) => void} />;
+    case "video":
+      return <VideoEditor data={d as VideoData} onChange={onChange as (d: VideoData) => void} />;
+    case "stats":
+      return <StatsEditor data={d as StatsData} onChange={onChange as (d: StatsData) => void} />;
+    case "gallery":
+      return (
+        <GalleryEditor
+          data={d as GalleryData}
+          onChange={onChange as (d: GalleryData) => void}
+          blockId={block.id}
+        />
+      );
+    case "bento":
+      return <BentoEditor data={d as BentoData} onChange={onChange as (d: BentoData) => void} />;
+    case "timeline":
+      return <TimelineEditor data={d as TimelineData} onChange={onChange as (d: TimelineData) => void} />;
+    case "team":
+      return <TeamEditor data={d as TeamData} onChange={onChange as (d: TeamData) => void} />;
+    case "cta":
+      return <CtaEditor data={d as CtaData} onChange={onChange as (d: CtaData) => void} />;
+    default:
+      return <p className="text-neutral-500 text-sm">Редактор для этого типа блока не реализован.</p>;
+  }
+}
+
+// ─── Toast ──────────────────────────────────────────────────────────────────
 
 type ToastType = { msg: string; ok: boolean };
 
@@ -28,124 +603,122 @@ function Toast({ msg, ok }: ToastType) {
   );
 }
 
-// ─── JSON editor modal ───────────────────────────────────────────────────────
+// ─── Visual Edit Modal (replaces JSON textarea) ──────────────────────────────
 
 interface EditModalProps {
   block: AboutBlockRow;
   onClose: () => void;
-  onSave: (id: string, type: BlockType, data: Record<string, unknown>, visible: boolean) => Promise<void>;
+  onSave: (id: string, type: BlockType, data: unknown, visible: boolean) => Promise<void>;
 }
 
 function EditModal({ block, onClose, onSave }: EditModalProps) {
   const [type, setType] = useState<BlockType>(block.type);
   const [visible, setVisible] = useState(block.visible);
-  const [json, setJson] = useState(
-    JSON.stringify(block.data as Record<string, unknown>, null, 2),
+  // When type changes we reset data to defaults; otherwise start with block data
+  const [blockData, setBlockData] = useState<unknown>(
+    block.data ?? BLOCK_DEFAULTS[block.type],
   );
-  const [jsonErr, setJsonErr] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleTypeChange = (t: BlockType) => {
     setType(t);
-    // Pre-fill with defaults for the new type when user switches
-    setJson(JSON.stringify(BLOCK_DEFAULTS[t] as unknown, null, 2));
-    setJsonErr("");
+    setBlockData(BLOCK_DEFAULTS[t]);
   };
 
   const handleSave = async () => {
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(json) as Record<string, unknown>;
-    } catch {
-      setJsonErr("Неверный JSON");
-      return;
-    }
     setSaving(true);
-    await onSave(block.id, type, parsed, visible);
+    await onSave(block.id, type, blockData, visible);
     setSaving(false);
     onClose();
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,.65)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
+      style={{ background: "rgba(0,0,0,.7)" }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-2xl rounded-2xl border border-white/10 bg-neutral-900 p-6 shadow-2xl"
+        initial={{ opacity: 0, scale: 0.96, y: -10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        className="relative w-full max-w-2xl rounded-2xl border border-white/10 bg-neutral-900 p-6 shadow-2xl my-8"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">Редактировать блок</h3>
-          <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* Header */}
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-white">✏️ Редактировать блок</h3>
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-white/10 p-1.5 text-neutral-500 hover:text-white transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
         {/* Type selector */}
-        <div className="mb-4">
-          <label className="mb-1.5 block text-xs text-neutral-400">Тип блока</label>
-          <select
-            value={type}
-            onChange={(e) => handleTypeChange(e.target.value as BlockType)}
-            className="w-full rounded-xl border border-white/10 bg-neutral-800 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
-          >
-            {BLOCK_TYPES.map((t) => (
-              <option key={t} value={t}>{BLOCK_LABELS[t]}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Visible toggle */}
-        <label className="mb-4 flex cursor-pointer items-center gap-3">
-          <div
-            onClick={() => setVisible((v) => !v)}
-            className={`relative h-6 w-11 rounded-full transition-colors ${
-              visible ? "bg-indigo-600" : "bg-neutral-700"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                visible ? "translate-x-5" : ""
-              }`}
-            />
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex-1">
+            <label className={labelCls}>Тип блока</label>
+            <select
+              value={type}
+              onChange={(e) => handleTypeChange(e.target.value as BlockType)}
+              className="w-full rounded-lg border border-white/10 bg-neutral-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            >
+              {BLOCK_TYPES.map((t) => (
+                <option key={t} value={t}>{BLOCK_LABELS[t]}</option>
+              ))}
+            </select>
           </div>
-          <span className="text-sm text-neutral-300">Показывать на странице</span>
-        </label>
 
-        {/* JSON editor */}
-        <div className="mb-1">
-          <label className="mb-1.5 block text-xs text-neutral-400">
-            Данные блока (JSON)
-          </label>
-          <textarea
-            value={json}
-            onChange={(e) => { setJson(e.target.value); setJsonErr(""); }}
-            rows={14}
-            spellCheck={false}
-            className="w-full rounded-xl border border-white/10 bg-neutral-800 px-4 py-3 font-mono text-xs text-white focus:border-indigo-500 focus:outline-none resize-y"
-          />
-          {jsonErr && <p className="mt-1 text-xs text-red-400">{jsonErr}</p>}
+          {/* Visibility toggle */}
+          <div>
+            <label className={labelCls}>Показывать</label>
+            <button
+              onClick={() => setVisible((v) => !v)}
+              className={`relative flex h-8 w-14 items-center rounded-full transition-colors ${
+                visible ? "bg-indigo-600" : "bg-neutral-700"
+              }`}
+            >
+              <span
+                className={`absolute left-0.5 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                  visible ? "translate-x-6" : ""
+                }`}
+              />
+            </button>
+          </div>
         </div>
 
-        <div className="flex justify-end gap-3">
+        {/* Visual block editor — no JSON! */}
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <BlockEditorForm block={{ ...block, type }} blockData={blockData} onChange={setBlockData} />
+        </div>
+
+        {/* Footer buttons */}
+        <div className="mt-5 flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="rounded-xl border border-white/10 px-5 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
+            className="rounded-xl border border-white/10 px-5 py-2.5 text-sm text-neutral-400 hover:text-white transition-colors"
           >
             Отмена
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
           >
-            {saving ? "Сохранение…" : "Сохранить"}
+            {saving ? (
+              <>
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Сохранение...
+              </>
+            ) : (
+              "💾 Сохранить"
+            )}
           </button>
         </div>
       </motion.div>
@@ -153,7 +726,7 @@ function EditModal({ block, onClose, onSave }: EditModalProps) {
   );
 }
 
-// ─── Block card ───────────────────────────────────────────────────────────────
+// ─── Block card (row in the list) ────────────────────────────────────────────
 
 interface BlockCardProps {
   block: AboutBlockRow;
@@ -169,21 +742,23 @@ interface BlockCardProps {
 function BlockCard({
   block, isFirst, isLast, onMoveUp, onMoveDown, onToggleVisible, onEdit, onDelete,
 }: BlockCardProps) {
+  const [icon, ...rest] = BLOCK_LABELS[block.type].split(" ");
+  const name = rest.join(" ");
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="flex items-center gap-3 rounded-2xl border border-white/08 bg-neutral-900 p-4"
+      className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-neutral-900 p-4"
     >
-      {/* Order arrows */}
+      {/* Up / Down */}
       <div className="flex flex-col gap-1">
         <button
           onClick={onMoveUp}
           disabled={isFirst}
-          className="rounded-lg border border-white/10 p-1 text-neutral-500 hover:text-white disabled:opacity-20 transition-colors"
           title="Вверх"
+          className="rounded-lg border border-white/10 p-1 text-neutral-500 hover:text-white disabled:opacity-20 transition-colors"
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -192,8 +767,8 @@ function BlockCard({
         <button
           onClick={onMoveDown}
           disabled={isLast}
-          className="rounded-lg border border-white/10 p-1 text-neutral-500 hover:text-white disabled:opacity-20 transition-colors"
           title="Вниз"
+          className="rounded-lg border border-white/10 p-1 text-neutral-500 hover:text-white disabled:opacity-20 transition-colors"
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -204,44 +779,38 @@ function BlockCard({
       {/* Label */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-base">{BLOCK_LABELS[block.type].split(" ")[0]}</span>
-          <span className="text-sm font-semibold text-white">{BLOCK_LABELS[block.type].slice(BLOCK_LABELS[block.type].indexOf(" ") + 1)}</span>
+          <span className="text-lg">{icon}</span>
+          <span className="text-sm font-semibold text-white truncate">{name}</span>
         </div>
-        <div className="mt-0.5 text-xs text-neutral-600">позиция {block.position}</div>
+        <div className="mt-0.5 text-xs text-neutral-700">позиция {block.position}</div>
       </div>
 
       {/* Visible badge */}
       <span
         className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-          block.visible
-            ? "bg-green-500/15 text-green-400"
-            : "bg-neutral-700 text-neutral-500"
+          block.visible ? "bg-green-500/15 text-green-400" : "bg-neutral-800 text-neutral-500"
         }`}
       >
-        {block.visible ? "Видим" : "Скрыт"}
+        {block.visible ? "Виден" : "Скрыт"}
       </span>
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
-        {/* Toggle visibility */}
+      <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={onToggleVisible}
           className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
-          title={block.visible ? "Скрыть" : "Показать"}
         >
           {block.visible ? "Скрыть" : "Показать"}
         </button>
-        {/* Edit */}
         <button
           onClick={onEdit}
           className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/20 transition-colors"
         >
-          Изменить
+          ✏️ Изменить
         </button>
-        {/* Delete */}
         <button
           onClick={onDelete}
-          className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20 transition-colors"
+          className="rounded-xl border border-red-500/20 bg-red-500/10 px-2.5 py-1.5 text-red-400 hover:bg-red-500/20 transition-colors"
           title="Удалить блок"
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -253,9 +822,9 @@ function BlockCard({
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Main admin page ──────────────────────────────────────────────────────────
 
-export default function AdminAboutBlocksPage() {
+export default function AdminAboutPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
@@ -272,16 +841,13 @@ export default function AdminAboutBlocksPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "authenticated" && session?.user?.role !== "ADMIN") {
-      router.push("/");
-    }
+    if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/");
   }, [session, status, router]);
 
-  // Fetch all blocks (including hidden) for admin
   const fetchBlocks = useCallback(async () => {
     try {
       const res = await fetch("/api/about-blocks?all=1");
-      if (!res.ok) throw new Error("Fetch failed");
+      if (!res.ok) throw new Error();
       const data = (await res.json()) as AboutBlockRow[];
       setBlocks(data.sort((a, b) => a.position - b.position));
     } catch {
@@ -291,9 +857,10 @@ export default function AdminAboutBlocksPage() {
     }
   }, [showToast]);
 
-  useEffect(() => { fetchBlocks(); }, [fetchBlocks]);
+  useEffect(() => {
+    fetchBlocks();
+  }, [fetchBlocks]);
 
-  // Toggle visibility
   const toggleVisible = async (block: AboutBlockRow) => {
     try {
       const res = await fetch("/api/about-blocks", {
@@ -306,17 +873,11 @@ export default function AdminAboutBlocksPage() {
       setBlocks((prev) => prev.map((b) => (b.id === block.id ? updated : b)));
       showToast(updated.visible ? "Блок показан" : "Блок скрыт", true);
     } catch {
-      showToast("Ошибка при обновлении", false);
+      showToast("Ошибка при обновлении видимости", false);
     }
   };
 
-  // Save block edits
-  const saveBlock = async (
-    id: string,
-    type: BlockType,
-    data: Record<string, unknown>,
-    visible: boolean,
-  ) => {
+  const saveBlock = async (id: string, type: BlockType, data: unknown, visible: boolean) => {
     try {
       const res = await fetch("/api/about-blocks", {
         method: "PUT",
@@ -326,15 +887,14 @@ export default function AdminAboutBlocksPage() {
       if (!res.ok) throw new Error();
       const updated = (await res.json()) as AboutBlockRow;
       setBlocks((prev) => prev.map((b) => (b.id === id ? updated : b)));
-      showToast("Сохранено", true);
+      showToast("Изменения сохранены", true);
     } catch {
       showToast("Ошибка при сохранении", false);
     }
   };
 
-  // Delete block
   const deleteBlock = async (block: AboutBlockRow) => {
-    if (!confirm(`Удалить блок «${BLOCK_LABELS[block.type]}»?`)) return;
+    if (!confirm(`Удалить блок «${BLOCK_LABELS[block.type]}»? Это действие необратимо.`)) return;
     try {
       const res = await fetch("/api/about-blocks", {
         method: "DELETE",
@@ -349,7 +909,6 @@ export default function AdminAboutBlocksPage() {
     }
   };
 
-  // Move block up or down
   const moveBlock = async (idx: number, dir: "up" | "down") => {
     const swapIdx = dir === "up" ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= blocks.length) return;
@@ -376,12 +935,11 @@ export default function AdminAboutBlocksPage() {
         }),
       ]);
     } catch {
-      showToast("Ошибка при смене порядка", false);
-      fetchBlocks(); // Revert on error
+      showToast("Ошибка при перестановке", false);
+      fetchBlocks();
     }
   };
 
-  // Add new block
   const addBlock = async () => {
     setAdding(true);
     try {
@@ -428,13 +986,13 @@ export default function AdminAboutBlocksPage() {
             </svg>
             Админ-панель
           </Link>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-white">Блоки страницы /about</h1>
+              <h1 className="text-2xl font-bold text-white">📄 Блоки страницы О проекте</h1>
               <p className="mt-1 text-sm text-neutral-500">
-                Управляйте содержимым страницы{" "}
-                <Link href="/about" target="_blank" className="text-indigo-400 hover:underline">/about</Link>.
-                Изменения отображаются сразу.
+                Редактируйте содержимое{" "}
+                <Link href="/about" target="_blank" className="text-indigo-400 hover:underline">/about</Link>{" "}
+                без написания кода. Нажмите <strong className="text-neutral-400">✏️ Изменить</strong> на нужном блоке.
               </p>
             </div>
             <Link
@@ -450,6 +1008,15 @@ export default function AdminAboutBlocksPage() {
           </div>
         </div>
 
+        {/* Info tip */}
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
+          <span className="text-xl">💡</span>
+          <p className="text-sm text-neutral-400">
+            Блоки отображаются в том порядке, в котором расположены в списке. Используйте стрелки ↑↓ для изменения
+            порядка. Скрытые блоки не показываются на странице, но не удаляются.
+          </p>
+        </div>
+
         {/* Block list */}
         <div className="space-y-3">
           <AnimatePresence mode="popLayout">
@@ -460,6 +1027,7 @@ export default function AdminAboutBlocksPage() {
                 animate={{ opacity: 1 }}
                 className="rounded-2xl border border-dashed border-white/10 p-10 text-center"
               >
+                <p className="text-2xl mb-2">🧩</p>
                 <p className="text-neutral-500">Блоков пока нет. Добавьте первый блок ниже.</p>
               </motion.div>
             ) : (
@@ -481,30 +1049,33 @@ export default function AdminAboutBlocksPage() {
         </div>
 
         {/* Add block */}
-        <div className="mt-6 flex items-center gap-3">
-          <select
-            value={newType}
-            onChange={(e) => setNewType(e.target.value as BlockType)}
-            className="flex-1 rounded-xl border border-white/10 bg-neutral-900 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
-          >
-            {BLOCK_TYPES.map((t) => (
-              <option key={t} value={t}>{BLOCK_LABELS[t]}</option>
-            ))}
-          </select>
-          <button
-            onClick={addBlock}
-            disabled={adding}
-            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-          >
-            {adding ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            ) : (
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            )}
-            Добавить блок
-          </button>
+        <div className="mt-6">
+          <h2 className="mb-3 text-sm font-semibold text-neutral-400">Добавить блок</h2>
+          <div className="flex items-center gap-3">
+            <select
+              value={newType}
+              onChange={(e) => setNewType(e.target.value as BlockType)}
+              className="flex-1 rounded-xl border border-white/10 bg-neutral-900 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            >
+              {BLOCK_TYPES.map((t) => (
+                <option key={t} value={t}>{BLOCK_LABELS[t]}</option>
+              ))}
+            </select>
+            <button
+              onClick={addBlock}
+              disabled={adding}
+              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+            >
+              {adding ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              )}
+              Добавить
+            </button>
+          </div>
         </div>
 
         <p className="mt-4 text-xs text-neutral-700">
