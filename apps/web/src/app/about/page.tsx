@@ -7,10 +7,7 @@ import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
 import { LEGAL_SECTIONS, LEGAL_DEFAULTS } from "@/lib/legal";
-import {
-  BLOCK_DEFAULTS,
-  BLOCK_TYPES,
-} from "@/lib/aboutBlocks";
+
 import type {
   AboutBlockRow,
   HeroData,
@@ -21,6 +18,9 @@ import type {
   TimelineData,
   TeamData,
   CtaData,
+  AppsData,
+  AppItem,
+  AppPlatform,
   GalleryItem,
   BlockType,
 } from "@/lib/aboutBlocks";
@@ -401,6 +401,174 @@ function CtaBlock({ data }: { data: CtaData }) {
   );
 }
 
+
+// ---------- Apps block ----------
+
+const PLATFORM_CFG: Record<AppPlatform, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  android: {
+    label: 'Android',
+    color: '#22c55e',
+    bg: 'rgba(34,197,94,0.08)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
+        <path d="M17.523 15.341A7.37 7.37 0 0 0 19.4 10.5a7.37 7.37 0 0 0-1.877-4.841L18.86 4.32a.5.5 0 0 0-.707-.707l-1.41 1.41A7.4 7.4 0 0 0 12 3.5a7.4 7.4 0 0 0-4.743 1.523L5.847 3.613a.5.5 0 0 0-.707.707l1.337 1.337A7.37 7.37 0 0 0 4.6 10.5a7.37 7.37 0 0 0 1.877 4.841L5.14 16.679a.5.5 0 0 0 .707.707l1.41-1.41A7.4 7.4 0 0 0 12 17.5a7.4 7.4 0 0 0 4.743-1.524l1.41 1.41a.5.5 0 0 0 .707-.707zM9 11a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm6 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+      </svg>
+    ),
+  },
+  windows: {
+    label: 'Windows',
+    color: '#00f0ff',
+    bg: 'rgba(0,240,255,0.08)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
+        <path d="M3 5.566L10.5 4.5v7H3V5.566zM11.5 4.357L21 3v8.5h-9.5V4.357zM3 12.5h7.5V19.5L3 18.434V12.5zM11.5 12.5H21V21l-9.5-1.357V12.5z"/>
+      </svg>
+    ),
+  },
+  macos: {
+    label: 'macOS',
+    color: '#a855f7',
+    bg: 'rgba(168,85,247,0.08)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
+        <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+      </svg>
+    ),
+  },
+  linux: {
+    label: 'Linux',
+    color: '#f59e0b',
+    bg: 'rgba(245,158,11,0.08)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
+        <path d="M12.504 0C12.22 0 12 .22 12 .504 12 4.63 9.965 6.57 8.49 7.986c-.79.754-1.476 1.408-1.74 2.177-.263.77-.163 1.71.417 2.994l-.002.003c.23.518.348 1.095.348 1.676 0 .756-.194 1.476-.583 2.073l-.002.003a4.76 4.76 0 0 1-.393.527c-.508.587-.933 1.078-.933 1.86 0 .457.175.892.468 1.21.293.317.702.51 1.145.51.302 0 .59-.087.836-.239a3.3 3.3 0 0 0 .698-.609l.001-.001.003-.004c.256-.305.46-.662.585-1.048.127-.386.17-.793.12-1.186a3.3 3.3 0 0 0-.214-.806 5.15 5.15 0 0 1-.22-.678 5.14 5.14 0 0 1-.07-.692c0-.487.13-.95.378-1.35.25-.4.607-.726 1.032-.934.426-.207.9-.307 1.383-.285.483.022.944.165 1.343.41.4.246.735.59.97 1.003.235.414.36.882.36 1.356 0 .243-.03.483-.088.716a5.15 5.15 0 0 1-.243.679 3.3 3.3 0 0 0-.238.808c-.06.394-.023.8.1 1.185.122.386.32.742.568 1.05l.004.004.002.002c.192.24.42.46.687.622.266.162.565.254.87.254.443 0 .852-.193 1.145-.51.293-.318.468-.753.468-1.21 0-.782-.425-1.273-.933-1.86a4.76 4.76 0 0 1-.393-.527l-.002-.003c-.389-.597-.583-1.317-.583-2.073 0-.581.119-1.158.348-1.676l-.002-.003c.58-1.283.68-2.225.417-2.994-.264-.77-.95-1.423-1.74-2.177C14.035 6.57 12 4.631 12 .504 12 .22 11.78 0 11.496 0z"/>
+      </svg>
+    ),
+  },
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AppCard({ app, index }: { app: AppItem; index: number }) {
+  const cfg = PLATFORM_CFG[app.platform] ?? PLATFORM_CFG.android;
+  return (
+    <motion.div
+      key={app.id}
+      {...fadeUp(index * 0.08)}
+      className="group relative flex flex-col overflow-hidden rounded-2xl border bg-white/[0.025] transition-all duration-300 hover:-translate-y-1"
+      style={{
+        borderColor: `${cfg.color}28`,
+        boxShadow: `0 0 0 0 ${cfg.color}`,
+      }}
+      whileHover={{ boxShadow: `0 0 40px -8px ${cfg.color}55` }}
+    >
+      {/* Top accent line */}
+      <span
+        className="absolute inset-x-0 top-0 h-0.5 opacity-60"
+        style={{ background: `linear-gradient(90deg,transparent,${cfg.color},transparent)` }}
+      />
+      {/* Glow background */}
+      <span
+        className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+        style={{ background: `radial-gradient(ellipse at 50% 0%,${cfg.bg} 0%,transparent 70%)` }}
+      />
+      <div className="relative p-6 flex flex-col flex-1">
+        {/* Platform badge + icon */}
+        <div className="mb-4 flex items-center gap-3">
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-xl border"
+            style={{ color: cfg.color, borderColor: `${cfg.color}40`, background: cfg.bg, boxShadow: `0 0 20px -4px ${cfg.color}60` }}
+          >
+            {cfg.icon}
+          </div>
+          <div>
+            <span
+              className="inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest"
+              style={{ background: `${cfg.color}18`, color: cfg.color, border: `1px solid ${cfg.color}35` }}
+            >
+              {cfg.label}
+            </span>
+          </div>
+        </div>
+
+        {/* Name + version */}
+        <div className="mb-2 flex items-baseline gap-2">
+          <h3 className="text-xl font-black text-white">{app.name}</h3>
+          {app.version && (
+            <span className="rounded bg-white/[0.07] px-1.5 py-0.5 text-[10px] font-mono text-white/50">v{app.version}</span>
+          )}
+        </div>
+
+        {/* Description */}
+        {app.description && (
+          <p className="mb-4 text-sm leading-relaxed text-neutral-500 flex-1">{app.description}</p>
+        )}
+
+        {/* Download or coming soon */}
+        <div className="mt-auto pt-4 flex items-center gap-3">
+          {app.fileUrl ? (
+            <a
+              href={app.fileUrl}
+              download={app.fileName ?? true}
+              className="group/btn flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-all"
+              style={{ background: `linear-gradient(135deg,${cfg.color}cc,${cfg.color}88)`, boxShadow: `0 0 20px -4px ${cfg.color}80` }}
+            >
+              <svg className="h-4 w-4 transition-transform group-hover/btn:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-8m0 8l-3-3m3 3l3-3M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" />
+              </svg>
+              Скачать
+            </a>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-xl border px-5 py-2.5 text-sm font-medium"
+              style={{ borderColor: `${cfg.color}25`, color: `${cfg.color}80` }}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Скоро
+            </span>
+          )}
+          {app.fileUrl && app.fileSize && (
+            <span className="text-xs text-neutral-600">{formatBytes(app.fileSize)}</span>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function AppsBlock({ data }: { data: AppsData }) {
+  const items = (data.items ?? []).filter((a) => a.active);
+  if (!items.length) return null;
+  return (
+    <section
+      className="px-6 md:px-10 lg:px-16 py-16"
+      style={{ background: 'radial-gradient(ellipse at 50% 0%,rgba(99,102,241,.07) 0%,transparent 60%)' }}
+    >
+      <motion.div {...fadeUp()}>
+        {data.title && (
+          <>
+            <SectionLabel>Приложения</SectionLabel>
+            <SectionTitle>{data.title}</SectionTitle>
+          </>
+        )}
+        {data.subtitle && (
+          <p className="mb-10 max-w-xl text-sm leading-relaxed text-neutral-500">{data.subtitle}</p>
+        )}
+      </motion.div>
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((app, i) => (
+          <AppCard key={app.id} app={app} index={i} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ---------- Privacy / Legal section ----------
 
 function PrivacySection() {
@@ -445,20 +613,6 @@ function PrivacySection() {
   );
 }
 
-// ---------- Build default blocks for fallback ----------
-
-function makeDefaultBlocks(): AboutBlockRow[] {
-  return BLOCK_TYPES.map((type: BlockType, i: number) => ({
-    id: `default-${type}`,
-    type,
-    position: i,
-    data: BLOCK_DEFAULTS[type] as unknown,
-    visible: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }));
-}
-
 // ---------- Page ----------
 
 export default function AboutPage() {
@@ -470,11 +624,9 @@ export default function AboutPage() {
     fetch("/api/about-blocks")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: AboutBlockRow[]) => {
-        setBlocks(data.length > 0 ? data : makeDefaultBlocks());
+        setBlocks(Array.isArray(data) ? data.filter((b) => b.visible) : []);
       })
-      .catch(() => {
-        setBlocks(makeDefaultBlocks());
-      })
+      .catch(() => setBlocks([]))
       .finally(() => setLoading(false));
   }, []);
 
@@ -512,6 +664,8 @@ export default function AboutPage() {
         return <TeamBlock key={block.id} data={d as TeamData} />;
       case "cta":
         return <CtaBlock key={block.id} data={d as CtaData} />;
+      case 'apps':
+        return <AppsBlock key={block.id} data={d as AppsData} />;
       default:
         return null;
     }
