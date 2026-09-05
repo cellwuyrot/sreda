@@ -17,6 +17,8 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  legacyLegalOverrides,
+  mergeLegalOverrides,
   LEGAL_CONTACTS,
   LEGAL_DEFAULTS,
   LEGAL_SECTIONS,
@@ -149,5 +151,78 @@ describe("resolveLegalContent", () => {
     expect(byKey.media.email).toBe(defaults.media.email);
     expect(byKey.support.label).toBe(defaults.support.label);
     expect(content.contactUrl).toBe(LEGAL_DEFAULTS.contactUrl);
+  });
+});
+
+/* Унаследованный блок «Правовая информация».
+
+   Главная причина того, что текст не появлялся на /about: до переезда
+   соглашение редактировалось как блок страницы и хранилось в таблице
+   AboutBlock, а новый подвал читал только siteConfig. Заполненный
+   администратором текст обязан показываться из любого из двух хранилищ. */
+describe("унаследованный блок соглашения", () => {
+  const legacyBlock = {
+    heading: "Соглашение из старого блока",
+    subheading: "редакция от 5 марта 2026 г.",
+    contactEmail: "old-legal@trioz.ru",
+    contactUrl: "https://trioz.ru/legal",
+    sections: [
+      { title: "1. Свои термины", content: "Текст первого раздела из блока." },
+      { title: "2. Свой предмет", content: "Текст второго раздела из блока." },
+    ],
+  };
+
+  it("ИНВАРИАНТ: текст из старого блока показывается на сайте", () => {
+    const content = resolveLegalContent(
+      mergeLegalOverrides(legacyLegalOverrides(legacyBlock), null),
+    );
+
+    expect(content.heading).toBe("Соглашение из старого блока");
+    expect(content.subheading).toBe("редакция от 5 марта 2026 г.");
+    expect(content.sections[0]).toEqual({
+      title: "1. Свои термины",
+      content: "Текст первого раздела из блока.",
+    });
+    expect(content.contactEmail).toBe("old-legal@trioz.ru");
+    expect(content.contactUrl).toBe("https://trioz.ru/legal");
+
+    // Разделы, которых в блоке не было, остаются из редакции кода.
+    expect(content.sections.length).toBeGreaterThanOrEqual(LEGAL_SECTIONS.length);
+  });
+
+  it("новый раздел админки важнее старого блока", () => {
+    const content = resolveLegalContent(
+      mergeLegalOverrides(legacyLegalOverrides(legacyBlock), {
+        [legalKeys.heading]: "Актуальное соглашение",
+      }),
+    );
+
+    expect(content.heading).toBe("Актуальное соглашение");
+    // Нетронутое берётся из блока, а не теряется.
+    expect(content.subheading).toBe("редакция от 5 марта 2026 г.");
+  });
+
+  it("разделов может быть больше, чем в редакции по умолчанию", () => {
+    const extraIndex = LEGAL_SECTIONS.length; // девятый раздел
+    const content = resolveLegalContent({
+      [legalKeys.sectionTitle(extraIndex)]: "9. Дополнительные условия",
+      [legalKeys.sectionContent(extraIndex)]: "Текст добавленного раздела.",
+    });
+
+    expect(content.sections).toHaveLength(LEGAL_SECTIONS.length + 1);
+    expect(content.sections[extraIndex]).toEqual({
+      title: "9. Дополнительные условия",
+      content: "Текст добавленного раздела.",
+    });
+  });
+
+  it("мусорные данные блока не ломают страницу", () => {
+    for (const junk of [null, undefined, 42, "текст", [], {}, { sections: "не массив" }]) {
+      expect(legacyLegalOverrides(junk)).toEqual({});
+    }
+
+    const content = resolveLegalContent(mergeLegalOverrides(legacyLegalOverrides(null)));
+    expect(content.heading).toBe(LEGAL_DEFAULTS.heading);
+    expect(content.sections).toHaveLength(LEGAL_SECTIONS.length);
   });
 });
