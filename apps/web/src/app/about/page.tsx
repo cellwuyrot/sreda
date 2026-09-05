@@ -4,6 +4,10 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
+import {
+  BLOCK_DEFAULTS,
+  BLOCK_TYPES,
+} from "@/lib/aboutBlocks";
 import type {
   AboutBlockRow,
   HeroData,
@@ -15,6 +19,7 @@ import type {
   TeamData,
   CtaData,
   GalleryItem,
+  BlockType,
 } from "@/lib/aboutBlocks";
 
 // ---------- helpers ----------
@@ -54,7 +59,6 @@ function HeroBlock({ data }: { data: HeroData }) {
           "radial-gradient(ellipse at 85% 90%,rgba(6,182,212,.1) 0%,transparent 40%)",
       }}
     >
-      {/* Grid overlay */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -65,16 +69,12 @@ function HeroBlock({ data }: { data: HeroData }) {
           maskImage: "radial-gradient(ellipse at center,black 30%,transparent 75%)",
         }}
       />
-
-      {/* Badge */}
       {data.badge && (
         <motion.div {...fadeUp(0.1)} className="mb-8 inline-flex items-center gap-2 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-5 py-2">
           <span className="h-2 w-2 rounded-full bg-indigo-500 shadow-[0_0_8px_#6366f1] animate-pulse" />
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">{data.badge}</span>
         </motion.div>
       )}
-
-      {/* Title */}
       <motion.h1
         {...fadeUp(0.15)}
         className="mb-3 text-center text-[80px] md:text-[100px] font-black leading-none"
@@ -87,22 +87,16 @@ function HeroBlock({ data }: { data: HeroData }) {
       >
         {data.title}
       </motion.h1>
-
-      {/* Subtitle */}
       {data.subtitle && (
         <motion.p {...fadeUp(0.2)} className="mb-4 text-center text-2xl font-light text-white/40">
           {data.subtitle}
         </motion.p>
       )}
-
-      {/* Description */}
       {data.description && (
         <motion.p {...fadeUp(0.25)} className="mx-auto mb-10 max-w-lg text-center text-lg leading-relaxed text-white/60">
           {data.description}
         </motion.p>
       )}
-
-      {/* CTAs */}
       <motion.div {...fadeUp(0.3)} className="flex flex-wrap gap-4 justify-center">
         {data.primaryCta && (
           <Link
@@ -116,7 +110,7 @@ function HeroBlock({ data }: { data: HeroData }) {
             {data.primaryCta.label}
           </Link>
         )}
-        {data.secondaryCta && data.secondaryCta.href && (
+        {data.secondaryCta?.href && (
           <Link
             href={data.secondaryCta.href}
             className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-7 py-3.5 text-[15px] font-semibold text-white/70 hover:bg-white/[0.07] transition-colors"
@@ -183,7 +177,7 @@ function StatsBlock({ data }: { data: StatsData }) {
         <motion.div
           key={i}
           {...fadeUp(i * 0.05)}
-          className="flex flex-col items-center py-7 px-4 border-r border-indigo-500/08 last:border-0 text-center"
+          className="flex flex-col items-center py-7 px-4 border-r border-indigo-500/[0.08] last:border-0 text-center"
         >
           <span
             className="block text-4xl font-black mb-1"
@@ -201,10 +195,8 @@ function StatsBlock({ data }: { data: StatsData }) {
 function GalleryBlock({ data }: { data: GalleryData }) {
   const items = data.items ?? [];
   if (!items.length) return null;
-
   const big = items[0];
   const rest = items.slice(1, 5);
-
   return (
     <section className="px-6 md:px-10 lg:px-16 py-16"
       style={{ background: "radial-gradient(ellipse at 90% 50%,rgba(6,182,212,.06) 0%,transparent 55%)" }}
@@ -214,16 +206,14 @@ function GalleryBlock({ data }: { data: GalleryData }) {
         {data.title && <SectionTitle>{data.title}</SectionTitle>}
         {data.subtitle && <p className="mb-10 text-sm text-neutral-500">{data.subtitle}</p>}
       </motion.div>
-
-      <div className="grid gap-3" style={{ gridTemplateColumns: '1.6fr 1fr 1fr', gridTemplateRows: '200px 200px' }}>
-        {/* Big item spans 2 rows */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: "1.6fr 1fr 1fr", gridTemplateRows: "200px 200px" }}>
         {big && (
-          <motion.div {...fadeUp(0.05)} className="row-span-2 overflow-hidden rounded-2xl border border-white/06 bg-neutral-900 relative group">
+          <motion.div {...fadeUp(0.05)} className="row-span-2 overflow-hidden rounded-2xl border border-white/[0.06] bg-neutral-900 relative group">
             <MediaItem item={big} fill />
           </motion.div>
         )}
         {rest.map((item, i) => (
-          <motion.div key={item.id} {...fadeUp(0.1 + i * 0.05)} className="overflow-hidden rounded-2xl border border-white/06 bg-neutral-900 relative group">
+          <motion.div key={item.id} {...fadeUp(0.1 + i * 0.05)} className="overflow-hidden rounded-2xl border border-white/[0.06] bg-neutral-900 relative group">
             <MediaItem item={item} />
           </motion.div>
         ))}
@@ -233,15 +223,15 @@ function GalleryBlock({ data }: { data: GalleryData }) {
 }
 
 function MediaItem({ item, fill }: { item: GalleryItem; fill?: boolean }) {
-  const isVideo = item.mediaType === 'video';
-  const isGif = item.mediaType === 'gif' || item.isGif;
+  const isVideo = item.mediaType === "video";
+  const isGif = item.mediaType === "gif" || item.isGif;
   return (
     <>
       {isVideo ? (
-        <video src={item.url} className={`${fill ? 'absolute inset-0 h-full w-full' : 'h-full w-full'} object-cover`} muted loop playsInline autoPlay />
+        <video src={item.url} className={`${fill ? "absolute inset-0 h-full w-full" : "h-full w-full"} object-cover`} muted loop playsInline autoPlay />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={item.url} alt={item.caption ?? ''} className={`${fill ? 'absolute inset-0 h-full w-full' : 'h-full w-full'} object-cover`} />
+        <img src={item.url} alt={item.caption ?? ""} className={`${fill ? "absolute inset-0 h-full w-full" : "h-full w-full"} object-cover`} />
       )}
       {item.tag && (
         <span className="absolute top-2.5 left-2.5 rounded-full bg-black/60 backdrop-blur px-2.5 py-1 text-[10px] uppercase tracking-wide text-white/70 border border-white/10">
@@ -258,7 +248,6 @@ function MediaItem({ item, fill }: { item: GalleryItem; fill?: boolean }) {
 function BentoBlock({ data }: { data: BentoData }) {
   const items = data.items ?? [];
   if (!items.length) return null;
-
   return (
     <section className="px-6 md:px-10 lg:px-16 py-16">
       <motion.div {...fadeUp()}>
@@ -266,25 +255,17 @@ function BentoBlock({ data }: { data: BentoData }) {
         {data.title && <SectionTitle>{data.title}</SectionTitle>}
         {data.subtitle && <p className="mb-8 text-sm text-neutral-500">{data.subtitle}</p>}
       </motion.div>
-
       <div className="grid gap-3 grid-cols-3">
         {items.map((item, i) => (
-          <motion.div
-            key={item.key}
-            {...fadeUp(i * 0.07)}
-            className={item.wide ? 'col-span-2' : ''}
-          >
+          <motion.div key={item.key} {...fadeUp(i * 0.07)} className={item.wide ? "col-span-2" : ""}>
             <Link
-              href={item.href ?? '#'}
-              className="group relative flex h-full min-h-[160px] flex-col overflow-hidden rounded-2xl border border-white/07 bg-white/[0.025] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-white/15"
-              style={{ '--glow': item.color } as React.CSSProperties}
+              href={item.href ?? "#"}
+              className="group relative flex h-full min-h-[160px] flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-white/15"
             >
-              {/* Top accent */}
               <span
                 className="pointer-events-none absolute inset-x-0 top-0 h-0.5 opacity-40 transition-opacity group-hover:opacity-100"
                 style={{ background: `linear-gradient(90deg,transparent,${item.color},transparent)` }}
               />
-              {/* Icon */}
               <div
                 className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border text-xl transition-transform duration-300 group-hover:scale-110"
                 style={{ color: item.color, borderColor: `${item.color}40`, backgroundColor: `${item.color}14`, boxShadow: `0 0 20px -6px ${item.color}66` }}
@@ -293,9 +274,6 @@ function BentoBlock({ data }: { data: BentoData }) {
               </div>
               <h3 className="mb-2 text-lg font-bold text-white">{item.title}</h3>
               <p className="text-sm leading-relaxed text-neutral-500">{item.description}</p>
-              <span className="mt-4 flex items-center gap-1.5 text-xs font-semibold transition-all duration-200 group-hover:gap-2" style={{ color: item.color }}>
-                Перейти <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-              </span>
             </Link>
           </motion.div>
         ))}
@@ -315,22 +293,22 @@ function TimelineBlock({ data }: { data: TimelineData }) {
       </motion.div>
       <div className="relative mt-8 flex flex-col pl-6">
         <div className="pointer-events-none absolute left-[7px] top-4 bottom-4 w-px"
-          style={{ background: 'linear-gradient(180deg,rgba(99,102,241,.5),rgba(139,92,246,.3),transparent)' }}
+          style={{ background: "linear-gradient(180deg,rgba(99,102,241,.5),rgba(139,92,246,.3),transparent)" }}
         />
         {items.map((item, i) => (
           <motion.div key={i} {...fadeUp(i * 0.08)} className="flex gap-5 py-4">
             <div
               className="mt-1 h-3.5 w-3.5 flex-shrink-0 rounded-full border-2 -ml-7"
               style={{
-                background: item.color ?? '#6366f1',
-                borderColor: item.color ?? '#6366f1',
-                boxShadow: item.current ? `0 0 10px ${item.color ?? '#6366f1'}` : undefined,
-                borderStyle: item.current ? 'dashed' : 'solid',
+                background: item.color ?? "#6366f1",
+                borderColor: item.color ?? "#6366f1",
+                boxShadow: item.current ? `0 0 10px ${item.color ?? "#6366f1"}` : undefined,
+                borderStyle: item.current ? "dashed" : "solid",
               }}
             />
             <div className="min-w-[40px] text-xs font-semibold text-neutral-500 pt-0.5">{item.year}</div>
             <div>
-              <div className="mb-1 text-[15px] font-bold text-white" style={item.current ? { color: item.color ?? '#6366f1' } : undefined}>
+              <div className="mb-1 text-[15px] font-bold text-white" style={item.current ? { color: item.color ?? "#6366f1" } : undefined}>
                 {item.title}
               </div>
               {item.description && <div className="text-sm leading-relaxed text-neutral-600">{item.description}</div>}
@@ -351,29 +329,28 @@ function TeamBlock({ data }: { data: TeamData }) {
         {data.title && <SectionLabel>Команда</SectionLabel>}
         {data.title && <SectionTitle>{data.title}</SectionTitle>}
       </motion.div>
-      <div className="mt-10 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))' }}>
+      <div className="mt-10 grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))" }}>
         {members.map((m, i) => (
           <motion.div
             key={m.id}
             {...fadeUp(i * 0.07)}
-            className="flex flex-col items-center rounded-2xl border border-white/06 bg-white/[0.022] p-6 text-center"
+            className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.022] p-6 text-center"
           >
             {m.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={m.avatarUrl} alt={m.name} className="mb-4 h-16 w-16 rounded-full object-cover border-2" style={{ borderColor: `${m.color ?? '#6366f1'}55` }} />
+              <img src={m.avatarUrl} alt={m.name} className="mb-4 h-16 w-16 rounded-full object-cover border-2" style={{ borderColor: `${m.color ?? "#6366f1"}55` }} />
             ) : (
               <div
                 className="mb-4 flex h-16 w-16 items-center justify-center rounded-full text-3xl border-2"
-                style={{ background: `${m.color ?? '#6366f1'}14`, borderColor: `${m.color ?? '#6366f1'}40` }}
+                style={{ background: `${m.color ?? "#6366f1"}14`, borderColor: `${m.color ?? "#6366f1"}40` }}
               >
-                {m.emoji ?? '👤'}
+                {m.emoji ?? "👤"}
               </div>
             )}
             <div className="mb-1 text-[15px] font-bold text-white">{m.name}</div>
             <div className="text-xs text-neutral-500">{m.role}</div>
           </motion.div>
         ))}
-        {/* Join card */}
         {data.joinLabel && data.joinHref && (
           <motion.div {...fadeUp(members.length * 0.07)}>
             <Link
@@ -393,9 +370,9 @@ function TeamBlock({ data }: { data: TeamData }) {
 function CtaBlock({ data }: { data: CtaData }) {
   return (
     <section className="mx-6 md:mx-10 lg:mx-16 mb-20 overflow-hidden rounded-3xl border border-indigo-500/22 p-14 text-center relative"
-      style={{ background: 'linear-gradient(135deg,rgba(99,102,241,.14),rgba(139,92,246,.09))' }}
+      style={{ background: "linear-gradient(135deg,rgba(99,102,241,.14),rgba(139,92,246,.09))" }}
     >
-      <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(ellipse at center,rgba(99,102,241,.1),transparent 70%)' }} />
+      <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at center,rgba(99,102,241,.1),transparent 70%)" }} />
       <motion.div {...fadeUp()}>
         <h2 className="relative mb-4 text-5xl font-black text-white">{data.title}</h2>
         {data.subtitle && <p className="relative mb-9 text-lg text-neutral-500">{data.subtitle}</p>}
@@ -403,7 +380,7 @@ function CtaBlock({ data }: { data: CtaData }) {
           {data.primaryCta && (
             <Link href={data.primaryCta.href}
               className="flex items-center gap-2 rounded-xl px-8 py-3.5 text-[15px] font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 0 30px rgba(99,102,241,.4)' }}
+              style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", boxShadow: "0 0 30px rgba(99,102,241,.4)" }}
             >
               {data.primaryCta.label}
             </Link>
@@ -421,6 +398,20 @@ function CtaBlock({ data }: { data: CtaData }) {
   );
 }
 
+// ---------- Build default blocks for fallback ----------
+
+function makeDefaultBlocks(): AboutBlockRow[] {
+  return BLOCK_TYPES.map((type: BlockType, i: number) => ({
+    id: `default-${type}`,
+    type,
+    position: i,
+    data: BLOCK_DEFAULTS[type] as unknown,
+    visible: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
 // ---------- Page ----------
 
 export default function AboutPage() {
@@ -429,49 +420,51 @@ export default function AboutPage() {
   const videoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch('/api/about-blocks')
+    fetch("/api/about-blocks")
       .then((r) => (r.ok ? r.json() : []))
-      .then((data: AboutBlockRow[]) => setBlocks(data))
-      .catch(() => {})
+      .then((data: AboutBlockRow[]) => {
+        // If DB has no blocks yet, show defaults so the page is never blank
+        setBlocks(data.length > 0 ? data : makeDefaultBlocks());
+      })
+      .catch(() => {
+        setBlocks(makeDefaultBlocks());
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  // Find video block for secondary CTA scroll
-  const videoBlock = blocks.find((b) => b.type === 'video');
-
-  const scrollToVideo = () => videoRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const videoBlock = blocks.find((b) => b.type === "video");
 
   const renderBlock = (block: AboutBlockRow) => {
     const d = block.data as unknown;
     switch (block.type) {
-      case 'hero': {
+      case "hero": {
         const hero = d as HeroData;
-        // Wire "Смотреть видео" to scroll if action === 'video'
         const heroPatched: HeroData = {
           ...hero,
-          secondaryCta: hero.secondaryCta?.action === 'video'
-            ? { ...hero.secondaryCta, href: videoBlock ? '#video' : '/about' }
-            : hero.secondaryCta,
+          secondaryCta:
+            hero.secondaryCta?.action === "video"
+              ? { ...hero.secondaryCta, href: videoBlock ? "#video" : "/about" }
+              : hero.secondaryCta,
         };
         return <HeroBlock key={block.id} data={heroPatched} />;
       }
-      case 'video':
+      case "video":
         return (
           <div key={block.id} id="video" ref={videoRef}>
             <VideoBlock data={d as VideoData} />
           </div>
         );
-      case 'stats':
+      case "stats":
         return <StatsBlock key={block.id} data={d as StatsData} />;
-      case 'gallery':
+      case "gallery":
         return <GalleryBlock key={block.id} data={d as GalleryData} />;
-      case 'bento':
+      case "bento":
         return <BentoBlock key={block.id} data={d as BentoData} />;
-      case 'timeline':
+      case "timeline":
         return <TimelineBlock key={block.id} data={d as TimelineData} />;
-      case 'team':
+      case "team":
         return <TeamBlock key={block.id} data={d as TeamData} />;
-      case 'cta':
+      case "cta":
         return <CtaBlock key={block.id} data={d as CtaData} />;
       default:
         return null;
@@ -482,7 +475,6 @@ export default function AboutPage() {
     <div className="relative min-h-screen overflow-x-hidden text-neutral-900 dark:text-white bg-[#07090f]">
       <CosmicBackground />
 
-      {/* Back button */}
       <div className="fixed top-4 left-4 z-50">
         <Link href="/">
           <motion.button
@@ -498,7 +490,6 @@ export default function AboutPage() {
         </Link>
       </div>
 
-      {/* Blocks */}
       <AnimatePresence>
         {loading ? (
           <div className="flex min-h-screen items-center justify-center">
@@ -509,7 +500,6 @@ export default function AboutPage() {
         )}
       </AnimatePresence>
 
-      {/* Footer */}
       <footer className="border-t border-indigo-500/10 px-6 py-8 flex items-center justify-between text-xs text-neutral-700">
         <div className="flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 100 100" aria-hidden>
@@ -521,7 +511,7 @@ export default function AboutPage() {
           </svg>
           <span>TRIOZ</span>
         </div>
-        <span>© {new Date().getFullYear()} TRIOZ. Все права защищены.</span>
+        <span>&#169; {new Date().getFullYear()} TRIOZ. Все права защищены.</span>
       </footer>
     </div>
   );
