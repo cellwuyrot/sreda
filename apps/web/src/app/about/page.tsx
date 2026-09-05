@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
-import { LEGAL_SECTIONS, LEGAL_DEFAULTS } from "@/lib/legal";
 
 import type {
   AboutBlockRow,
@@ -23,6 +22,8 @@ import type {
   AppPlatform,
   GalleryItem,
   BlockType,
+  LegalData,
+  LegalSection as LegalSectionItem,
 } from "@/lib/aboutBlocks";
 
 // ---------- helpers ----------
@@ -569,45 +570,65 @@ function AppsBlock({ data }: { data: AppsData }) {
   );
 }
 
-// ---------- Privacy / Legal section ----------
+// ---------- Legal / CMS section ----------
 
-function PrivacySection() {
-  const [open, setOpen] = useState(false);
-
+function LegalBlock({ data }: { data: LegalData }) {
+  const sections = data.sections ?? [];
   return (
-    <section className="px-6 md:px-10 lg:px-16 py-16 border-t border-indigo-500/10">
+    <section
+      id="legal"
+      className="px-6 md:px-10 lg:px-16 py-16 border-t border-indigo-500/10"
+    >
       <motion.div {...fadeUp()}>
-        <SectionLabel>Правовая информация</SectionLabel>
-        <SectionTitle className="text-3xl md:text-4xl">{LEGAL_DEFAULTS.heading}</SectionTitle>
-        <p className="mb-6 text-sm text-neutral-500">{LEGAL_DEFAULTS.subheading}</p>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2.5 text-sm font-medium text-neutral-300 hover:bg-white/[0.07] transition-colors mb-6"
-        >
-          <svg className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          {open ? "Скрыть" : "Читать полностью"}
-        </button>
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="space-y-8 pb-4">
-                {LEGAL_SECTIONS.map((section, i) => (
-                  <div key={i}>
-                    <h3 className="text-base font-bold text-white mb-3">{section.title}</h3>
-                    <div className="text-sm leading-relaxed text-neutral-500 whitespace-pre-line">{section.content}</div>
-                  </div>
-                ))}
+        {data.heading && (
+          <>
+            <SectionLabel>Правовая информация</SectionLabel>
+            <SectionTitle className="text-3xl md:text-4xl">{data.heading}</SectionTitle>
+          </>
+        )}
+        {data.subheading && (
+          <p className="mb-8 max-w-2xl text-sm text-neutral-500">{data.subheading}</p>
+        )}
+        <div className="space-y-8">
+          {sections.map((section: LegalSectionItem, i: number) => (
+            <motion.div key={i} {...fadeUp(i * 0.04)}>
+              <h3 className="mb-3 text-base font-bold text-white">{section.title}</h3>
+              <div className="text-sm leading-relaxed text-neutral-500 whitespace-pre-line">
+                {section.content}
               </div>
             </motion.div>
-          )}
-        </AnimatePresence>
+          ))}
+        </div>
+        {(data.contactEmail || data.contactUrl) && (
+          <div className="mt-10 flex flex-wrap gap-5 border-t border-indigo-500/10 pt-6">
+            {data.contactEmail && (
+              <a
+                href={`mailto:${data.contactEmail}`}
+                className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                {data.contactEmail}
+              </a>
+            )}
+            {data.contactUrl && (
+              <a
+                href={data.contactUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                {data.contactUrl}
+              </a>
+            )}
+          </div>
+        )}
       </motion.div>
     </section>
   );
@@ -666,6 +687,8 @@ export default function AboutPage() {
         return <CtaBlock key={block.id} data={d as CtaData} />;
       case 'apps':
         return <AppsBlock key={block.id} data={d as AppsData} />;
+      case 'legal':
+        return <LegalBlock key={block.id} data={d as LegalData} />;
       default:
         return null;
     }
@@ -690,37 +713,41 @@ export default function AboutPage() {
         </Link>
       </div>
 
-      <AnimatePresence>
-        {loading ? (
-          <div className="flex min-h-screen items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          </div>
-        ) : (
-          <>{blocks.map(renderBlock)}</>
-        )}
-      </AnimatePresence>
-
-      {/* ── Download section ───────────────────────────────────── */}
-      <div className="px-6 md:px-10 lg:px-16">
-        <DesktopDownload />
-      </div>
-
-      {/* ── Privacy / Legal section ────────────────────────────── */}
-      <PrivacySection />
-
-      <footer className="border-t border-indigo-500/10 px-6 py-8 flex items-center justify-between text-xs text-neutral-700">
-        <div className="flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 100 100" aria-hidden>
-            <g transform="translate(50,52)" fill="#6366f1" opacity=".6">
-              <path d="M5,6 L5,-30 L22,-30 L26,-34 L26,-43 L22,-47 L-22,-47 L-26,-43 L-26,-34 L-22,-30 L-5,-30 L-5,6Z" transform="rotate(0)"/>
-              <path d="M5,6 L5,-30 L22,-30 L26,-34 L26,-43 L22,-47 L-22,-47 L-26,-43 L-26,-34 L-22,-30 L-5,-30 L-5,6Z" transform="rotate(120)"/>
-              <path d="M5,6 L5,-30 L22,-30 L26,-34 L26,-43 L22,-47 L-22,-47 L-26,-43 L-26,-34 L-22,-30 L-5,-30 L-5,6Z" transform="rotate(240)"/>
-            </g>
-          </svg>
-          <span>TRIOZ</span>
+      {loading ? (
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
         </div>
-        <span>&#169; {new Date().getFullYear()} TRIOZ. Все права защищены.</span>
-      </footer>
+      ) : (
+        <>
+          {blocks.map(renderBlock)}
+
+          {/* ── Download section ───────────────────────────────────────── */}
+          <div className="px-6 md:px-10 lg:px-16">
+            <DesktopDownload />
+          </div>
+
+          <footer className="border-t border-indigo-500/10 px-6 py-8 text-xs text-neutral-700">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 100 100" aria-hidden>
+                  <g transform="translate(50,52)" fill="#6366f1" opacity=".6">
+                    <path d="M5,6 L5,-30 L22,-30 L26,-34 L26,-43 L22,-47 L-22,-47 L-26,-43 L-26,-34 L-22,-30 L-5,-30 L-5,6Z" transform="rotate(0)"/>
+                    <path d="M5,6 L5,-30 L22,-30 L26,-34 L26,-43 L22,-47 L-22,-47 L-26,-43 L-26,-34 L-22,-30 L-5,-30 L-5,6Z" transform="rotate(120)"/>
+                    <path d="M5,6 L5,-30 L22,-30 L26,-34 L26,-43 L22,-47 L-22,-47 L-26,-43 L-26,-34 L-22,-30 L-5,-30 L-5,6Z" transform="rotate(240)"/>
+                  </g>
+                </svg>
+                <span className="font-semibold text-neutral-500">TRIOZ</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <a href="#legal" className="hover:text-neutral-400 transition-colors">Пользовательское соглашение</a>
+                <a href="mailto:legal@trioz.ru" className="hover:text-neutral-400 transition-colors">legal@trioz.ru</a>
+                <a href="https://trioz.ru" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-400 transition-colors">trioz.ru</a>
+              </div>
+              <span>&#169; {new Date().getFullYear()} TRIOZ. Все права защищены.</span>
+            </div>
+          </footer>
+        </>
+      )}
     </div>
   );
 }
