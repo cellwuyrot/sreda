@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
+import LegalFooter from "@/components/about/LegalFooter";
 
 import type {
   AboutBlockRow,
@@ -21,9 +22,6 @@ import type {
   AppItem,
   AppPlatform,
   GalleryItem,
-  BlockType,
-  LegalData,
-  LegalSection as LegalSectionItem,
 } from "@/lib/aboutBlocks";
 
 // ---------- helpers ----------
@@ -570,70 +568,6 @@ function AppsBlock({ data }: { data: AppsData }) {
   );
 }
 
-// ---------- Legal / CMS section ----------
-
-function LegalBlock({ data }: { data: LegalData }) {
-  const sections = data.sections ?? [];
-  return (
-    <section
-      id="legal"
-      className="px-6 md:px-10 lg:px-16 py-16 border-t border-indigo-500/10"
-    >
-      <motion.div {...fadeUp()}>
-        {data.heading && (
-          <>
-            <SectionLabel>Правовая информация</SectionLabel>
-            <SectionTitle className="text-3xl md:text-4xl">{data.heading}</SectionTitle>
-          </>
-        )}
-        {data.subheading && (
-          <p className="mb-8 max-w-2xl text-sm text-neutral-500">{data.subheading}</p>
-        )}
-        <div className="space-y-8">
-          {sections.map((section: LegalSectionItem, i: number) => (
-            <motion.div key={i} {...fadeUp(i * 0.04)}>
-              <h3 className="mb-3 text-base font-bold text-white">{section.title}</h3>
-              <div className="text-sm leading-relaxed text-neutral-500 whitespace-pre-line">
-                {section.content}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-        {(data.contactEmail || data.contactUrl) && (
-          <div className="mt-10 flex flex-wrap gap-5 border-t border-indigo-500/10 pt-6">
-            {data.contactEmail && (
-              <a
-                href={`mailto:${data.contactEmail}`}
-                className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                {data.contactEmail}
-              </a>
-            )}
-            {data.contactUrl && (
-              <a
-                href={data.contactUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                {data.contactUrl}
-              </a>
-            )}
-          </div>
-        )}
-      </motion.div>
-    </section>
-  );
-}
-
 // ---------- Page ----------
 
 export default function AboutPage() {
@@ -645,7 +579,13 @@ export default function AboutPage() {
     fetch("/api/about-blocks")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: AboutBlockRow[]) => {
-        setBlocks(Array.isArray(data) ? data.filter((b) => b.visible) : []);
+        // FIX-LEGAL: у старых установок в БД мог остаться блок 'legal'.
+        // Не рисуем его: правовая информация теперь только в подвале.
+        setBlocks(
+          Array.isArray(data)
+            ? data.filter((b) => b.visible && b.type !== ('legal' as typeof b.type))
+            : [],
+        );
       })
       .catch(() => setBlocks([]))
       .finally(() => setLoading(false));
@@ -687,9 +627,8 @@ export default function AboutPage() {
         return <CtaBlock key={block.id} data={d as CtaData} />;
       case 'apps':
         return <AppsBlock key={block.id} data={d as AppsData} />;
-      case 'legal':
-        return <LegalBlock key={block.id} data={d as LegalData} />;
       default:
+        // FIX-LEGAL: блока 'legal' больше нет — соглашение рисует LegalFooter.
         return null;
     }
   };
@@ -725,6 +664,9 @@ export default function AboutPage() {
           <div className="px-6 md:px-10 lg:px-16">
             <DesktopDownload />
           </div>
+
+          {/* ── Правовая информация ──────────────────────────── */}
+          <LegalFooter />
 
           <footer className="border-t border-indigo-500/10 px-6 py-8 text-xs text-neutral-700">
             <div className="flex flex-wrap items-center justify-between gap-4">

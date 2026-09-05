@@ -548,6 +548,19 @@ export default function AdminContentPage() {
 
       {/* Block list */}
       <div className="mx-auto max-w-4xl px-6 py-8">
+        {/* FIX-LEGAL: блока «Правовая информация» здесь больше нет — чтобы два
+            редактора не спорили за один и тот же текст. Ссылка на единственное
+            место редактирования остаётся на виду. */}
+        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.06] px-4 py-3 text-xs text-neutral-400">
+          <span className="text-base">⚖️</span>
+          <span>
+            Пользовательское соглашение показывается в подвале /about и правится отдельно:
+          </span>
+          <a href="/admin/legal" className="font-semibold text-indigo-400 hover:text-indigo-300">
+            Контент сайта → Правовая информация
+          </a>
+        </div>
+
         {blocks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="mb-4 text-4xl">📋</div>
