@@ -556,17 +556,14 @@ const APP_PLATFORMS: { value: AppPlatform; label: string }[] = [
   { value: 'linux',   label: 'Linux (.deb / .AppImage)' },
 ];
 
-function formatSize(bytes?: number): string {
+function formatAppSize(bytes?: number): string {
   if (!bytes) return '';
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function AppItemEditor({
-  app,
-  index,
-  onChange,
-  onDelete,
+  app, index, onChange, onDelete,
 }: {
   app: AppItem;
   index: number;
@@ -574,27 +571,21 @@ function AppItemEditor({
   onDelete: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
+  const [uploadErr, setUploadErr] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file: File) => {
-    setUploading(true);
-    setUploadError('');
+  const handleUpload = async (file: File) => {
+    setUploading(true); setUploadErr('');
     try {
       const fd = new FormData();
       fd.append('file', file);
       const res = await fetch('/api/about-apps-upload', { method: 'POST', body: fd });
-      if (!res.ok) {
-        const e = (await res.json()) as { error?: string };
-        throw new Error(e.error ?? 'Upload failed');
-      }
+      if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? 'Upload failed');
       const json = (await res.json()) as { url: string; fileName: string; fileSize: number };
       onChange({ fileUrl: json.url, fileName: json.fileName, fileSize: json.fileSize });
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Ошибка загрузки');
-    } finally {
-      setUploading(false);
-    }
+      setUploadErr(e instanceof Error ? e.message : 'Ошибка загрузки');
+    } finally { setUploading(false); }
   };
 
   const removeFile = async () => {
@@ -617,115 +608,59 @@ function AppItemEditor({
         </span>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={app.active}
-              onChange={(e) => onChange({ active: e.target.checked })}
-              className="h-3.5 w-3.5 rounded accent-indigo-500"
-            />
+            <input type="checkbox" checked={app.active} onChange={(e) => onChange({ active: e.target.checked })} className="h-3.5 w-3.5 rounded accent-indigo-500" />
             <span className="text-xs text-neutral-400">Активно</span>
           </label>
-          <button
-            className="text-red-500 hover:text-red-400 text-sm transition-colors"
-            onClick={onDelete}
-          >
-            Удалить
-          </button>
+          <button className="text-red-500 hover:text-red-400 text-sm transition-colors" onClick={onDelete}>Удалить</button>
         </div>
       </div>
-
       <div className="grid grid-cols-2 gap-3">
         <Field label="Платформа">
-          <select
-            className={inputCls}
-            value={app.platform}
-            onChange={(e) => onChange({ platform: e.target.value as AppPlatform })}
-          >
-            {APP_PLATFORMS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
-            ))}
+          <select className={inputCls} value={app.platform} onChange={(e) => onChange({ platform: e.target.value as AppPlatform })}>
+            {APP_PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </Field>
-        <Field label="Название приложения">
+        <Field label="Название">
           <Inp value={app.name} onChange={(v) => onChange({ name: v })} placeholder="TZ.Connect" />
         </Field>
         <Field label="Версия">
           <Inp value={app.version} onChange={(v) => onChange({ version: v })} placeholder="1.0.0" />
         </Field>
       </div>
-
-      <Field label="Описание (показывается на /about)">
-        <TextArea
-          value={app.description}
-          onChange={(v) => onChange({ description: v })}
-          rows={2}
-          placeholder="Краткое описание приложения..."
-        />
+      <Field label="Описание">
+        <TextArea value={app.description} onChange={(v) => onChange({ description: v })} rows={2} placeholder="Краткое описание..." />
       </Field>
-
-      {/* File section */}
-      <div className="mt-1">
+      <div>
         <label className={labelCls}>Установочный файл (.exe / .apk / .dmg / .deb / .AppImage)</label>
         {app.fileUrl ? (
           <div className="flex items-center gap-3 rounded-lg border border-green-500/25 bg-green-500/5 px-3 py-2">
-            <svg className="h-4 w-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <svg className="h-4 w-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-green-400 font-medium truncate">{app.fileName ?? app.fileUrl}</p>
-              {app.fileSize && (
-                <p className="text-[10px] text-neutral-600">{formatSize(app.fileSize)}</p>
-              )}
+              {app.fileSize && <p className="text-[10px] text-neutral-600">{formatAppSize(app.fileSize)}</p>}
             </div>
             <div className="flex gap-2 shrink-0">
-              <button
-                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-              >
-                Заменить
-              </button>
-              <button
-                className="text-xs text-red-500 hover:text-red-400 transition-colors"
-                onClick={removeFile}
-                disabled={uploading}
-              >
-                Удалить
-              </button>
+              <button className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors" onClick={() => fileRef.current?.click()} disabled={uploading}>Заменить</button>
+              <button className="text-xs text-red-500 hover:text-red-400 transition-colors" onClick={removeFile} disabled={uploading}>Удалить</button>
             </div>
           </div>
         ) : (
           <button
             className="w-full flex items-center justify-center gap-2 rounded-lg border border-dashed border-white/15 bg-white/[0.02] py-3 text-sm text-neutral-500 hover:border-indigo-500/40 hover:text-indigo-400 transition-colors"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            onClick={() => fileRef.current?.click()} disabled={uploading}
           >
-            {uploading ? (
-              <><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /> Загрузка...</>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-8m0 0l-3 3m3-3l3 3M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" />
-                </svg>
-                Загрузить установочник
-              </>
-            )}
+            {uploading
+              ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /> Загрузка...</>
+              : <>
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-8m0 0l-3 3m3-3l3 3M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" /></svg>
+                  Загрузить установочник
+                </>
+            }
           </button>
         )}
-        {uploadError && (
-          <p className="mt-1 text-xs text-red-400">{uploadError}</p>
-        )}
-        <input
-          ref={fileRef}
-          type="file"
-          className="hidden"
-          accept=".exe,.apk,.dmg,.deb,.AppImage,.pkg,.msi"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleFile(f);
-            e.target.value = '';
-          }}
-        />
+        {uploadErr && <p className="mt-1 text-xs text-red-400">{uploadErr}</p>}
+        <input ref={fileRef} type="file" className="hidden" accept=".exe,.apk,.dmg,.deb,.AppImage,.pkg,.msi"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ''; }} />
       </div>
     </div>
   );
@@ -733,69 +668,34 @@ function AppItemEditor({
 
 function AppsEditor({ data, onChange }: { data: AppsData; onChange: (d: AppsData) => void }) {
   const items = data.items ?? [];
-
+  const addItem = () => onChange({
+    ...data,
+    items: [...items, { id: Date.now().toString(), platform: 'android' as AppPlatform, name: 'TZ.Connect', version: '1.0.0', description: '', active: true }],
+  });
   const updItem = (i: number, patch: Partial<AppItem>) =>
-    onChange({ ...data, items: items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
-
-  const addItem = () => {
-    const newItem: AppItem = {
-      id: Date.now().toString(),
-      platform: 'android',
-      name: 'TZ.Connect',
-      version: '1.0.0',
-      description: '',
-      active: true,
-    };
-    onChange({ ...data, items: [...items, newItem] });
-  };
-
-  const removeItem = (i: number) =>
-    onChange({ ...data, items: items.filter((_, j) => j !== i) });
-
+    onChange({ ...data, items: items.map((it, j) => j === i ? { ...it, ...patch } : it) });
+  const delItem = (i: number) => onChange({ ...data, items: items.filter((_, j) => j !== i) });
   return (
     <>
       <Field label="Заголовок секции">
         <Inp value={data.title} onChange={(v) => onChange({ ...data, title: v })} placeholder="Приложения TRIOZ" />
       </Field>
       <Field label="Подзаголовок">
-        <TextArea
-          value={data.subtitle}
-          onChange={(v) => onChange({ ...data, subtitle: v })}
-          rows={2}
-          placeholder="Установите нативное приложение..."
-        />
+        <TextArea value={data.subtitle} onChange={(v) => onChange({ ...data, subtitle: v })} rows={2} placeholder="Установите нативное приложение..." />
       </Field>
-
       <div className="my-4 border-t border-white/[0.06]" />
-
-      <p className="mb-3 text-xs text-neutral-600">
-        Добавьте приложения. Только активные приложения с загруженным файлом покажут кнопку «Скачать».
-        Неактивные не отображаются на публичной странице.
-      </p>
-
+      <p className="mb-3 text-xs text-neutral-600">Только активные приложения показываются на /about.</p>
       {items.length === 0 && (
-        <p className="mb-3 text-center text-sm text-neutral-700 rounded-xl border border-dashed border-white/10 py-6">
-          Приложений пока нет. Нажмите «+ Добавить приложение».
-        </p>
+        <p className="mb-3 text-center text-sm text-neutral-700 rounded-xl border border-dashed border-white/10 py-6">Приложений пока нет.</p>
       )}
-
       {items.map((app, i) => (
-        <AppItemEditor
-          key={app.id}
-          app={app}
-          index={i}
-          onChange={(patch) => updItem(i, patch)}
-          onDelete={() => removeItem(i)}
-        />
+        <AppItemEditor key={app.id} app={app} index={i} onChange={(p) => updItem(i, p)} onDelete={() => delItem(i)} />
       ))}
-
       <button
         className="w-full mt-2 flex items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-500/30 py-2.5 text-sm text-indigo-400 hover:border-indigo-500/60 hover:bg-indigo-500/5 transition-colors"
         onClick={addItem}
       >
-        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
         + Добавить приложение
       </button>
     </>
