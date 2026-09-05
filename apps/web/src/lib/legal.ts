@@ -205,9 +205,85 @@ export function resolveLegalContent(
     preamble: pick(map[legalKeys.preamble], LEGAL_DEFAULTS.preamble),
     contactEmail: contacts[0]?.email || LEGAL_DEFAULTS.contactEmail,
     contactUrl: pick(map[legalKeys.contactUrl], LEGAL_DEFAULTS.contactUrl),
-    sections: LEGAL_SECTIONS.map((section, i) => ({
-      title: pick(map[legalKeys.sectionTitle(i)], section.title),
-      content: pick(map[legalKeys.sectionContent(i)], section.content),
-    })),
+    sections: buildSections(map),
   };
+}
+
+/**
+ * Собирает разделы документа.
+ *
+ * В админке и в старом блоке разделов может быть больше, чем в редакции
+ * по умолчанию. Раньше лишние разделы просто пропадали: перебор шёл по
+ * списку из кода, а не по тому, что действительно заполнено.
+ */
+function buildSections(map: Record<string, string>): LegalSection[] {
+  let count = LEGAL_SECTIONS.length;
+
+  for (const key of Object.keys(map)) {
+    const match = /^legal\.section\.(\d+)\.(title|content)$/.exec(key);
+    if (!match) continue;
+    if (!(map[key] ?? "").trim()) continue;
+    count = Math.max(count, Number(match[1]));
+  }
+
+  return Array.from({ length: count }, (_, i) => ({
+    title: pick(map[legalKeys.sectionTitle(i)], LEGAL_SECTIONS[i]?.title ?? ""),
+    content: pick(map[legalKeys.sectionContent(i)], LEGAL_SECTIONS[i]?.content ?? ""),
+  })).filter((section) => section.title.trim() || section.content.trim());
+}
+
+/**
+ * Переводит унаследованный блок «Правовая информация» в ключи контента.
+ *
+ * До переезда текст соглашения редактировался как блок страницы и лежал в
+ * таблице AboutBlock (тип 'legal', поля heading/subheading/sections/почты).
+ * Такой текст есть на работающих установках, и потерять его нельзя: сайт
+ * показывает его до тех пор, пока то же поле не заполнено в новом разделе админки.
+ */
+export function legacyLegalOverrides(data: unknown): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!data || typeof data !== "object") return map;
+
+  const block = data as Record<string, unknown>;
+  const put = (key: string, value: unknown) => {
+    if (typeof value === "string" && value.trim()) map[key] = value;
+  };
+
+  put(legalKeys.heading, block.heading);
+  put(legalKeys.subheading, block.subheading);
+  put(legalKeys.preamble, block.preamble);
+  put(legalKeys.contactEmail("legal"), block.contactEmail);
+  put(legalKeys.contactUrl, block.contactUrl);
+
+  if (Array.isArray(block.sections)) {
+    block.sections.forEach((section, i) => {
+      if (!section || typeof section !== "object") return;
+      const s = section as Record<string, unknown>;
+      put(legalKeys.sectionTitle(i), s.title);
+      put(legalKeys.sectionContent(i), s.content);
+    });
+  }
+
+  return map;
+}
+
+/**
+ * Объединяет источники по возрастанию приоритета.
+ *
+ * Последний аргумент важнее: настройки из «Контент сайта → Правовая
+ * информация» перебивают унаследованный блок. Пустые значения ничего не стирают.
+ */
+export function mergeLegalOverrides(
+  ...sources: Array<Record<string, string> | null | undefined>
+): Record<string, string> {
+  const merged: Record<string, string> = {};
+
+  for (const source of sources) {
+    if (!source) continue;
+    for (const [key, value] of Object.entries(source)) {
+      if (typeof value === "string" && value.trim()) merged[key] = value;
+    }
+  }
+
+  return merged;
 }

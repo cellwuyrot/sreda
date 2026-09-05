@@ -15,6 +15,8 @@ import LegalFooter, {
   LegalContactLinks,
 } from "@/components/about/LegalFooter";
 import {
+  legacyLegalOverrides,
+  mergeLegalOverrides,
   LEGAL_CONTACTS,
   LEGAL_DEFAULTS,
   LEGAL_SECTIONS,
@@ -225,6 +227,46 @@ check("блоки «О проекте» и правовая информация
     "подвал подхватил чужие настройки",
   );
   assert(text.includes(LEGAL_CONTACTS[0].email), "потеряны контакты");
+});
+
+check("текст из унаследованного блока виден на странице", () => {
+  // Так выглядит строка AboutBlock с типом 'legal' на работающей установке.
+  const legacy = legacyLegalOverrides({
+    heading: "Соглашение из старого блока",
+    subheading: "редакция от 5 марта 2026 г.",
+    contactEmail: "old-legal@trioz.ru",
+    sections: [
+      { title: "1. Свои термины", content: "Текст первого раздела из блока." },
+    ],
+  });
+
+  const { html, text } = renderFooter({
+    defaultExpanded: true,
+    overrides: mergeLegalOverrides(legacy, null),
+  });
+
+  assert(text.includes("Соглашение из старого блока"), "заголовок блока не показан");
+  assert(text.includes("Текст первого раздела из блока."), "текст блока не показан");
+  assert(html.includes("mailto:old-legal@trioz.ru"), "почта из блока не показана");
+  // Остальные разделы не пропадают.
+  assert(text.includes(visibleText(LEGAL_SECTIONS[1].title)), "потеряны остальные разделы");
+});
+
+check("новый раздел админки перебивает старый блок", () => {
+  const legacy = legacyLegalOverrides({
+    heading: "Старый заголовок",
+    subheading: "старая редакция",
+  });
+
+  const { text } = renderFooter({
+    overrides: mergeLegalOverrides(legacy, {
+      [legalKeys.heading]: "Актуальное соглашение",
+    }),
+  });
+
+  assert(text.includes("Актуальное соглашение"), "новое значение не взяло верх");
+  assert(!text.includes("Старый заголовок"), "показан устаревший заголовок");
+  assert(text.includes("старая редакция"), "нетронутое поле потеряно");
 });
 
 console.log(
