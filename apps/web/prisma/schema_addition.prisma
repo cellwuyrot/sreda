@@ -1,12 +1,15 @@
-// ────────────────────────────────────────────────────────────────────────────
-// Добавьте эту модель в конец вашего prisma/schema.prisma
-// ────────────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ВАЖНО: ЗАМЕНИТЬ существующую модель AboutBlock в prisma/schema.prisma
+// (не добавлять в конец — модель уже есть со старыми полями!)
+//
+// Найдите блок «model AboutBlock { ... }» и замените его целиком на этот:
+// ══════════════════════════════════════════════════════════════════════════════
 
 model AboutBlock {
   id        String   @id @default(cuid())
-  type      String   // hero | video | stats | gallery | bento | timeline | team | cta
+  type      String                         // hero | video | stats | gallery | bento | timeline | team | cta
   position  Int      @default(0)
-  data      String   @db.Text   // JSON-строка с данными блока
+  data      String   @default("{}") @db.Text  // JSON-строка с данными блока
   visible   Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
