@@ -41,7 +41,9 @@ export default function LegalFooter({
 
     let cancelled = false;
 
-    fetch("/api/site-content")
+    // no-store: правки из админки должны появляться на /about сразу, без
+    // ожидания истечения браузерного кеша GET-запроса.
+    fetch("/api/site-content", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: Record<string, string> | null) => {
         if (cancelled) return;
