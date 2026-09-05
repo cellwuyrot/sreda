@@ -11,8 +11,11 @@
  *   npx tsx src/test/legalFooter.ssrcheck.tsx
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import LegalFooter from "@/components/about/LegalFooter";
+import LegalFooter, {
+  LegalContactLinks,
+} from "@/components/about/LegalFooter";
 import {
+  LEGAL_CONTACTS,
   LEGAL_DEFAULTS,
   LEGAL_SECTIONS,
   legalKeys,
@@ -146,6 +149,82 @@ check("resolveLegalContent устойчив к null и пустому ответ
     "пустой ответ даёт другой результат",
   );
   assert(fallback.sections.length === LEGAL_SECTIONS.length, "потеряны разделы");
+});
+
+check("все опубликованные почты показаны с подписями", () => {
+  const { html, text } = renderFooter();
+
+  assert(html.includes('id="legal-contacts"'), "нет блока контактов");
+  assert(text.includes("Контакты администрации"), "нет подписи блока контактов");
+
+  for (const contact of LEGAL_CONTACTS) {
+    assert(text.includes(contact.label), `нет названия канала: ${contact.label}`);
+    assert(text.includes(contact.email), `нет почты: ${contact.email}`);
+    assert(
+      html.includes(`mailto:${contact.email}`),
+      `почта ${contact.email} не кликабельна`,
+    );
+    assert(text.includes(contact.hint), `нет пояснения к почте: ${contact.label}`);
+  }
+
+  assert(html.includes(LEGAL_DEFAULTS.contactUrl), "нет адреса сайта");
+});
+
+check("почты из админки доезжают до сайта", () => {
+  const { html, text } = renderFooter({
+    overrides: {
+      [legalKeys.contactEmail("legal")]: "pravo@trioz.ru",
+      [legalKeys.contactLabel("media")]: "Пресс-служба",
+      [legalKeys.contactEmail("media")]: "press@trioz.ru",
+      [legalKeys.contactUrl]: "https://trioz.ru/about",
+    },
+  });
+
+  assert(html.includes("mailto:pravo@trioz.ru"), "новая правовая почта не показана");
+  assert(html.includes("mailto:press@trioz.ru"), "новая медийная почта не показана");
+  assert(text.includes("Пресс-служба"), "новая подпись канала не показана");
+  assert(html.includes("https://trioz.ru/about"), "адрес сайта из админки не показан");
+  assert(!html.includes("mailto:legal@trioz.ru"), "остался старый адрес из кода");
+});
+
+check("колонтитул берёт те же почты, что и блок правовой информации", () => {
+  const overrides = {
+    [legalKeys.contactEmail("legal")]: "pravo@trioz.ru",
+    [legalKeys.contactEmail("media")]: "press@trioz.ru",
+  };
+
+  const links = renderToStaticMarkup(<LegalContactLinks overrides={overrides} />);
+  const linksText = visibleText(links);
+
+  assert(links.includes("mailto:pravo@trioz.ru"), "в колонтитуле нет правовой почты");
+  assert(links.includes("mailto:press@trioz.ru"), "в колонтитуле нет медийной почты");
+  assert(
+    !links.includes("mailto:legal@trioz.ru"),
+    "колонтитул остался с жёстко вбитым адресом",
+  );
+  assert(
+    linksText.includes("Медийные запросы: press@trioz.ru"),
+    "в колонтитуле почта без назначения",
+  );
+  assert(links.includes(LEGAL_DEFAULTS.contactUrl), "в колонтитуле нет адреса сайта");
+});
+
+check("блоки «О проекте» и правовая информация — разные источники", () => {
+  // Ключи блоков «О проекте» хранятся в таблице AboutBlock и никак не
+  // влияют на подвал: лишние значения siteConfig не должны его ломать.
+  const { text } = renderFooter({
+    overrides: {
+      "about.title": "Заголовок из другого раздела",
+      "about.subtitle": "Подзаголовок из другого раздела",
+    },
+  });
+
+  assert(text.includes(LEGAL_DEFAULTS.heading), "правовой блок потерял заголовок");
+  assert(
+    !text.includes("Заголовок из другого раздела"),
+    "подвал подхватил чужие настройки",
+  );
+  assert(text.includes(LEGAL_CONTACTS[0].email), "потеряны контакты");
 });
 
 console.log(

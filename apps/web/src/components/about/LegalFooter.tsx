@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { resolveLegalContent, type LegalContent } from "@/lib/legal";
+import { useLegalContent } from "./useLegalContent";
 
 export type LegalFooterProps = {
   /**
@@ -30,33 +30,9 @@ export default function LegalFooter({
   overrides,
   defaultExpanded = false,
 }: LegalFooterProps = {}) {
-  // Стартуем сразу с редакции по умолчанию — текст есть до любых запросов.
-  const [content, setContent] = useState<LegalContent>(() =>
-    resolveLegalContent(overrides ?? null),
-  );
+  // Текст и почты — из единого источника, того же, что и у колонтитула.
+  const content = useLegalContent(overrides);
   const [expanded, setExpanded] = useState(defaultExpanded);
-
-  useEffect(() => {
-    if (overrides) return;
-
-    let cancelled = false;
-
-    // no-store: правки из админки должны появляться на /about сразу, без
-    // ожидания истечения браузерного кеша GET-запроса.
-    fetch("/api/site-content", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: Record<string, string> | null) => {
-        if (cancelled) return;
-        setContent(resolveLegalContent(data));
-      })
-      .catch(() => {
-        /* остаётся редакция по умолчанию */
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [overrides]);
 
   // По ссылке #legal из подвала документ должен сразу быть раскрытым.
   useEffect(() => {
@@ -112,22 +88,79 @@ export default function LegalFooter({
         </div>
       )}
 
-      <div className="mt-10 flex flex-wrap gap-5 border-t border-indigo-500/10 pt-6">
-        <a
-          href={`mailto:${content.contactEmail}`}
-          className="text-sm text-indigo-400 transition-colors hover:text-indigo-300"
-        >
-          {content.contactEmail}
-        </a>
+      {/* Почты разных назначений: без подписей посетитель не понимал,
+          куда писать по прессе, а куда — по персональным данным. */}
+      <div
+        id="legal-contacts"
+        className="mt-10 border-t border-indigo-500/10 pt-6"
+      >
+        <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-indigo-400">
+          Контакты администрации
+        </p>
+
+        <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {content.contacts.map((contact) => (
+            <div key={contact.key}>
+              <dt className="text-sm font-semibold text-white">{contact.label}</dt>
+              <dd className="mt-1">
+                <a
+                  href={`mailto:${contact.email}`}
+                  className="text-sm text-indigo-400 transition-colors hover:text-indigo-300"
+                >
+                  {contact.email}
+                </a>
+                <span className="mt-1 block text-xs text-neutral-600">
+                  {contact.hint}
+                </span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+
         <a
           href={content.contactUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm text-indigo-400 transition-colors hover:text-indigo-300"
+          className="mt-5 inline-block text-sm text-indigo-400 transition-colors hover:text-indigo-300"
         >
           {content.contactUrl}
         </a>
       </div>
     </section>
+  );
+}
+
+/**
+ * Компактный список почт и адреса сайта для колонтитула /about.
+ *
+ * Раньше в колонтитуле были жёстко вбитые legal@trioz.ru и https://trioz.ru:
+ * правка в админке их не меняла, а медийной почты не было вовсе.
+ */
+export function LegalContactLinks({
+  overrides,
+}: Pick<LegalFooterProps, "overrides"> = {}) {
+  const content = useLegalContent(overrides);
+
+  return (
+    <>
+      {content.contacts.map((contact) => (
+        <a
+          key={contact.key}
+          href={`mailto:${contact.email}`}
+          title={`${contact.label}: ${contact.hint}`}
+          className="transition-colors hover:text-indigo-400"
+        >
+          {contact.label}: {contact.email}
+        </a>
+      ))}
+      <a
+        href={content.contactUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="transition-colors hover:text-indigo-400"
+      >
+        {content.contactUrl}
+      </a>
+    </>
   );
 }

@@ -23,12 +23,58 @@ export const LEGAL_DEFAULTS = {
   contactUrl: "https://trioz.ru",
 };
 
+/**
+ * Опубликованная почта для обращений определённого типа.
+ *
+ * Правовые и медийные запросы идут на разные адреса, поэтому на сайте
+ * нужна не одна строка «mailto», а подписанный список: видно, куда
+ * писать по соглашению и персональным данным, а куда — прессе.
+ */
+export interface LegalContact {
+  /** Стабильный slug — из него собираются ключи контента. */
+  key: string;
+  /** Название канала: «Правовые запросы», «Медийные запросы»… */
+  label: string;
+  /** Короткое пояснение, по каким вопросам писать на этот адрес. */
+  hint: string;
+  /** Сам адрес почты. */
+  email: string;
+}
+
+/** Почты по умолчанию. Любую из них можно переопределить в админке. */
+export const LEGAL_CONTACTS: LegalContact[] = [
+  {
+    key: "legal",
+    label: "Правовые запросы",
+    hint: "соглашение, персональные данные, претензии",
+    email: "legal@trioz.ru",
+  },
+  {
+    key: "media",
+    label: "Медийные запросы",
+    hint: "пресса, интервью, использование материалов и логотипов",
+    email: "media@trioz.ru",
+  },
+  {
+    key: "support",
+    label: "Поддержка пользователей",
+    hint: "доступ к аккаунту, оплата, технические вопросы",
+    email: "support@trioz.ru",
+  },
+];
+
 export const legalKeys = {
   heading: "legal.heading",
   subheading: "legal.subheading",
   preamble: "legal.preamble",
   sectionTitle: (i: number) => `legal.section.${i + 1}.title`,
   sectionContent: (i: number) => `legal.section.${i + 1}.content`,
+  /** Название канала обращений. */
+  contactLabel: (key: string) => `legal.contact.${key}.label`,
+  /** Почта канала обращений. */
+  contactEmail: (key: string) => `legal.contact.${key}.email`,
+  /** Адрес сайта владельца платформы. */
+  contactUrl: "legal.contact.url",
 };
 
 export const LEGAL_SECTIONS: LegalSection[] = [
@@ -122,6 +168,9 @@ export interface LegalContent {
   subheading: string;
   preamble: string;
   sections: LegalSection[];
+  /** Подписанные почты: правовые, медийные, поддержка. */
+  contacts: LegalContact[];
+  /** Почта для юридических запросов — первая в списке контактов. */
   contactEmail: string;
   contactUrl: string;
 }
@@ -143,12 +192,19 @@ export function resolveLegalContent(
 ): LegalContent {
   const map = overrides ?? {};
 
+  const contacts: LegalContact[] = LEGAL_CONTACTS.map((contact) => ({
+    ...contact,
+    label: pick(map[legalKeys.contactLabel(contact.key)], contact.label),
+    email: pick(map[legalKeys.contactEmail(contact.key)], contact.email),
+  }));
+
   return {
+    contacts,
     heading: pick(map[legalKeys.heading], LEGAL_DEFAULTS.heading),
     subheading: pick(map[legalKeys.subheading], LEGAL_DEFAULTS.subheading),
     preamble: pick(map[legalKeys.preamble], LEGAL_DEFAULTS.preamble),
-    contactEmail: LEGAL_DEFAULTS.contactEmail,
-    contactUrl: LEGAL_DEFAULTS.contactUrl,
+    contactEmail: contacts[0]?.email || LEGAL_DEFAULTS.contactEmail,
+    contactUrl: pick(map[legalKeys.contactUrl], LEGAL_DEFAULTS.contactUrl),
     sections: LEGAL_SECTIONS.map((section, i) => ({
       title: pick(map[legalKeys.sectionTitle(i)], section.title),
       content: pick(map[legalKeys.sectionContent(i)], section.content),
