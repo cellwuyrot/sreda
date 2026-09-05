@@ -415,7 +415,7 @@ export default function AdminContentPage() {
   // Open edit modal
   const openEdit = (block: AboutBlockRow) => {
     setEditId(block.id);
-    setEditData(block.data);
+    setEditData(block.data as Record<string, unknown>);
   };
 
   const closeEdit = () => { setEditId(null); setEditData({}); };
