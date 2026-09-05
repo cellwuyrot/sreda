@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
-import LegalFooter from "@/components/about/LegalFooter";
+import LegalFooter, { LegalContactLinks } from "@/components/about/LegalFooter";
 
 import type {
   AboutBlockRow,
@@ -660,6 +660,29 @@ export default function AboutPage() {
         <>
           {blocks.map(renderBlock)}
 
+          {/* FIX-LEGAL: без этого страница без блоков выглядела сломанной:
+              видны были только кнопки загрузки и правовой блок, без пояснений,
+              где настраивается содержимое. */}
+          {blocks.length === 0 && (
+            <section
+              id="about-empty"
+              className="px-6 md:px-10 lg:px-16 py-20"
+            >
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-indigo-400">
+                О проекте
+              </p>
+              <h1 className="mb-4 text-3xl md:text-4xl font-black leading-tight text-white">
+                TRIOZ
+              </h1>
+              <p className="max-w-2xl text-sm leading-relaxed text-neutral-400">
+                Содержимое раздела пока не заполнено. Блоки страницы — обложка,
+                видео, статистика, галерея, команда и прочее — настраиваются в
+                админке: Контент сайта → О проекте. Правовая информация ниже —
+                отдельный раздел админки и показывается всегда.
+              </p>
+            </section>
+          )}
+
           {/* ── Download section ───────────────────────────────────────── */}
           <div className="px-6 md:px-10 lg:px-16">
             <DesktopDownload />
@@ -682,8 +705,9 @@ export default function AboutPage() {
               </div>
               <div className="flex flex-wrap items-center gap-4">
                 <a href="#legal" className="hover:text-neutral-400 transition-colors">Пользовательское соглашение</a>
-                <a href="mailto:legal@trioz.ru" className="hover:text-neutral-400 transition-colors">legal@trioz.ru</a>
-                <a href="https://trioz.ru" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-400 transition-colors">trioz.ru</a>
+                {/* FIX-LEGAL: почты и адрес сайта — из Админ → Контент сайта →
+                    Правовая информация, а не жёстко вбитые в разметку. */}
+                <LegalContactLinks />
               </div>
               <span>&#169; {new Date().getFullYear()} TRIOZ. Все права защищены.</span>
             </div>
