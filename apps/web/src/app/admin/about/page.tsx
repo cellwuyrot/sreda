@@ -26,8 +26,6 @@ import type {
   AppsData,
   AppItem,
   AppPlatform,
-  LegalData,
-  LegalSection as LegalSectionItem,
 } from "@/lib/aboutBlocks";
 import { BLOCK_DEFAULTS, BLOCK_LABELS, BLOCK_TYPES } from "@/lib/aboutBlocks";
 
@@ -705,89 +703,10 @@ function AppsEditor({ data, onChange }: { data: AppsData; onChange: (d: AppsData
 }
 
 
-function LegalSectionEditor({
-  section, index, onChange, onDelete,
-}: {
-  section: LegalSectionItem;
-  index: number;
-  onChange: (p: Partial<LegalSectionItem>) => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 mb-3">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold text-neutral-500 uppercase tracking-widest">
-          Раздел {index + 1}
-        </span>
-        <button className="text-red-500 hover:text-red-400 text-sm transition-colors" onClick={onDelete}>Удалить</button>
-      </div>
-      <Field label="Заголовок">
-        <Inp value={section.title} onChange={(v) => onChange({ title: v })} placeholder="1. Термины..." />
-      </Field>
-      <Field label="Текст раздела">
-        <TextArea value={section.content} onChange={(v) => onChange({ content: v })} rows={5} placeholder="Содержание раздела..." />
-      </Field>
-    </div>
-  );
-}
-
-function LegalEditor({ data, onChange }: { data: LegalData; onChange: (d: LegalData) => void }) {
-  const sections = data.sections ?? [];
-  const addSection = () => onChange({
-    ...data,
-    sections: [...sections, { title: `${sections.length + 1}. Новый раздел`, content: '' }],
-  });
-  const updSection = (i: number, p: Partial<LegalSectionItem>) =>
-    onChange({ ...data, sections: sections.map((s, j) => j === i ? { ...s, ...p } : s) });
-  const delSection = (i: number) =>
-    onChange({ ...data, sections: sections.filter((_, j) => j !== i) });
-
-  return (
-    <>
-      <Field label="Заголовок секции">
-        <Inp value={data.heading} onChange={(v) => onChange({ ...data, heading: v })} placeholder="Пользовательское соглашение" />
-      </Field>
-      <Field label="Подзаголовок">
-        <TextArea value={data.subheading} onChange={(v) => onChange({ ...data, subheading: v })} rows={2} placeholder="Редакция от..." />
-      </Field>
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <Field label="Email для юридических запросов">
-          <Inp value={data.contactEmail} onChange={(v) => onChange({ ...data, contactEmail: v })} placeholder="legal@trioz.ru" type="email" />
-        </Field>
-        <Field label="URL сайта">
-          <Inp value={data.contactUrl} onChange={(v) => onChange({ ...data, contactUrl: v })} placeholder="https://trioz.ru" />
-        </Field>
-      </div>
-      <div className="my-4 border-t border-white/[0.06]" />
-      <p className="mb-3 text-xs text-neutral-600">
-        Разделы соглашения ({sections.length} шт.)
-      </p>
-      {sections.length === 0 && (
-        <p className="mb-3 text-center text-sm text-neutral-700 rounded-xl border border-dashed border-white/10 py-6">
-          Разделов нет. Добавьте первый.
-        </p>
-      )}
-      {sections.map((s, i) => (
-        <LegalSectionEditor
-          key={i}
-          section={s}
-          index={i}
-          onChange={(p) => updSection(i, p)}
-          onDelete={() => delSection(i)}
-        />
-      ))}
-      <button
-        className="w-full mt-2 flex items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-500/30 py-2.5 text-sm text-indigo-400 hover:border-indigo-500/60 hover:bg-indigo-500/5 transition-colors"
-        onClick={addSection}
-      >
-        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
-        + Добавить раздел
-      </button>
-    </>
-  );
-}
+/* FIX-LEGAL: редакторы LegalSectionEditor/LegalEditor удалены.
+   Правовая информация больше не хранится в блоках «О проекте»:
+   единственное место редактирования — Контент сайта → Правовая
+   информация (/admin/legal), показ — подвал /about (LegalFooter). */
 
 // Dispatches the right form component based on block type
 function BlockEditorForm({
@@ -825,8 +744,6 @@ function BlockEditorForm({
       return <CtaEditor data={d as CtaData} onChange={onChange as (d: CtaData) => void} />;
     case "apps":
       return <AppsEditor data={d as AppsData} onChange={onChange as (d: AppsData) => void} />;
-    case "legal":
-      return <LegalEditor data={d as LegalData} onChange={onChange as (d: LegalData) => void} />;
     default:
       return <p className="text-neutral-500 text-sm">Редактор для этого типа блока не реализован.</p>;
   }

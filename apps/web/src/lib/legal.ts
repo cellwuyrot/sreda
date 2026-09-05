@@ -16,6 +16,11 @@ export const LEGAL_DEFAULTS = {
   heading: "Пользовательское соглашение",
   subheading:
     "Политика ведения деятельности платформы TRIOZ — редакция от 31 мая 2026 г.",
+  preamble: `Настоящее Пользовательское соглашение (далее — Соглашение) является публичной офертой Администрации платформы TRIOZ и определяет условия использования сайта trioz.ru, всех его разделов, сервисов и функциональных возможностей.
+
+Начало использования Платформы любым способом — просмотр страниц, регистрация, отправка сообщений или файлов — означает полное и безоговорочное принятие условий настоящего Соглашения и Политики обработки персональных данных.`,
+  contactEmail: "legal@trioz.ru",
+  contactUrl: "https://trioz.ru",
 };
 
 export const legalKeys = {
@@ -101,3 +106,52 @@ URL-адрес: https://trioz.ru
 Электронный адрес для юридических запросов и отзывов персональных данных: legal@trioz.ru`,
   },
 ];
+
+/* ─── Сборка действующей редакции ───────────────────────────────
+
+   Раньше правовая информация жила в двух местах сразу: в блоке «Правовая
+   информация» редактора «О проекте» (таблица AboutBlock) и в разделе
+   «Контент сайта → Правовая информация» (siteConfig, ключи `content:legal.*`).
+   Страница /about читала только первое хранилище, поэтому большой текст
+   из админки не показывался нигде, а при отсутствии блока подвал оставался
+   вовсе без текста. Теперь источник один — siteConfig, а код даёт редакцию
+   по умолчанию. Пустое значение = «вернуть текст по умолчанию». */
+
+export interface LegalContent {
+  heading: string;
+  subheading: string;
+  preamble: string;
+  sections: LegalSection[];
+  contactEmail: string;
+  contactUrl: string;
+}
+
+/** Пустая строка, пробелы и undefined равнозначны «нет переопределения». */
+function pick(override: string | undefined | null, fallback: string): string {
+  const value = (override ?? "").trim();
+  return value || fallback;
+}
+
+/**
+ * Собирает текст соглашения для показа в подвале /about.
+ *
+ * @param overrides ответ `/api/site-content` (ключи без префикса `content:`).
+ *   Может быть пустым или не передан — тогда вернётся редакция из кода.
+ */
+export function resolveLegalContent(
+  overrides?: Record<string, string> | null,
+): LegalContent {
+  const map = overrides ?? {};
+
+  return {
+    heading: pick(map[legalKeys.heading], LEGAL_DEFAULTS.heading),
+    subheading: pick(map[legalKeys.subheading], LEGAL_DEFAULTS.subheading),
+    preamble: pick(map[legalKeys.preamble], LEGAL_DEFAULTS.preamble),
+    contactEmail: LEGAL_DEFAULTS.contactEmail,
+    contactUrl: LEGAL_DEFAULTS.contactUrl,
+    sections: LEGAL_SECTIONS.map((section, i) => ({
+      title: pick(map[legalKeys.sectionTitle(i)], section.title),
+      content: pick(map[legalKeys.sectionContent(i)], section.content),
+    })),
+  };
+}
