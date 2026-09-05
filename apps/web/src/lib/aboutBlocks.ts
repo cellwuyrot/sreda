@@ -1,6 +1,6 @@
 /**
- * Типы и дефолтные данные для блоков страницы /about.
- * Каждый блок хранится в таблице AboutBlock (Prisma) как JSON в поле data.
+ * Block types and default data for the /about page CMS.
+ * Each block is stored in the AboutBlock Prisma table (JSON in `data` field).
  */
 
 export type BlockType =
@@ -11,7 +11,8 @@ export type BlockType =
   | 'bento'
   | 'timeline'
   | 'team'
-  | 'cta';
+  | 'cta'
+  | 'apps';
 
 export interface AboutBlockRow {
   id: string;
@@ -23,7 +24,7 @@ export interface AboutBlockRow {
   updatedAt: string;
 }
 
-// ─── Block data shapes ───────────────────────────────────────────────────────
+// ─── Block data shapes ────────────────────────────────────────────────────────
 
 export interface HeroData {
   badge?: string;
@@ -35,17 +36,15 @@ export interface HeroData {
 }
 
 export interface VideoData {
-  url?: string;          // direct mp4 / hosted
-  youtubeId?: string;    // YouTube embed id
+  url?: string;
+  youtubeId?: string;
   title?: string;
   duration?: string;
   tag?: string;
 }
 
 export interface StatsItem { label: string; value: string }
-export interface StatsData {
-  items: StatsItem[];
-}
+export interface StatsData { items: StatsItem[]; }
 
 export interface GalleryItem {
   id: string;
@@ -68,7 +67,7 @@ export interface BentoItem {
   description: string;
   color: string;
   href?: string;
-  wide?: boolean;  // spans 2 columns
+  wide?: boolean;
 }
 export interface BentoData {
   title?: string;
@@ -110,9 +109,32 @@ export interface CtaData {
   secondaryCta?: { label: string; href: string };
 }
 
-// ─── Default data per block type ─────────────────────────────────────────────
+// ─── Apps block ───────────────────────────────────────────────────────────────
 
-/** Maps each BlockType to its concrete default data. No `any` needed. */
+export type AppPlatform = 'android' | 'windows' | 'macos' | 'linux';
+
+export interface AppItem {
+  id: string;
+  platform: AppPlatform;
+  name: string;
+  version: string;
+  description?: string;
+  /** Relative URL served from /uploads/apps/ */
+  fileUrl?: string;
+  fileName?: string;
+  /** File size in bytes */
+  fileSize?: number;
+  active: boolean;
+}
+
+export interface AppsData {
+  title?: string;
+  subtitle?: string;
+  items: AppItem[];
+}
+
+// ─── Unified type map ─────────────────────────────────────────────────────────
+
 type BlockDataMap = {
   hero: HeroData;
   video: VideoData;
@@ -122,6 +144,7 @@ type BlockDataMap = {
   timeline: TimelineData;
   team: TeamData;
   cta: CtaData;
+  apps: AppsData;
 };
 
 export const BLOCK_DEFAULTS: BlockDataMap = {
@@ -129,9 +152,8 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
     badge: 'Платформа открыта',
     title: 'TRIOZ',
     subtitle: 'Экосистема проектов',
-    description:
-      'Игры, общение, творчество и знания — всё в одном пространстве. Мы строим уникальную вселенную, где каждый находит своё место.',
-    primaryCta: { label: 'Начать сейчас', href: '/connect' },
+    description: 'Игры, общение, творчество и знания — всё в одном пространстве.',
+    primaryCta: { label: 'Начать', href: '/connect' },
     secondaryCta: { label: 'Смотреть видео', action: 'video' },
   },
 
@@ -140,14 +162,14 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
     youtubeId: '',
     title: 'Трейлер платформы',
     duration: '0:00',
-    tag: '🎬 Официальный трейлер',
+    tag: 'Трейлер',
   },
 
   stats: {
     items: [
       { label: 'раздела платформы', value: '4' },
       { label: 'участников', value: '1 200+' },
-      { label: 'активных игры', value: '3' },
+      { label: 'активных игр', value: '3' },
       { label: 'материалов в библиотеке', value: '500+' },
       { label: 'год основания', value: '2022' },
     ],
@@ -155,7 +177,7 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
 
   gallery: {
     title: 'Внутри платформы',
-    subtitle: 'Скриншоты, трейлеры, гифки и арты — управляется из админки',
+    subtitle: 'Скриншоты, трейлеры и арты',
     items: [],
   },
 
@@ -163,30 +185,21 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
     title: 'Что внутри TRIOZ',
     subtitle: 'Четыре направления — одна экосистема',
     items: [
-      {
-        key: 'connect',
-        icon: '💬',
-        title: 'TZ.Connect',
-        description:
-          'Коммуникационная платформа нового поколения — каналы, сообщества, личные сообщения с превью ссылок и медиа.',
-        color: '#6366f1',
-        href: '/connect',
-        wide: true,
-      },
-      { key: 'games', icon: '🎮', title: 'TZ.Games', description: 'Стратегические онлайн-игры в уникальной вселенной.', color: '#ef4444', href: '/games' },
-      { key: 'library', icon: '📚', title: 'TZ.Library', description: 'Библиотека знаний, книг и лора вселенной.', color: '#10b981', href: '/library' },
-      { key: 'pero', icon: '✏️', title: 'TZ.Pero', description: 'Творческая мастерская: рассказы, арт, лор.', color: '#8b5cf6', href: '/pero' },
-      { key: 'projects', icon: '🏗️', title: 'TZ.Projects', description: 'Витрина проектов и разработок внутри экосистемы.', color: '#f59e0b', href: '/projects' },
+      { key: 'connect', icon: '💬', title: 'TZ.Connect', description: 'Коммуникационная платформа нового поколения.', color: '#6366f1', href: '/connect', wide: true },
+      { key: 'games', icon: '🎮', title: 'TZ.Games', description: 'Стратегические онлайн-игры.', color: '#ef4444', href: '/games' },
+      { key: 'library', icon: '📚', title: 'TZ.Library', description: 'Библиотека знаний и лора.', color: '#10b981', href: '/library' },
+      { key: 'pero', icon: '✏️', title: 'TZ.Pero', description: 'Творческая мастерская.', color: '#8b5cf6', href: '/pero' },
+      { key: 'projects', icon: '🏗️', title: 'TZ.Projects', description: 'Витрина проектов.', color: '#f59e0b', href: '/projects' },
     ],
   },
 
   timeline: {
     title: 'Путь TRIOZ',
     items: [
-      { year: '2022', title: 'Основание проекта', description: 'Первая идея и прототип платформы. Запуск первых игровых механик.', color: '#6366f1' },
-      { year: '2023', title: 'TZ.Connect — запуск мессенджера', description: 'Собственная коммуникационная платформа с каналами и сообществами.', color: '#8b5cf6' },
-      { year: '2024', title: 'Библиотека и творческий модуль', description: 'TZ.Library и TZ.Pero открыты для всех участников. Лор вселенной.', color: '#06b6d4' },
-      { year: '2025', title: 'Новый этап · Сейчас', description: 'Полный редизайн, новые игры, открытое API, публичный доступ.', color: '#6366f1', current: true },
+      { year: '2022', title: 'Основание проекта', description: 'Первая идея и прототип.', color: '#6366f1' },
+      { year: '2023', title: 'TZ.Connect — запуск', description: 'Мессенджер с каналами.', color: '#8b5cf6' },
+      { year: '2024', title: 'Библиотека и творчество', description: 'TZ.Library и TZ.Pero.', color: '#06b6d4' },
+      { year: '2025', title: 'Новый этап', description: 'Полный редизайн, новые игры.', color: '#6366f1', current: true },
     ],
   },
 
@@ -194,8 +207,6 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
     title: 'Кто создаёт TRIOZ',
     members: [
       { id: '1', name: 'Основатель', role: 'Идея · Разработка', emoji: '👤', color: '#6366f1' },
-      { id: '2', name: 'Дизайн', role: 'UI · Арт', emoji: '🎨', color: '#06b6d4' },
-      { id: '3', name: 'Контент', role: 'Лор · Редактура', emoji: '✏️', color: '#8b5cf6' },
     ],
     joinLabel: 'Присоединиться',
     joinHref: '/connect',
@@ -203,23 +214,30 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
 
   cta: {
     title: 'Станьте частью TRIOZ',
-    subtitle: 'Присоединяйтесь к тысячам участников уже сегодня',
+    subtitle: 'Присоединяйтесь уже сегодня',
     primaryCta: { label: 'Зарегистрироваться', href: '/auth/signin' },
-    secondaryCta: { label: 'Подробнее о проекте', href: '/projects' },
+    secondaryCta: { label: 'Подробнее', href: '/projects' },
+  },
+
+  apps: {
+    title: 'Приложения TRIOZ',
+    subtitle: 'Установите нативное приложение TZ.Connect — быстрый запуск, системные уведомления и звонки.',
+    items: [],
   },
 };
 
 export const BLOCK_LABELS: Record<BlockType, string> = {
-  hero: '🦸 Hero-секция',
-  video: '🎬 Видео / трейлер',
-  stats: '📊 Статистика',
-  gallery: '🖼 Медиа-галерея',
-  bento: '🃏 Карточки разделов',
+  hero:     '🦸 Hero-секция',
+  video:    '🎬 Видео / трейлер',
+  stats:    '📊 Статистика',
+  gallery:  '🖼 Медиа-галерея',
+  bento:    '🃏 Карточки разделов',
   timeline: '📅 История проекта',
-  team: '👥 Команда',
-  cta: '⚡ CTA-блок',
+  team:     '👥 Команда',
+  cta:      '⚡ CTA-блок',
+  apps:     '📱 Приложения',
 };
 
 export const BLOCK_TYPES: BlockType[] = [
-  'hero', 'video', 'stats', 'gallery', 'bento', 'timeline', 'team', 'cta',
+  'hero', 'video', 'stats', 'gallery', 'bento', 'timeline', 'team', 'cta', 'apps',
 ];
