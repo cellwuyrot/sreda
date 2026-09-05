@@ -13,7 +13,23 @@
  */
 
 import { useEffect, useState } from "react";
-import { resolveLegalContent, type LegalContent } from "@/lib/legal";
+import {
+  legacyLegalOverrides,
+  mergeLegalOverrides,
+  resolveLegalContent,
+  type LegalContent,
+} from "@/lib/legal";
+
+/** Находит унаследованный блок соглашения среди блоков «О проекте». */
+function legalBlockOverrides(blocks: unknown): Record<string, string> {
+  if (!Array.isArray(blocks)) return {};
+
+  const row = blocks.find(
+    (b) => b && typeof b === "object" && (b as { type?: unknown }).type === "legal",
+  ) as { data?: unknown } | undefined;
+
+  return legacyLegalOverrides(row?.data);
+}
 
 /**
  * @param overrides готовые настройки siteConfig. Если переданы — запрос к API
@@ -31,17 +47,31 @@ export function useLegalContent(
 
     let cancelled = false;
 
-    // no-store: правки из админки должны появляться на /about сразу, без
-    // ожидания истечения браузерного кеша GET-запроса.
-    fetch("/api/site-content", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: Record<string, string> | null) => {
+    // Два источника сразу:
+    //   • /api/site-content — раздел «Контент сайта → Правовая информация»;
+    //   • /api/about-blocks — унаследованный блок 'legal', в котором текст
+    //     редактировался раньше.
+    // Именно из-за чтения только одного из них ранее и пропадал
+    // большой текст соглашения на /about.
+    const json = (url: string) =>
+      fetch(url, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+
+    Promise.all([json("/api/site-content"), json("/api/about-blocks")]).then(
+      ([siteContent, blocks]) => {
         if (cancelled) return;
-        setContent(resolveLegalContent(data));
-      })
-      .catch(() => {
-        /* остаётся редакция по умолчанию */
-      });
+
+        setContent(
+          resolveLegalContent(
+            mergeLegalOverrides(
+              legalBlockOverrides(blocks),
+              siteContent as Record<string, string> | null,
+            ),
+          ),
+        );
+      },
+    );
 
     return () => {
       cancelled = true;
