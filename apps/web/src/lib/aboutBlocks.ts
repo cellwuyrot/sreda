@@ -17,7 +17,7 @@ export interface AboutBlockRow {
   id: string;
   type: BlockType;
   position: number;
-  data: Record<string, unknown>;
+  data: unknown;
   visible: boolean;
   createdAt: string;
   updatedAt: string;
@@ -112,7 +112,19 @@ export interface CtaData {
 
 // ─── Default data per block type ─────────────────────────────────────────────
 
-export const BLOCK_DEFAULTS: Record<BlockType, any> = {
+/** Maps each BlockType to its concrete default data. No `any` needed. */
+type BlockDataMap = {
+  hero: HeroData;
+  video: VideoData;
+  stats: StatsData;
+  gallery: GalleryData;
+  bento: BentoData;
+  timeline: TimelineData;
+  team: TeamData;
+  cta: CtaData;
+};
+
+export const BLOCK_DEFAULTS: BlockDataMap = {
   hero: {
     badge: 'Платформа открыта',
     title: 'TRIOZ',
@@ -121,7 +133,7 @@ export const BLOCK_DEFAULTS: Record<BlockType, any> = {
       'Игры, общение, творчество и знания — всё в одном пространстве. Мы строим уникальную вселенную, где каждый находит своё место.',
     primaryCta: { label: 'Начать сейчас', href: '/connect' },
     secondaryCta: { label: 'Смотреть видео', action: 'video' },
-  } as HeroData,
+  },
 
   video: {
     url: '',
@@ -129,7 +141,7 @@ export const BLOCK_DEFAULTS: Record<BlockType, any> = {
     title: 'Трейлер платформы',
     duration: '0:00',
     tag: '🎬 Официальный трейлер',
-  } as VideoData,
+  },
 
   stats: {
     items: [
@@ -139,13 +151,13 @@ export const BLOCK_DEFAULTS: Record<BlockType, any> = {
       { label: 'материалов в библиотеке', value: '500+' },
       { label: 'год основания', value: '2022' },
     ],
-  } as StatsData,
+  },
 
   gallery: {
     title: 'Внутри платформы',
     subtitle: 'Скриншоты, трейлеры, гифки и арты — управляется из админки',
     items: [],
-  } as GalleryData,
+  },
 
   bento: {
     title: 'Что внутри TRIOZ',
@@ -166,7 +178,7 @@ export const BLOCK_DEFAULTS: Record<BlockType, any> = {
       { key: 'pero', icon: '✏️', title: 'TZ.Pero', description: 'Творческая мастерская: рассказы, арт, лор.', color: '#8b5cf6', href: '/pero' },
       { key: 'projects', icon: '🏗️', title: 'TZ.Projects', description: 'Витрина проектов и разработок внутри экосистемы.', color: '#f59e0b', href: '/projects' },
     ],
-  } as BentoData,
+  },
 
   timeline: {
     title: 'Путь TRIOZ',
@@ -176,7 +188,7 @@ export const BLOCK_DEFAULTS: Record<BlockType, any> = {
       { year: '2024', title: 'Библиотека и творческий модуль', description: 'TZ.Library и TZ.Pero открыты для всех участников. Лор вселенной.', color: '#06b6d4' },
       { year: '2025', title: 'Новый этап · Сейчас', description: 'Полный редизайн, новые игры, открытое API, публичный доступ.', color: '#6366f1', current: true },
     ],
-  } as TimelineData,
+  },
 
   team: {
     title: 'Кто создаёт TRIOZ',
@@ -187,14 +199,14 @@ export const BLOCK_DEFAULTS: Record<BlockType, any> = {
     ],
     joinLabel: 'Присоединиться',
     joinHref: '/connect',
-  } as TeamData,
+  },
 
   cta: {
     title: 'Станьте частью TRIOZ',
     subtitle: 'Присоединяйтесь к тысячам участников уже сегодня',
     primaryCta: { label: 'Зарегистрироваться', href: '/auth/signin' },
     secondaryCta: { label: 'Подробнее о проекте', href: '/projects' },
-  } as CtaData,
+  },
 };
 
 export const BLOCK_LABELS: Record<BlockType, string> = {
