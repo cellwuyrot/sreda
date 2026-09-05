@@ -404,7 +404,7 @@ function CtaBlock({ data }: { data: CtaData }) {
 
 // ---------- Apps block ----------
 
-const PLATFORM_CFG: Record<AppPlatform, { label: string; color: string; bg: string; icon: JSX.Element }> = {
+const PLATFORM_CFG: Record<AppPlatform, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   android: {
     label: 'Android',
     color: '#22c55e',

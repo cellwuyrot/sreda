@@ -9,25 +9,12 @@ import { randomUUID } from 'crypto';
 const MAX_SIZE = 500 * 1024 * 1024; // 500 MB
 const ALLOWED_EXT = ['exe', 'apk', 'dmg', 'deb', 'appimage', 'pkg', 'msi'];
 
-const MIME_MAP: Record<string, string> = {
-  exe: 'application/vnd.microsoft.portable-executable',
-  apk: 'application/vnd.android.package-archive',
-  dmg: 'application/x-apple-diskimage',
-  deb: 'application/vnd.debian.binary-package',
-  appimage: 'application/octet-stream',
-  pkg: 'application/octet-stream',
-  msi: 'application/x-msi',
-};
-
-function adminGuard(session: Awaited<ReturnType<typeof getServerSession>>) {
-  return !session?.user || (session.user as { role?: string }).role !== 'ADMIN';
-}
-
-// POST /api/about-apps-upload  — upload installer file
+// POST /api/about-apps-upload — upload installer file (admin only)
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (adminGuard(session))
+  if (!session?.user || (session.user as { role?: string }).role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
@@ -56,20 +43,21 @@ export async function POST(req: NextRequest) {
     url: `/uploads/apps/${filename}`,
     fileName: file.name,
     fileSize: file.size,
-    mime: MIME_MAP[ext] ?? 'application/octet-stream',
   });
 }
 
-// DELETE /api/about-apps-upload  — remove installer file from disk
+// DELETE /api/about-apps-upload — remove installer file from disk (admin only)
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (adminGuard(session))
+  if (!session?.user || (session.user as { role?: string }).role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
-  const body = await req.json() as { fileUrl?: string };
-  if (!body.fileUrl) return NextResponse.json({ error: 'fileUrl required' }, { status: 400 });
+  const body = (await req.json()) as { fileUrl?: string };
+  if (!body.fileUrl)
+    return NextResponse.json({ error: 'fileUrl required' }, { status: 400 });
 
-  // Only delete files inside /uploads/apps/
+  // Safety: only delete files from /uploads/apps/
   const urlPath = body.fileUrl.startsWith('/') ? body.fileUrl : `/${body.fileUrl}`;
   if (!urlPath.startsWith('/uploads/apps/')) {
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
