@@ -359,7 +359,7 @@ function CtaEditor({ data, onChange }: { data: CtaData; onChange: (d: CtaData) =
 }
 
 function BlockEditorForm({ block, onChange }: { block: AboutBlockRow; onChange: (d: Record<string, unknown>) => void }) {
-  const d = block.data;
+  const d = block.data as unknown;
   switch (block.type) {
     case 'hero':     return <HeroEditor data={d as HeroData} onChange={onChange as (d: HeroData) => void} />;
     case 'video':    return <VideoEditor data={d as VideoData} onChange={onChange as (d: VideoData) => void} />;
