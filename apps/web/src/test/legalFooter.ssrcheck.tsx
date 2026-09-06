@@ -10,6 +10,7 @@
  *
  *   npx tsx src/test/legalFooter.ssrcheck.tsx
  */
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import LegalFooter, {
   LegalContactLinks,
@@ -23,6 +24,7 @@ import {
   legalKeys,
   resolveLegalContent,
 } from "@/lib/legal";
+import { BLOCK_DEFAULTS, BLOCK_LABELS, BLOCK_TYPES } from "@/lib/aboutBlocks";
 
 let failures = 0;
 
@@ -267,6 +269,98 @@ check("новый раздел админки перебивает старый 
   assert(text.includes("Актуальное соглашение"), "новое значение не взяло верх");
   assert(!text.includes("Старый заголовок"), "показан устаревший заголовок");
   assert(text.includes("старая редакция"), "нетронутое поле потеряно");
+});
+
+/* UNIFY: проверки единого блока и загрузки файлов. */
+const pageSrc = readFileSync("src/app/about/page.tsx", "utf8");
+const adminSrc = readFileSync("src/app/admin/about/page.tsx", "utf8");
+
+check("каждый тип блока рисуется на /about", () => {
+  for (const type of BLOCK_TYPES) {
+    assert(
+      pageSrc.includes("case '" + type + "'") ||
+        pageSrc.includes('case "' + type + '"'),
+      "нет рендера для блока " + type,
+    );
+  }
+});
+
+check("каждый тип блока редактируется в админке", () => {
+  for (const type of BLOCK_TYPES) {
+    assert(
+      adminSrc.includes('case "' + type + '"') ||
+        adminSrc.includes("case '" + type + "'"),
+      "нет редактора для блока " + type,
+    );
+    assert(BLOCK_LABELS[type] !== undefined, "нет подписи для блока " + type);
+    assert(BLOCK_DEFAULTS[type] !== undefined, "нет заготовки для блока " + type);
+  }
+});
+
+check("правовая информация — полноценный блок «О проекте»", () => {
+  assert(BLOCK_TYPES.includes("legal"), "тип legal не вернулся в список блоков");
+  const legalDefaults = BLOCK_DEFAULTS.legal as {
+    sections?: unknown[];
+    contacts?: unknown[];
+  };
+  assert((legalDefaults.sections ?? []).length > 0, "в заготовке нет разделов");
+  assert((legalDefaults.contacts ?? []).length > 0, "в заготовке нет почт");
+  assert(
+    !pageSrc.includes("b.type !== ('legal'"),
+    "блок legal всё ещё отфильтровывается",
+  );
+});
+
+check("соглашение не дублируется на странице", () => {
+  assert(
+    /blocks\.some\(\(b\) => b\.type === .legal.\)/.test(pageSrc),
+    "подвал рисуется всегда — будет два одинаковых раздела",
+  );
+});
+
+check("блок перебивает старые настройки Контента сайта", () => {
+  const { text } = renderFooter({
+    overrides: { [legalKeys.heading]: "Старый источник" },
+    blockOverrides: legacyLegalOverrides({
+      heading: "Текст из единого блока",
+      sections: [
+        { title: "1. Наши условия", content: "Текст из блока О проекте." },
+      ],
+    }),
+    defaultExpanded: true,
+  });
+
+  assert(text.includes("Текст из единого блока"), "текст блока не показан");
+  assert(!text.includes("Старый источник"), "старый источник пересекает блок");
+  assert(text.includes("Текст из блока О проекте."), "раздел блока не показан");
+});
+
+check("медиа грузится файлом, а не ссылкой", () => {
+  assert(adminSrc.includes("MediaUploadField"), "в админке нет загрузчика файлов");
+  assert(!adminSrc.includes("Аватар URL"), "аватар всё ещё задаётся ссылкой");
+  const uploadSrc = readFileSync(
+    "src/components/admin/MediaUploadField.tsx",
+    "utf8",
+  );
+  assert(uploadSrc.includes('type="file"'), "нет поля выбора файла");
+  assert(uploadSrc.includes("/api/about-media"), "загрузка не шлётся на сервер");
+});
+
+check("загруженные медиафайлы видны на /about", () => {
+  assert(pageSrc.includes("hero-bg-image"), "фон обложки не рисуется");
+  assert(pageSrc.includes("hero-bg-video"), "видео-фон обложки не рисуется");
+  assert(pageSrc.includes("data.posterUrl"), "обложка видео не рисуется");
+  assert(pageSrc.includes("item.imageUrl"), "картинка карточки не рисуется");
+  assert(pageSrc.includes("m.avatarUrl"), "аватар команды не рисуется");
+});
+
+check("старый раздел админки ведёт в единый редактор", () => {
+  const legalAdmin = readFileSync("src/app/admin/legal/page.tsx", "utf8");
+  assert(legalAdmin.includes("/admin/about"), "нет ссылки на единый редактор");
+  assert(
+    !legalAdmin.includes("/api/site-content"),
+    "старый редактор всё ещё пишет данные",
+  );
 });
 
 console.log(

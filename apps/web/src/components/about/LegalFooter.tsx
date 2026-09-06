@@ -24,14 +24,17 @@ export type LegalFooterProps = {
   overrides?: Record<string, string> | null;
   /** Показать полный документ сразу, без клика по кнопке. */
   defaultExpanded?: boolean;
+  /** Данные блока «Правовая информация» страницы — высший приоритет. */
+  blockOverrides?: Record<string, string> | null;
 };
 
 export default function LegalFooter({
   overrides,
   defaultExpanded = false,
+  blockOverrides,
 }: LegalFooterProps = {}) {
   // Текст и почты — из единого источника, того же, что и у колонтитула.
-  const content = useLegalContent(overrides);
+  const content = useLegalContent(overrides, blockOverrides);
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   // По ссылке #legal из подвала документ должен сразу быть раскрытым.
@@ -138,8 +141,9 @@ export default function LegalFooter({
  */
 export function LegalContactLinks({
   overrides,
-}: Pick<LegalFooterProps, "overrides"> = {}) {
-  const content = useLegalContent(overrides);
+  blockOverrides,
+}: Pick<LegalFooterProps, "overrides" | "blockOverrides"> = {}) {
+  const content = useLegalContent(overrides, blockOverrides);
 
   return (
     <>
