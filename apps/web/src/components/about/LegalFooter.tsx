@@ -1,169 +1,158 @@
 "use client";
 
-/**
- * Правовая информация в подвале страницы /about.
- *
- * Единственное место на сайте, где показывается пользовательское соглашение.
- * Текст берётся из Админ → Контент сайта → Правовая информация
- * (siteConfig, ключи `content:legal.*`), а при отсутствии переопределений —
- * из редакции по умолчанию в `@/lib/legal`.
- *
- * Важное свойство: компонент никогда не остаётся пустым. Первый рендер,
- * отказ сети, 403, битый JSON — во всех случаях показывается текст из кода.
- * Именно отсутствие такого запасного варианта раньше и давало «пустой подвал».
- */
-
 import { useEffect, useState } from "react";
-import { useLegalContent } from "./useLegalContent";
+import { resolveLegalContent } from "@/lib/legal";
 
-export type LegalFooterProps = {
-  /**
-   * Готовые настройки из siteConfig (ключи `legal.*`). Если переданы — запрос
-   * к `/api/site-content` не выполняется. Удобно для серверного рендера и тестов.
-   */
-  overrides?: Record<string, string> | null;
-  /** Показать полный документ сразу, без клика по кнопке. */
-  defaultExpanded?: boolean;
-  /** Данные блока «Правовая информация» страницы — высший приоритет. */
-  blockOverrides?: Record<string, string> | null;
-};
+function useSiteLegalOverrides() {
+  const [overrides, setOverrides] =
+    useState<Record<string, string> | null>(null);
 
-export default function LegalFooter({
-  overrides,
-  defaultExpanded = false,
-  blockOverrides,
-}: LegalFooterProps = {}) {
-  // Текст и почты — из единого источника, того же, что и у колонтитула.
-  const content = useLegalContent(overrides, blockOverrides);
-  const [expanded, setExpanded] = useState(defaultExpanded);
-
-  // По ссылке #legal из подвала документ должен сразу быть раскрытым.
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash === "#legal") {
-      setExpanded(true);
-    }
+    let cancelled = false;
+
+    fetch("/api/site-content", {
+      cache: "no-store",
+    })
+      .then((response) => {
+        if (!response.ok) {
+          return null;
+        }
+
+        return response.json() as Promise<unknown>;
+      })
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (
+          data &&
+          typeof data === "object" &&
+          !Array.isArray(data)
+        ) {
+          const values: Record<string, string> = {};
+
+          for (const [key, value] of Object.entries(
+            data as Record<string, unknown>,
+          )) {
+            if (typeof value === "string") {
+              values[key] = value;
+            }
+          }
+
+          setOverrides(values);
+        }
+      })
+      .catch(() => {
+        // Значения по умолчанию уже доступны.
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  return overrides;
+}
+
+export default function LegalFooter() {
+  const overrides = useSiteLegalOverrides();
+  const content = resolveLegalContent(overrides);
 
   return (
     <section
       id="legal"
       aria-labelledby="legal-heading"
-      className="border-t border-indigo-500/10 px-6 md:px-10 lg:px-16 py-14"
+      className="border-t border-indigo-500/10 px-6 py-16 md:px-10 lg:px-16"
     >
-      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-indigo-400">
-        Правовая информация
-      </p>
+      <div className="mx-auto max-w-5xl">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-indigo-400">
+          Правовая информация
+        </p>
 
-      <h2
-        id="legal-heading"
-        className="mb-3 text-2xl md:text-3xl font-black leading-tight text-white"
-      >
-        {content.heading}
-      </h2>
+        <h2
+          id="legal-heading"
+          className="mb-3 text-3xl font-black leading-tight text-white md:text-4xl"
+        >
+          {content.heading}
+        </h2>
 
-      <p className="mb-6 max-w-2xl text-sm text-neutral-500">{content.subheading}</p>
+        <p className="mb-8 max-w-3xl text-sm leading-relaxed text-neutral-500">
+          {content.subheading}
+        </p>
 
-      <div className="mb-8 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-neutral-400">
-        {content.preamble}
-      </div>
+        <div className="mb-10 max-w-4xl rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm leading-7 text-neutral-300">
+          <p className="whitespace-pre-line">
+            {content.preamble}
+          </p>
+        </div>
 
-      {/* Сам документ большой, поэтому разделы свёрнуты, но всегда доступны. */}
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        aria-controls="legal-sections"
-        className="mb-6 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:border-indigo-500/40 hover:text-indigo-300"
-      >
-        {expanded ? "Свернуть документ" : "Читать полный текст соглашения"}
-      </button>
+        <div className="space-y-10">
+          {content.sections.map((section) => (
+            <article key={section.title}>
+              <h3 className="mb-3 text-lg font-bold text-white">
+                {section.title}
+              </h3>
 
-      {expanded && (
-        <div id="legal-sections" className="max-w-3xl space-y-8">
-          {content.sections.map((section, i) => (
-            <article key={i}>
-              <h3 className="mb-3 text-base font-bold text-white">{section.title}</h3>
-              <div className="whitespace-pre-line text-sm leading-relaxed text-neutral-500">
+              <div className="max-w-4xl whitespace-pre-line text-sm leading-7 text-neutral-400">
                 {section.content}
               </div>
             </article>
           ))}
         </div>
-      )}
 
-      {/* Почты разных назначений: без подписей посетитель не понимал,
-          куда писать по прессе, а куда — по персональным данным. */}
-      <div
-        id="legal-contacts"
-        className="mt-10 border-t border-indigo-500/10 pt-6"
-      >
-        <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-indigo-400">
-          Контакты администрации
-        </p>
+        <div className="mt-12 grid gap-4 border-t border-indigo-500/10 pt-7 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-neutral-600">
+              Юридические обращения
+            </p>
 
-        <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {content.contacts.map((contact) => (
-            <div key={contact.key}>
-              <dt className="text-sm font-semibold text-white">{contact.label}</dt>
-              <dd className="mt-1">
-                <a
-                  href={`mailto:${contact.email}`}
-                  className="text-sm text-indigo-400 transition-colors hover:text-indigo-300"
-                >
-                  {contact.email}
-                </a>
-                <span className="mt-1 block text-xs text-neutral-600">
-                  {contact.hint}
-                </span>
-              </dd>
-            </div>
-          ))}
-        </dl>
+            <a
+              href={`mailto:${content.contactEmail}`}
+              className="mt-1 inline-block text-sm text-indigo-400 transition-colors hover:text-indigo-300"
+            >
+              {content.contactEmail}
+            </a>
+          </div>
 
-        <a
-          href={content.contactUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-5 inline-block text-sm text-indigo-400 transition-colors hover:text-indigo-300"
-        >
-          {content.contactUrl}
-        </a>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-neutral-600">
+              Официальный сайт
+            </p>
+
+            <a
+              href={content.contactUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-block text-sm text-indigo-400 transition-colors hover:text-indigo-300"
+            >
+              {content.contactUrl}
+            </a>
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
-/**
- * Компактный список почт и адреса сайта для колонтитула /about.
- *
- * Раньше в колонтитуле были жёстко вбитые legal@trioz.ru и https://trioz.ru:
- * правка в админке их не меняла, а медийной почты не было вовсе.
- */
-export function LegalContactLinks({
-  overrides,
-  blockOverrides,
-}: Pick<LegalFooterProps, "overrides" | "blockOverrides"> = {}) {
-  const content = useLegalContent(overrides, blockOverrides);
+export function LegalContactLinks() {
+  const overrides = useSiteLegalOverrides();
+  const content = resolveLegalContent(overrides);
 
   return (
     <>
-      {content.contacts.map((contact) => (
-        <a
-          key={contact.key}
-          href={`mailto:${contact.email}`}
-          title={`${contact.label}: ${contact.hint}`}
-          className="transition-colors hover:text-indigo-400"
-        >
-          {contact.label}: {contact.email}
-        </a>
-      ))}
       <a
-        href={content.contactUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+        href="#legal"
         className="transition-colors hover:text-indigo-400"
       >
-        {content.contactUrl}
+        Правовая информация
+      </a>
+
+      <a
+        href={`mailto:${content.contactEmail}`}
+        className="transition-colors hover:text-indigo-400"
+      >
+        {content.contactEmail}
       </a>
     </>
   );
