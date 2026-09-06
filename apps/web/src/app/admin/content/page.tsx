@@ -554,10 +554,10 @@ export default function AdminContentPage() {
         <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.06] px-4 py-3 text-xs text-neutral-400">
           <span className="text-base">⚖️</span>
           <span>
-            Пользовательское соглашение показывается в подвале /about и правится отдельно:
+            Правовая информация не является блоком этой страницы и правится отдельно.
           </span>
           <a href="/admin/legal" className="font-semibold text-indigo-400 hover:text-indigo-300">
-            Контент сайта → Правовая информация
+            Открыть редактор правовой информации
           </a>
         </div>
 
