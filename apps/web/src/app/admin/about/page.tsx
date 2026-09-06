@@ -28,7 +28,6 @@ import type {
   AppPlatform,
 } from "@/lib/aboutBlocks";
 import { BLOCK_DEFAULTS, BLOCK_LABELS, BLOCK_TYPES } from "@/lib/aboutBlocks";
-import MediaUploadField from "@/components/admin/MediaUploadField";
 
 // ─── tiny UI helpers ──────────────────────────────────────────────────────────
 
@@ -98,20 +97,6 @@ function HeroEditor({ data, onChange }: { data: HeroData; onChange: (d: HeroData
       <Field label="Описание (краткий текст)">
         <TextArea value={data.description} onChange={(v) => upd({ description: v })} rows={3} />
       </Field>
-      {/* UPLOAD: фон обложки — файлом, без ручного URL. */}
-      <Field label="Фон обложки (картинка или видео)">
-        <MediaUploadField
-          kind="both"
-          value={data.bgUrl}
-          label="Загрузить фон"
-          onChange={(url) =>
-            upd({
-              bgUrl: url,
-              bgType: /\.(mp4|webm|mov)$/i.test(url) ? "video" : "image",
-            })
-          }
-        />
-      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Кнопка 1 — текст">
           <Inp value={data.primaryCta?.label} onChange={(v) => upd({ primaryCta: { ...data.primaryCta!, label: v } })} placeholder="Начать" />
@@ -145,27 +130,11 @@ function VideoEditor({ data, onChange }: { data: VideoData; onChange: (d: VideoD
   const upd = (patch: Partial<VideoData>) => onChange({ ...data, ...patch });
   return (
     <>
-      {/* UPLOAD: главный способ — загрузка файла. Раньше здесь было поле для URL,
-          и видео приходилось заливать на сервер вручную. */}
-      <Field label="Видеофайл (MP4 / WebM / MOV)">
-        <MediaUploadField
-          kind="video"
-          value={data.url}
-          label="Загрузить видео"
-          previewHeight={160}
-          onChange={(url) => upd({ url, youtubeId: url ? "" : data.youtubeId })}
-        />
-      </Field>
-      <Field label="Обложка видео (необязательно)">
-        <MediaUploadField
-          kind="image"
-          value={data.posterUrl}
-          label="Загрузить обложку"
-          onChange={(url) => upd({ posterUrl: url })}
-        />
-      </Field>
-      <Field label="Резервный вариант: YouTube ID (если файл не загружен)">
+      <Field label="YouTube ID (например: dQw4w9WgXcQ)">
         <Inp value={data.youtubeId} onChange={(v) => upd({ youtubeId: v, url: "" })} placeholder="dQw4w9WgXcQ" />
+      </Field>
+      <Field label="Или прямой URL видеофайла (.mp4 / .webm)">
+        <Inp value={data.url} onChange={(v) => upd({ url: v, youtubeId: "" })} placeholder="/uploads/about/video.mp4" />
       </Field>
       <Field label="Подпись под видео">
         <Inp value={data.title} onChange={(v) => upd({ title: v })} />
@@ -377,16 +346,6 @@ function BentoEditor({ data, onChange }: { data: BentoData; onChange: (d: BentoD
           <Field label="Описание">
             <TextArea rows={2} value={it.description} onChange={(v) => updItem(i, { description: v })} />
           </Field>
-          {/* UPLOAD: картинка карточки вместо эмодзи — файлом. */}
-          <Field label="Картинка карточки (необязательно)">
-            <MediaUploadField
-              kind="image"
-              value={it.imageUrl}
-              label="Загрузить картинку"
-              previewHeight={90}
-              onChange={(url) => updItem(i, { imageUrl: url })}
-            />
-          </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Ссылка (href)">
               <Inp value={it.href} onChange={(v) => updItem(i, { href: v })} placeholder="/connect" />
@@ -522,15 +481,8 @@ function TeamEditor({ data, onChange }: { data: TeamData; onChange: (d: TeamData
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {/* UPLOAD: аватар — файлом, а не ссылкой. */}
-            <Field label="Аватар (необязательно)">
-              <MediaUploadField
-                kind="image"
-                value={m.avatarUrl}
-                label="Загрузить аватар"
-                previewHeight={90}
-                onChange={(url) => updMember(i, { avatarUrl: url })}
-              />
+            <Field label="Аватар URL (необязательно)">
+              <Inp value={m.avatarUrl} onChange={(v) => updMember(i, { avatarUrl: v })} placeholder="/uploads/..." />
             </Field>
             <Field label="Цвет">
               <div className="flex items-center gap-2">

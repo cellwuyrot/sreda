@@ -23,60 +23,14 @@ export const LEGAL_DEFAULTS = {
   contactUrl: "https://trioz.ru",
 };
 
-/**
- * Опубликованная почта для обращений определённого типа.
- *
- * Правовые и медийные запросы идут на разные адреса, поэтому на сайте
- * нужна не одна строка «mailto», а подписанный список: видно, куда
- * писать по соглашению и персональным данным, а куда — прессе.
- */
-export interface LegalContact {
-  /** Стабильный slug — из него собираются ключи контента. */
-  key: string;
-  /** Название канала: «Правовые запросы», «Медийные запросы»… */
-  label: string;
-  /** Короткое пояснение, по каким вопросам писать на этот адрес. */
-  hint: string;
-  /** Сам адрес почты. */
-  email: string;
-}
-
-/** Почты по умолчанию. Любую из них можно переопределить в админке. */
-export const LEGAL_CONTACTS: LegalContact[] = [
-  {
-    key: "legal",
-    label: "Правовые запросы",
-    hint: "соглашение, персональные данные, претензии",
-    email: "legal@trioz.ru",
-  },
-  {
-    key: "media",
-    label: "Медийные запросы",
-    hint: "пресса, интервью, использование материалов и логотипов",
-    email: "media@trioz.ru",
-  },
-  {
-    key: "support",
-    label: "Поддержка пользователей",
-    hint: "доступ к аккаунту, оплата, технические вопросы",
-    email: "support@trioz.ru",
-  },
-];
-
 export const legalKeys = {
   heading: "legal.heading",
   subheading: "legal.subheading",
   preamble: "legal.preamble",
+  contactEmail: "legal.contact.email",
+  contactUrl: "legal.contact.url",
   sectionTitle: (i: number) => `legal.section.${i + 1}.title`,
   sectionContent: (i: number) => `legal.section.${i + 1}.content`,
-  /** Название канала обращений. */
-  contactLabel: (key: string) => `legal.contact.${key}.label`,
-  /** Почта канала обращений. */
-  contactEmail: (key: string) => `legal.contact.${key}.email`,
-  /** Пояснение к каналу обращений. */
-  contactHint: (key: string) => `legal.contact.${key}.hint`,
-  /** Адрес сайта владельца платформы. */
-  contactUrl: "legal.contact.url",
 };
 
 export const LEGAL_SECTIONS: LegalSection[] = [
@@ -155,197 +109,37 @@ URL-адрес: https://trioz.ru
   },
 ];
 
-/* ─── Сборка действующей редакции ───────────────────────────────
-
-   Раньше правовая информация жила в двух местах сразу: в блоке «Правовая
-   информация» редактора «О проекте» (таблица AboutBlock) и в разделе
-   «Контент сайта → Правовая информация» (siteConfig, ключи `content:legal.*`).
-   Страница /about читала только первое хранилище, поэтому большой текст
-   из админки не показывался нигде, а при отсутствии блока подвал оставался
-   вовсе без текста. Теперь источник один — siteConfig, а код даёт редакцию
-   по умолчанию. Пустое значение = «вернуть текст по умолчанию». */
 
 export interface LegalContent {
   heading: string;
   subheading: string;
   preamble: string;
-  sections: LegalSection[];
-  /** Подписанные почты: правовые, медийные, поддержка. */
-  contacts: LegalContact[];
-  /** Почта для юридических запросов — первая в списке контактов. */
   contactEmail: string;
   contactUrl: string;
+  sections: LegalSection[];
 }
 
-/** Пустая строка, пробелы и undefined равнозначны «нет переопределения». */
-function pick(override: string | undefined | null, fallback: string): string {
-  const value = (override ?? "").trim();
-  return value || fallback;
+function pick(value: string | undefined, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
 }
 
-/**
- * Собирает текст соглашения для показа в подвале /about.
- *
- * @param overrides ответ `/api/site-content` (ключи без префикса `content:`).
- *   Может быть пустым или не передан — тогда вернётся редакция из кода.
- */
+function buildSections(overrides: Record<string, string>): LegalSection[] {
+  return LEGAL_SECTIONS.map((section, index) => ({
+    title: pick(overrides[legalKeys.sectionTitle(index)], section.title),
+    content: pick(overrides[legalKeys.sectionContent(index)], section.content),
+  }));
+}
+
 export function resolveLegalContent(
   overrides?: Record<string, string> | null,
 ): LegalContent {
   const map = overrides ?? {};
-
-  const contacts = buildContacts(map);
-
   return {
-    contacts,
     heading: pick(map[legalKeys.heading], LEGAL_DEFAULTS.heading),
     subheading: pick(map[legalKeys.subheading], LEGAL_DEFAULTS.subheading),
     preamble: pick(map[legalKeys.preamble], LEGAL_DEFAULTS.preamble),
-    contactEmail: contacts[0]?.email || LEGAL_DEFAULTS.contactEmail,
+    contactEmail: pick(map[legalKeys.contactEmail], LEGAL_DEFAULTS.contactEmail),
     contactUrl: pick(map[legalKeys.contactUrl], LEGAL_DEFAULTS.contactUrl),
     sections: buildSections(map),
-  };
-}
-
-/**
- * Собирает подписанные почты.
- *
- * Кроме трёх каналов по умолчанию админ может добавить свои — раньше
- * такие адреса молча терялись: перебор шёл только по списку из кода.
- */
-function buildContacts(map: Record<string, string>): LegalContact[] {
-  const order: string[] = LEGAL_CONTACTS.map((c) => c.key);
-
-  for (const key of Object.keys(map)) {
-    const match = /^legal\.contact\.(.+)\.(label|email|hint)$/.exec(key);
-    if (!match) continue;
-    if (!(map[key] ?? "").trim()) continue;
-    if (!order.includes(match[1])) order.push(match[1]);
-  }
-
-  return order
-    .map((key) => {
-      const base = LEGAL_CONTACTS.find((c) => c.key === key);
-      return {
-        key,
-        label: pick(map[legalKeys.contactLabel(key)], base?.label ?? key),
-        hint: pick(map[legalKeys.contactHint(key)], base?.hint ?? ""),
-        email: pick(map[legalKeys.contactEmail(key)], base?.email ?? ""),
-      };
-    })
-    .filter((contact) => contact.email.trim());
-}
-
-/**
- * Собирает разделы документа.
- *
- * В админке и в старом блоке разделов может быть больше, чем в редакции
- * по умолчанию. Раньше лишние разделы просто пропадали: перебор шёл по
- * списку из кода, а не по тому, что действительно заполнено.
- */
-function buildSections(map: Record<string, string>): LegalSection[] {
-  let count = LEGAL_SECTIONS.length;
-
-  for (const key of Object.keys(map)) {
-    const match = /^legal\.section\.(\d+)\.(title|content)$/.exec(key);
-    if (!match) continue;
-    if (!(map[key] ?? "").trim()) continue;
-    count = Math.max(count, Number(match[1]));
-  }
-
-  return Array.from({ length: count }, (_, i) => ({
-    title: pick(map[legalKeys.sectionTitle(i)], LEGAL_SECTIONS[i]?.title ?? ""),
-    content: pick(map[legalKeys.sectionContent(i)], LEGAL_SECTIONS[i]?.content ?? ""),
-  })).filter((section) => section.title.trim() || section.content.trim());
-}
-
-/**
- * Переводит унаследованный блок «Правовая информация» в ключи контента.
- *
- * До переезда текст соглашения редактировался как блок страницы и лежал в
- * таблице AboutBlock (тип 'legal', поля heading/subheading/sections/почты).
- * Такой текст есть на работающих установках, и потерять его нельзя: сайт
- * показывает его до тех пор, пока то же поле не заполнено в новом разделе админки.
- */
-export function legacyLegalOverrides(data: unknown): Record<string, string> {
-  const map: Record<string, string> = {};
-  if (!data || typeof data !== "object") return map;
-
-  const block = data as Record<string, unknown>;
-  const put = (key: string, value: unknown) => {
-    if (typeof value === "string" && value.trim()) map[key] = value;
-  };
-
-  put(legalKeys.heading, block.heading);
-  put(legalKeys.subheading, block.subheading);
-  put(legalKeys.preamble, block.preamble);
-  put(legalKeys.contactEmail("legal"), block.contactEmail);
-  put(legalKeys.contactUrl, block.contactUrl);
-
-  if (Array.isArray(block.contacts)) {
-    block.contacts.forEach((contact) => {
-      if (!contact || typeof contact !== "object") return;
-      const c = contact as Record<string, unknown>;
-      const key = typeof c.key === "string" ? c.key.trim() : "";
-      if (!key) return;
-      put(legalKeys.contactLabel(key), c.label);
-      put(legalKeys.contactHint(key), c.hint);
-      put(legalKeys.contactEmail(key), c.email);
-    });
-  }
-
-  if (Array.isArray(block.sections)) {
-    block.sections.forEach((section, i) => {
-      if (!section || typeof section !== "object") return;
-      const s = section as Record<string, unknown>;
-      put(legalKeys.sectionTitle(i), s.title);
-      put(legalKeys.sectionContent(i), s.content);
-    });
-  }
-
-  return map;
-}
-
-/**
- * Объединяет источники по возрастанию приоритета.
- *
- * Последний аргумент важнее: настройки из «Контент сайта → Правовая
- * информация» перебивают унаследованный блок. Пустые значения ничего не стирают.
- */
-export function mergeLegalOverrides(
-  ...sources: Array<Record<string, string> | null | undefined>
-): Record<string, string> {
-  const merged: Record<string, string> = {};
-
-  for (const source of sources) {
-    if (!source) continue;
-    for (const [key, value] of Object.entries(source)) {
-      if (typeof value === "string" && value.trim()) merged[key] = value;
-    }
-  }
-
-  return merged;
-}
-
-/**
- * Готовые данные блока «Правовая информация» для единого редактора.
- *
- * Нужно при первом открытии блока: в поля сразу подставляется текст,
- * который админ уже написал раньше — в старом блоке или в разделе
- * «Контент сайта». Так слияние двух редакторов не теряет данные.
- */
-export function legalContentToBlock(content: LegalContent) {
-  return {
-    heading: content.heading,
-    subheading: content.subheading,
-    preamble: content.preamble,
-    sections: content.sections.map((s) => ({ title: s.title, content: s.content })),
-    contacts: content.contacts.map((c) => ({
-      key: c.key,
-      label: c.label,
-      hint: c.hint,
-      email: c.email,
-    })),
-    contactUrl: content.contactUrl,
   };
 }
