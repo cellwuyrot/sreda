@@ -3,89 +3,85 @@
 /**
  * Действующая редакция правовой информации для клиентских компонентов.
  *
- * Подвал /about показывает одни и те же данные в двух местах: большой блок
- * с соглашением и короткая строка ссылок в самом низу страницы. Чтобы почты
- * и адрес сайта не расходились (раньше в колонтитуле был жёстко вбитый
- * legal@trioz.ru), оба места берут данные из этого хука.
+ * ПОЧЕМУ ПЕРЕПИСАНО.
+ * Прошлая версия принимала объекты (`overrides`, `blockOverrides`) прямо в
+ * зависимости useEffect. Страница /about создавала такой объект заново на
+ * каждый рендер, поэтому эффект считал зависимости изменившимися, снова делал
+ * запрос, снова вызывал setState — и получался бесконечный цикл
+ * «запрос → рендер → запрос». Из-за него раздел не успевал отрисоваться:
+ * блок был включён, текст в админке был, а на странице не появлялось ничего.
  *
- * Свойство, которое важно сохранить: текст есть всегда. Первый рендер идёт
- * с редакцией из кода, а отказ сети, 403 или битый JSON её не стирают.
+ * Теперь:
+ *   • зависимости эффекта — строки (стабильные при равных данных), поэтому
+ *     запрос выполняется один раз;
+ *   • источник один — «Контент сайта → Правовая информация» (siteConfig).
+ *     Блоков страница больше не догружает: данные блока приходят пропсом.
+ *     Именно двойное чтение и давало «пересечение информации»;
+ *   • приоритет: редакция из кода → siteConfig → данные блока;
+ *   • текст есть всегда: отказ сети, 403 или битый JSON не стирают его.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  legacyLegalOverrides,
   mergeLegalOverrides,
   resolveLegalContent,
   type LegalContent,
 } from "@/lib/legal";
 
-/** Находит унаследованный блок соглашения среди блоков «О проекте». */
-function legalBlockOverrides(blocks: unknown): Record<string, string> {
-  if (!Array.isArray(blocks)) return {};
+type Overrides = Record<string, string> | null | undefined;
 
-  const row = blocks.find(
-    (b) => b && typeof b === "object" && (b as { type?: unknown }).type === "legal",
-  ) as { data?: unknown } | undefined;
-
-  return legacyLegalOverrides(row?.data);
+/** Стабильный ключ: одинаковые данные — одинаковая строка. */
+function keyOf(overrides: Overrides): string {
+  if (!overrides) return "";
+  return JSON.stringify(
+    Object.keys(overrides)
+      .sort()
+      .map((k) => [k, overrides[k]]),
+  );
 }
 
-/**
- * @param overrides готовые настройки siteConfig. Если переданы — запрос к API
- *   не выполняется (удобно для тестов и серверного рендера).
- */
 export function useLegalContent(
-  overrides?: Record<string, string> | null,
-  /**
-   * Данные блока «Правовая информация» со страницы. Единый редактор
-   * важнее старых ключей siteConfig — именно из-за обратного приоритета
-   * правки в блоке раньше не доезжали до страницы.
-   */
-  blockOverrides?: Record<string, string> | null,
+  /** Готовые ключи siteConfig. Если переданы — запрос не выполняется. */
+  overrides?: Overrides,
+  /** Данные блока «Правовая информация» страницы — высший приоритет. */
+  blockOverrides?: Overrides,
 ): LegalContent {
-  const [content, setContent] = useState<LegalContent>(() =>
-    resolveLegalContent(mergeLegalOverrides(overrides, blockOverrides)),
+  const overridesKey = keyOf(overrides);
+  const blockKey = keyOf(blockOverrides);
+
+  // Ответ API храним отдельно от пропсов, чтобы слияние оставалось чистым.
+  const [siteContent, setSiteContent] = useState<Record<string, string> | null>(
+    null,
   );
 
   useEffect(() => {
-    if (overrides) return;
+    // Данные переданы явно (тесты, серверный рендер) — сеть не нужна.
+    if (overridesKey) return;
 
     let cancelled = false;
 
-    // Два источника сразу:
-    //   • /api/site-content — раздел «Контент сайта → Правовая информация»;
-    //   • /api/about-blocks — унаследованный блок 'legal', в котором текст
-    //     редактировался раньше.
-    // Именно из-за чтения только одного из них ранее и пропадал
-    // большой текст соглашения на /about.
-    const json = (url: string) =>
-      fetch(url, { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
-
-    Promise.all([json("/api/site-content"), json("/api/about-blocks")]).then(
-      ([siteContent, blocks]) => {
+    fetch("/api/site-content", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((data) => {
         if (cancelled) return;
-
-        // Приоритет снизу вверх: редакция из кода → старые ключи
-        // siteConfig → блок единого редактора «О проекте».
-        setContent(
-          resolveLegalContent(
-            mergeLegalOverrides(
-              siteContent as Record<string, string> | null,
-              legalBlockOverrides(blocks),
-              blockOverrides,
-            ),
-          ),
-        );
-      },
-    );
+        if (data && typeof data === "object" && !Array.isArray(data)) {
+          setSiteContent(data as Record<string, string>);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [overrides, blockOverrides]);
+    // Только строки: объекты в зависимостях и вызывали бесконечный цикл.
+  }, [overridesKey]);
 
-  return content;
+  return useMemo(
+    () =>
+      resolveLegalContent(
+        mergeLegalOverrides(siteContent, overrides, blockOverrides),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [siteContent, overridesKey, blockKey],
+  );
 }
