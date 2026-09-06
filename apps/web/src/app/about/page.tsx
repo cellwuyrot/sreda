@@ -866,7 +866,6 @@ export default function AboutPage() {
         return <CtaBlock key={block.id} data={d as CtaData} />;
       case "apps":
         return <AppsBlock key={block.id} data={d as AppsData} />;
-
       default:
         return null;
     }
@@ -923,8 +922,8 @@ export default function AboutPage() {
               <p className="max-w-2xl text-sm leading-relaxed text-neutral-400">
                 Содержимое раздела пока не заполнено. Все блоки — обложка,
                 видео, статистика, галерея, карточки, история, команда, CTA,
-                приложения настраиваются в одном месте:
-                Админ → О проекте. Правовая информация отображается ниже автоматически,
+                приложения и правовая информация — настраиваются в одном месте:
+                Админ → О проекте. Правовая информация ниже показывается всегда,
                 даже без блоков.
               </p>
             </section>
@@ -935,8 +934,7 @@ export default function AboutPage() {
             <DesktopDownload />
           </div>
 
-          {/* ── Правовая информация ──────────────────────────── */}
-          {/* Системный раздел страницы, не отдельный CMS-блок. */}
+          {/* Правовая информация — системная часть страницы, не CMS-блок. */}
           <LegalFooter />
 
           <footer className="border-t border-indigo-500/10 px-6 py-8 text-xs text-neutral-700">
