@@ -474,6 +474,31 @@ check("\u0441\u0435\u043a\u0446\u0438\u0438 \u0438 \u0431\u043b\u043e\u043a\u043
   assert(page.includes("buildAboutContent"), "\u0441\u0435\u043a\u0446\u0438\u0438 \u043d\u0435 \u0441\u043e\u0431\u0438\u0440\u0430\u044e\u0442\u0441\u044f \u043d\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435");
 });
 
+check("\u043f\u0440\u043e\u043f\u0441\u044b \u0441\u043e\u0432\u043f\u0430\u0434\u0430\u044e\u0442 \u0441 \u0441\u0438\u0433\u043d\u0430\u0442\u0443\u0440\u0430\u043c\u0438 \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043e\u0432", () => {
+  const glyph = readFileSync("src/components/about/ProjectGlyph.tsx", "utf8");
+  const signature = /export default function ProjectGlyph\(\{([^}]*)\}/.exec(glyph);
+  assert(signature !== null, "\u043d\u0435 \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u043b\u0430\u0441\u044c \u0441\u0438\u0433\u043d\u0430\u0442\u0443\u0440\u0430 ProjectGlyph");
+  const allowed = (signature as RegExpExecArray)[1]
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  const legacy = readFileSync("src/components/about/LegacyAboutSections.tsx", "utf8");
+  const usage = /<ProjectGlyph([^/]*)\/>/.exec(legacy);
+  assert(usage !== null, "ProjectGlyph \u043d\u0435 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u0432 \u0441\u0435\u043a\u0446\u0438\u044f\u0445");
+  const passed = ((usage as RegExpExecArray)[1].match(/([a-zA-Z]+)=/g) ?? []).map((m) =>
+    m.replace("=", ""),
+  );
+  assert(passed.length > 0, "\u0433\u043b\u0438\u0444\u0443 \u043d\u0435 \u043f\u0435\u0440\u0435\u0434\u0430\u043d\u043e \u043d\u0438 \u043e\u0434\u043d\u043e\u0433\u043e \u043f\u0440\u043e\u043f\u0430");
+  assert(passed.includes("name"), "\u0433\u043b\u0438\u0444 \u043d\u0435 \u043f\u043e\u043b\u0443\u0447\u0430\u0435\u0442 \u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 name");
+  for (const prop of passed) {
+    assert(
+      allowed.includes(prop),
+      "\u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442 \u043d\u0435 \u0437\u043d\u0430\u0435\u0442 \u043f\u0440\u043e\u043f\u0430 \u00ab" + prop + "\u00bb \u2014 tsc \u0443\u043f\u0430\u0434\u0451\u0442 \u043d\u0430 \u0441\u0431\u043e\u0440\u043a\u0435",
+    );
+  }
+});
+
 writeFileSync(
   "/data/about-legal-preview.html",
   `<!doctype html>\n<html lang="ru"><head><meta charset="utf-8"><title>/about</title></head>\n<body style="background:#07090f;color:#fff">\n${htmlMerged}\n</body></html>\n`,
