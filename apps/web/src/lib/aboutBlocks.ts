@@ -1,3 +1,5 @@
+import { parseBlockData } from './blockData';
+
 /**
  * Block types and default data for the /about page CMS.
  * Each block is stored in the AboutBlock Prisma table (JSON in `data` field).
@@ -305,9 +307,12 @@ export interface AboutLayout {
 export function buildAboutLayout(
   blocks: AboutBlockRow[] | null | undefined,
 ): AboutLayout {
-  const visible = (Array.isArray(blocks) ? blocks : []).filter(
-    (block) => block && block.visible !== false,
-  );
+  const visible = (Array.isArray(blocks) ? blocks : [])
+    .filter((block) => block && block.visible !== false)
+    // Данные нормализуются в одном месте: если API или база отдали
+    // JSON-строку (или дважды закодированную строку), компоненты всё равно
+    // получат обычный объект и не упадут в `if (!data.items?.length) return null`.
+    .map((block) => ({ ...block, data: parseBlockData(block.data) }));
 
   return {
     bodyBlocks: visible.filter((block) => block.type !== 'legal'),

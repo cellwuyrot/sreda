@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { parseBlockData, serializeBlockData } from '@/lib/blockData';
 
 type AnyBlock = {
   id: string;
@@ -23,9 +24,9 @@ const db = (prisma as any).aboutBlock as {
 };
 
 function serialize(b: AnyBlock) {
-  let data: unknown = {};
-  try { data = JSON.parse(b.data); } catch { /* keep empty obj */ }
-  return { ...b, data };
+  // Разбор терпим к дважды закодированным строкам и к уже готовым объектам:
+  // иначе компоненты получали {} и тихо возвращали null.
+  return { ...b, data: parseBlockData(b.data) };
 }
 
 // GET /api/about-blocks
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
     data: {
       type: body.type,
       position: pos,
-      data: JSON.stringify(body.data ?? {}),
+      data: serializeBlockData(body.data ?? {}),
       visible: body.visible ?? true,
     },
   });
@@ -104,7 +105,7 @@ export async function PUT(req: NextRequest) {
   if (body.type     !== undefined) updateData.type     = body.type;
   if (body.position !== undefined) updateData.position = body.position;
   if (body.visible  !== undefined) updateData.visible  = body.visible;
-  if (body.data     !== undefined) updateData.data     = JSON.stringify(body.data);
+  if (body.data     !== undefined) updateData.data     = serializeBlockData(body.data);
 
   try {
     const block = await db.update({ where: { id: body.id }, data: updateData });

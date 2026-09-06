@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { parseBlockData, serializeBlockData } from '@/lib/blockData';
 
 type AnyBlock = { id: string; type: string; position: number; data: string; visible: boolean; createdAt: Date; updatedAt: Date };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = (prisma as any).aboutBlock as { update:(a:unknown)=>Promise<AnyBlock>; delete:(a:unknown)=>Promise<void> };
-const ser = (b: AnyBlock) => ({ ...b, data: (() => { try { return JSON.parse(b.data); } catch { return {}; } })() });
+const ser = (b: AnyBlock) => ({ ...b, data: parseBlockData(b.data) });
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -18,7 +19,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (body.type     !== undefined) upd.type     = body.type;
   if (body.position !== undefined) upd.position = body.position;
   if (body.visible  !== undefined) upd.visible  = body.visible;
-  if (body.data     !== undefined) upd.data     = JSON.stringify(body.data);
+  if (body.data     !== undefined) upd.data     = serializeBlockData(body.data);
   try {
     const block = await db.update({ where: { id }, data: upd });
     return NextResponse.json(ser(block));
