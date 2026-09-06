@@ -1,85 +1,68 @@
-"use client";
+```ts
+function buildSections(overrides: Record<string, string>): LegalSection[] {
+  return LEGAL_SECTIONS.map((section, index) => ({
+    title: pick(overrides[legalKeys.sectionTitle(index)], section.title),
+    content: pick(overrides[legalKeys.sectionContent(index)], section.content),
+  }));
+}
 
 /**
- * Действующая редакция правовой информации для клиентских компонентов.
+ * Объединяет источники правового контента.
  *
- * ПОЧЕМУ ПЕРЕПИСАНО.
- * Прошлая версия принимала объекты (`overrides`, `blockOverrides`) прямо в
- * зависимости useEffect. Страница /about создавала такой объект заново на
- * каждый рендер, поэтому эффект считал зависимости изменившимися, снова делал
- * запрос, снова вызывал setState — и получался бесконечный цикл
- * «запрос → рендер → запрос». Из-за него раздел не успевал отрисоваться:
- * блок был включён, текст в админке был, а на странице не появлялось ничего.
- *
- * Теперь:
- *   • зависимости эффекта — строки (стабильные при равных данных), поэтому
- *     запрос выполняется один раз;
- *   • источник один — «Контент сайта → Правовая информация» (siteConfig).
- *     Блоков страница больше не догружает: данные блока приходят пропсом.
- *     Именно двойное чтение и давало «пересечение информации»;
- *   • приоритет: редакция из кода → siteConfig → данные блока;
- *   • текст есть всегда: отказ сети, 403 или битый JSON не стирают его.
+ * Приоритет:
+ * LEGAL_DEFAULTS / LEGAL_SECTIONS
+ * → siteConfig
+ * → overrides
+ * → blockOverrides
  */
+export function mergeLegalOverrides(
+  siteContent?: Record<string, string> | null,
+  overrides?: Record<string, string> | null,
+  blockOverrides?: Record<string, string> | null,
+): Record<string, string> {
+  const result: Record<string, string> = {};
 
-import { useEffect, useState } from "react";
-import {
-  mergeLegalOverrides,
-  resolveLegalContent,
-  type LegalContent,
-} from "@/lib/legal";
+  const sources = [siteContent, overrides, blockOverrides];
 
-type Overrides = Record<string, string> | null | undefined;
+  for (const source of sources) {
+    if (!source || typeof source !== "object") {
+      continue;
+    }
 
-/** Стабильный ключ: одинаковые данные — одинаковая строка. */
-function keyOf(overrides: Overrides): string {
-  if (!overrides) return "";
-  return JSON.stringify(
-    Object.keys(overrides)
-      .sort()
-      .map((k) => [k, overrides[k]]),
-  );
+    for (const [key, value] of Object.entries(source)) {
+      if (typeof value === "string" && value.trim()) {
+        result[key] = value;
+      }
+    }
+  }
+
+  return result;
 }
 
-export function useLegalContent(
-  /** Готовые ключи siteConfig. Если переданы — запрос не выполняется. */
-  overrides?: Overrides,
-  /** Данные блока «Правовая информация» страницы — высший приоритет. */
-  blockOverrides?: Overrides,
+export function resolveLegalContent(
+  overrides?: Record<string, string> | null,
 ): LegalContent {
-  const overridesKey = keyOf(overrides);
+  const map = overrides ?? {};
 
-  // Ответ API храним отдельно от пропсов, чтобы слияние оставалось чистым.
-  const [siteContent, setSiteContent] = useState<Record<string, string> | null>(
-    null,
-  );
-
-  useEffect(() => {
-    // Данные переданы явно (тесты, серверный рендер) — сеть не нужна.
-    if (overridesKey) return;
-
-    let cancelled = false;
-
-    fetch("/api/site-content", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)
-      .then((data) => {
-        if (cancelled) return;
-        if (data && typeof data === "object" && !Array.isArray(data)) {
-          setSiteContent(data as Record<string, string>);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // Только строки: объекты в зависимостях и вызывали бесконечный цикл.
-  }, [overridesKey]);
-
-  // Слияние считается на рендер. Запоминание здесь не нужно и даже вредно:
-  // результат нигде не попадает в зависимости других хуков, а объём данных —
-  // несколько десятков строк. Зато нет ни списков зависимостей со сложными
-  // выражениями, ни подавленных правил eslint.
-  return resolveLegalContent(
-    mergeLegalOverrides(siteContent, overrides, blockOverrides),
-  );
+  return {
+    heading: pick(map[legalKeys.heading], LEGAL_DEFAULTS.heading),
+    subheading: pick(
+      map[legalKeys.subheading],
+      LEGAL_DEFAULTS.subheading,
+    ),
+    preamble: pick(
+      map[legalKeys.preamble],
+      LEGAL_DEFAULTS.preamble,
+    ),
+    contactEmail: pick(
+      map[legalKeys.contactEmail],
+      LEGAL_DEFAULTS.contactEmail,
+    ),
+    contactUrl: pick(
+      map[legalKeys.contactUrl],
+      LEGAL_DEFAULTS.contactUrl,
+    ),
+    sections: buildSections(map),
+  };
 }
+```
