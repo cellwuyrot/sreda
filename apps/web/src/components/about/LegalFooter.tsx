@@ -1,4 +1,3 @@
-```tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,7 +8,7 @@ import { resolveLegalContent } from "@/lib/legal";
  *
  * Контент:
  * - берётся из siteConfig через /api/site-content;
- * - при отсутствии значения используется LEGAL_DEFAULTS;
+ * - при отсутствии значения используются значения по умолчанию;
  * - при недоступности API документ по умолчанию всё равно отображается.
  */
 export default function LegalFooter() {
@@ -52,10 +51,7 @@ export default function LegalFooter() {
         }
       })
       .catch(() => {
-        /**
-         * Значения по умолчанию уже предусмотрены в resolveLegalContent().
-         * Поэтому отсутствие сети/API не должно скрывать правовой документ.
-         */
+        // Используются значения LEGAL_DEFAULTS.
       });
 
     return () => {
@@ -202,4 +198,3 @@ export function LegalContactLinks() {
     </>
   );
 }
-```
