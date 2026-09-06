@@ -19,8 +19,10 @@ import type {
   TeamData,
   TeamMember,
   CtaData,
+  LegalBlockData,
 } from "@/lib/aboutBlocks";
 import { BLOCK_DEFAULTS, BLOCK_LABELS, BLOCK_TYPES } from "@/lib/aboutBlocks";
+import { LEGAL_DEFAULTS, LEGAL_SECTIONS } from "@/lib/legal";
 
 // ─── tiny UI helpers ────────────────────────────────────────────────────────
 
@@ -358,6 +360,72 @@ function CtaEditor({ data, onChange }: { data: CtaData; onChange: (d: CtaData) =
   );
 }
 
+// ─── Правовая информация ───────────────────────────────────────────────────
+
+// Пустое поле здесь — не «пусто на сайте», а «взять из раздела
+// Контент сайта → Правовая информация». Именно так два раздела дополняют
+// друг друга вместо того, чтобы спорить за один и тот же текст.
+function LegalEditor({ data, onChange }: { data: LegalBlockData; onChange: (d: LegalBlockData) => void }) {
+  const upd = (patch: Partial<LegalBlockData>) => onChange({ ...data, ...patch });
+  const sections = data.sections ?? [];
+
+  const updSection = (i: number, patch: Partial<{ title: string; content: string }>) => {
+    const next = sections.map((s, idx) => (idx === i ? { ...s, ...patch } : s));
+    upd({ sections: next });
+  };
+
+  return (
+    <>
+      <div className="mb-4 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] p-3 text-xs leading-relaxed text-neutral-400">
+        Блок всегда показывается в подвале страницы <span className="text-indigo-400">/about</span>,
+        независимо от его позиции в списке. Оставьте поле пустым — будет
+        взят текст из раздела{" "}
+        <a href="/admin/legal" className="font-semibold text-indigo-400 hover:text-indigo-300">Контент сайта → Правовая информация</a>,
+        а если и там пусто — редакция по умолчанию. Заполненное поле имеет
+        приоритет только для себя и не стирает остальные.
+      </div>
+
+      <Field label="Заголовок документа">
+        <Inp value={data.heading ?? ""} onChange={(v) => upd({ heading: v })} placeholder={LEGAL_DEFAULTS.heading} />
+      </Field>
+
+      <Field label="Подзаголовок (редакция, дата)">
+        <Inp value={data.subheading ?? ""} onChange={(v) => upd({ subheading: v })} placeholder={LEGAL_DEFAULTS.subheading} />
+      </Field>
+
+      <Field label="Преамбула">
+        <TextArea rows={5} value={data.preamble ?? ""} onChange={(v) => upd({ preamble: v })} placeholder="Пусто — текст из раздела «Правовая информация»" />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Почта для юридических обращений">
+          <Inp value={data.contactEmail ?? ""} onChange={(v) => upd({ contactEmail: v })} placeholder={LEGAL_DEFAULTS.contactEmail} />
+        </Field>
+
+        <Field label="Официальный сайт">
+          <Inp value={data.contactUrl ?? ""} onChange={(v) => upd({ contactUrl: v })} placeholder={LEGAL_DEFAULTS.contactUrl} />
+        </Field>
+      </div>
+
+      <p className="mt-5 mb-2 text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+        Разделы соглашения
+      </p>
+
+      {LEGAL_SECTIONS.map((def, i) => (
+        <div key={def.title} className="mb-3 rounded-xl border border-white/07 bg-white/[0.025] p-3">
+          <Field label={`Раздел ${i + 1} — заголовок`}>
+            <Inp value={sections[i]?.title ?? ""} onChange={(v) => updSection(i, { title: v })} placeholder={def.title} />
+          </Field>
+
+          <Field label={`Раздел ${i + 1} — текст`}>
+            <TextArea rows={4} value={sections[i]?.content ?? ""} onChange={(v) => updSection(i, { content: v })} placeholder="Пусто — текст из раздела «Правовая информация»" />
+          </Field>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function BlockEditorForm({ block, onChange }: { block: AboutBlockRow; onChange: (d: unknown) => void }) {
   const d = block.data as unknown;
   switch (block.type) {
@@ -369,6 +437,7 @@ function BlockEditorForm({ block, onChange }: { block: AboutBlockRow; onChange: 
     case 'timeline': return <TimelineEditor data={d as TimelineData} onChange={onChange as unknown as (d: TimelineData) => void} />;
     case 'team':     return <TeamEditor data={d as TeamData} onChange={onChange as unknown as (d: TeamData) => void} />;
     case 'cta':      return <CtaEditor data={d as CtaData} onChange={onChange as unknown as (d: CtaData) => void} />;
+    case 'legal':    return <LegalEditor data={d as LegalBlockData} onChange={onChange as unknown as (d: LegalBlockData) => void} />;
     default:         return null;
   }
 }
@@ -548,13 +617,14 @@ export default function AdminContentPage() {
 
       {/* Block list */}
       <div className="mx-auto max-w-4xl px-6 py-8">
-        {/* FIX-LEGAL: блока «Правовая информация» здесь больше нет — чтобы два
-            редактора не спорили за один и тот же текст. Ссылка на единственное
-            место редактирования остаётся на виду. */}
+        {/* Два раздела админки больше не конфликтуют: текст из «Правовой
+            информации» и поля блока сливаются поле-за-поле. */}
         <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.06] px-4 py-3 text-xs text-neutral-400">
           <span className="text-base">⚖️</span>
           <span>
-            Правовая информация не является блоком этой страницы и правится отдельно.
+            Правовая информация всегда показывается в подвале /about. Полный текст
+            документа удобнее править в отдельном редакторе, а блоком ниже можно
+            переопределить отдельные поля — они дополняют друг друга, а не спорят.
           </span>
           <a href="/admin/legal" className="font-semibold text-indigo-400 hover:text-indigo-300">
             Открыть редактор правовой информации

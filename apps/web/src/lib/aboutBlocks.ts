@@ -12,7 +12,8 @@ export type BlockType =
   | 'timeline'
   | 'team'
   | 'cta'
-  | 'apps';
+  | 'apps'
+  | 'legal';
 
 export interface AboutBlockRow {
   id: string;
@@ -133,6 +134,30 @@ export interface AppsData {
   items: AppItem[];
 }
 
+// ─── Legal block ────────────────────────────────────────────────────────────────
+
+/**
+ * Блок «Правовая информация».
+ *
+ * Все поля необязательные и по умолчанию пустые. Пустое поле означает
+ * «взять текст из раздела Админ-панель → Контент сайта → Правовая информация»,
+ * а если и там пусто — редакцию по умолчанию из LEGAL_DEFAULTS / LEGAL_SECTIONS.
+ * Именно так два раздела админки дополняют друг друга, а не спорят.
+ */
+export interface LegalBlockSection {
+  title?: string;
+  content?: string;
+}
+
+export interface LegalBlockData {
+  heading?: string;
+  subheading?: string;
+  preamble?: string;
+  contactEmail?: string;
+  contactUrl?: string;
+  sections?: LegalBlockSection[];
+}
+
 // ─── Unified type map ─────────────────────────────────────────────────────────
 
 type BlockDataMap = {
@@ -145,6 +170,7 @@ type BlockDataMap = {
   team: TeamData;
   cta: CtaData;
   apps: AppsData;
+  legal: LegalBlockData;
 };
 
 export const BLOCK_DEFAULTS: BlockDataMap = {
@@ -226,6 +252,17 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
     subtitle: 'Установите нативное приложение TZ.Connect — быстрый запуск, системные уведомления и звонки.',
     items: [],
   },
+
+  // Пустой по умолчанию: свежедобавленный блок сразу показывает текст из
+  // «Контент сайта → Правовая информация», ничего не затирая.
+  legal: {
+    heading: '',
+    subheading: '',
+    preamble: '',
+    contactEmail: '',
+    contactUrl: '',
+    sections: [],
+  },
 };
 
 export const BLOCK_LABELS: Record<BlockType, string> = {
@@ -238,8 +275,42 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   team:     '👥 Команда',
   cta:      '⚡ CTA-блок',
   apps:     '📱 Приложения',
+  legal:    '⚖️ Правовая информация (подвал)',
 };
 
 export const BLOCK_TYPES: BlockType[] = [
-  'hero', 'video', 'stats', 'gallery', 'bento', 'timeline', 'team', 'cta', 'apps',
+  'hero', 'video', 'stats', 'gallery', 'bento', 'timeline', 'team', 'cta', 'apps', 'legal',
 ];
+
+// ─── Раскладка страницы /about ──────────────────────────────────────────
+
+export interface AboutLayout {
+  /** Блоки, рисуемые в теле страницы в своём порядке. Без legal. */
+  bodyBlocks: AboutBlockRow[];
+  /** Единственный legal-блок для подвала, если он заведён и включён. */
+  legalBlock: AboutBlockRow | null;
+}
+
+/**
+ * Разделяет блоки на тело страницы и правовой подвал.
+ *
+ * Правила, которые гарантируют отсутствие конфликта:
+ *  1. Правовая информация никогда не рисуется среди обычных блоков —
+ *     только в подвале, какова бы ни была её position в админке.
+ *  2. Если legal-блоков в базе несколько (следствие старых правок), берётся
+ *     первый видимый — документ не дублируется.
+ *  3. Невидимые блоки отбрасываются здесь же, в одном месте.
+ *  4. Подвал показывается всегда, даже если legalBlock === null.
+ */
+export function buildAboutLayout(
+  blocks: AboutBlockRow[] | null | undefined,
+): AboutLayout {
+  const visible = (Array.isArray(blocks) ? blocks : []).filter(
+    (block) => block && block.visible !== false,
+  );
+
+  return {
+    bodyBlocks: visible.filter((block) => block.type !== 'legal'),
+    legalBlock: visible.find((block) => block.type === 'legal') ?? null,
+  };
+}

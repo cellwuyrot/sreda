@@ -1,5 +1,22 @@
 "use client";
 
+/**
+ * Единственный источник правового текста для всей страницы /about.
+ *
+ * Приоритет (каждый следующий уровень дополняет предыдущий поле-за-поле):
+ *   1. редакция по умолчанию из LEGAL_DEFAULTS / LEGAL_SECTIONS;
+ *   2. Админ-панель → Контент сайта → Правовая информация (/api/site-content);
+ *   3. данные блока «Правовая информация» из Контент сайта → О проекте.
+ *
+ * Пустые значения никогда не затирают заполненные — разделы дополняют друг
+ * друга, поэтому конфликт двух редакторов невозможен по построению.
+ *
+ * Важно про зависимости: в useEffect попадает только пустой массив, потому что
+ * объекты-пропсы пересоздаются на каждый рендер и раньше вызывали
+ * бесконечный цикл «запрос → рендер → запрос», из-за которого раздел не
+ * успевал отрисоваться. Запрос сайт-контента выполняется ровно один раз.
+ */
+
 import { useEffect, useState } from "react";
 import {
   mergeLegalOverrides,
@@ -9,81 +26,54 @@ import {
 
 type Overrides = Record<string, string> | null | undefined;
 
-function keyOf(overrides: Overrides): string {
-  if (!overrides) {
-    return "";
-  }
-
-  return JSON.stringify(
-    Object.keys(overrides)
-      .sort()
-      .map((key) => [key, overrides[key]]),
-  );
-}
-
 export function useLegalContent(
-  overrides?: Overrides,
   blockOverrides?: Overrides,
+  initialSiteContent?: Overrides,
 ): LegalContent {
-  const overridesKey = keyOf(overrides);
-
-  const [siteContent, setSiteContent] =
-    useState<Record<string, string> | null>(null);
+  const [siteContent, setSiteContent] = useState<Record<
+    string,
+    string
+  > | null>(initialSiteContent ?? null);
 
   useEffect(() => {
-    if (overridesKey) {
+    // Если текст уже передан снаружи (серверный рендер, тесты) — не запрашиваем.
+    if (initialSiteContent) {
       return;
     }
 
     let cancelled = false;
 
-    fetch("/api/site-content", {
-      cache: "no-store",
-    })
-      .then((response) => {
-        if (!response.ok) {
-          return null;
-        }
+    fetch("/api/site-content", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: unknown) => {
+        if (cancelled) return;
+        if (!data || typeof data !== "object" || Array.isArray(data)) return;
 
-        return response.json() as Promise<unknown>;
-      })
-      .then((data) => {
-        if (cancelled) {
-          return;
-        }
+        const values: Record<string, string> = {};
 
-        if (
-          data &&
-          typeof data === "object" &&
-          !Array.isArray(data)
-        ) {
-          const values: Record<string, string> = {};
-
-          for (const [key, value] of Object.entries(
-            data as Record<string, unknown>,
-          )) {
-            if (typeof value === "string") {
-              values[key] = value;
-            }
+        for (const [key, value] of Object.entries(
+          data as Record<string, unknown>,
+        )) {
+          if (typeof value === "string") {
+            values[key] = value;
           }
-
-          setSiteContent(values);
         }
+
+        setSiteContent(values);
       })
       .catch(() => {
-        // Используются значения по умолчанию.
+        // Остаётся редакция по умолчанию — подвал никогда не остаётся пустым.
       });
 
     return () => {
       cancelled = true;
     };
-  }, [overridesKey]);
+    // Зависимостей нет вовсе: запрос выполняется ровно один раз за жизнь компонента.
+    // Объекты-пропсы сюда попасть не могут, а значит бесконечный цикл невозможен.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return resolveLegalContent(
-    mergeLegalOverrides(
-      siteContent,
-      overrides,
-      blockOverrides,
-    ),
+    mergeLegalOverrides(siteContent, null, blockOverrides),
   );
 }
