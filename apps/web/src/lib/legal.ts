@@ -73,6 +73,8 @@ export const legalKeys = {
   contactLabel: (key: string) => `legal.contact.${key}.label`,
   /** Почта канала обращений. */
   contactEmail: (key: string) => `legal.contact.${key}.email`,
+  /** Пояснение к каналу обращений. */
+  contactHint: (key: string) => `legal.contact.${key}.hint`,
   /** Адрес сайта владельца платформы. */
   contactUrl: "legal.contact.url",
 };
@@ -192,11 +194,7 @@ export function resolveLegalContent(
 ): LegalContent {
   const map = overrides ?? {};
 
-  const contacts: LegalContact[] = LEGAL_CONTACTS.map((contact) => ({
-    ...contact,
-    label: pick(map[legalKeys.contactLabel(contact.key)], contact.label),
-    email: pick(map[legalKeys.contactEmail(contact.key)], contact.email),
-  }));
+  const contacts = buildContacts(map);
 
   return {
     contacts,
@@ -207,6 +205,35 @@ export function resolveLegalContent(
     contactUrl: pick(map[legalKeys.contactUrl], LEGAL_DEFAULTS.contactUrl),
     sections: buildSections(map),
   };
+}
+
+/**
+ * Собирает подписанные почты.
+ *
+ * Кроме трёх каналов по умолчанию админ может добавить свои — раньше
+ * такие адреса молча терялись: перебор шёл только по списку из кода.
+ */
+function buildContacts(map: Record<string, string>): LegalContact[] {
+  const order: string[] = LEGAL_CONTACTS.map((c) => c.key);
+
+  for (const key of Object.keys(map)) {
+    const match = /^legal\.contact\.(.+)\.(label|email|hint)$/.exec(key);
+    if (!match) continue;
+    if (!(map[key] ?? "").trim()) continue;
+    if (!order.includes(match[1])) order.push(match[1]);
+  }
+
+  return order
+    .map((key) => {
+      const base = LEGAL_CONTACTS.find((c) => c.key === key);
+      return {
+        key,
+        label: pick(map[legalKeys.contactLabel(key)], base?.label ?? key),
+        hint: pick(map[legalKeys.contactHint(key)], base?.hint ?? ""),
+        email: pick(map[legalKeys.contactEmail(key)], base?.email ?? ""),
+      };
+    })
+    .filter((contact) => contact.email.trim());
 }
 
 /**
@@ -255,6 +282,18 @@ export function legacyLegalOverrides(data: unknown): Record<string, string> {
   put(legalKeys.contactEmail("legal"), block.contactEmail);
   put(legalKeys.contactUrl, block.contactUrl);
 
+  if (Array.isArray(block.contacts)) {
+    block.contacts.forEach((contact) => {
+      if (!contact || typeof contact !== "object") return;
+      const c = contact as Record<string, unknown>;
+      const key = typeof c.key === "string" ? c.key.trim() : "";
+      if (!key) return;
+      put(legalKeys.contactLabel(key), c.label);
+      put(legalKeys.contactHint(key), c.hint);
+      put(legalKeys.contactEmail(key), c.email);
+    });
+  }
+
   if (Array.isArray(block.sections)) {
     block.sections.forEach((section, i) => {
       if (!section || typeof section !== "object") return;
@@ -286,4 +325,27 @@ export function mergeLegalOverrides(
   }
 
   return merged;
+}
+
+/**
+ * Готовые данные блока «Правовая информация» для единого редактора.
+ *
+ * Нужно при первом открытии блока: в поля сразу подставляется текст,
+ * который админ уже написал раньше — в старом блоке или в разделе
+ * «Контент сайта». Так слияние двух редакторов не теряет данные.
+ */
+export function legalContentToBlock(content: LegalContent) {
+  return {
+    heading: content.heading,
+    subheading: content.subheading,
+    preamble: content.preamble,
+    sections: content.sections.map((s) => ({ title: s.title, content: s.content })),
+    contacts: content.contacts.map((c) => ({
+      key: c.key,
+      label: c.label,
+      hint: c.hint,
+      email: c.email,
+    })),
+    contactUrl: content.contactUrl,
+  };
 }

@@ -7,6 +7,7 @@ import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
 import LegalFooter, { LegalContactLinks } from "@/components/about/LegalFooter";
+import { legacyLegalOverrides } from "@/lib/legal";
 
 import type {
   AboutBlockRow,
@@ -52,6 +53,10 @@ function SectionTitle({ children, className }: { children: React.ReactNode; clas
 // ---------- Block components ----------
 
 function HeroBlock({ data }: { data: HeroData }) {
+  // UPLOAD: фон обложки — загруженный файл из /uploads/about/.
+  const bgIsVideo =
+    data.bgType === "video" || /\.(mp4|webm|mov)$/i.test(data.bgUrl ?? "");
+
   return (
     <section className="relative min-h-[640px] flex flex-col items-center justify-center px-6 py-20 overflow-hidden"
       style={{
@@ -61,6 +66,27 @@ function HeroBlock({ data }: { data: HeroData }) {
           "radial-gradient(ellipse at 85% 90%,rgba(6,182,212,.1) 0%,transparent 40%)",
       }}
     >
+      {data.bgUrl &&
+        (bgIsVideo ? (
+          <video
+            data-testid="hero-bg-video"
+            src={data.bgUrl}
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
+            muted
+            loop
+            playsInline
+            autoPlay
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            data-testid="hero-bg-image"
+            src={data.bgUrl}
+            alt=""
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
+          />
+        ))}
+
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -148,6 +174,7 @@ function VideoBlock({ data }: { data: VideoData }) {
             <video
               className="absolute inset-0 h-full w-full object-cover"
               src={data.url}
+              poster={data.posterUrl || undefined}
               controls
               playsInline
             />
@@ -272,7 +299,16 @@ function BentoBlock({ data }: { data: BentoData }) {
                 className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border text-xl transition-transform duration-300 group-hover:scale-110"
                 style={{ color: item.color, borderColor: `${item.color}40`, backgroundColor: `${item.color}14`, boxShadow: `0 0 20px -6px ${item.color}66` }}
               >
-                {item.icon}
+                {item.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={item.imageUrl}
+                    alt=""
+                    className="h-full w-full rounded-xl object-cover"
+                  />
+                ) : (
+                  item.icon
+                )}
               </div>
               <h3 className="mb-2 text-lg font-bold text-white">{item.title}</h3>
               <p className="text-sm leading-relaxed text-neutral-500">{item.description}</p>
@@ -579,13 +615,10 @@ export default function AboutPage() {
     fetch("/api/about-blocks")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: AboutBlockRow[]) => {
-        // FIX-LEGAL: у старых установок в БД мог остаться блок 'legal'.
-        // Не рисуем его: правовая информация теперь только в подвале.
-        setBlocks(
-          Array.isArray(data)
-            ? data.filter((b) => b.visible && b.type !== ('legal' as typeof b.type))
-            : [],
-        );
+        // UNIFY: блоки больше не фильтруются по типу. Раньше здесь
+        // выбрасывался блок 'legal' — именно поэтому написанный админом
+        // текст соглашения не показывался на странице.
+        setBlocks(Array.isArray(data) ? data.filter((b) => b.visible) : []);
       })
       .catch(() => setBlocks([]))
       .finally(() => setLoading(false));
@@ -627,8 +660,18 @@ export default function AboutPage() {
         return <CtaBlock key={block.id} data={d as CtaData} />;
       case 'apps':
         return <AppsBlock key={block.id} data={d as AppsData} />;
+      case 'legal': {
+        // UNIFY: правовая информация — такой же блок в общей последовательности.
+        const legal = (d ?? {}) as { defaultExpanded?: boolean };
+        return (
+          <LegalFooter
+            key={block.id}
+            blockOverrides={legacyLegalOverrides(d)}
+            defaultExpanded={legal.defaultExpanded ?? false}
+          />
+        );
+      }
       default:
-        // FIX-LEGAL: блока 'legal' больше нет — соглашение рисует LegalFooter.
         return null;
     }
   };
@@ -675,10 +718,10 @@ export default function AboutPage() {
                 TRIOZ
               </h1>
               <p className="max-w-2xl text-sm leading-relaxed text-neutral-400">
-                Содержимое раздела пока не заполнено. Блоки страницы — обложка,
-                видео, статистика, галерея, команда и прочее — настраиваются в
-                админке: Контент сайта → О проекте. Правовая информация ниже —
-                отдельный раздел админки и показывается всегда.
+                Содержимое раздела пока не заполнено. Все блоки — обложка, видео,
+                статистика, галерея, карточки, история, команда, CTA, приложения и
+                правовая информация — настраиваются в одном месте: Админ → О проекте.
+                Правовая информация ниже показывается всегда, даже без блоков.
               </p>
             </section>
           )}
@@ -689,7 +732,11 @@ export default function AboutPage() {
           </div>
 
           {/* ── Правовая информация ──────────────────────────── */}
-          <LegalFooter />
+          {/* UNIFY: если блок «Правовая информация» уже есть в списке блоков,
+              второй раз его не рисуем: два одинаковых раздела и были тем самым
+              «пересечением информации». Без блока соглашение остаётся в подвале —
+              страница никогда не теряет его. */}
+          {!blocks.some((b) => b.type === 'legal') && <LegalFooter />}
 
           <footer className="border-t border-indigo-500/10 px-6 py-8 text-xs text-neutral-700">
             <div className="flex flex-wrap items-center justify-between gap-4">
