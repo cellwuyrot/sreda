@@ -1,63 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { resolveLegalContent } from "@/lib/legal";
+/**
+ * Правовой подвал страницы /about.
+ *
+ * Показывается ВСЕГДА и ровно один раз, в самом конце страницы.
+ *
+ * Источники текста (дополняют друг друга, см. useLegalContent):
+ *   редакция по умолчанию → Контент сайта → Правовая информация
+ *   → блок «Правовая информация» из Контент сайта → О проекте (blockOverrides).
+ *
+ * Текст виден сразу, без аккордеонов и кликов: при первом рендере
+ * подставляется редакция по умолчанию, затем она тихо заменяется текстом из
+ * админки. Поэтому подвал не бывает пустым ни при каком состоянии базы.
+ */
 
-function useSiteLegalOverrides() {
-  const [overrides, setOverrides] =
-    useState<Record<string, string> | null>(null);
+import { useLegalContent } from "./useLegalContent";
 
-  useEffect(() => {
-    let cancelled = false;
+type Overrides = Record<string, string> | null | undefined;
 
-    fetch("/api/site-content", {
-      cache: "no-store",
-    })
-      .then((response) => {
-        if (!response.ok) {
-          return null;
-        }
-
-        return response.json() as Promise<unknown>;
-      })
-      .then((data) => {
-        if (cancelled) {
-          return;
-        }
-
-        if (
-          data &&
-          typeof data === "object" &&
-          !Array.isArray(data)
-        ) {
-          const values: Record<string, string> = {};
-
-          for (const [key, value] of Object.entries(
-            data as Record<string, unknown>,
-          )) {
-            if (typeof value === "string") {
-              values[key] = value;
-            }
-          }
-
-          setOverrides(values);
-        }
-      })
-      .catch(() => {
-        // Значения по умолчанию уже доступны.
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return overrides;
-}
-
-export default function LegalFooter() {
-  const overrides = useSiteLegalOverrides();
-  const content = resolveLegalContent(overrides);
+export default function LegalFooter({
+  blockOverrides,
+  siteOverrides,
+}: {
+  blockOverrides?: Overrides;
+  /** Текст «Контент сайта → Правовая информация», если уже загружен. */
+  siteOverrides?: Overrides;
+} = {}) {
+  const content = useLegalContent(blockOverrides, siteOverrides);
 
   return (
     <section
@@ -82,12 +51,10 @@ export default function LegalFooter() {
         </p>
 
         <div className="mb-10 max-w-4xl rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm leading-7 text-neutral-300">
-          <p className="whitespace-pre-line">
-            {content.preamble}
-          </p>
+          <p className="whitespace-pre-line">{content.preamble}</p>
         </div>
 
-        <div className="space-y-10">
+        <div id="legal-sections" className="space-y-10">
           {content.sections.map((section) => (
             <article key={section.title}>
               <h3 className="mb-3 text-lg font-bold text-white">
@@ -101,7 +68,10 @@ export default function LegalFooter() {
           ))}
         </div>
 
-        <div className="mt-12 grid gap-4 border-t border-indigo-500/10 pt-7 sm:grid-cols-2">
+        <div
+          id="legal-contacts"
+          className="mt-12 grid gap-4 border-t border-indigo-500/10 pt-7 sm:grid-cols-2"
+        >
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-neutral-600">
               Юридические обращения
@@ -135,16 +105,17 @@ export default function LegalFooter() {
   );
 }
 
-export function LegalContactLinks() {
-  const overrides = useSiteLegalOverrides();
-  const content = resolveLegalContent(overrides);
+/** Ссылки в самом низу страницы. Берёт ту же почту, что и документ выше. */
+export function LegalContactLinks({
+  blockOverrides,
+}: {
+  blockOverrides?: Overrides;
+} = {}) {
+  const content = useLegalContent(blockOverrides);
 
   return (
     <>
-      <a
-        href="#legal"
-        className="transition-colors hover:text-indigo-400"
-      >
+      <a href="#legal" className="transition-colors hover:text-indigo-400">
         Правовая информация
       </a>
 

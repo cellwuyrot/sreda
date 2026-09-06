@@ -226,3 +226,50 @@ export function resolveLegalContent(
     sections: buildSections(map),
   };
 }
+/**
+ * Превращает данные блока «Правовая информация» в такую же плоскую карту
+ * ключей legal.*, какая приходит из /api/site-content.
+ *
+ * Благодаря общему формату два раздела админки сливаются поле-за-поле
+ * и дополняют друг друга, а не замещают целиком. Пустые строки не попадают
+ * в результат вовсе, поэтому пустое поле блока никогда не стирает текст,
+ * заданный в «Контент сайта → Правовая информация».
+ */
+export function legalBlockOverrides(
+  data: unknown,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return result;
+  }
+
+  const block = data as Record<string, unknown>;
+
+  const put = (key: string, value: unknown) => {
+    if (typeof value === "string" && value.trim()) {
+      result[key] = value;
+    }
+  };
+
+  put(legalKeys.heading, block.heading);
+  put(legalKeys.subheading, block.subheading);
+  put(legalKeys.preamble, block.preamble);
+  put(legalKeys.contactEmail, block.contactEmail);
+  put(legalKeys.contactUrl, block.contactUrl);
+
+  const sections = Array.isArray(block.sections) ? block.sections : [];
+
+  sections.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") {
+      return;
+    }
+
+    const section = raw as Record<string, unknown>;
+
+    put(legalKeys.sectionTitle(index), section.title);
+    put(legalKeys.sectionContent(index), section.content);
+  });
+
+  return result;
+}
