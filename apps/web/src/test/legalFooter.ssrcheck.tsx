@@ -423,8 +423,12 @@ check("блок не запускает бесконечный цикл запр
     "блок правовой информации не подключён",
   );
 
+  // Списки зависимостей — только простые выражения: иначе падает lint в CI.
   const blockSrc = readFileSync("src/components/about/LegalBlock.tsx", "utf8");
-  assert(blockSrc.includes("useMemo"), "ключи блока не запоминаются");
+  assert(
+    !/\[\s*JSON\.stringify/.test(blockSrc),
+    "в списке зависимостей сложное выражение — eslint отклонит сборку",
+  );
 
   const hookSrc = readFileSync(
     "src/components/about/useLegalContent.ts",
@@ -437,6 +441,14 @@ check("блок не запускает бесконечный цикл запр
   assert(
     hookSrc.includes("[overridesKey]"),
     "зависимости эффекта не стабилизированы",
+  );
+  assert(
+    !/\[\s*JSON\.stringify/.test(hookSrc),
+    "в зависимостях хука сложное выражение",
+  );
+  assert(
+    !hookSrc.includes("eslint-disable"),
+    "правила хуков подавлены вместо исправления",
   );
   assert(
     !hookSrc.includes("/api/about-blocks"),

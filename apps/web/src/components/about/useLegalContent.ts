@@ -21,7 +21,7 @@
  *   • текст есть всегда: отказ сети, 403 или битый JSON не стирают его.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   mergeLegalOverrides,
   resolveLegalContent,
@@ -47,7 +47,6 @@ export function useLegalContent(
   blockOverrides?: Overrides,
 ): LegalContent {
   const overridesKey = keyOf(overrides);
-  const blockKey = keyOf(blockOverrides);
 
   // Ответ API храним отдельно от пропсов, чтобы слияние оставалось чистым.
   const [siteContent, setSiteContent] = useState<Record<string, string> | null>(
@@ -76,12 +75,11 @@ export function useLegalContent(
     // Только строки: объекты в зависимостях и вызывали бесконечный цикл.
   }, [overridesKey]);
 
-  return useMemo(
-    () =>
-      resolveLegalContent(
-        mergeLegalOverrides(siteContent, overrides, blockOverrides),
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [siteContent, overridesKey, blockKey],
+  // Слияние считается на рендер. Запоминание здесь не нужно и даже вредно:
+  // результат нигде не попадает в зависимости других хуков, а объём данных —
+  // несколько десятков строк. Зато нет ни списков зависимостей со сложными
+  // выражениями, ни подавленных правил eslint.
+  return resolveLegalContent(
+    mergeLegalOverrides(siteContent, overrides, blockOverrides),
   );
 }
