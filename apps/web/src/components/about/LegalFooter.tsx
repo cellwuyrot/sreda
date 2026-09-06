@@ -108,10 +108,13 @@ export default function LegalFooter({
 /** Ссылки в самом низу страницы. Берёт ту же почту, что и документ выше. */
 export function LegalContactLinks({
   blockOverrides,
+  siteOverrides,
 }: {
   blockOverrides?: Overrides;
+  /** Текст «Контент сайта → Правовая информация», если уже загружен с сервера. */
+  siteOverrides?: Overrides;
 } = {}) {
-  const content = useLegalContent(blockOverrides);
+  const content = useLegalContent(blockOverrides, siteOverrides);
 
   return (
     <>
