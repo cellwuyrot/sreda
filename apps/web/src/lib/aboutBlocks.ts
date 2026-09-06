@@ -12,8 +12,7 @@ export type BlockType =
   | "timeline"
   | "team"
   | "cta"
-  | "apps"
-;
+  | "apps";
 
 export interface AboutBlockRow {
   id: string;
@@ -318,6 +317,8 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   apps: "📱 Приложения",
 };
 
+/* Единый список CMS-блоков страницы /about. Правовая информация
+   не является CMS-блоком и выводится системно внизу страницы. */
 export const BLOCK_TYPES: BlockType[] = [
   "hero",
   "video",

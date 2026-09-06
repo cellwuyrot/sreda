@@ -29,6 +29,7 @@ import type {
 } from "@/lib/aboutBlocks";
 import { BLOCK_DEFAULTS, BLOCK_LABELS, BLOCK_TYPES } from "@/lib/aboutBlocks";
 import MediaUploadField from "@/components/admin/MediaUploadField";
+
 // ─── tiny UI helpers ──────────────────────────────────────────────────────────
 
 const inputCls =
@@ -786,7 +787,6 @@ function BlockEditorForm({
       return <CtaEditor data={d as CtaData} onChange={onChange as (d: CtaData) => void} />;
     case "apps":
       return <AppsEditor data={d as AppsData} onChange={onChange as (d: AppsData) => void} />;
-
     default:
       return <p className="text-neutral-500 text-sm">Редактор для этого типа блока не реализован.</p>;
   }

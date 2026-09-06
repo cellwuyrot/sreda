@@ -388,55 +388,83 @@ check("каждый тип блока редактируется в админк
 });
 
 check("правовая информация больше не является CMS-блоком", () => {
-  assert(!BLOCK_TYPES.includes("legal"), "тип legal всё ещё присутствует в CMS");
+  assert(!BLOCK_TYPES.includes("legal" as never), "тип legal всё ещё присутствует в CMS");
   assert(!("legal" in BLOCK_DEFAULTS), "заготовка legal всё ещё присутствует в CMS");
   assert(!("legal" in BLOCK_LABELS), "подпись legal всё ещё присутствует в CMS");
-  assert(!/case\s+"legal"/.test(pageSrc), "страница всё ещё обрабатывает legal как блок");
-  assert(/<LegalFooter\s*\/>/.test(pageSrc), "системный LegalFooter не выводится");
+  assert(!pageSrc.includes('case "legal"'), "страница всё ещё обрабатывает legal как CMS-блок");
+  assert(!adminSrc.includes('case "legal"'), "админка всё ещё редактирует legal как CMS-блок");
 });
 
-check("правовая информация не дублируется на /about", () => {
-  assert(!/blocks\.some\(\(b\) => b\.type === .legal.\)/.test(pageSrc),
-    "страница всё ещё ищет legal-блок");
-  assert(!pageSrc.includes("<LegalBlock"), "устаревший LegalBlock всё ещё подключён");
+check("правовая информация всегда отображается на /about", () => {
+  assert(
+    /<LegalFooter\s*\/>/.test(pageSrc),
+    "LegalFooter не выводится на странице",
+  );
+  assert(
+    !/blocks\.some\(\(b\) => b\.type === .legal.\)/.test(pageSrc),
+    "вывод legal всё ещё зависит от наличия CMS-блока",
+  );
 });
 
-check("текст из Контента сайта виден в блоке", () => {
-  // Блок включён, но своих текстов в нём нет — берём из siteConfig.
+check("LegalFooter не зависит от CMS-блока", () => {
+  assert(
+    !pageSrc.includes("<LegalBlock"),
+    "старый компонент LegalBlock всё ещё используется на /about",
+  );
+  assert(
+    !pageSrc.includes('case "legal"'),
+    "страница всё ещё обрабатывает legal как CMS-блок",
+  );
+  assert(
+    !adminSrc.includes("LegalEditor"),
+    "админка всё ещё содержит редактор legal-блока",
+  );
+  assert(
+    !pageSrc.includes('blocks.some((b) => b.type === "legal")'),
+    "отображение LegalFooter всё ещё зависит от CMS-блока",
+  );
+
+  const hookSrc = readFileSync(
+    "src/components/about/useLegalContent.ts",
+    "utf8",
+  );
+  assert(
+    !hookSrc.includes("/api/about-blocks"),
+    "useLegalContent снова читает CMS /about",
+  );
+});
+
+check("текст из Контента сайта виден без CMS-блока", () => {
   const { text } = renderFooter({
     overrides: {
       [legalKeys.heading]: "Соглашение из Контента сайта",
       [legalKeys.sectionContent(0)]: "Текст из раздела Правовая информация.",
     },
-    blockOverrides: {},
     defaultExpanded: true,
   });
 
   assert(
     text.includes("Соглашение из Контента сайта"),
-    "заголовок siteConfig потерян",
+    "заголовок из Контента сайта не показан",
   );
   assert(
     text.includes("Текст из раздела Правовая информация."),
-    "текст из Контента сайта не показан в блоке",
+    "текст из Контента сайта не показан",
   );
 });
 
-check("блок перебивает старые настройки Контента сайта", () => {
-  const { text } = renderFooter({
-    overrides: { [legalKeys.heading]: "Старый источник" },
-    blockOverrides: legacyLegalOverrides({
-      heading: "Текст из единого блока",
-      sections: [
-        { title: "1. Наши условия", content: "Текст из блока О проекте." },
-      ],
-    }),
-    defaultExpanded: true,
-  });
+check("fallback правовой информации работает без CMS", () => {
+  const { text } = renderFooter({ defaultExpanded: true });
 
-  assert(text.includes("Текст из единого блока"), "текст блока не показан");
-  assert(!text.includes("Старый источник"), "старый источник пересекает блок");
-  assert(text.includes("Текст из блока О проекте."), "раздел блока не показан");
+  assert(text.includes(LEGAL_DEFAULTS.heading), "нет резервного заголовка");
+  assert(
+    text.includes(visibleText(LEGAL_SECTIONS[0].content)),
+    "нет резервного текста соглашения",
+  );
+  assert(
+    text.includes(LEGAL_CONTACTS[0].email),
+    "нет резервного контакта",
+  );
 });
 
 check("медиа грузится файлом, а не ссылкой", () => {
