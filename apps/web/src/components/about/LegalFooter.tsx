@@ -1,3 +1,4 @@
+```tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,29 +7,55 @@ import { resolveLegalContent } from "@/lib/legal";
 /**
  * Системный раздел правовой информации страницы /about.
  *
- * Он НЕ является CMS-блоком AboutBlock. Содержимое редактируется только в
- * Админ → Правовая информация и хранится в siteConfig через /api/site-content.
- * Пока запрос к API не завершён, отображается полная редакция по умолчанию.
+ * Контент:
+ * - берётся из siteConfig через /api/site-content;
+ * - при отсутствии значения используется LEGAL_DEFAULTS;
+ * - при недоступности API документ по умолчанию всё равно отображается.
  */
 export default function LegalFooter() {
-  const [overrides, setOverrides] = useState<Record<string, string> | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, string> | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/site-content", { cache: "no-store" })
+    fetch("/api/site-content", {
+      cache: "no-store",
+    })
       .then((response) => {
-        if (!response.ok) throw new Error(`site-content: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`site-content: ${response.status}`);
+        }
+
         return response.json() as Promise<unknown>;
       })
       .then((data) => {
         if (cancelled) return;
-        if (data && typeof data === "object" && !Array.isArray(data)) {
-          setOverrides(data as Record<string, string>);
+
+        if (
+          data &&
+          typeof data === "object" &&
+          !Array.isArray(data)
+        ) {
+          const values: Record<string, string> = {};
+
+          for (const [key, value] of Object.entries(
+            data as Record<string, unknown>,
+          )) {
+            if (typeof value === "string") {
+              values[key] = value;
+            }
+          }
+
+          setOverrides(values);
         }
       })
       .catch(() => {
-        // Редакция по умолчанию уже отображена — сеть не должна скрывать документ.
+        /**
+         * Значения по умолчанию уже предусмотрены в resolveLegalContent().
+         * Поэтому отсутствие сети/API не должно скрывать правовой документ.
+         */
       });
 
     return () => {
@@ -67,7 +94,10 @@ export default function LegalFooter() {
         <div className="space-y-10">
           {content.sections.map((section) => (
             <article key={section.title}>
-              <h3 className="mb-3 text-lg font-bold text-white">{section.title}</h3>
+              <h3 className="mb-3 text-lg font-bold text-white">
+                {section.title}
+              </h3>
+
               <div className="max-w-4xl whitespace-pre-line text-sm leading-7 text-neutral-400">
                 {section.content}
               </div>
@@ -80,6 +110,7 @@ export default function LegalFooter() {
             <p className="text-xs font-semibold uppercase tracking-widest text-neutral-600">
               Юридические обращения
             </p>
+
             <a
               href={`mailto:${content.contactEmail}`}
               className="mt-1 inline-block text-sm text-indigo-400 transition-colors hover:text-indigo-300"
@@ -92,6 +123,7 @@ export default function LegalFooter() {
             <p className="text-xs font-semibold uppercase tracking-widest text-neutral-600">
               Официальный сайт
             </p>
+
             <a
               href={content.contactUrl}
               target="_blank"
@@ -108,16 +140,39 @@ export default function LegalFooter() {
 }
 
 export function LegalContactLinks() {
-  const [overrides, setOverrides] = useState<Record<string, string> | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, string> | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/site-content", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
+
+    fetch("/api/site-content", {
+      cache: "no-store",
+    })
+      .then((response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<unknown>;
+      })
       .then((data) => {
         if (cancelled) return;
-        if (data && typeof data === "object" && !Array.isArray(data)) {
-          setOverrides(data as Record<string, string>);
+
+        if (
+          data &&
+          typeof data === "object" &&
+          !Array.isArray(data)
+        ) {
+          const values: Record<string, string> = {};
+
+          for (const [key, value] of Object.entries(
+            data as Record<string, unknown>,
+          )) {
+            if (typeof value === "string") {
+              values[key] = value;
+            }
+          }
+
+          setOverrides(values);
         }
       })
       .catch(() => undefined);
@@ -131,9 +186,13 @@ export function LegalContactLinks() {
 
   return (
     <>
-      <a href="#legal" className="transition-colors hover:text-indigo-400">
+      <a
+        href="#legal"
+        className="transition-colors hover:text-indigo-400"
+      >
         Правовая информация
       </a>
+
       <a
         href={`mailto:${content.contactEmail}`}
         className="transition-colors hover:text-indigo-400"
@@ -143,3 +202,4 @@ export function LegalContactLinks() {
     </>
   );
 }
+```
