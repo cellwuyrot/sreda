@@ -387,54 +387,34 @@ check("каждый тип блока редактируется в админк
   }
 });
 
-check("правовая информация больше не является CMS-блоком", () => {
-  assert(!BLOCK_TYPES.includes("legal" as never), "тип legal всё ещё присутствует в CMS");
+check("правовая информация НЕ является CMS-блоком", () => {
+  assert(!(BLOCK_TYPES as readonly string[]).includes("legal"), "тип legal всё ещё присутствует в CMS");
   assert(!("legal" in BLOCK_DEFAULTS), "заготовка legal всё ещё присутствует в CMS");
   assert(!("legal" in BLOCK_LABELS), "подпись legal всё ещё присутствует в CMS");
-  assert(!pageSrc.includes('case "legal"'), "страница всё ещё обрабатывает legal как CMS-блок");
-  assert(!adminSrc.includes('case "legal"'), "админка всё ещё редактирует legal как CMS-блок");
+  assert(!pageSrc.includes("case \"legal\""), "страница всё ещё обрабатывает legal как блок");
+  assert(!pageSrc.includes("<LegalBlock"), "старый LegalBlock всё ещё подключён");
+  assert(pageSrc.includes("<LegalFooter />"), "LegalFooter не выводится на /about");
 });
 
-check("правовая информация всегда отображается на /about", () => {
-  assert(
-    /<LegalFooter\s*\/>/.test(pageSrc),
-    "LegalFooter не выводится на странице",
-  );
-  assert(
-    !/blocks\.some\(\(b\) => b\.type === .legal.\)/.test(pageSrc),
-    "вывод legal всё ещё зависит от наличия CMS-блока",
-  );
+check("старые legal-записи не должны попадать в CMS-вывод", () => {
+  const apiSrc = readFileSync("src/app/api/about-blocks/route.ts", "utf8");
+  assert(apiSrc.includes('type: { not: "legal" }'), "API не фильтрует legacy legal");
 });
 
-check("LegalFooter не зависит от CMS-блока", () => {
-  assert(
-    !pageSrc.includes("<LegalBlock"),
-    "старый компонент LegalBlock всё ещё используется на /about",
-  );
-  assert(
-    !pageSrc.includes('case "legal"'),
-    "страница всё ещё обрабатывает legal как CMS-блок",
-  );
-  assert(
-    !adminSrc.includes("LegalEditor"),
-    "админка всё ещё содержит редактор legal-блока",
-  );
-  assert(
-    !pageSrc.includes('blocks.some((b) => b.type === "legal")'),
-    "отображение LegalFooter всё ещё зависит от CMS-блока",
-  );
-
-  const hookSrc = readFileSync(
-    "src/components/about/useLegalContent.ts",
-    "utf8",
-  );
-  assert(
-    !hookSrc.includes("/api/about-blocks"),
-    "useLegalContent снова читает CMS /about",
-  );
+check("в блоках /about нет второго источника legal-контента", () => {
+  const adminSrc = readFileSync("src/app/admin/about/page.tsx", "utf8");
+  assert(!adminSrc.includes("function LegalEditor"), "LegalEditor всё ещё встроен в О проекте");
+  assert(!adminSrc.includes('case "legal"'), "admin /about всё ещё редактирует legal");
 });
 
-check("текст из Контента сайта виден без CMS-блока", () => {
+check("правовая информация всегда выводится отдельным системным разделом", () => {
+  const { html, text } = renderFooter();
+  assert(html.includes('id="legal"'), "нет системного раздела #legal");
+  assert(text.includes(LEGAL_DEFAULTS.heading), "нет заголовка системной правовой информации");
+  assert(text.includes(visibleText(LEGAL_DEFAULTS.preamble)), "нет текста системной правовой информации");
+});
+
+check("текст из Контента сайта виден в системной правовой информации", () => {
   const { text } = renderFooter({
     overrides: {
       [legalKeys.heading]: "Соглашение из Контента сайта",
@@ -443,28 +423,8 @@ check("текст из Контента сайта виден без CMS-бло�
     defaultExpanded: true,
   });
 
-  assert(
-    text.includes("Соглашение из Контента сайта"),
-    "заголовок из Контента сайта не показан",
-  );
-  assert(
-    text.includes("Текст из раздела Правовая информация."),
-    "текст из Контента сайта не показан",
-  );
-});
-
-check("fallback правовой информации работает без CMS", () => {
-  const { text } = renderFooter({ defaultExpanded: true });
-
-  assert(text.includes(LEGAL_DEFAULTS.heading), "нет резервного заголовка");
-  assert(
-    text.includes(visibleText(LEGAL_SECTIONS[0].content)),
-    "нет резервного текста соглашения",
-  );
-  assert(
-    text.includes(LEGAL_CONTACTS[0].email),
-    "нет резервного контакта",
-  );
+  assert(text.includes("Соглашение из Контента сайта"), "заголовок siteConfig потерян");
+  assert(text.includes("Текст из раздела Правовая информация."), "текст из Контента сайта не показан");
 });
 
 check("медиа грузится файлом, а не ссылкой", () => {
@@ -492,13 +452,10 @@ check("загруженные медиафайлы видны на /about", () =
   assert(pageSrc.includes("m.avatarUrl"), "аватар команды не рисуется");
 });
 
-check("старый раздел админки ведёт в единый редактор", () => {
+check("правовая информация редактируется отдельно от блоков /about", () => {
   const legalAdmin = readFileSync("src/app/admin/legal/page.tsx", "utf8");
-  assert(legalAdmin.includes("/admin/about"), "нет ссылки на единый редактор");
-  assert(
-    !legalAdmin.includes("/api/site-content"),
-    "старый редактор всё ещё пишет данные",
-  );
+  assert(legalAdmin.includes("/api/site-content"), "нет редактора siteConfig");
+  assert(!legalAdmin.includes("/admin/about"), "правовая информация снова перенесена в блоки /about");
 });
 
 console.log(
