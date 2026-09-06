@@ -82,3 +82,38 @@ export const aboutKeys = {
    */
   sectionDesc: (key: string) => `about.section.${key}`,
 };
+
+/* Сборка текста экосистемных секций страницы /about.
+
+   Набор секций и тексты по умолчанию живут в коде, поэтому страница никогда не
+   окажется пустой: значения из админки (siteConfig, ключи content:about.*)
+   лишь перекрывают отдельные поля. Пустая строка = «вернуть текст по умолчанию». */
+
+export interface AboutContent {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  footer: string;
+  sections: AboutSection[];
+}
+
+export function buildAboutContent(
+  overrides?: Record<string, string> | null,
+): AboutContent {
+  const pick = (key: string, def: string) => {
+    const value = overrides?.[key];
+    return typeof value === "string" && value.trim() ? value : def;
+  };
+
+  return {
+    eyebrow: pick(aboutKeys.eyebrow, ABOUT_DEFAULTS.eyebrow),
+    title: pick(aboutKeys.title, ABOUT_DEFAULTS.title),
+    subtitle: pick(aboutKeys.subtitle, ABOUT_DEFAULTS.subtitle),
+    footer: pick(aboutKeys.footer, ABOUT_DEFAULTS.footer),
+    sections: ABOUT_SECTIONS.map((section) => ({
+      ...section,
+      title: pick(aboutKeys.sectionTitle(section.key), section.title),
+      description: pick(aboutKeys.sectionDesc(section.key), section.description),
+    })),
+  };
+}
