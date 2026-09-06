@@ -10,13 +10,12 @@
  *
  *   npx tsx src/test/legalFooter.ssrcheck.tsx
  */
+
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import LegalFooter, { LegalContactLinks } from "@/components/about/LegalFooter";
 import {
-  legacyLegalOverrides,
   mergeLegalOverrides,
-  LEGAL_CONTACTS,
   LEGAL_DEFAULTS,
   LEGAL_SECTIONS,
   legalKeys,
@@ -33,12 +32,16 @@ function check(name: string, fn: () => void) {
   } catch (e) {
     failures += 1;
     console.log(`  FAIL ${name}`);
-    console.log(`       ${(e as Error).message}`);
+    console.log(
+      `       ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
 
 function assert(condition: boolean, message: string) {
-  if (!condition) throw new Error(message);
+  if (!condition) {
+    throw new Error(message);
+  }
 }
 
 /** Снимает теги и HTML-экранирование, чтобы искать видимый текст. */
@@ -53,321 +56,411 @@ function visibleText(html: string): string {
     .trim();
 }
 
-function renderFooter(props: Parameters<typeof LegalFooter>[0] = {}) {
-  const html = renderToStaticMarkup(<LegalFooter {...props} />);
-  return { html, text: visibleText(html) };
+function renderFooter() {
+  const html = renderToStaticMarkup(<LegalFooter />);
+  return {
+    html,
+    text: visibleText(html),
+  };
+}
+
+function renderLinks() {
+  const html = renderToStaticMarkup(<LegalContactLinks />);
+  return {
+    html,
+    text: visibleText(html),
+  };
 }
 
 console.log("\nПравовая информация в подвале /about\n");
 
-check("свёрнутый раздел уже содержит текст (подвал не пустой)", () => {
+check("правовой раздел существует и содержит текст", () => {
   const { html, text } = renderFooter();
 
   assert(
     html.includes('id="legal"'),
-    "нет якоря #legal для ссылки из колонтитула",
+    "нет якоря #legal",
   );
-  assert(text.includes("Правовая информация"), "нет подписи раздела");
-  assert(text.includes(LEGAL_DEFAULTS.heading), "нет заголовка соглашения");
+
   assert(
-    text.includes(visibleText(LEGAL_DEFAULTS.subheading)),
+    text.includes("Правовая информация"),
+    "нет подписи раздела",
+  );
+
+  assert(
+    text.includes(LEGAL_DEFAULTS.heading),
+    "нет заголовка соглашения",
+  );
+
+  assert(
+    text.includes(LEGAL_DEFAULTS.subheading),
     "нет редакции/даты",
   );
+
   assert(
-    text.length > 400,
+    text.includes(LEGAL_DEFAULTS.preamble),
+    "нет преамбулы",
+  );
+
+  assert(
+    text.length > 3000,
     `текста подозрительно мало: ${text.length} символов`,
   );
 });
 
-check("контакты для юридических запросов на виду", () => {
-  const { html } = renderFooter();
+check("контакт и официальный сайт отображаются", () => {
+  const { html, text } = renderFooter();
+
   assert(
     html.includes(`mailto:${LEGAL_DEFAULTS.contactEmail}`),
-    "нет почты для юридических запросов",
+    "нет ссылки на юридический email",
   );
+
+  assert(
+    text.includes(LEGAL_DEFAULTS.contactEmail),
+    "нет юридического email в тексте",
+  );
+
   assert(
     html.includes(LEGAL_DEFAULTS.contactUrl),
-    "нет ссылки на сайт владельца",
+    "нет ссылки на официальный сайт",
   );
 });
 
-check("полный документ содержит все разделы соглашения", () => {
-  const { html, text } = renderFooter({ defaultExpanded: true });
+check("все разделы соглашения присутствуют", () => {
+  const { text } = renderFooter();
 
-  assert(html.includes('id="legal-sections"'), "нет контейнера разделов");
-  assert(LEGAL_SECTIONS.length >= 8, "ожидался большой документ");
+  assert(
+    LEGAL_SECTIONS.length >= 8,
+    "ожидалось не менее 8 разделов",
+  );
 
   for (const section of LEGAL_SECTIONS) {
     assert(
-      text.includes(visibleText(section.title)),
+      text.includes(section.title),
       `потерян раздел: ${section.title}`,
     );
-    const head = visibleText(section.content).slice(0, 60);
-    assert(text.includes(head), `потерян текст раздела: ${section.title}`);
+
+    const contentPreview = section.content
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 60);
+
+    assert(
+      text.includes(contentPreview),
+      `потерян текст раздела: ${section.title}`,
+    );
   }
 
-  assert(text.length > 5000, `полный текст слишком короткий: ${text.length}`);
-});
-
-check("кнопка раскрытия подписана и доступна", () => {
-  const collapsed = renderFooter();
-  const expanded = renderFooter({ defaultExpanded: true });
-
   assert(
-    collapsed.text.includes("Читать полный текст соглашения"),
-    "нет кнопки раскрытия",
-  );
-  assert(
-    collapsed.html.includes('aria-expanded="false"'),
-    "aria-expanded не false",
-  );
-  assert(expanded.text.includes("Свернуть документ"), "нет кнопки свёртывания");
-  assert(
-    expanded.html.includes('aria-expanded="true"'),
-    "aria-expanded не true",
-  );
-  assert(
-    !collapsed.text.includes(visibleText(LEGAL_SECTIONS[0].title)),
-    "свёрнутый документ не должен показывать разделы",
+    text.length > 5000,
+    `полный текст слишком короткий: ${text.length}`,
   );
 });
 
-check("текст из админки показывается на сайте", () => {
-  const { text } = renderFooter({
-    defaultExpanded: true,
-    overrides: {
-      [legalKeys.heading]: "Оферта из админки",
-      [legalKeys.subheading]: "редакция от 1 января 2027 г.",
-      [legalKeys.preamble]: "Преамбула, заданная администратором.",
-      [legalKeys.sectionTitle(0)]: "1. Свои термины",
-      [legalKeys.sectionContent(0)]: "Текст первого раздела из админки.",
-    },
-  });
+check("resolveLegalContent возвращает полноценную редакцию", () => {
+  const content = resolveLegalContent();
 
-  assert(text.includes("Оферта из админки"), "заголовок из админки не показан");
   assert(
-    text.includes("редакция от 1 января 2027 г."),
-    "подзаголовок не показан",
+    content.heading === LEGAL_DEFAULTS.heading,
+    "неверный заголовок",
   );
+
   assert(
-    text.includes("Преамбула, заданная администратором."),
-    "преамбула не показана",
+    content.subheading === LEGAL_DEFAULTS.subheading,
+    "неверный подзаголовок",
   );
-  assert(text.includes("1. Свои термины"), "заголовок раздела не показан");
+
   assert(
-    text.includes("Текст первого раздела из админки."),
-    "текст раздела не показан",
+    content.preamble === LEGAL_DEFAULTS.preamble,
+    "неверная преамбула",
   );
+
   assert(
-    text.includes(visibleText(LEGAL_SECTIONS[1].title)),
-    "потерян нетронутый раздел",
+    content.contactEmail === LEGAL_DEFAULTS.contactEmail,
+    "неверный юридический email",
+  );
+
+  assert(
+    content.contactUrl === LEGAL_DEFAULTS.contactUrl,
+    "неверный URL",
+  );
+
+  assert(
+    content.sections.length === LEGAL_SECTIONS.length,
+    "количество разделов изменилось",
   );
 });
 
-check("пустые поля в админке возвращают текст по умолчанию", () => {
-  const { text } = renderFooter({
-    overrides: { [legalKeys.heading]: "", [legalKeys.subheading]: "   " },
-  });
-
-  assert(text.includes(LEGAL_DEFAULTS.heading), "пустое поле стёрло заголовок");
-  assert(
-    text.includes(visibleText(LEGAL_DEFAULTS.subheading)),
-    "пустое поле стёрло подзаголовок",
-  );
-});
-
-check("resolveLegalContent устойчив к null и пустому ответу API", () => {
+check("resolveLegalContent устойчив к null и пустому объекту", () => {
   const fallback = resolveLegalContent();
+
   assert(
-    JSON.stringify(resolveLegalContent(null)) === JSON.stringify(fallback),
+    JSON.stringify(resolveLegalContent(null)) ===
+      JSON.stringify(fallback),
     "null даёт другой результат",
   );
+
   assert(
-    JSON.stringify(resolveLegalContent({})) === JSON.stringify(fallback),
-    "пустой ответ даёт другой результат",
-  );
-  assert(
-    fallback.sections.length === LEGAL_SECTIONS.length,
-    "потеряны разделы",
+    JSON.stringify(resolveLegalContent({})) ===
+      JSON.stringify(fallback),
+    "пустой объект даёт другой результат",
   );
 });
 
-check("все опубликованные почты показаны с подписями", () => {
+check("данные из siteConfig заменяют значения по умолчанию", () => {
+  const content = resolveLegalContent({
+    [legalKeys.heading]: "Оферта из Контента сайта",
+    [legalKeys.subheading]: "редакция от 1 января 2027 г.",
+    [legalKeys.preamble]:
+      "Преамбула, заданная администратором.",
+    [legalKeys.contactEmail]: "pravo@trioz.ru",
+    [legalKeys.contactUrl]:
+      "https://trioz.ru/about",
+    [legalKeys.sectionTitle(0)]:
+      "1. Свои термины",
+    [legalKeys.sectionContent(0)]:
+      "Текст первого раздела из админки.",
+  });
+
+  assert(
+    content.heading === "Оферта из Контента сайта",
+    "заголовок из siteConfig не применился",
+  );
+
+  assert(
+    content.subheading ===
+      "редакция от 1 января 2027 г.",
+    "подзаголовок не применился",
+  );
+
+  assert(
+    content.preamble ===
+      "Преамбула, заданная администратором.",
+    "преамбула не применилась",
+  );
+
+  assert(
+    content.contactEmail === "pravo@trioz.ru",
+    "юридическая почта не применилась",
+  );
+
+  assert(
+    content.contactUrl ===
+      "https://trioz.ru/about",
+    "URL не применился",
+  );
+
+  assert(
+    content.sections[0].title ===
+      "1. Свои термины",
+    "заголовок первого раздела не применился",
+  );
+
+  assert(
+    content.sections[0].content ===
+      "Текст первого раздела из админки.",
+    "текст первого раздела не применился",
+  );
+
+  assert(
+    content.sections[1].title ===
+      LEGAL_SECTIONS[1].title,
+    "нетронутый раздел был повреждён",
+  );
+});
+
+check("пустые значения возвращают текст по умолчанию", () => {
+  const content = resolveLegalContent({
+    [legalKeys.heading]: "",
+    [legalKeys.subheading]: "   ",
+    [legalKeys.preamble]: "",
+    [legalKeys.contactEmail]: "",
+    [legalKeys.contactUrl]: "",
+  });
+
+  assert(
+    content.heading === LEGAL_DEFAULTS.heading,
+    "пустое поле стёрло заголовок",
+  );
+
+  assert(
+    content.subheading === LEGAL_DEFAULTS.subheading,
+    "пустое поле стёрло подзаголовок",
+  );
+
+  assert(
+    content.preamble === LEGAL_DEFAULTS.preamble,
+    "пустое поле стёрло преамбулу",
+  );
+
+  assert(
+    content.contactEmail ===
+      LEGAL_DEFAULTS.contactEmail,
+    "пустое поле стёрло email",
+  );
+
+  assert(
+    content.contactUrl ===
+      LEGAL_DEFAULTS.contactUrl,
+    "пустое поле стёрло URL",
+  );
+});
+
+check("mergeLegalOverrides объединяет источники по приоритету", () => {
+  const merged = mergeLegalOverrides(
+    {
+      [legalKeys.heading]: "site",
+      [legalKeys.preamble]: "site preamble",
+      [legalKeys.contactEmail]: "site@example.com",
+    },
+    {
+      [legalKeys.heading]: "override",
+      [legalKeys.preamble]: "override preamble",
+    },
+    {
+      [legalKeys.heading]: "block",
+    },
+  );
+
+  assert(
+    merged[legalKeys.heading] === "block",
+    "blockOverrides не имеет высший приоритет",
+  );
+
+  assert(
+    merged[legalKeys.preamble] === "override preamble",
+    "overrides не перебили siteContent",
+  );
+
+  assert(
+    merged[legalKeys.contactEmail] ===
+      "site@example.com",
+    "значение из siteContent потеряно",
+  );
+});
+
+check("mergeLegalOverrides игнорирует пустые значения", () => {
+  const merged = mergeLegalOverrides(
+    {
+      [legalKeys.heading]: "Исходный заголовок",
+    },
+    {
+      [legalKeys.heading]: "",
+      [legalKeys.preamble]: "   ",
+    },
+  );
+
+  assert(
+    merged[legalKeys.heading] ===
+      "Исходный заголовок",
+    "пустое override стерло значение",
+  );
+
+  assert(
+    !(legalKeys.preamble in merged),
+    "пустая преамбула попала в результат",
+  );
+});
+
+check("LegalFooter реально отображает данные", () => {
   const { html, text } = renderFooter();
-
-  assert(html.includes('id="legal-contacts"'), "нет блока контактов");
-  assert(
-    text.includes("Контакты администрации"),
-    "нет подписи блока контактов",
-  );
-
-  for (const contact of LEGAL_CONTACTS) {
-    assert(
-      text.includes(contact.label),
-      `нет названия канала: ${contact.label}`,
-    );
-    assert(text.includes(contact.email), `нет почты: ${contact.email}`);
-    assert(
-      html.includes(`mailto:${contact.email}`),
-      `почта ${contact.email} не кликабельна`,
-    );
-    assert(
-      text.includes(contact.hint),
-      `нет пояснения к почте: ${contact.label}`,
-    );
-  }
-
-  assert(html.includes(LEGAL_DEFAULTS.contactUrl), "нет адреса сайта");
-});
-
-check("почты из админки доезжают до сайта", () => {
-  const { html, text } = renderFooter({
-    overrides: {
-      [legalKeys.contactEmail("legal")]: "pravo@trioz.ru",
-      [legalKeys.contactLabel("media")]: "Пресс-служба",
-      [legalKeys.contactEmail("media")]: "press@trioz.ru",
-      [legalKeys.contactUrl]: "https://trioz.ru/about",
-    },
-  });
-
-  assert(
-    html.includes("mailto:pravo@trioz.ru"),
-    "новая правовая почта не показана",
-  );
-  assert(
-    html.includes("mailto:press@trioz.ru"),
-    "новая медийная почта не показана",
-  );
-  assert(text.includes("Пресс-служба"), "новая подпись канала не показана");
-  assert(
-    html.includes("https://trioz.ru/about"),
-    "адрес сайта из админки не показан",
-  );
-  assert(
-    !html.includes("mailto:legal@trioz.ru"),
-    "остался старый адрес из кода",
-  );
-});
-
-check("колонтитул берёт те же почты, что и блок правовой информации", () => {
-  const overrides = {
-    [legalKeys.contactEmail("legal")]: "pravo@trioz.ru",
-    [legalKeys.contactEmail("media")]: "press@trioz.ru",
-  };
-
-  const links = renderToStaticMarkup(
-    <LegalContactLinks overrides={overrides} />,
-  );
-  const linksText = visibleText(links);
-
-  assert(
-    links.includes("mailto:pravo@trioz.ru"),
-    "в колонтитуле нет правовой почты",
-  );
-  assert(
-    links.includes("mailto:press@trioz.ru"),
-    "в колонтитуле нет медийной почты",
-  );
-  assert(
-    !links.includes("mailto:legal@trioz.ru"),
-    "колонтитул остался с жёстко вбитым адресом",
-  );
-  assert(
-    linksText.includes("Медийные запросы: press@trioz.ru"),
-    "в колонтитуле почта без назначения",
-  );
-  assert(
-    links.includes(LEGAL_DEFAULTS.contactUrl),
-    "в колонтитуле нет адреса сайта",
-  );
-});
-
-check("блоки «О проекте» и правовая информация — разные источники", () => {
-  // Ключи блоков «О проекте» хранятся в таблице AboutBlock и никак не
-  // влияют на подвал: лишние значения siteConfig не должны его ломать.
-  const { text } = renderFooter({
-    overrides: {
-      "about.title": "Заголовок из другого раздела",
-      "about.subtitle": "Подзаголовок из другого раздела",
-    },
-  });
 
   assert(
     text.includes(LEGAL_DEFAULTS.heading),
-    "правовой блок потерял заголовок",
+    "заголовок не попал в SSR",
   );
-  assert(
-    !text.includes("Заголовок из другого раздела"),
-    "подвал подхватил чужие настройки",
-  );
-  assert(text.includes(LEGAL_CONTACTS[0].email), "потеряны контакты");
-});
-
-check("текст из унаследованного блока виден на странице", () => {
-  // Так выглядит строка AboutBlock с типом 'legal' на работающей установке.
-  const legacy = legacyLegalOverrides({
-    heading: "Соглашение из старого блока",
-    subheading: "редакция от 5 марта 2026 г.",
-    contactEmail: "old-legal@trioz.ru",
-    sections: [
-      { title: "1. Свои термины", content: "Текст первого раздела из блока." },
-    ],
-  });
-
-  const { html, text } = renderFooter({
-    defaultExpanded: true,
-    overrides: mergeLegalOverrides(legacy, null),
-  });
 
   assert(
-    text.includes("Соглашение из старого блока"),
-    "заголовок блока не показан",
+    text.includes(LEGAL_DEFAULTS.preamble),
+    "преамбула не попала в SSR",
   );
+
   assert(
-    text.includes("Текст первого раздела из блока."),
-    "текст блока не показан",
+    html.includes(
+      `mailto:${LEGAL_DEFAULTS.contactEmail}`,
+    ),
+    "email не попал в SSR",
   );
+
   assert(
-    html.includes("mailto:old-legal@trioz.ru"),
-    "почта из блока не показана",
-  );
-  // Остальные разделы не пропадают.
-  assert(
-    text.includes(visibleText(LEGAL_SECTIONS[1].title)),
-    "потеряны остальные разделы",
+    html.includes(LEGAL_DEFAULTS.contactUrl),
+    "URL не попал в SSR",
   );
 });
 
-check("новый раздел админки перебивает старый блок", () => {
-  const legacy = legacyLegalOverrides({
-    heading: "Старый заголовок",
-    subheading: "старая редакция",
-  });
+check(
+  "LegalContactLinks содержит ссылку на правовую информацию",
+  () => {
+    const { html, text } = renderLinks();
 
-  const { text } = renderFooter({
-    overrides: mergeLegalOverrides(legacy, {
-      [legalKeys.heading]: "Актуальное соглашение",
-    }),
+    assert(
+      html.includes('href="#legal"'),
+      "нет якоря #legal",
+    );
+
+    assert(
+      text.includes("Правовая информация"),
+      "нет ссылки «Правовая информация»",
+    );
+
+    assert(
+      text.includes(LEGAL_DEFAULTS.contactEmail),
+      "нет юридического email",
+    );
+
+    assert(
+      html.includes(
+        `mailto:${LEGAL_DEFAULTS.contactEmail}`,
+      ),
+      "юридический email не кликабелен",
+    );
+  },
+);
+
+check("источник about.* не влияет на правовую информацию", () => {
+  const content = resolveLegalContent({
+    "about.title": "Заголовок из другого раздела",
+    "about.subtitle":
+      "Подзаголовок из другого раздела",
   });
 
   assert(
-    text.includes("Актуальное соглашение"),
-    "новое значение не взяло верх",
+    content.heading === LEGAL_DEFAULTS.heading,
+    "legal подхватил чужой about.title",
   );
-  assert(!text.includes("Старый заголовок"), "показан устаревший заголовок");
-  assert(text.includes("старая редакция"), "нетронутое поле потеряно");
+
+  assert(
+    content.subheading === LEGAL_DEFAULTS.subheading,
+    "legal подхватил чужой about.subtitle",
+  );
+
+  assert(
+    !content.heading.includes(
+      "Заголовок из другого раздела",
+    ),
+    "обнаружено пересечение источников",
+  );
 });
 
-/* UNIFY: проверки единого блока и загрузки файлов. */
-const pageSrc = readFileSync("src/app/about/page.tsx", "utf8");
-const adminSrc = readFileSync("src/app/admin/about/page.tsx", "utf8");
+/* Проверки структуры /about и админки. */
 
-check("каждый тип блока рисуется на /about", () => {
+const pageSrc = readFileSync(
+  "src/app/about/page.tsx",
+  "utf8",
+);
+
+const adminSrc = readFileSync(
+  "src/app/admin/about/page.tsx",
+  "utf8",
+);
+
+check("каждый тип блока имеет обработчик на /about", () => {
   for (const type of BLOCK_TYPES) {
     assert(
-      pageSrc.includes("case '" + type + "'") ||
-        pageSrc.includes('case "' + type + '"'),
-      "нет рендера для блока " + type,
+      pageSrc.includes(`case '${type}'`) ||
+        pageSrc.includes(`case "${type}"`),
+      `нет рендера для блока ${type}`,
     );
   }
 });
@@ -375,92 +468,207 @@ check("каждый тип блока рисуется на /about", () => {
 check("каждый тип блока редактируется в админке", () => {
   for (const type of BLOCK_TYPES) {
     assert(
-      adminSrc.includes('case "' + type + '"') ||
-        adminSrc.includes("case '" + type + "'"),
-      "нет редактора для блока " + type,
+      adminSrc.includes(`case '${type}'`) ||
+        adminSrc.includes(`case "${type}"`),
+      `нет редактора для блока ${type}`,
     );
-    assert(BLOCK_LABELS[type] !== undefined, "нет подписи для блока " + type);
+
+    assert(
+      BLOCK_LABELS[type] !== undefined,
+      `нет подписи для блока ${type}`,
+    );
+
     assert(
       BLOCK_DEFAULTS[type] !== undefined,
-      "нет заготовки для блока " + type,
+      `нет заготовки для блока ${type}`,
     );
   }
 });
 
-check("правовая информация НЕ является CMS-блоком", () => {
-  assert(!(BLOCK_TYPES as readonly string[]).includes("legal"), "тип legal всё ещё присутствует в CMS");
-  assert(!("legal" in BLOCK_DEFAULTS), "заготовка legal всё ещё присутствует в CMS");
-  assert(!("legal" in BLOCK_LABELS), "подпись legal всё ещё присутствует в CMS");
-  assert(!pageSrc.includes("case \"legal\""), "страница всё ещё обрабатывает legal как блок");
-  assert(!pageSrc.includes("<LegalBlock"), "старый LegalBlock всё ещё подключён");
-  assert(pageSrc.includes("<LegalFooter />"), "LegalFooter не выводится на /about");
+check("правовая информация не является CMS-блоком", () => {
+  assert(
+    !(BLOCK_TYPES as readonly string[]).includes(
+      "legal",
+    ),
+    "тип legal всё ещё присутствует в CMS",
+  );
+
+  assert(
+    !("legal" in BLOCK_DEFAULTS),
+    "заготовка legal всё ещё присутствует в CMS",
+  );
+
+  assert(
+    !("legal" in BLOCK_LABELS),
+    "подпись legal всё ещё присутствует в CMS",
+  );
+
+  assert(
+    !pageSrc.includes('case "legal"') &&
+      !pageSrc.includes("case 'legal'"),
+    "страница всё ещё обрабатывает legal как CMS-блок",
+  );
+
+  assert(
+    !pageSrc.includes("<LegalBlock"),
+    "старый LegalBlock всё ещё подключён",
+  );
+
+  assert(
+    pageSrc.includes("<LegalFooter"),
+    "LegalFooter не выводится на /about",
+  );
 });
 
-check("старые legal-записи не должны попадать в CMS-вывод", () => {
-  const apiSrc = readFileSync("src/app/api/about-blocks/route.ts", "utf8");
-  assert(apiSrc.includes('type: { not: "legal" }'), "API не фильтрует legacy legal");
+check("legacy legal-записи не попадают в API CMS-блоков", () => {
+  const apiSrc = readFileSync(
+    "src/app/api/about-blocks/route.ts",
+    "utf8",
+  );
+
+  assert(
+    apiSrc.includes('type: { not: "legal" }'),
+    "API не фильтрует legacy legal",
+  );
 });
 
-check("в блоках /about нет второго источника legal-контента", () => {
-  const adminSrc = readFileSync("src/app/admin/about/page.tsx", "utf8");
-  assert(!adminSrc.includes("function LegalEditor"), "LegalEditor всё ещё встроен в О проекте");
-  assert(!adminSrc.includes('case "legal"'), "admin /about всё ещё редактирует legal");
+check("правовая информация редактируется отдельно", () => {
+  const legalAdmin = readFileSync(
+    "src/app/admin/legal/page.tsx",
+    "utf8",
+  );
+
+  assert(
+    legalAdmin.includes("/api/site-content"),
+    "редактор legal не использует siteConfig",
+  );
+
+  assert(
+    !legalAdmin.includes("/admin/about"),
+    "legal снова связан с /admin/about",
+  );
 });
 
-check("правовая информация всегда выводится отдельным системным разделом", () => {
-  const { html, text } = renderFooter();
-  assert(html.includes('id="legal"'), "нет системного раздела #legal");
-  assert(text.includes(LEGAL_DEFAULTS.heading), "нет заголовка системной правовой информации");
-  assert(text.includes(visibleText(LEGAL_DEFAULTS.preamble)), "нет текста системной правовой информации");
+check("в админке /about нет второго LegalEditor", () => {
+  assert(
+    !adminSrc.includes("function LegalEditor"),
+    "LegalEditor всё ещё встроен в About",
+  );
+
+  assert(
+    !adminSrc.includes('case "legal"') &&
+      !adminSrc.includes("case 'legal'"),
+    "legal всё ещё редактируется через About",
+  );
 });
 
-check("текст из Контента сайта виден в системной правовой информации", () => {
-  const { text } = renderFooter({
-    overrides: {
-      [legalKeys.heading]: "Соглашение из Контента сайта",
-      [legalKeys.sectionContent(0)]: "Текст из раздела Правовая информация.",
-    },
-    defaultExpanded: true,
-  });
+check(
+  "правовая информация выводится как отдельный системный раздел",
+  () => {
+    const { html, text } = renderFooter();
 
-  assert(text.includes("Соглашение из Контента сайта"), "заголовок siteConfig потерян");
-  assert(text.includes("Текст из раздела Правовая информация."), "текст из Контента сайта не показан");
-});
+    assert(
+      html.includes('id="legal"'),
+      "нет системного #legal",
+    );
 
-check("медиа грузится файлом, а не ссылкой", () => {
+    assert(
+      text.includes(LEGAL_DEFAULTS.heading),
+      "нет заголовка",
+    );
+
+    assert(
+      text.includes(LEGAL_DEFAULTS.preamble),
+      "нет основного текста",
+    );
+  },
+);
+
+check(
+  "контент сайта может переопределять правовой документ",
+  () => {
+    const content = resolveLegalContent({
+      [legalKeys.heading]:
+        "Соглашение из Контента сайта",
+
+      [legalKeys.sectionContent(0)]:
+        "Текст из раздела Правовая информация.",
+    });
+
+    assert(
+      content.heading ===
+        "Соглашение из Контента сайта",
+      "заголовок из siteConfig потерян",
+    );
+
+    assert(
+      content.sections[0].content ===
+        "Текст из раздела Правовая информация.",
+      "текст из siteConfig потерян",
+    );
+  },
+);
+
+check("медиа загружается файлом, а не URL", () => {
   assert(
     adminSrc.includes("MediaUploadField"),
-    "в админке нет загрузчика файлов",
+    "в админке нет MediaUploadField",
   );
-  assert(!adminSrc.includes("Аватар URL"), "аватар всё ещё задаётся ссылкой");
+
+  assert(
+    !adminSrc.includes("Аватар URL"),
+    "аватар всё ещё задаётся URL",
+  );
+
   const uploadSrc = readFileSync(
     "src/components/admin/MediaUploadField.tsx",
     "utf8",
   );
-  assert(uploadSrc.includes('type="file"'), "нет поля выбора файла");
+
+  assert(
+    uploadSrc.includes('type="file"'),
+    "нет поля выбора файла",
+  );
+
   assert(
     uploadSrc.includes("/api/about-media"),
-    "загрузка не шлётся на сервер",
+    "загрузка не идёт на /api/about-media",
   );
 });
 
-check("загруженные медиафайлы видны на /about", () => {
-  assert(pageSrc.includes("hero-bg-image"), "фон обложки не рисуется");
-  assert(pageSrc.includes("hero-bg-video"), "видео-фон обложки не рисуется");
-  assert(pageSrc.includes("data.posterUrl"), "обложка видео не рисуется");
-  assert(pageSrc.includes("item.imageUrl"), "картинка карточки не рисуется");
-  assert(pageSrc.includes("m.avatarUrl"), "аватар команды не рисуется");
-});
+check(
+  "загруженные медиафайлы используются на /about",
+  () => {
+    assert(
+      pageSrc.includes("hero-bg-image"),
+      "фон обложки не рисуется",
+    );
 
-check("правовая информация редактируется отдельно от блоков /about", () => {
-  const legalAdmin = readFileSync("src/app/admin/legal/page.tsx", "utf8");
-  assert(legalAdmin.includes("/api/site-content"), "нет редактора siteConfig");
-  assert(!legalAdmin.includes("/admin/about"), "правовая информация снова перенесена в блоки /about");
-});
+    assert(
+      pageSrc.includes("hero-bg-video"),
+      "видео-фон обложки не рисуется",
+    );
+
+    assert(
+      pageSrc.includes("data.posterUrl"),
+      "posterUrl не используется",
+    );
+
+    assert(
+      pageSrc.includes("item.imageUrl"),
+      "imageUrl карточки не используется",
+    );
+
+    assert(
+      pageSrc.includes("m.avatarUrl"),
+      "avatarUrl команды не используется",
+    );
+  },
+);
 
 console.log(
   failures === 0
-    ? "\nВсе проверки отображения прошли.\n"
+    ? "\nВсе SSR-проверки правовой информации прошли.\n"
     : `\nНе прошло проверок: ${failures}\n`,
 );
 

@@ -1,87 +1,50 @@
-/* FIX-LEGAL: тексты пользовательского соглашения больше не живут в разметке
-   страницы /about. Здесь — только редакция по умолчанию, а действующая
-   правится в админке: Админ → Контент сайта → Правовая информация.
-
-   Хранилище — тот же siteConfig (ключи `content:legal.*`), что и у остальных
-   редактируемых текстов сайта, поэтому отдельного API не потребовалось.
-   Пустое значение в админке = «вернуть текст по умолчанию»: откат редакции
-   не требует правки кода. */
-
 export interface LegalSection {
   title: string;
   content: string;
 }
 
+export interface LegalContent {
+  heading: string;
+  subheading: string;
+  preamble: string;
+  contactEmail: string;
+  contactUrl: string;
+  sections: LegalSection[];
+}
+
 export const LEGAL_DEFAULTS = {
   heading: "Пользовательское соглашение",
+
   subheading:
     "Политика ведения деятельности платформы TRIOZ — редакция от 31 мая 2026 г.",
+
   preamble: `Настоящее Пользовательское соглашение (далее — Соглашение) является публичной офертой Администрации платформы TRIOZ и определяет условия использования сайта trioz.ru, всех его разделов, сервисов и функциональных возможностей.
 
 Начало использования Платформы любым способом — просмотр страниц, регистрация, отправка сообщений или файлов — означает полное и безоговорочное принятие условий настоящего Соглашения и Политики обработки персональных данных.`,
+
   contactEmail: "legal@trioz.ru",
+
   contactUrl: "https://trioz.ru",
 };
-
-/**
- * Опубликованная почта для обращений определённого типа.
- *
- * Правовые и медийные запросы идут на разные адреса, поэтому на сайте
- * нужна не одна строка «mailto», а подписанный список: видно, куда
- * писать по соглашению и персональным данным, а куда — прессе.
- */
-export interface LegalContact {
-  /** Стабильный slug — из него собираются ключи контента. */
-  key: string;
-  /** Название канала: «Правовые запросы», «Медийные запросы»… */
-  label: string;
-  /** Короткое пояснение, по каким вопросам писать на этот адрес. */
-  hint: string;
-  /** Сам адрес почты. */
-  email: string;
-}
-
-/** Почты по умолчанию. Любую из них можно переопределить в админке. */
-export const LEGAL_CONTACTS: LegalContact[] = [
-  {
-    key: "legal",
-    label: "Правовые запросы",
-    hint: "соглашение, персональные данные, претензии",
-    email: "legal@trioz.ru",
-  },
-  {
-    key: "media",
-    label: "Медийные запросы",
-    hint: "пресса, интервью, использование материалов и логотипов",
-    email: "media@trioz.ru",
-  },
-  {
-    key: "support",
-    label: "Поддержка пользователей",
-    hint: "доступ к аккаунту, оплата, технические вопросы",
-    email: "support@trioz.ru",
-  },
-];
 
 export const legalKeys = {
   heading: "legal.heading",
   subheading: "legal.subheading",
   preamble: "legal.preamble",
-  sectionTitle: (i: number) => `legal.section.${i + 1}.title`,
-  sectionContent: (i: number) => `legal.section.${i + 1}.content`,
-  /** Название канала обращений. */
-  contactLabel: (key: string) => `legal.contact.${key}.label`,
-  /** Почта канала обращений. */
-  contactEmail: (key: string) => `legal.contact.${key}.email`,
-  /** Пояснение к каналу обращений. */
-  contactHint: (key: string) => `legal.contact.${key}.hint`,
-  /** Адрес сайта владельца платформы. */
+  contactEmail: "legal.contact.email",
   contactUrl: "legal.contact.url",
+
+  sectionTitle: (index: number) =>
+    `legal.section.${index + 1}.title`,
+
+  sectionContent: (index: number) =>
+    `legal.section.${index + 1}.content`,
 };
 
 export const LEGAL_SECTIONS: LegalSection[] = [
   {
     title: "1. Термины и определения",
+
     content: `Платформа (Сайт) — совокупность программно-аппаратных средств, интегрированных с веб-сайтом, размещенным в сети Интернет в домене trioz.ru, включая все его поддомены, страницы, элементы интерфейса, графику и программный код.
 
 Администрация Платформы — правообладатель Платформы TRIOZ, осуществляющий управление Сайтом, обеспечение его функционирования и техническую поддержку.
@@ -90,14 +53,18 @@ export const LEGAL_SECTIONS: LegalSection[] = [
 
 Обработка сообщений (Сервис) — функционал Платформы, позволяющий Пользователю отправлять текстовые сообщения, запросы, технические задания, файлы и иные материалы Администрации, а Администрации — принимать, регистрировать, анализировать и отвечать на указанные запросы в рамках обслуживания Клиентов.`,
   },
+
   {
     title: "2. Предмет соглашения",
+
     content: `2.1. Предметом настоящего Соглашения является предоставление Пользователю доступа к функциональным возможностям Платформы trioz.ru для получения информационных, консультационных, сервисных или технологических услуг, а также для направления официальных обращений и обработки сообщений Пользователя.
 
 2.2. Использование любых функций Платформы означает безоговорочное согласие Пользователя со всеми пунктами настоящего Соглашения, а также с Политикой конфиденциальности, являющейся неотъемлемой частью данного документа. В случае несогласия с какими-либо условиями Пользователь обязан незамедлительно прекратить использование Сайта.`,
   },
+
   {
     title: "3. Порядок использования Платформы",
+
     content: `3.1. Платформа trioz.ru предоставляет интерфейс для взаимодействия Клиентов с проектом TRIOZ. В рамках этого взаимодействия Пользователь имеет право направлять сообщения через электронные формы обратной связи, онлайн-чаты или специализированные тикет-системы, развернутые на Сайте.
 
 3.2. При отправке сообщений Пользователь обязуется предоставлять достоверную, актуальную и полную информацию (включая имя, контактный адрес электронной почты и иные реквизиты, необходимые для обратной связи).
@@ -106,42 +73,58 @@ export const LEGAL_SECTIONS: LegalSection[] = [
 
 3.4. Направляя сообщение или файлы через Платформу, Пользователь гарантирует, что обладает всеми необходимыми правами на передаваемую информацию и её содержание не нарушает законодательство РФ, права третьих лиц и общепринятые этические нормы.`,
   },
+
   {
     title: "4. Политика ведения деятельности",
+
     content: `4.1. Проект TRIOZ строит свою деятельность на принципах законности, прозрачности, конфиденциальности и профессиональной этики. Администрация обязуется прилагать максимальные усилия для обеспечения бесперебойного функционирования Платформы, оперативного устранения технических сбоев и качественного обслуживания Клиентов.
 
 4.2. При использовании Платформы Пользователю строго запрещается:
+
 • Использовать Сервис для отправки спама, массовых рассылок, вредоносного программного обеспечения, фишинговых ссылок или иных материалов, способных нарушить стабильность работы компьютерного оборудования или сетей.
+
 • Размещать или передавать информацию, носящую оскорбительный, дискриминационный, заведомо ложный, клеветнический характер, а также материалы, нарушающие авторские, смежные или патентные права третьих лиц.
+
 • Осуществлять попытки несанкционированного доступа к административной панели Сайта, учетным записям других пользователей или серверам, на которых развернута инфраструктура TRIOZ.
+
 • Использовать автоматизированные скрипты (парсеры, боты, краулеры) для сбора информации с Платформы без предварительного письменного разрешения Администрации.
 
 4.3. В случае выявления нарушений правил допустимого использования, Администрация оставляет за собой право в одностороннем порядке заблокировать доступ Пользователя к Сервису, проигнорировать направленные сообщения или передать соответствующие данные в правоохранительные органы.`,
   },
+
   {
     title: "5. Интеллектуальная собственность",
+
     content: `5.1. Все объекты, размещенные на Платформе trioz.ru, включая элементы дизайна, текст, графические изображения, иллюстрации, скрипты, программы для ЭВМ, базы данных, товарные знаки и логотипы, являются объектами исключительных прав Администрации Платформы или её партнеров.
 
 5.2. Никакие элементы контента Платформы не могут быть скопированы, воспроизведены, переработаны, распространены или использованы иным образом для коммерческих или некоммерческих целей без предварительного согласия правообладателя.`,
   },
+
   {
     title: "6. Ограничение ответственности",
+
     content: `6.1. Платформа и её сервисы предоставляются на условиях «как есть» (as is). Администрация не гарантирует, что Платформа будет соответствовать всем субъективным ожиданиям Пользователя, функционировать непрерывно, быстро и абсолютно без ошибок.
 
 6.2. Администрация не несет ответственности за убытки (включая упущенную выгоду, прерывание деловой активности или потерю данных), возникшие у Пользователя в связи с использованием или невозможностью использования Платформы, а также в результате задержек в обработке сообщений, вызванных сбоями в сетях электросвязи или действиями третьих лиц.`,
   },
+
   {
     title: "7. Политика обработки персональных данных",
+
     content: `7.1. Сбор, хранение и обработка персональных данных Пользователей, направляемых через Сайт trioz.ru, осуществляются в строгом соответствии с Федеральным законом РФ № 152-ФЗ «О персональных данных».
 
 7.2. Категории обрабатываемых данных:
+
 • Имя, Фамилия, Отчество, адрес электронной почты, номер телефона — для идентификации Пользователя, обработки входящих сообщений, консультирования и предоставления ответов. Хранятся до достижения целей обработки или до момента отзыва согласия.
+
 • Технические данные (IP-адрес, файлы cookie, данные о браузере, время доступа) — для аналитики работы Сайта, оптимизации интерфейса, обеспечения информационной безопасности. Автоматическое удаление в соответствии с настройками веб-сервера (до 12 месяцев).
 
 7.3. Администрация принимает необходимые организационные и технические меры для защиты персональной информации Пользователя от неправомерного или случайного доступа, уничтожения, изменения, блокирования, копирования, распространения.`,
   },
+
   {
     title: "8. Разрешение споров и заключительные положения",
+
     content: `8.1. Все споры и разногласия, возникающие из настоящего Соглашения или в связи с ним, подлежат разрешению путем переговоров с соблюдением обязательного досудебного претензионного порядка. Срок рассмотрения претензии составляет 15 (пятнадцать) рабочих дней с момента её получения Стороной.
 
 8.2. В случае невозможности достижения согласия, спор передается на рассмотрение в суд по месту нахождения Администрации Платформы в соответствии с действующим законодательством Российской Федерации.
@@ -149,203 +132,97 @@ export const LEGAL_SECTIONS: LegalSection[] = [
 8.3. Администрация вправе в любой момент в одностороннем порядке изменять условия настоящего Соглашения. Новая редакция вступает в силу с момента ее публикации на странице https://trioz.ru, если иное не предусмотрено новой редакцией Соглашения.
 
 Контакты Администрации проекта TRIOZ:
+
 URL-адрес: https://trioz.ru
+
 Назначение: Платформа обслуживания клиентов и обработки сообщений
+
 Электронный адрес для юридических запросов и отзывов персональных данных: legal@trioz.ru`,
   },
 ];
 
-/* ─── Сборка действующей редакции ───────────────────────────────
-
-   Раньше правовая информация жила в двух местах сразу: в блоке «Правовая
-   информация» редактора «О проекте» (таблица AboutBlock) и в разделе
-   «Контент сайта → Правовая информация» (siteConfig, ключи `content:legal.*`).
-   Страница /about читала только первое хранилище, поэтому большой текст
-   из админки не показывался нигде, а при отсутствии блока подвал оставался
-   вовсе без текста. Теперь источник один — siteConfig, а код даёт редакцию
-   по умолчанию. Пустое значение = «вернуть текст по умолчанию». */
-
-export interface LegalContent {
-  heading: string;
-  subheading: string;
-  preamble: string;
-  sections: LegalSection[];
-  /** Подписанные почты: правовые, медийные, поддержка. */
-  contacts: LegalContact[];
-  /** Почта для юридических запросов — первая в списке контактов. */
-  contactEmail: string;
-  contactUrl: string;
+function pick(
+  value: string | undefined,
+  fallback: string,
+): string {
+  return typeof value === "string" && value.trim()
+    ? value
+    : fallback;
 }
 
-/** Пустая строка, пробелы и undefined равнозначны «нет переопределения». */
-function pick(override: string | undefined | null, fallback: string): string {
-  const value = (override ?? "").trim();
-  return value || fallback;
+function buildSections(
+  overrides: Record<string, string>,
+): LegalSection[] {
+  return LEGAL_SECTIONS.map((section, index) => ({
+    title: pick(
+      overrides[legalKeys.sectionTitle(index)],
+      section.title,
+    ),
+
+    content: pick(
+      overrides[legalKeys.sectionContent(index)],
+      section.content,
+    ),
+  }));
 }
 
-/**
- * Собирает текст соглашения для показа в подвале /about.
- *
- * @param overrides ответ `/api/site-content` (ключи без префикса `content:`).
- *   Может быть пустым или не передан — тогда вернётся редакция из кода.
- */
+export function mergeLegalOverrides(
+  siteContent?: Record<string, string> | null,
+  overrides?: Record<string, string> | null,
+  blockOverrides?: Record<string, string> | null,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  for (const source of [
+    siteContent,
+    overrides,
+    blockOverrides,
+  ]) {
+    if (!source) {
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(source)) {
+      if (typeof value === "string" && value.trim()) {
+        result[key] = value;
+      }
+    }
+  }
+
+  return result;
+}
+
 export function resolveLegalContent(
   overrides?: Record<string, string> | null,
 ): LegalContent {
   const map = overrides ?? {};
 
-  const contacts = buildContacts(map);
-
   return {
-    contacts,
-    heading: pick(map[legalKeys.heading], LEGAL_DEFAULTS.heading),
-    subheading: pick(map[legalKeys.subheading], LEGAL_DEFAULTS.subheading),
-    preamble: pick(map[legalKeys.preamble], LEGAL_DEFAULTS.preamble),
-    contactEmail: contacts[0]?.email || LEGAL_DEFAULTS.contactEmail,
-    contactUrl: pick(map[legalKeys.contactUrl], LEGAL_DEFAULTS.contactUrl),
+    heading: pick(
+      map[legalKeys.heading],
+      LEGAL_DEFAULTS.heading,
+    ),
+
+    subheading: pick(
+      map[legalKeys.subheading],
+      LEGAL_DEFAULTS.subheading,
+    ),
+
+    preamble: pick(
+      map[legalKeys.preamble],
+      LEGAL_DEFAULTS.preamble,
+    ),
+
+    contactEmail: pick(
+      map[legalKeys.contactEmail],
+      LEGAL_DEFAULTS.contactEmail,
+    ),
+
+    contactUrl: pick(
+      map[legalKeys.contactUrl],
+      LEGAL_DEFAULTS.contactUrl,
+    ),
+
     sections: buildSections(map),
-  };
-}
-
-/**
- * Собирает подписанные почты.
- *
- * Кроме трёх каналов по умолчанию админ может добавить свои — раньше
- * такие адреса молча терялись: перебор шёл только по списку из кода.
- */
-function buildContacts(map: Record<string, string>): LegalContact[] {
-  const order: string[] = LEGAL_CONTACTS.map((c) => c.key);
-
-  for (const key of Object.keys(map)) {
-    const match = /^legal\.contact\.(.+)\.(label|email|hint)$/.exec(key);
-    if (!match) continue;
-    if (!(map[key] ?? "").trim()) continue;
-    if (!order.includes(match[1])) order.push(match[1]);
-  }
-
-  return order
-    .map((key) => {
-      const base = LEGAL_CONTACTS.find((c) => c.key === key);
-      return {
-        key,
-        label: pick(map[legalKeys.contactLabel(key)], base?.label ?? key),
-        hint: pick(map[legalKeys.contactHint(key)], base?.hint ?? ""),
-        email: pick(map[legalKeys.contactEmail(key)], base?.email ?? ""),
-      };
-    })
-    .filter((contact) => contact.email.trim());
-}
-
-/**
- * Собирает разделы документа.
- *
- * В админке и в старом блоке разделов может быть больше, чем в редакции
- * по умолчанию. Раньше лишние разделы просто пропадали: перебор шёл по
- * списку из кода, а не по тому, что действительно заполнено.
- */
-function buildSections(map: Record<string, string>): LegalSection[] {
-  let count = LEGAL_SECTIONS.length;
-
-  for (const key of Object.keys(map)) {
-    const match = /^legal\.section\.(\d+)\.(title|content)$/.exec(key);
-    if (!match) continue;
-    if (!(map[key] ?? "").trim()) continue;
-    count = Math.max(count, Number(match[1]));
-  }
-
-  return Array.from({ length: count }, (_, i) => ({
-    title: pick(map[legalKeys.sectionTitle(i)], LEGAL_SECTIONS[i]?.title ?? ""),
-    content: pick(map[legalKeys.sectionContent(i)], LEGAL_SECTIONS[i]?.content ?? ""),
-  })).filter((section) => section.title.trim() || section.content.trim());
-}
-
-/**
- * Переводит унаследованный блок «Правовая информация» в ключи контента.
- *
- * До переезда текст соглашения редактировался как блок страницы и лежал в
- * таблице AboutBlock (тип 'legal', поля heading/subheading/sections/почты).
- * Такой текст есть на работающих установках, и потерять его нельзя: сайт
- * показывает его до тех пор, пока то же поле не заполнено в новом разделе админки.
- */
-export function legacyLegalOverrides(data: unknown): Record<string, string> {
-  const map: Record<string, string> = {};
-  if (!data || typeof data !== "object") return map;
-
-  const block = data as Record<string, unknown>;
-  const put = (key: string, value: unknown) => {
-    if (typeof value === "string" && value.trim()) map[key] = value;
-  };
-
-  put(legalKeys.heading, block.heading);
-  put(legalKeys.subheading, block.subheading);
-  put(legalKeys.preamble, block.preamble);
-  put(legalKeys.contactEmail("legal"), block.contactEmail);
-  put(legalKeys.contactUrl, block.contactUrl);
-
-  if (Array.isArray(block.contacts)) {
-    block.contacts.forEach((contact) => {
-      if (!contact || typeof contact !== "object") return;
-      const c = contact as Record<string, unknown>;
-      const key = typeof c.key === "string" ? c.key.trim() : "";
-      if (!key) return;
-      put(legalKeys.contactLabel(key), c.label);
-      put(legalKeys.contactHint(key), c.hint);
-      put(legalKeys.contactEmail(key), c.email);
-    });
-  }
-
-  if (Array.isArray(block.sections)) {
-    block.sections.forEach((section, i) => {
-      if (!section || typeof section !== "object") return;
-      const s = section as Record<string, unknown>;
-      put(legalKeys.sectionTitle(i), s.title);
-      put(legalKeys.sectionContent(i), s.content);
-    });
-  }
-
-  return map;
-}
-
-/**
- * Объединяет источники по возрастанию приоритета.
- *
- * Последний аргумент важнее: настройки из «Контент сайта → Правовая
- * информация» перебивают унаследованный блок. Пустые значения ничего не стирают.
- */
-export function mergeLegalOverrides(
-  ...sources: Array<Record<string, string> | null | undefined>
-): Record<string, string> {
-  const merged: Record<string, string> = {};
-
-  for (const source of sources) {
-    if (!source) continue;
-    for (const [key, value] of Object.entries(source)) {
-      if (typeof value === "string" && value.trim()) merged[key] = value;
-    }
-  }
-
-  return merged;
-}
-
-/**
- * Готовые данные блока «Правовая информация» для единого редактора.
- *
- * Нужно при первом открытии блока: в поля сразу подставляется текст,
- * который админ уже написал раньше — в старом блоке или в разделе
- * «Контент сайта». Так слияние двух редакторов не теряет данные.
- */
-export function legalContentToBlock(content: LegalContent) {
-  return {
-    heading: content.heading,
-    subheading: content.subheading,
-    preamble: content.preamble,
-    sections: content.sections.map((s) => ({ title: s.title, content: s.content })),
-    contacts: content.contacts.map((c) => ({
-      key: c.key,
-      label: c.label,
-      hint: c.hint,
-      email: c.email,
-    })),
-    contactUrl: content.contactUrl,
   };
 }
