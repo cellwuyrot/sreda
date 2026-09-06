@@ -27,6 +27,7 @@ import {
   buildAboutLayout,
   type AboutBlockRow,
 } from "../lib/aboutBlocks";
+import { parseBlockData, serializeBlockData } from "../lib/blockData";
 
 let failures = 0;
 
@@ -296,6 +297,91 @@ check("API \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u0435\u0442 \u0441\u043e\u
 check("\u0441\u043a\u0440\u044b\u0442\u044b\u0435 \u0431\u043b\u043e\u043a\u0438 \u0444\u0438\u043b\u044c\u0442\u0440\u0443\u044e\u0442\u0441\u044f \u0442\u043e\u043b\u044c\u043a\u043e \u043f\u043e \u0432\u0438\u0434\u0438\u043c\u043e\u0441\u0442\u0438", () => {
   const apiSrc = readFileSync("src/app/api/about-blocks/route.ts", "utf8");
   assert(apiSrc.includes("{ visible: true }"), "\u043f\u0443\u0431\u043b\u0438\u0447\u043d\u0430\u044f \u0432\u044b\u0434\u0430\u0447\u0430 \u0444\u0438\u043b\u044c\u0442\u0440\u0443\u0435\u0442\u0441\u044f \u0438\u043d\u0430\u0447\u0435");
+});
+
+check("\u0434\u0430\u043d\u043d\u044b\u0435 \u0431\u043b\u043e\u043a\u0430 \u0440\u0430\u0437\u0431\u0438\u0440\u0430\u044e\u0442\u0441\u044f \u0432 \u043b\u044e\u0431\u043e\u043c \u0432\u0438\u0434\u0435", () => {
+  const want = { items: [{ label: "\u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u043e\u0432", value: "1200" }] };
+  assert(JSON.stringify(parseBlockData(want)) === JSON.stringify(want), "\u043e\u0431\u044a\u0435\u043a\u0442 \u0438\u0441\u043a\u0430\u0436\u0451\u043d");
+  assert(JSON.stringify(parseBlockData(JSON.stringify(want))) === JSON.stringify(want), "\u0441\u0442\u0440\u043e\u043a\u0430 \u043d\u0435 \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u043d\u0430");
+  assert(JSON.stringify(parseBlockData(JSON.stringify(JSON.stringify(want)))) === JSON.stringify(want), "\u0434\u0432\u043e\u0439\u043d\u043e\u0435 \u043a\u043e\u0434\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u043d\u0435 \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u043d\u043e");
+  for (const junk of [null, undefined, "", "   ", "\u043d\u0435 json", "[1,2]", 42, true]) {
+    const out = parseBlockData(junk);
+    assert(out !== null && typeof out === "object" && !Array.isArray(out), "\u043c\u0443\u0441\u043e\u0440 \u0434\u0430\u043b \u043d\u0435 \u043e\u0431\u044a\u0435\u043a\u0442");
+  }
+});
+
+check("\u0437\u0430\u043f\u0438\u0441\u044c \u043d\u0435 \u0441\u043e\u0437\u0434\u0430\u0451\u0442 \u0432\u0442\u043e\u0440\u043e\u0439 \u0441\u043b\u043e\u0439 \u043a\u043e\u0434\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f", () => {
+  const want = { title: "\u0422\u0440\u0435\u0439\u043b\u0435\u0440" };
+  assert(serializeBlockData(want) === JSON.stringify(want), "\u043e\u0431\u044a\u0435\u043a\u0442 \u0437\u0430\u043a\u043e\u0434\u0438\u0440\u043e\u0432\u0430\u043d \u043d\u0435\u0432\u0435\u0440\u043d\u043e");
+  assert(serializeBlockData(JSON.stringify(want)) === JSON.stringify(want), "\u0441\u0442\u0440\u043e\u043a\u0430 \u0437\u0430\u043a\u043e\u0434\u0438\u0440\u043e\u0432\u0430\u043d\u0430 \u0434\u0432\u0430\u0436\u0434\u044b");
+  assert(JSON.parse(serializeBlockData(want)).title === "\u0422\u0440\u0435\u0439\u043b\u0435\u0440", "\u043a\u0440\u0443\u0433\u043e\u0432\u043e\u0439 \u043e\u0431\u043e\u0440\u043e\u0442 \u0431\u0438\u0442");
+});
+
+check("\u0432\u0441\u0435 \u0431\u043b\u043e\u043a\u0438 \u0434\u043e\u0435\u0437\u0436\u0430\u044e\u0442 \u0441 \u0434\u0430\u043d\u043d\u044b\u043c\u0438, \u0430 \u043d\u0435 \u0442\u043e\u043b\u044c\u043a\u043e hero", () => {
+  const rows: AboutBlockRow[] = BLOCK_TYPES.filter((t) => t !== "legal").map((t, i) =>
+    // данные специально в виде дважды закодированной строки — как в базе
+    row("b" + i, t, JSON.stringify(JSON.stringify(BLOCK_DEFAULTS[t])) as unknown as Record<string, unknown>, true, i),
+  );
+  const { bodyBlocks } = buildAboutLayout(rows);
+  assert(bodyBlocks.length === rows.length, "\u0431\u043b\u043e\u043a\u0438 \u043f\u043e\u0442\u0435\u0440\u044f\u043b\u0438\u0441\u044c \u0432 \u0440\u0430\u0441\u043a\u043b\u0430\u0434\u043a\u0435");
+  for (const block of bodyBlocks) {
+    const d = block.data as Record<string, unknown>;
+    assert(d !== null && typeof d === "object" && !Array.isArray(d), block.type + ": \u0434\u0430\u043d\u043d\u044b\u0435 \u043d\u0435 \u043e\u0431\u044a\u0435\u043a\u0442");
+    assert(Object.keys(d).length > 0, block.type + ": \u0434\u0430\u043d\u043d\u044b\u0435 \u043e\u043a\u0430\u0437\u0430\u043b\u0438\u0441\u044c \u043f\u0443\u0441\u0442\u044b\u043c\u0438");
+    const expected = BLOCK_DEFAULTS[block.type as keyof typeof BLOCK_DEFAULTS] as Record<string, unknown>;
+    assert(JSON.stringify(d) === JSON.stringify(expected), block.type + ": \u0434\u0430\u043d\u043d\u044b\u0435 \u0438\u0441\u043a\u0430\u0436\u0435\u043d\u044b");
+  }
+});
+
+check("\u0431\u043b\u043e\u043a\u0438 \u0441 \u0441\u043f\u0438\u0441\u043a\u0430\u043c\u0438 \u043f\u0440\u043e\u0445\u043e\u0434\u044f\u0442 \u0437\u0430\u0449\u0438\u0442\u0443 items?.length", () => {
+  // gallery и apps по задумке пусты и скрыты, пока админ не добавит медиа.
+  for (const type of ["stats", "bento", "timeline", "team"] as const) {
+    const [only] = buildAboutLayout([
+      row("x", type, JSON.stringify(BLOCK_DEFAULTS[type]) as unknown as Record<string, unknown>),
+    ]).bodyBlocks;
+    const d = only.data as { items?: unknown[]; members?: unknown[] };
+    const list = d.items ?? d.members;
+    assert(Array.isArray(list) && list.length > 0, type + ": \u0441\u043f\u0438\u0441\u043e\u043a \u043f\u0443\u0441\u0442 \u2014 \u0431\u043b\u043e\u043a \u0432\u0435\u0440\u043d\u0451\u0442 null");
+  }
+});
+
+check("\u043f\u0440\u0430\u0432\u043e\u0432\u043e\u0439 \u0431\u043b\u043e\u043a \u0447\u0438\u0442\u0430\u0435\u0442\u0441\u044f \u0434\u0430\u0436\u0435 \u0438\u0437 \u0441\u0442\u0440\u043e\u043a\u0438", () => {
+  const { legalBlock } = buildAboutLayout([
+    row("L", "legal", JSON.stringify(legalBlockData) as unknown as Record<string, unknown>),
+  ]);
+  assert(legalBlock !== null, "\u043f\u0440\u0430\u0432\u043e\u0432\u043e\u0439 \u0431\u043b\u043e\u043a \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d");
+  const ov = legalBlockOverrides(legalBlock!.data);
+  assert(ov[legalKeys.subheading] === "\u0420\u0435\u0434\u0430\u043a\u0446\u0438\u044f \u0438\u0437 \u0431\u043b\u043e\u043a\u0430 \u041e \u043f\u0440\u043e\u0435\u043a\u0442\u0435", "\u0442\u0435\u043a\u0441\u0442 \u0438\u0437 \u0441\u0442\u0440\u043e\u043a\u0438 \u043d\u0435 \u0434\u043e\u0448\u0451\u043b");
+});
+
+check("\u0432 \u043a\u043e\u0434\u0435 \u043d\u0435 \u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c \u043c\u043e\u043b\u0447\u0430\u043b\u0438\u0432\u043e\u0433\u043e JSON.parse(data)", () => {
+  for (const file of [
+    "src/app/api/about-blocks/route.ts",
+    "src/app/api/admin/about-blocks/route.ts",
+    "src/app/api/admin/about-blocks/[id]/route.ts",
+  ]) {
+    const src = readFileSync(file, "utf8");
+    assert(!/JSON\.parse\(b\.data\)/.test(src), file + ": \u043e\u0441\u0442\u0430\u043b\u0441\u044f \u0441\u044b\u0440\u043e\u0439 JSON.parse");
+    assert(src.includes("parseBlockData"), file + ": \u043d\u0435 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442 parseBlockData");
+    assert(!/JSON\.stringify\(body\.data/.test(src) && !/JSON\.stringify\(body\.data \?\? \{\}\)/.test(src), file + ": \u0437\u0430\u043f\u0438\u0441\u044c \u043c\u0438\u043c\u043e serializeBlockData");
+  }
+});
+
+check("\u0430\u0434\u043c\u0438\u043d\u0441\u043a\u0430\u044f \u0432\u044b\u0434\u0430\u0447\u0430 \u0431\u043b\u043e\u043a\u043e\u0432 \u0437\u0430\u0449\u0438\u0449\u0435\u043d\u0430", () => {
+  const src = readFileSync("src/app/api/admin/about-blocks/route.ts", "utf8");
+  const get = src.slice(src.indexOf("export async function GET"), src.indexOf("export async function POST"));
+  assert(get.includes("role") && get.includes("Forbidden"), "GET \u043e\u0442\u0434\u0430\u0451\u0442 \u0431\u043b\u043e\u043a\u0438 \u0431\u0435\u0437 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043f\u0440\u0430\u0432");
+});
+
+check("\u043c\u0435\u0434\u0438\u0430-\u0431\u043b\u043e\u043a\u0438 \u0433\u043e\u0442\u043e\u0432\u044b \u043a \u043d\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u044e", () => {
+  for (const type of ["gallery", "apps"] as const) {
+    const [only] = buildAboutLayout([
+      row("m", type, JSON.stringify(JSON.stringify(BLOCK_DEFAULTS[type])) as unknown as Record<string, unknown>),
+    ]).bodyBlocks;
+    const d = only.data as { title?: string; items?: unknown[] };
+    assert(Array.isArray(d.items), type + ": items \u043d\u0435 \u043c\u0430\u0441\u0441\u0438\u0432");
+    assert(typeof d.title === "string" && d.title.length > 0, type + ": \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043e\u043a \u043f\u043e\u0442\u0435\u0440\u044f\u043d");
+  }
 });
 
 writeFileSync(
