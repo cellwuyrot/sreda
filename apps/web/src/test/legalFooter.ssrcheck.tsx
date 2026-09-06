@@ -387,90 +387,18 @@ check("каждый тип блока редактируется в админк
   }
 });
 
-check("правовая информация — полноценный блок «О проекте»", () => {
-  assert(
-    BLOCK_TYPES.includes("legal"),
-    "тип legal не вернулся в список блоков",
-  );
-  const legalDefaults = BLOCK_DEFAULTS.legal as {
-    sections?: unknown[];
-    contacts?: unknown[];
-  };
-  assert((legalDefaults.sections ?? []).length > 0, "в заготовке нет разделов");
-  assert((legalDefaults.contacts ?? []).length > 0, "в заготовке нет почт");
-  assert(
-    !pageSrc.includes("b.type !== ('legal'"),
-    "блок legal всё ещё отфильтровывается",
-  );
+check("правовая информация больше не является CMS-блоком", () => {
+  assert(!BLOCK_TYPES.includes("legal"), "тип legal всё ещё присутствует в CMS");
+  assert(!("legal" in BLOCK_DEFAULTS), "заготовка legal всё ещё присутствует в CMS");
+  assert(!("legal" in BLOCK_LABELS), "подпись legal всё ещё присутствует в CMS");
+  assert(!/case\s+"legal"/.test(pageSrc), "страница всё ещё обрабатывает legal как блок");
+  assert(/<LegalFooter\s*\/>/.test(pageSrc), "системный LegalFooter не выводится");
 });
 
-check("соглашение не дублируется на странице", () => {
-  assert(
-    /blocks\.some\(\(b\) => b\.type === .legal.\)/.test(pageSrc),
-    "подвал рисуется всегда — будет два одинаковых раздела",
-  );
-});
-
-check("блок не запускает бесконечный цикл запросов", () => {
-  // Корень бага «на /about ничего не появилось»: объект-проп
-  // создавался в JSX на каждый рендер и попадал в зависимости useEffect.
-  assert(
-    !/blockOverrides=\{legacyLegalOverrides\(/.test(pageSrc),
-    "ключи блока снова вычисляются прямо в JSX",
-  );
-  assert(
-    pageSrc.includes("<LegalBlock"),
-    "блок правовой информации не подключён",
-  );
-
-  // Списки зависимостей — только простые выражения: иначе падает lint в CI.
-  const blockSrc = readFileSync("src/components/about/LegalBlock.tsx", "utf8");
-  assert(
-    !/\[\s*JSON\.stringify/.test(blockSrc),
-    "в списке зависимостей сложное выражение — eslint отклонит сборку",
-  );
-
-  const hookSrc = readFileSync(
-    "src/components/about/useLegalContent.ts",
-    "utf8",
-  );
-  assert(
-    !/\}, \[overrides, blockOverrides\]\)/.test(hookSrc),
-    "в зависимостях эффекта снова объекты",
-  );
-  assert(
-    hookSrc.includes("[overridesKey]"),
-    "зависимости эффекта не стабилизированы",
-  );
-  assert(
-    !/\[\s*JSON\.stringify/.test(hookSrc),
-    "в зависимостях хука сложное выражение",
-  );
-  assert(
-    !hookSrc.includes("eslint-disable"),
-    "правила хуков подавлены вместо исправления",
-  );
-  assert(
-    !hookSrc.includes("/api/about-blocks"),
-    "хук снова читает второй источник — данные будут пересекаться",
-  );
-});
-
-check("текст блока виден сразу, без клика", () => {
-  const legalDefaults = BLOCK_DEFAULTS.legal as { defaultExpanded?: boolean };
-  assert(
-    legalDefaults.defaultExpanded === true,
-    "разделы документа скрыты до нажатия кнопки",
-  );
-
-  const { text } = renderFooter({
-    defaultExpanded: true,
-    blockOverrides: legacyLegalOverrides(BLOCK_DEFAULTS.legal),
-  });
-  assert(
-    text.includes(visibleText(LEGAL_SECTIONS[0].content)),
-    "текст блока не виден",
-  );
+check("правовая информация не дублируется на /about", () => {
+  assert(!/blocks\.some\(\(b\) => b\.type === .legal.\)/.test(pageSrc),
+    "страница всё ещё ищет legal-блок");
+  assert(!pageSrc.includes("<LegalBlock"), "устаревший LegalBlock всё ещё подключён");
 });
 
 check("текст из Контента сайта виден в блоке", () => {

@@ -1,5 +1,3 @@
-import { LEGAL_CONTACTS, LEGAL_DEFAULTS, LEGAL_SECTIONS } from "./legal";
-
 /**
  * Block types and default data for the /about page CMS.
  * Each block is stored in the AboutBlock Prisma table (JSON in `data` field).
@@ -15,8 +13,7 @@ export type BlockType =
   | "team"
   | "cta"
   | "apps"
-  /* UNIFY: правовая информация снова блок страницы — единый редактор «О проекте». */
-  | "legal";
+;
 
 export interface AboutBlockRow {
   id: string;
@@ -127,39 +124,6 @@ export interface CtaData {
   secondaryCta?: { label: string; href: string };
 }
 
-// ─── Legal block ──────────────────────────────────────────────────────────────
-
-/**
- * UNIFY: правовая информация — такой же блок страницы, как и остальные.
- *
- * Раньше её правили в двух местах (блок «О проекте» и «Контент сайта →
- * Правовая информация»), и данные пересекались: страница показывала одно,
- * админка — другое. Теперь редактор один, а старые ключи siteConfig
- * остаются только запасным источником при первом открытии.
- */
-export interface LegalBlockSection {
-  title: string;
-  content: string;
-}
-
-export interface LegalBlockContact {
-  key: string;
-  label: string;
-  hint?: string;
-  email: string;
-}
-
-export interface LegalBlockData {
-  heading?: string;
-  subheading?: string;
-  preamble?: string;
-  sections?: LegalBlockSection[];
-  contacts?: LegalBlockContact[];
-  contactUrl?: string;
-  /** Показывать полный текст сразу, без кнопки «Читать полностью». */
-  defaultExpanded?: boolean;
-}
-
 // ─── Apps block ───────────────────────────────────────────────────────────────
 
 export type AppPlatform = "android" | "windows" | "macos" | "linux";
@@ -196,7 +160,6 @@ type BlockDataMap = {
   team: TeamData;
   cta: CtaData;
   apps: AppsData;
-  legal: LegalBlockData;
 };
 
 export const BLOCK_DEFAULTS: BlockDataMap = {
@@ -335,16 +298,6 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
     secondaryCta: { label: "Подробнее", href: "/projects" },
   },
 
-  legal: {
-    heading: LEGAL_DEFAULTS.heading,
-    subheading: LEGAL_DEFAULTS.subheading,
-    preamble: LEGAL_DEFAULTS.preamble,
-    sections: LEGAL_SECTIONS.map((s) => ({ ...s })),
-    contacts: LEGAL_CONTACTS.map((c) => ({ ...c })),
-    contactUrl: LEGAL_DEFAULTS.contactUrl,
-    defaultExpanded: true,
-  },
-
   apps: {
     title: "Приложения TRIOZ",
     subtitle:
@@ -363,13 +316,8 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   team: "👥 Команда",
   cta: "⚡ CTA-блок",
   apps: "📱 Приложения",
-  legal: "⚖️ Правовая информация",
 };
 
-/* UNIFY: единый список блоков страницы /about. Правовая информация входит
-   в него на равных правах: один редактор («О проекте»), одно хранилище
-   (таблица AboutBlock), один порядок вывода. Отдельная страница
-   /admin/legal больше не редактирует текст, чтобы данные не пересекались. */
 export const BLOCK_TYPES: BlockType[] = [
   "hero",
   "video",
@@ -380,5 +328,4 @@ export const BLOCK_TYPES: BlockType[] = [
   "team",
   "cta",
   "apps",
-  "legal",
 ];
