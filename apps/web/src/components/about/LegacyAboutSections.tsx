@@ -46,7 +46,7 @@ function ProjectCard({ section, index }: { section: AboutSection; index: number 
           style={{ background: `linear-gradient(90deg, transparent, ${section.color}, transparent)` }}
         />
         <div className="mb-5">
-          <ProjectGlyph type={section.key} color={section.color} />
+          <ProjectGlyph name={section.key} className="h-8 w-8 tz-float-y" />
         </div>
         <h2 className="mb-3 text-2xl font-display font-semibold text-neutral-900 dark:text-white">
           {section.title}
