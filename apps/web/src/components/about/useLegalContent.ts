@@ -37,9 +37,15 @@ function legalBlockOverrides(blocks: unknown): Record<string, string> {
  */
 export function useLegalContent(
   overrides?: Record<string, string> | null,
+  /**
+   * Данные блока «Правовая информация» со страницы. Единый редактор
+   * важнее старых ключей siteConfig — именно из-за обратного приоритета
+   * правки в блоке раньше не доезжали до страницы.
+   */
+  blockOverrides?: Record<string, string> | null,
 ): LegalContent {
   const [content, setContent] = useState<LegalContent>(() =>
-    resolveLegalContent(overrides ?? null),
+    resolveLegalContent(mergeLegalOverrides(overrides, blockOverrides)),
   );
 
   useEffect(() => {
@@ -62,11 +68,14 @@ export function useLegalContent(
       ([siteContent, blocks]) => {
         if (cancelled) return;
 
+        // Приоритет снизу вверх: редакция из кода → старые ключи
+        // siteConfig → блок единого редактора «О проекте».
         setContent(
           resolveLegalContent(
             mergeLegalOverrides(
-              legalBlockOverrides(blocks),
               siteContent as Record<string, string> | null,
+              legalBlockOverrides(blocks),
+              blockOverrides,
             ),
           ),
         );
@@ -76,7 +85,7 @@ export function useLegalContent(
     return () => {
       cancelled = true;
     };
-  }, [overrides]);
+  }, [overrides, blockOverrides]);
 
   return content;
 }
