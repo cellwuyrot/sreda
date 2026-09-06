@@ -286,6 +286,18 @@ check("единый источник текста для подвала и сс�
   assert((footerSrc.match(/fetch\(/g) ?? []).length === 0, "подвал грузит данные сам");
 });
 
+check("API \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u0435\u0442 \u0441\u043e\u0437\u0434\u0430\u0432\u0430\u0442\u044c \u0438 \u043f\u0440\u0430\u0432\u0438\u0442\u044c \u0431\u043b\u043e\u043a \u043f\u0440\u0430\u0432\u043e\u0432\u043e\u0439 \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u0438", () => {
+  const apiSrc = readFileSync("src/app/api/about-blocks/route.ts", "utf8");
+  assert(!apiSrc.includes("no longer supported"), "API \u043e\u0442\u043a\u043b\u043e\u043d\u044f\u0435\u0442 \u0431\u043b\u043e\u043a legal");
+  assert(!/not:\s*["']legal["']/.test(apiSrc), "API \u0432\u044b\u0440\u0435\u0437\u0430\u0435\u0442 legal \u0438\u0437 \u0432\u044b\u0434\u0430\u0447\u0438");
+  assert(!/body\.type === ["']legal["']/.test(apiSrc), "\u0432 API \u043e\u0441\u0442\u0430\u043b\u0430\u0441\u044c \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043d\u0430 legal");
+});
+
+check("\u0441\u043a\u0440\u044b\u0442\u044b\u0435 \u0431\u043b\u043e\u043a\u0438 \u0444\u0438\u043b\u044c\u0442\u0440\u0443\u044e\u0442\u0441\u044f \u0442\u043e\u043b\u044c\u043a\u043e \u043f\u043e \u0432\u0438\u0434\u0438\u043c\u043e\u0441\u0442\u0438", () => {
+  const apiSrc = readFileSync("src/app/api/about-blocks/route.ts", "utf8");
+  assert(apiSrc.includes("{ visible: true }"), "\u043f\u0443\u0431\u043b\u0438\u0447\u043d\u0430\u044f \u0432\u044b\u0434\u0430\u0447\u0430 \u0444\u0438\u043b\u044c\u0442\u0440\u0443\u0435\u0442\u0441\u044f \u0438\u043d\u0430\u0447\u0435");
+});
+
 writeFileSync(
   "/data/about-legal-preview.html",
   `<!doctype html>\n<html lang="ru"><head><meta charset="utf-8"><title>/about</title></head>\n<body style="background:#07090f;color:#fff">\n${htmlMerged}\n</body></html>\n`,

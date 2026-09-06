@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
   }
 
   const blocks = await db.findMany({
-    where: isAll ? { type: { not: "legal" } } : { visible: true, type: { not: "legal" } },
+    // Блок «legal» тоже отдаётся: страница сама переносит его в подвал
+    // через buildAboutLayout(), поэтому фильтровать его здесь нельзя.
+    where: isAll ? {} : { visible: true },
     orderBy: { position: 'asc' },
   });
 
@@ -64,10 +66,6 @@ export async function POST(req: NextRequest) {
   };
 
   if (!body.type) return NextResponse.json({ error: 'type required' }, { status: 400 });
-  if (body.type === "legal") {
-    return NextResponse.json({ error: "legal block is no longer supported" }, { status: 400 });
-  }
-
   let pos = body.position;
   if (pos === undefined) {
     const last = await db.findFirst({ orderBy: { position: 'desc' } });
@@ -102,10 +100,6 @@ export async function PUT(req: NextRequest) {
   };
 
   if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-  if (body.type === "legal") {
-    return NextResponse.json({ error: "legal block is no longer supported" }, { status: 400 });
-  }
-
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
   if (body.type     !== undefined) updateData.type     = body.type;
   if (body.position !== undefined) updateData.position = body.position;
