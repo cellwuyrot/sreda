@@ -26,18 +26,9 @@ import type {
   AppsData,
   AppItem,
   AppPlatform,
-  LegalBlockData,
-  LegalBlockContact,
 } from "@/lib/aboutBlocks";
 import { BLOCK_DEFAULTS, BLOCK_LABELS, BLOCK_TYPES } from "@/lib/aboutBlocks";
 import MediaUploadField from "@/components/admin/MediaUploadField";
-import {
-  legacyLegalOverrides,
-  legalContentToBlock,
-  mergeLegalOverrides,
-  resolveLegalContent,
-} from "@/lib/legal";
-
 // ─── tiny UI helpers ──────────────────────────────────────────────────────────
 
 const inputCls =
@@ -759,219 +750,6 @@ function AppsEditor({ data, onChange }: { data: AppsData; onChange: (d: AppsData
 }
 
 
-/* UNIFY: единый редактор правовой информации внутри «О проекте».
-
-   До этого текст соглашения правился в двух местах сразу, и админ не мог
-   понять, какой из них показывается на /about. Теперь редактор один, а при
-   первом открытии блок сам подтягивает текст из старых хранилищ —
-   так ничего из ранее написанного не теряется. */
-function LegalEditor({
-  data,
-  onChange,
-}: {
-  data: LegalBlockData;
-  onChange: (d: LegalBlockData) => void;
-}) {
-  const sections = data.sections ?? [];
-  const contacts = data.contacts ?? [];
-  const [seeded, setSeeded] = useState(false);
-
-  const upd = (patch: Partial<LegalBlockData>) => onChange({ ...data, ...patch });
-
-  // Первое открытие пустого блока: берём текст из старого блока и из
-  // раздела «Контент сайта», чтобы объединение блоков не потеряло данные.
-  useEffect(() => {
-    if (seeded) return;
-    if ((data.heading ?? "").trim() && sections.length) return;
-
-    let cancelled = false;
-    const json = (url: string) =>
-      fetch(url, { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
-
-    Promise.all([json("/api/site-content"), json("/api/about-blocks?all=1")]).then(
-      ([siteContent, blocks]) => {
-        if (cancelled) return;
-
-        const legacyRow = Array.isArray(blocks)
-          ? (blocks.find(
-              (b) => b && typeof b === "object" && (b as { type?: string }).type === "legal",
-            ) as { data?: unknown } | undefined)
-          : undefined;
-
-        const merged = mergeLegalOverrides(
-          siteContent as Record<string, string> | null,
-          legacyLegalOverrides(legacyRow?.data),
-          legacyLegalOverrides(data),
-        );
-
-        setSeeded(true);
-        onChange({ ...data, ...legalContentToBlock(resolveLegalContent(merged)) });
-      },
-    );
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seeded]);
-
-  const updSection = (i: number, patch: Partial<{ title: string; content: string }>) =>
-    upd({
-      sections: sections.map((sec, j) => (j === i ? { ...sec, ...patch } : sec)),
-    });
-
-  const updContact = (i: number, patch: Partial<LegalBlockContact>) =>
-    upd({
-      contacts: contacts.map((c, j) => (j === i ? { ...c, ...patch } : c)),
-    });
-
-  return (
-    <>
-      <div className="mb-4 rounded-xl border border-indigo-500/25 bg-indigo-500/[0.07] p-3 text-xs leading-relaxed text-indigo-200">
-        ⚖️ Единый редактор правовой информации. Всё, что заполнено здесь, показывается
-        в разделе /about на месте этого блока. Старая страница «Контент сайта →
-        Правовая информация» больше не редактирует текст — данные не пересекаются.
-      </div>
-
-      <Field label="Заголовок документа">
-        <Inp value={data.heading} onChange={(v) => upd({ heading: v })} placeholder="Пользовательское соглашение" />
-      </Field>
-      <Field label="Подзаголовок (редакция, дата)">
-        <Inp value={data.subheading} onChange={(v) => upd({ subheading: v })} />
-      </Field>
-      <Field label="Вступление (видно без раскрытия документа)">
-        <TextArea rows={5} value={data.preamble} onChange={(v) => upd({ preamble: v })} />
-      </Field>
-
-      <div className="mb-2 mt-5 flex items-center justify-between">
-        <span className="text-sm font-semibold text-white">Разделы документа ({sections.length})</span>
-        <button
-          type="button"
-          className="text-xs text-indigo-400 transition-colors hover:text-indigo-300"
-          onClick={() =>
-            upd({ sections: [...sections, { title: "Новый раздел", content: "" }] })
-          }
-        >
-          + Добавить раздел
-        </button>
-      </div>
-
-      {sections.map((sec, i) => (
-        <div key={i} className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-semibold text-white">
-              {sec.title || `Раздел ${i + 1}`}
-            </span>
-            <div className="flex flex-shrink-0 items-center gap-2">
-              <button
-                type="button"
-                disabled={i === 0}
-                className="text-xs text-neutral-500 transition-colors hover:text-white disabled:opacity-30"
-                onClick={() => {
-                  const next = [...sections];
-                  [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                  upd({ sections: next });
-                }}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                disabled={i === sections.length - 1}
-                className="text-xs text-neutral-500 transition-colors hover:text-white disabled:opacity-30"
-                onClick={() => {
-                  const next = [...sections];
-                  [next[i + 1], next[i]] = [next[i], next[i + 1]];
-                  upd({ sections: next });
-                }}
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                className="text-sm text-red-500 transition-colors hover:text-red-400"
-                onClick={() => upd({ sections: sections.filter((_, j) => j !== i) })}
-              >
-                Удалить
-              </button>
-            </div>
-          </div>
-          <Field label="Заголовок раздела">
-            <Inp value={sec.title} onChange={(v) => updSection(i, { title: v })} />
-          </Field>
-          <Field label="Текст раздела">
-            <TextArea rows={8} value={sec.content} onChange={(v) => updSection(i, { content: v })} />
-          </Field>
-        </div>
-      ))}
-
-      <div className="mb-2 mt-5 flex items-center justify-between">
-        <span className="text-sm font-semibold text-white">Опубликованные почты ({contacts.length})</span>
-        <button
-          type="button"
-          className="text-xs text-indigo-400 transition-colors hover:text-indigo-300"
-          onClick={() =>
-            upd({
-              contacts: [
-                ...contacts,
-                {
-                  key: `contact${contacts.length + 1}`,
-                  label: "Новый канал",
-                  hint: "",
-                  email: "",
-                },
-              ],
-            })
-          }
-        >
-          + Добавить почту
-        </button>
-      </div>
-
-      {contacts.map((contact, i) => (
-        <div key={contact.key || i} className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-semibold text-white">{contact.label || "Канал"}</span>
-            <button
-              type="button"
-              className="text-sm text-red-500 transition-colors hover:text-red-400"
-              onClick={() => upd({ contacts: contacts.filter((_, j) => j !== i) })}
-            >
-              Удалить
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Название канала">
-              <Inp value={contact.label} onChange={(v) => updContact(i, { label: v })} placeholder="Правовые запросы" />
-            </Field>
-            <Field label="Почта">
-              <Inp value={contact.email} onChange={(v) => updContact(i, { email: v })} placeholder="legal@trioz.ru" />
-            </Field>
-          </div>
-          <Field label="Пояснение (по каким вопросам писать)">
-            <Inp value={contact.hint} onChange={(v) => updContact(i, { hint: v })} />
-          </Field>
-        </div>
-      ))}
-
-      <Field label="Адрес сайта владельца платформы">
-        <Inp value={data.contactUrl} onChange={(v) => upd({ contactUrl: v })} placeholder="https://trioz.ru" />
-      </Field>
-
-      <label className="mt-2 flex items-center gap-2 text-xs text-neutral-400">
-        <input
-          type="checkbox"
-          checked={data.defaultExpanded ?? false}
-          onChange={(e) => upd({ defaultExpanded: e.target.checked })}
-        />
-        Показывать полный текст сразу, без кнопки «Читать полностью»
-      </label>
-    </>
-  );
-}
-
 // Dispatches the right form component based on block type
 function BlockEditorForm({
   block,
@@ -1008,8 +786,7 @@ function BlockEditorForm({
       return <CtaEditor data={d as CtaData} onChange={onChange as (d: CtaData) => void} />;
     case "apps":
       return <AppsEditor data={d as AppsData} onChange={onChange as (d: AppsData) => void} />;
-    case "legal":
-      return <LegalEditor data={d as LegalBlockData} onChange={onChange as (d: LegalBlockData) => void} />;
+
     default:
       return <p className="text-neutral-500 text-sm">Редактор для этого типа блока не реализован.</p>;
   }

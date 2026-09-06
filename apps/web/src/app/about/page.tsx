@@ -6,7 +6,6 @@ import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
 import LegalFooter, { LegalContactLinks } from "@/components/about/LegalFooter";
-import LegalBlock from "@/components/about/LegalBlock";
 
 import type {
   AboutBlockRow,
@@ -867,12 +866,7 @@ export default function AboutPage() {
         return <CtaBlock key={block.id} data={d as CtaData} />;
       case "apps":
         return <AppsBlock key={block.id} data={d as AppsData} />;
-      case "legal":
-        // FIX: раньше здесь вызывался legacyLegalOverrides(d) прямо в пропсе.
-        // Новый объект на каждый рендер попадал в зависимости useEffect и
-        // запускал бесконечный цикл запросов — именно поэтому включённый
-        // блок с заполненным текстом не показывал на странице ничего.
-        return <LegalBlock key={block.id} data={d} />;
+
       default:
         return null;
     }
@@ -929,8 +923,8 @@ export default function AboutPage() {
               <p className="max-w-2xl text-sm leading-relaxed text-neutral-400">
                 Содержимое раздела пока не заполнено. Все блоки — обложка,
                 видео, статистика, галерея, карточки, история, команда, CTA,
-                приложения и правовая информация — настраиваются в одном месте:
-                Админ → О проекте. Правовая информация ниже показывается всегда,
+                приложения настраиваются в одном месте:
+                Админ → О проекте. Правовая информация отображается ниже автоматически,
                 даже без блоков.
               </p>
             </section>
@@ -942,11 +936,8 @@ export default function AboutPage() {
           </div>
 
           {/* ── Правовая информация ──────────────────────────── */}
-          {/* UNIFY: если блок «Правовая информация» уже есть в списке блоков,
-              второй раз его не рисуем: два одинаковых раздела и были тем самым
-              «пересечением информации». Без блока соглашение остаётся в подвале —
-              страница никогда не теряет его. */}
-          {!blocks.some((b) => b.type === "legal") && <LegalFooter />}
+          {/* Системный раздел страницы, не отдельный CMS-блок. */}
+          <LegalFooter />
 
           <footer className="border-t border-indigo-500/10 px-6 py-8 text-xs text-neutral-700">
             <div className="flex flex-wrap items-center justify-between gap-4">
