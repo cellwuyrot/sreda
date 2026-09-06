@@ -3,18 +3,9 @@
 import { useEffect, useState } from "react";
 import { resolveLegalContent } from "@/lib/legal";
 
-/**
- * Системный раздел правовой информации страницы /about.
- *
- * Контент:
- * - берётся из siteConfig через /api/site-content;
- * - при отсутствии значения используются значения по умолчанию;
- * - при недоступности API документ по умолчанию всё равно отображается.
- */
-export default function LegalFooter() {
-  const [overrides, setOverrides] = useState<Record<string, string> | null>(
-    null,
-  );
+function useSiteLegalOverrides() {
+  const [overrides, setOverrides] =
+    useState<Record<string, string> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,13 +15,15 @@ export default function LegalFooter() {
     })
       .then((response) => {
         if (!response.ok) {
-          throw new Error(`site-content: ${response.status}`);
+          return null;
         }
 
         return response.json() as Promise<unknown>;
       })
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         if (
           data &&
@@ -51,7 +44,7 @@ export default function LegalFooter() {
         }
       })
       .catch(() => {
-        // Используются значения LEGAL_DEFAULTS.
+        // Значения по умолчанию уже доступны.
       });
 
     return () => {
@@ -59,6 +52,11 @@ export default function LegalFooter() {
     };
   }, []);
 
+  return overrides;
+}
+
+export default function LegalFooter() {
+  const overrides = useSiteLegalOverrides();
   const content = resolveLegalContent(overrides);
 
   return (
@@ -84,7 +82,9 @@ export default function LegalFooter() {
         </p>
 
         <div className="mb-10 max-w-4xl rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm leading-7 text-neutral-300">
-          <p className="whitespace-pre-line">{content.preamble}</p>
+          <p className="whitespace-pre-line">
+            {content.preamble}
+          </p>
         </div>
 
         <div className="space-y-10">
@@ -136,48 +136,7 @@ export default function LegalFooter() {
 }
 
 export function LegalContactLinks() {
-  const [overrides, setOverrides] = useState<Record<string, string> | null>(
-    null,
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch("/api/site-content", {
-      cache: "no-store",
-    })
-      .then((response) => {
-        if (!response.ok) return null;
-        return response.json() as Promise<unknown>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-
-        if (
-          data &&
-          typeof data === "object" &&
-          !Array.isArray(data)
-        ) {
-          const values: Record<string, string> = {};
-
-          for (const [key, value] of Object.entries(
-            data as Record<string, unknown>,
-          )) {
-            if (typeof value === "string") {
-              values[key] = value;
-            }
-          }
-
-          setOverrides(values);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  const overrides = useSiteLegalOverrides();
   const content = resolveLegalContent(overrides);
 
   return (
