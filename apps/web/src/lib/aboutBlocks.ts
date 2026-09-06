@@ -1,4 +1,4 @@
-import { LEGAL_CONTACTS, LEGAL_DEFAULTS, LEGAL_SECTIONS } from './legal';
+import { LEGAL_CONTACTS, LEGAL_DEFAULTS, LEGAL_SECTIONS } from "./legal";
 
 /**
  * Block types and default data for the /about page CMS.
@@ -6,17 +6,17 @@ import { LEGAL_CONTACTS, LEGAL_DEFAULTS, LEGAL_SECTIONS } from './legal';
  */
 
 export type BlockType =
-  | 'hero'
-  | 'video'
-  | 'stats'
-  | 'gallery'
-  | 'bento'
-  | 'timeline'
-  | 'team'
-  | 'cta'
-  | 'apps'
+  | "hero"
+  | "video"
+  | "stats"
+  | "gallery"
+  | "bento"
+  | "timeline"
+  | "team"
+  | "cta"
+  | "apps"
   /* UNIFY: правовая информация снова блок страницы — единый редактор «О проекте». */
-  | 'legal';
+  | "legal";
 
 export interface AboutBlockRow {
   id: string;
@@ -39,7 +39,7 @@ export interface HeroData {
   secondaryCta?: { label: string; action?: string; href?: string };
   /** Загруженный фон обложки (файл из /uploads/about/), а не внешняя ссылка. */
   bgUrl?: string;
-  bgType?: 'image' | 'video';
+  bgType?: "image" | "video";
 }
 
 export interface VideoData {
@@ -54,12 +54,17 @@ export interface VideoData {
   tag?: string;
 }
 
-export interface StatsItem { label: string; value: string }
-export interface StatsData { items: StatsItem[]; }
+export interface StatsItem {
+  label: string;
+  value: string;
+}
+export interface StatsData {
+  items: StatsItem[];
+}
 
 export interface GalleryItem {
   id: string;
-  mediaType: 'image' | 'gif' | 'video';
+  mediaType: "image" | "gif" | "video";
   url: string;
   caption?: string;
   tag?: string;
@@ -157,7 +162,7 @@ export interface LegalBlockData {
 
 // ─── Apps block ───────────────────────────────────────────────────────────────
 
-export type AppPlatform = 'android' | 'windows' | 'macos' | 'linux';
+export type AppPlatform = "android" | "windows" | "macos" | "linux";
 
 export interface AppItem {
   id: string;
@@ -196,77 +201,139 @@ type BlockDataMap = {
 
 export const BLOCK_DEFAULTS: BlockDataMap = {
   hero: {
-    badge: 'Платформа открыта',
-    title: 'TRIOZ',
-    subtitle: 'Экосистема проектов',
-    description: 'Игры, общение, творчество и знания — всё в одном пространстве.',
-    primaryCta: { label: 'Начать', href: '/connect' },
-    secondaryCta: { label: 'Смотреть видео', action: 'video' },
+    badge: "Платформа открыта",
+    title: "TRIOZ",
+    subtitle: "Экосистема проектов",
+    description:
+      "Игры, общение, творчество и знания — всё в одном пространстве.",
+    primaryCta: { label: "Начать", href: "/connect" },
+    secondaryCta: { label: "Смотреть видео", action: "video" },
   },
 
   video: {
-    url: '',
-    youtubeId: '',
-    title: 'Трейлер платформы',
-    duration: '0:00',
-    tag: 'Трейлер',
+    url: "",
+    youtubeId: "",
+    title: "Трейлер платформы",
+    duration: "0:00",
+    tag: "Трейлер",
   },
 
   stats: {
     items: [
-      { label: 'раздела платформы', value: '4' },
-      { label: 'участников', value: '1 200+' },
-      { label: 'активных игр', value: '3' },
-      { label: 'материалов в библиотеке', value: '500+' },
-      { label: 'год основания', value: '2022' },
+      { label: "раздела платформы", value: "4" },
+      { label: "участников", value: "1 200+" },
+      { label: "активных игр", value: "3" },
+      { label: "материалов в библиотеке", value: "500+" },
+      { label: "год основания", value: "2022" },
     ],
   },
 
   gallery: {
-    title: 'Внутри платформы',
-    subtitle: 'Скриншоты, трейлеры и арты',
+    title: "Внутри платформы",
+    subtitle: "Скриншоты, трейлеры и арты",
     items: [],
   },
 
   bento: {
-    title: 'Что внутри TRIOZ',
-    subtitle: 'Четыре направления — одна экосистема',
+    title: "Что внутри TRIOZ",
+    subtitle: "Четыре направления — одна экосистема",
     items: [
-      { key: 'connect', icon: '💬', title: 'TZ.Connect', description: 'Коммуникационная платформа нового поколения.', color: '#6366f1', href: '/connect', wide: true },
-      { key: 'games', icon: '🎮', title: 'TZ.Games', description: 'Стратегические онлайн-игры.', color: '#ef4444', href: '/games' },
-      { key: 'library', icon: '📚', title: 'TZ.Library', description: 'Библиотека знаний и лора.', color: '#10b981', href: '/library' },
-      { key: 'pero', icon: '✏️', title: 'TZ.Pero', description: 'Творческая мастерская.', color: '#8b5cf6', href: '/pero' },
-      { key: 'projects', icon: '🏗️', title: 'TZ.Projects', description: 'Витрина проектов.', color: '#f59e0b', href: '/projects' },
+      {
+        key: "connect",
+        icon: "💬",
+        title: "TZ.Connect",
+        description: "Коммуникационная платформа нового поколения.",
+        color: "#6366f1",
+        href: "/connect",
+        wide: true,
+      },
+      {
+        key: "games",
+        icon: "🎮",
+        title: "TZ.Games",
+        description: "Стратегические онлайн-игры.",
+        color: "#ef4444",
+        href: "/games",
+      },
+      {
+        key: "library",
+        icon: "📚",
+        title: "TZ.Library",
+        description: "Библиотека знаний и лора.",
+        color: "#10b981",
+        href: "/library",
+      },
+      {
+        key: "pero",
+        icon: "✏️",
+        title: "TZ.Pero",
+        description: "Творческая мастерская.",
+        color: "#8b5cf6",
+        href: "/pero",
+      },
+      {
+        key: "projects",
+        icon: "🏗️",
+        title: "TZ.Projects",
+        description: "Витрина проектов.",
+        color: "#f59e0b",
+        href: "/projects",
+      },
     ],
   },
 
   timeline: {
-    title: 'Путь TRIOZ',
+    title: "Путь TRIOZ",
     items: [
-      { year: '2022', title: 'Основание проекта', description: 'Первая идея и прототип.', color: '#6366f1' },
-      { year: '2023', title: 'TZ.Connect — запуск', description: 'Мессенджер с каналами.', color: '#8b5cf6' },
-      { year: '2024', title: 'Библиотека и творчество', description: 'TZ.Library и TZ.Pero.', color: '#06b6d4' },
-      { year: '2025', title: 'Новый этап', description: 'Полный редизайн, новые игры.', color: '#6366f1', current: true },
+      {
+        year: "2022",
+        title: "Основание проекта",
+        description: "Первая идея и прототип.",
+        color: "#6366f1",
+      },
+      {
+        year: "2023",
+        title: "TZ.Connect — запуск",
+        description: "Мессенджер с каналами.",
+        color: "#8b5cf6",
+      },
+      {
+        year: "2024",
+        title: "Библиотека и творчество",
+        description: "TZ.Library и TZ.Pero.",
+        color: "#06b6d4",
+      },
+      {
+        year: "2025",
+        title: "Новый этап",
+        description: "Полный редизайн, новые игры.",
+        color: "#6366f1",
+        current: true,
+      },
     ],
   },
 
   team: {
-    title: 'Кто создаёт TRIOZ',
+    title: "Кто создаёт TRIOZ",
     members: [
-      { id: '1', name: 'Основатель', role: 'Идея · Разработка', emoji: '👤', color: '#6366f1' },
+      {
+        id: "1",
+        name: "Основатель",
+        role: "Идея · Разработка",
+        emoji: "👤",
+        color: "#6366f1",
+      },
     ],
-    joinLabel: 'Присоединиться',
-    joinHref: '/connect',
+    joinLabel: "Присоединиться",
+    joinHref: "/connect",
   },
 
   cta: {
-    title: 'Станьте частью TRIOZ',
-    subtitle: 'Присоединяйтесь уже сегодня',
-    primaryCta: { label: 'Зарегистрироваться', href: '/auth/signin' },
-    secondaryCta: { label: 'Подробнее', href: '/projects' },
+    title: "Станьте частью TRIOZ",
+    subtitle: "Присоединяйтесь уже сегодня",
+    primaryCta: { label: "Зарегистрироваться", href: "/auth/signin" },
+    secondaryCta: { label: "Подробнее", href: "/projects" },
   },
-
-
 
   legal: {
     heading: LEGAL_DEFAULTS.heading,
@@ -275,27 +342,28 @@ export const BLOCK_DEFAULTS: BlockDataMap = {
     sections: LEGAL_SECTIONS.map((s) => ({ ...s })),
     contacts: LEGAL_CONTACTS.map((c) => ({ ...c })),
     contactUrl: LEGAL_DEFAULTS.contactUrl,
-    defaultExpanded: false,
+    defaultExpanded: true,
   },
 
   apps: {
-    title: 'Приложения TRIOZ',
-    subtitle: 'Установите нативное приложение TZ.Connect — быстрый запуск, системные уведомления и звонки.',
+    title: "Приложения TRIOZ",
+    subtitle:
+      "Установите нативное приложение TZ.Connect — быстрый запуск, системные уведомления и звонки.",
     items: [],
   },
 };
 
 export const BLOCK_LABELS: Record<BlockType, string> = {
-  hero:     '🦸 Hero-секция',
-  video:    '🎬 Видео / трейлер',
-  stats:    '📊 Статистика',
-  gallery:  '🖼 Медиа-галерея',
-  bento:    '🃏 Карточки разделов',
-  timeline: '📅 История проекта',
-  team:     '👥 Команда',
-  cta:      '⚡ CTA-блок',
-  apps:     '📱 Приложения',
-  legal:    '⚖️ Правовая информация',
+  hero: "🦸 Hero-секция",
+  video: "🎬 Видео / трейлер",
+  stats: "📊 Статистика",
+  gallery: "🖼 Медиа-галерея",
+  bento: "🃏 Карточки разделов",
+  timeline: "📅 История проекта",
+  team: "👥 Команда",
+  cta: "⚡ CTA-блок",
+  apps: "📱 Приложения",
+  legal: "⚖️ Правовая информация",
 };
 
 /* UNIFY: единый список блоков страницы /about. Правовая информация входит
@@ -303,5 +371,14 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
    (таблица AboutBlock), один порядок вывода. Отдельная страница
    /admin/legal больше не редактирует текст, чтобы данные не пересекались. */
 export const BLOCK_TYPES: BlockType[] = [
-  'hero', 'video', 'stats', 'gallery', 'bento', 'timeline', 'team', 'cta', 'apps', 'legal',
+  "hero",
+  "video",
+  "stats",
+  "gallery",
+  "bento",
+  "timeline",
+  "team",
+  "cta",
+  "apps",
+  "legal",
 ];
