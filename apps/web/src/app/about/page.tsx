@@ -7,6 +7,8 @@ import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
 import LegalFooter, { LegalContactLinks } from "@/components/about/LegalFooter";
+import { legalBlockOverrides } from "@/lib/legal";
+import { buildAboutLayout } from "@/lib/aboutBlocks";
 
 import type {
   AboutBlockRow,
@@ -579,13 +581,29 @@ export default function AboutPage() {
     fetch("/api/about-blocks")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: AboutBlockRow[]) => {
-        setBlocks(Array.isArray(data) ? data.filter((b) => b.visible) : []);
+        setBlocks(Array.isArray(data) ? data : []);
       })
       .catch(() => setBlocks([]))
       .finally(() => setLoading(false));
   }, []);
 
   const videoBlock = blocks.find((b) => b.type === "video");
+
+  // FIX-LEGAL: единая раскладка страницы.
+  //
+  //  • bodyBlocks — обычные блоки «О проекте» в своём порядке;
+  //  • legalBlock — правовая информация, которая всегда уезжает в подвал,
+  //    какова бы ни была её позиция в админке и сколько бы их ни было в базе.
+  //
+  // Раньше блок типа 'legal' падал в default: return null — поэтому в админке он
+  // был включён и заполнен, а на странице молча исчезал.
+  const { bodyBlocks, legalBlock } = buildAboutLayout(blocks);
+
+  // Ключи из блока дополняют текст из «Контент сайта → Правовая информация»
+  // поле-за-поле. Пустые поля блока ничего не стирают.
+  const legalOverrides = legalBlock
+    ? legalBlockOverrides(legalBlock.data)
+    : null;
 
   const renderBlock = (block: AboutBlockRow) => {
     const d = block.data as unknown;
@@ -621,6 +639,10 @@ export default function AboutPage() {
         return <CtaBlock key={block.id} data={d as CtaData} />;
       case 'apps':
         return <AppsBlock key={block.id} data={d as AppsData} />;
+      case 'legal':
+        // Намеренно ничего: документ рисуется только в подвале ниже,
+        // чтобы он не появлялся на странице дважды.
+        return null;
       default:
         return null;
     }
@@ -651,14 +673,14 @@ export default function AboutPage() {
         </div>
       ) : (
         <>
-          {blocks.map(renderBlock)}
+          {bodyBlocks.map(renderBlock)}
 
           {/* ── Download section ───────────────────────────────────────── */}
           <div className="px-6 md:px-10 lg:px-16">
             <DesktopDownload />
           </div>
 
-          <LegalFooter />
+          <LegalFooter blockOverrides={legalOverrides} />
 
           <footer className="border-t border-indigo-500/10 px-6 py-8 text-xs text-neutral-700">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -673,7 +695,7 @@ export default function AboutPage() {
                 <span className="font-semibold text-neutral-500">TRIOZ</span>
               </div>
               <div className="flex flex-wrap items-center gap-4">
-                <LegalContactLinks />
+                <LegalContactLinks blockOverrides={legalOverrides} />
               </div>
               <span>&#169; {new Date().getFullYear()} TRIOZ. Все права защищены.</span>
             </div>
