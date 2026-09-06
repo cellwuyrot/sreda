@@ -19,6 +19,7 @@
 import prisma from "@/lib/prisma";
 import { buildAboutLayout, type AboutBlockRow } from "@/lib/aboutBlocks";
 import { legalBlockOverrides } from "@/lib/legal";
+import { buildAboutContent } from "@/lib/about";
 import AboutPageClient from "@/components/about/AboutPageClient";
 
 /* Содержимое меняется из админки, поэтому страница не кешируется: иначе
@@ -50,10 +51,15 @@ async function loadBlocks(): Promise<AboutBlockRow[]> {
  * При успешном чтении возвращает объект (даже пустой) — тогда клиенту не нужен
  * дополнительный запрос. При ошибке — null, и клиент догрузит текст сам.
  */
-async function loadLegalSiteContent(): Promise<Record<string, string> | null> {
+async function loadSiteContent(): Promise<Record<string, string> | null> {
   try {
     const configs = await prisma.siteConfig.findMany({
-      where: { key: { startsWith: "content:legal." } },
+      where: {
+        OR: [
+          { key: { startsWith: "content:legal." } },
+          { key: { startsWith: "content:about." } },
+        ],
+      },
     });
 
     const result: Record<string, string> = {};
@@ -69,9 +75,9 @@ async function loadLegalSiteContent(): Promise<Record<string, string> | null> {
 
 export default async function AboutPage() {
   /* Два независимых чтения идут параллельно. */
-  const [blocks, siteOverrides] = await Promise.all([
+  const [blocks, siteContent] = await Promise.all([
     loadBlocks(),
-    loadLegalSiteContent(),
+    loadSiteContent(),
   ]);
 
   /* Единая раскладка: обычные блоки в тело, правовой — всегда в подвал,
@@ -84,11 +90,16 @@ export default async function AboutPage() {
     ? legalBlockOverrides(legalBlock.data)
     : null;
 
+  /* Экосистемные секции из прежней версии: текст по умолчанию лежит в коде,
+     поэтому страница не бывает пустой даже без блоков и без базы. */
+  const aboutContent = buildAboutContent(siteContent);
+
   return (
     <AboutPageClient
+      aboutContent={aboutContent}
       bodyBlocks={bodyBlocks}
       legalOverrides={legalOverrides}
-      siteOverrides={siteOverrides}
+      siteOverrides={siteContent}
     />
   );
 }
