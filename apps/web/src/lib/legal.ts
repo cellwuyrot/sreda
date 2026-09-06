@@ -1,34 +1,51 @@
 export interface LegalSection {
-title: string;
-content: string;
+  title: string;
+  content: string;
+}
+
+export interface LegalContent {
+  heading: string;
+  subheading: string;
+  preamble: string;
+  contactEmail: string;
+  contactUrl: string;
+  sections: LegalSection[];
 }
 
 export const LEGAL_DEFAULTS = {
-heading: "Пользовательское соглашение",
-subheading:
-"Политика ведения деятельности платформы TRIOZ — редакция от 31 мая 2026 г.",
-preamble: `Настоящее Пользовательское соглашение (далее — Соглашение) является публичной офертой Администрации платформы TRIOZ и определяет условия использования сайта trioz.ru, всех его разделов, сервисов и функциональных возможностей.
+  heading: "Пользовательское соглашение",
+
+  subheading:
+    "Политика ведения деятельности платформы TRIOZ — редакция от 31 мая 2026 г.",
+
+  preamble: `Настоящее Пользовательское соглашение (далее — Соглашение) является публичной офертой Администрации платформы TRIOZ и определяет условия использования сайта trioz.ru, всех его разделов, сервисов и функциональных возможностей.
 
 Начало использования Платформы любым способом — просмотр страниц, регистрация, отправка сообщений или файлов — означает полное и безоговорочное принятие условий настоящего Соглашения и Политики обработки персональных данных.`,
-contactEmail: "[legal@trioz.ru](mailto:legal@trioz.ru)",
-contactUrl: "https://trioz.ru",
+
+  contactEmail: "legal@trioz.ru",
+
+  contactUrl: "https://trioz.ru",
 };
 
 export const legalKeys = {
-heading: "legal.heading",
-subheading: "legal.subheading",
-preamble: "legal.preamble",
-contactEmail: "legal.contact.email",
-contactUrl: "legal.contact.url",
-sectionTitle: (index: number) => `legal.section.${index + 1}.title`,
-sectionContent: (index: number) =>
-`legal.section.${index + 1}.content`,
+  heading: "legal.heading",
+  subheading: "legal.subheading",
+  preamble: "legal.preamble",
+  contactEmail: "legal.contact.email",
+  contactUrl: "legal.contact.url",
+
+  sectionTitle: (index: number) =>
+    `legal.section.${index + 1}.title`,
+
+  sectionContent: (index: number) =>
+    `legal.section.${index + 1}.content`,
 };
 
 export const LEGAL_SECTIONS: LegalSection[] = [
-{
-title: "1. Термины и определения",
-content: `Платформа (Сайт) — совокупность программно-аппаратных средств, интегрированных с веб-сайтом, размещенным в сети Интернет в домене trioz.ru, включая все его поддомены, страницы, элементы интерфейса, графику и программный код.
+  {
+    title: "1. Термины и определения",
+
+    content: `Платформа (Сайт) — совокупность программно-аппаратных средств, интегрированных с веб-сайтом, размещенным в сети Интернет в домене trioz.ru, включая все его поддомены, страницы, элементы интерфейса, графику и программный код.
 
 Администрация Платформы — правообладатель Платформы TRIOZ, осуществляющий управление Сайтом, обеспечение его функционирования и техническую поддержку.
 
@@ -36,14 +53,18 @@ content: `Платформа (Сайт) — совокупность прогр�
 
 Обработка сообщений (Сервис) — функционал Платформы, позволяющий Пользователю отправлять текстовые сообщения, запросы, технические задания, файлы и иные материалы Администрации, а Администрации — принимать, регистрировать, анализировать и отвечать на указанные запросы в рамках обслуживания Клиентов.`,
   },
+
   {
     title: "2. Предмет соглашения",
+
     content: `2.1. Предметом настоящего Соглашения является предоставление Пользователю доступа к функциональным возможностям Платформы trioz.ru для получения информационных, консультационных, сервисных или технологических услуг, а также для направления официальных обращений и обработки сообщений Пользователя.
 
 2.2. Использование любых функций Платформы означает безоговорочное согласие Пользователя со всеми пунктами настоящего Соглашения, а также с Политикой конфиденциальности, являющейся неотъемлемой частью данного документа. В случае несогласия с какими-либо условиями Пользователь обязан незамедлительно прекратить использование Сайта.`,
   },
+
   {
     title: "3. Порядок использования Платформы",
+
     content: `3.1. Платформа trioz.ru предоставляет интерфейс для взаимодействия Клиентов с проектом TRIOZ. В рамках этого взаимодействия Пользователь имеет право направлять сообщения через электронные формы обратной связи, онлайн-чаты или специализированные тикет-системы, развернутые на Сайте.
 
 3.2. При отправке сообщений Пользователь обязуется предоставлять достоверную, актуальную и полную информацию (включая имя, контактный адрес электронной почты и иные реквизиты, необходимые для обратной связи).
@@ -52,8 +73,10 @@ content: `Платформа (Сайт) — совокупность прогр�
 
 3.4. Направляя сообщение или файлы через Платформу, Пользователь гарантирует, что обладает всеми необходимыми правами на передаваемую информацию и её содержание не нарушает законодательство РФ, права третьих лиц и общепринятые этические нормы.`,
   },
+
   {
     title: "4. Политика ведения деятельности",
+
     content: `4.1. Проект TRIOZ строит свою деятельность на принципах законности, прозрачности, конфиденциальности и профессиональной этики. Администрация обязуется прилагать максимальные усилия для обеспечения бесперебойного функционирования Платформы, оперативного устранения технических сбоев и качественного обслуживания Клиентов.
 
 4.2. При использовании Платформы Пользователю строго запрещается:
@@ -68,20 +91,26 @@ content: `Платформа (Сайт) — совокупность прогр�
 
 4.3. В случае выявления нарушений правил допустимого использования, Администрация оставляет за собой право в одностороннем порядке заблокировать доступ Пользователя к Сервису, проигнорировать направленные сообщения или передать соответствующие данные в правоохранительные органы.`,
   },
+
   {
     title: "5. Интеллектуальная собственность",
+
     content: `5.1. Все объекты, размещенные на Платформе trioz.ru, включая элементы дизайна, текст, графические изображения, иллюстрации, скрипты, программы для ЭВМ, базы данных, товарные знаки и логотипы, являются объектами исключительных прав Администрации Платформы или её партнеров.
 
 5.2. Никакие элементы контента Платформы не могут быть скопированы, воспроизведены, переработаны, распространены или использованы иным образом для коммерческих или некоммерческих целей без предварительного согласия правообладателя.`,
   },
+
   {
     title: "6. Ограничение ответственности",
+
     content: `6.1. Платформа и её сервисы предоставляются на условиях «как есть» (as is). Администрация не гарантирует, что Платформа будет соответствовать всем субъективным ожиданиям Пользователя, функционировать непрерывно, быстро и абсолютно без ошибок.
 
 6.2. Администрация не несет ответственности за убытки (включая упущенную выгоду, прерывание деловой активности или потерю данных), возникшие у Пользователя в связи с использованием или невозможностью использования Платформы, а также в результате задержек в обработке сообщений, вызванных сбоями в сетях электросвязи или действиями третьих лиц.`,
   },
+
   {
     title: "7. Политика обработки персональных данных",
+
     content: `7.1. Сбор, хранение и обработка персональных данных Пользователей, направляемых через Сайт trioz.ru, осуществляются в строгом соответствии с Федеральным законом РФ № 152-ФЗ «О персональных данных».
 
 7.2. Категории обрабатываемых данных:
@@ -92,8 +121,10 @@ content: `Платформа (Сайт) — совокупность прогр�
 
 7.3. Администрация принимает необходимые организационные и технические меры для защиты персональной информации Пользователя от неправомерного или случайного доступа, уничтожения, изменения, блокирования, копирования, распространения.`,
   },
+
   {
     title: "8. Разрешение споров и заключительные положения",
+
     content: `8.1. Все споры и разногласия, возникающие из настоящего Соглашения или в связи с ним, подлежат разрешению путем переговоров с соблюдением обязательного досудебного претензионного порядка. Срок рассмотрения претензии составляет 15 (пятнадцать) рабочих дней с момента её получения Стороной.
 
 8.2. В случае невозможности достижения согласия, спор передается на рассмотрение в суд по месту нахождения Администрации Платформы в соответствии с действующим законодательством Российской Федерации.
@@ -106,138 +137,92 @@ URL-адрес: https://trioz.ru
 
 Назначение: Платформа обслуживания клиентов и обработки сообщений
 
-Электронный адрес для юридических запросов и отзывов персональных данных: [legal@trioz.ru](mailto:legal@trioz.ru)`,
-},
+Электронный адрес для юридических запросов и отзывов персональных данных: legal@trioz.ru`,
+  },
 ];
 
-export interface LegalContent {
-heading: string;
-subheading: string;
-preamble: string;
-contactEmail: string;
-contactUrl: string;
-sections: LegalSection[];
-}
-
 function pick(
-value: string | undefined,
-fallback: string,
+  value: string | undefined,
+  fallback: string,
 ): string {
-return typeof value === "string" && value.trim()
-? value
-: fallback;
+  return typeof value === "string" && value.trim()
+    ? value
+    : fallback;
 }
 
 function buildSections(
-overrides: Record<string, string>,
+  overrides: Record<string, string>,
 ): LegalSection[] {
-return LEGAL_SECTIONS.map((section, index) => ({
-title: pick(
-overrides[legalKeys.sectionTitle(index)],
-section.title,
-),
-content: pick(
-overrides[legalKeys.sectionContent(index)],
-section.content,
-),
-}));
+  return LEGAL_SECTIONS.map((section, index) => ({
+    title: pick(
+      overrides[legalKeys.sectionTitle(index)],
+      section.title,
+    ),
+
+    content: pick(
+      overrides[legalKeys.sectionContent(index)],
+      section.content,
+    ),
+  }));
 }
 
 export function mergeLegalOverrides(
-siteContent?: Record<string, string> | null,
-overrides?: Record<string, string> | null,
-blockOverrides?: Record<string, string> | null,
+  siteContent?: Record<string, string> | null,
+  overrides?: Record<string, string> | null,
+  blockOverrides?: Record<string, string> | null,
 ): Record<string, string> {
-const result: Record<string, string> = {};
+  const result: Record<string, string> = {};
 
-const sources = [
-siteContent,
-overrides,
-blockOverrides,
-];
+  for (const source of [
+    siteContent,
+    overrides,
+    blockOverrides,
+  ]) {
+    if (!source) {
+      continue;
+    }
 
-for (const source of sources) {
-if (!source) {
-continue;
-}
-
-```
-for (const [key, value] of Object.entries(source)) {
-  if (typeof value === "string" && value.trim()) {
-    result[key] = value;
+    for (const [key, value] of Object.entries(source)) {
+      if (typeof value === "string" && value.trim()) {
+        result[key] = value;
+      }
+    }
   }
-}
-```
 
-}
-
-return result;
+  return result;
 }
 
 export function resolveLegalContent(
-overrides?: Record<string, string> | null,
+  overrides?: Record<string, string> | null,
 ): LegalContent {
-const map = overrides ?? {};
+  const map = overrides ?? {};
 
-return {
-heading: pick(
-map[legalKeys.heading],
-LEGAL_DEFAULTS.heading,
-),
-subheading: pick(
-map[legalKeys.subheading],
-LEGAL_DEFAULTS.subheading,
-),
-preamble: pick(
-map[legalKeys.preamble],
-LEGAL_DEFAULTS.preamble,
-),
-contactEmail: pick(
-map[legalKeys.contactEmail],
-LEGAL_DEFAULTS.contactEmail,
-),
-contactUrl: pick(
-map[legalKeys.contactUrl],
-LEGAL_DEFAULTS.contactUrl,
-),
-sections: buildSections(map),
-};
+  return {
+    heading: pick(
+      map[legalKeys.heading],
+      LEGAL_DEFAULTS.heading,
+    ),
+
+    subheading: pick(
+      map[legalKeys.subheading],
+      LEGAL_DEFAULTS.subheading,
+    ),
+
+    preamble: pick(
+      map[legalKeys.preamble],
+      LEGAL_DEFAULTS.preamble,
+    ),
+
+    contactEmail: pick(
+      map[legalKeys.contactEmail],
+      LEGAL_DEFAULTS.contactEmail,
+    ),
+
+    contactUrl: pick(
+      map[legalKeys.contactUrl],
+      LEGAL_DEFAULTS.contactUrl,
+    ),
+
+    sections: buildSections(map),
+  };
 }
-
-````
-
-### После замены сразу проверь синтаксис
-
-Не отправляй ещё один CI вслепую. Выполни локально:
-
-```bash
-npm run lint -w apps/web
-````
-
-Если lint прошёл:
-
-```bash
-npm run build
-```
-
-И проверь, что в `legal.ts` больше нет случайных Markdown-строк:
-
-````bash
-grep -n '```' apps/web/src/lib/legal.ts
-````
-
-Команда должна вернуть **пустой результат**.
-
-Также проверь наличие нужного экспорта:
-
-```bash
-grep -n "mergeLegalOverrides" apps/web/src/lib/legal.ts
-```
-
-Должна присутствовать строка:
-
-```text
-export function mergeLegalOverrides(
-```
-
-Сейчас твой CI падает **до проверки логики**, на синтаксисе `legal.ts`. После полной замены этого файла мы наконец перейдём от цепочки повреждённых исходников к проверке уже реального кода.
