@@ -21,6 +21,8 @@ import Link from "next/link";
 import CosmicBackground from "@/components/about/CosmicBackground";
 import DesktopDownload from "@/components/DesktopDownload";
 import LegalFooter, { LegalContactLinks } from "@/components/about/LegalFooter";
+import LegacyAboutSections from "@/components/about/LegacyAboutSections";
+import type { AboutContent } from "@/lib/about";
 
 import type {
   AboutBlockRow,
@@ -585,6 +587,7 @@ function AppsBlock({ data }: { data: AppsData }) {
 // ---------- Page ----------
 
 export type AboutPageClientProps = {
+  aboutContent: AboutContent;
   /** Обычные блоки «О проекте» в порядке из админки (без правового). */
   bodyBlocks: AboutBlockRow[];
   /** Ключи из блока «Правовая информация», если он заведён. */
@@ -594,6 +597,7 @@ export type AboutPageClientProps = {
 };
 
 export default function AboutPageClient({
+  aboutContent,
   bodyBlocks,
   legalOverrides,
   siteOverrides,
@@ -664,6 +668,9 @@ export default function AboutPageClient({
       </div>
 
       <>
+          {/* Секции из прежней версии — всегда видны, не зависят от базы */}
+          <LegacyAboutSections content={aboutContent} />
+
           {bodyBlocks.map(renderBlock)}
 
           {/* ── Download section ───────────────────────────────────────── */}
