@@ -14,7 +14,7 @@ import {
   type PaymentLinkPlan,
   type PaymentLinkStats,
   type PaymentLinkStatus,
-} from "@/lib/paymentLinks";
+} from "@/lib/paymentLinkKinds";
 
 /**
  * PAYLINK: пул платёжных ссылок банка в разделе «Платежи».

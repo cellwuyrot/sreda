@@ -88,7 +88,8 @@ if (migrationDir) {
 
 // ── 3. Логика ссылок ───────────────────────────────────────────────────
 const links = code("src/lib/paymentLinks.ts");
-ok("цикл состояний описан", ["FREE", "RESERVED", "AWAITING", "USED", "DISABLED"].every((s) => links.includes(`"${s}"`)));
+const linksAll = links + code("src/lib/paymentLinkKinds.ts");
+ok("цикл состояний описан", ["FREE", "RESERVED", "AWAITING", "USED", "DISABLED"].every((s) => linksAll.includes(`"${s}"`)));
 ok("ссылка захватывается условным обновлением", /updateMany\([\s\S]{0,200}status: "FREE"/.test(links));
 ok("подписка и смена статуса идут одной транзакцией", links.includes("$transaction(async (tx)"));
 ok("Premium привязывается к профилю", links.includes("isPremium: true"));
@@ -137,6 +138,28 @@ const manager = code("src/components/admin/PaymentLinkManager.tsx");
 ok("в пуле можно загружать сразу несколько ссылок", manager.includes("textarea"));
 ok("в пуле видны заявки на подтверждение", manager.includes("AWAITING"));
 ok("пул предупреждает об исчерпании ссылок", manager.includes("stats.free"));
+
+/* Сборка падала из-за того, что клиентский компонент тянул серверный модуль,
+   а тот через prisma/auth — ioredis с узловыми net/tls/dns. Сторожим границу. */
+const kinds = code("src/lib/paymentLinkKinds.ts");
+ok("общая часть выделена в отдельный модуль", kinds.length > 0);
+ok(
+  "общая часть не тянет серверные зависимости",
+  !["@/lib/prisma", "@/lib/auth", "@/lib/rateLimit", "@/lib/socketEmit", "ioredis"].some((dep) =>
+    kinds.includes(dep),
+  ),
+);
+ok("серверный модуль по-прежнему отдаёт общую часть", links.includes('export * from "@/lib/paymentLinkKinds"'));
+for (const rel of [
+  "src/components/admin/PaymentLinkManager.tsx",
+  "src/components/premium/PaymentLinkCheckout.tsx",
+]) {
+  const source = code(rel);
+  ok(`клиентский компонент не тянет серверный модуль: ${rel.split("/").pop()}`,
+    !source.includes('from "@/lib/paymentLinks"') &&
+      !["@/lib/prisma", "@/lib/auth", "@/lib/rateLimit"].some((dep) => source.includes(dep)),
+  );
+}
 
 // ── 6. Настройки профиля: кнопка у обеих подписок ────────────────────
 const settingsPage = code("src/app/settings/page.tsx");
