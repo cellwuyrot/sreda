@@ -185,7 +185,7 @@ export default function PaymentLinkManager() {
     if (action === "confirm") {
       const sure = await confirmDialog({
         title: "Подтвердить оплату?",
-        description:
+        message:
           "Подписка будет выдана плательщику сразу. Сначала сверьте зачисление средств в банке.",
         confirmText: "Подтвердить",
       });
@@ -223,7 +223,7 @@ export default function PaymentLinkManager() {
   async function remove(linkId: string) {
     const sure = await confirmDialog({
       title: "Удалить ссылку?",
-      description: "Ссылка исчезнет из пула. Выданные подписки останутся на месте.",
+      message: "Ссылка исчезнет из пула. Выданные подписки останутся на месте.",
       confirmText: "Удалить",
       danger: true,
     });
