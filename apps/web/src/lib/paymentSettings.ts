@@ -35,6 +35,47 @@ export const PREMIUM_PAYMENT_KEYS = [
   "pay_acquiring_comment",
 ] as const;
 
+/**
+ * PAYLINK: реквизиты второй подписки — «Ускоренный интернет» (VPN).
+ *
+ * В проекте две платные подписки и они не взаимозаменяемы: Premium даёт
+ * возможности внутри сервиса, VPN — только туннель. Цена и способы оплаты у
+ * них тоже разные, поэтому у VPN своя группа ключей, а не общая с Premium.
+ * Флаг `vpnpay_same_as_premium` — для тех, кому второй набор не нужен.
+ */
+export const VPN_PAYMENT_KEYS = [
+  "vpnpay_same_as_premium",
+  "vpn_price_month",
+  "vpn_currency",
+  "vpnpay_sbp_enabled",
+  "vpnpay_sbp_phone",
+  "vpnpay_sbp_bank",
+  "vpnpay_sbp_recipient",
+  "vpnpay_sbp_comment",
+  "vpnpay_acquiring_enabled",
+  "vpnpay_acquiring_provider",
+  "vpnpay_acquiring_link",
+  "vpnpay_acquiring_merchant",
+  "vpnpay_acquiring_secret",
+  "vpnpay_acquiring_comment",
+] as const;
+
+/**
+ * PAYLINK: общие настройки оплаты по одноразовым ссылкам.
+ *
+ * Платёжная ссылка банка (например, b2b.cbrpay.ru) не сообщает сайту о
+ * зачислении: об успешной оплате знают только банк и плательщик. Поэтому
+ * ссылка выдаётся адресно (одна ссылка = одна подписка), а подтверждение
+ * зачисления делает человек. `paylink_auto_activate` оставлен для тех, кто
+ * готов включать подписку сразу по нажатию «Я оплатил» (по умолчанию выключено).
+ */
+export const PAYLINK_KEYS = [
+  "paylink_enabled",
+  "paylink_auto_activate",
+  "paylink_reserve_minutes",
+  "paylink_instruction",
+] as const;
+
 /** Реквизиты для счетов бизнеса и параметры по умолчанию для подписки. */
 export const BUSINESS_PAYMENT_KEYS = [
   "bizpay_same_as_premium",
@@ -63,7 +104,9 @@ export const BUSINESS_PAYMENT_KEYS = [
 /** Все ключи платёжных настроек в SiteConfig. */
 export const PAYMENT_KEYS = [
   ...PREMIUM_PAYMENT_KEYS,
+  ...VPN_PAYMENT_KEYS,
   ...BUSINESS_PAYMENT_KEYS,
+  ...PAYLINK_KEYS,
 ] as const;
 
 export type PaymentKey = (typeof PAYMENT_KEYS)[number];
@@ -71,6 +114,7 @@ export type PaymentKey = (typeof PAYMENT_KEYS)[number];
 /** Ключи, значение которых хранится в зашифрованном виде. */
 export const PAYMENT_SECRET_KEYS: PaymentKey[] = [
   "pay_acquiring_secret",
+  "vpnpay_acquiring_secret",
   "bizpay_acquiring_secret",
 ];
 
@@ -88,6 +132,26 @@ export const PAYMENT_DEFAULTS: Record<PaymentKey, string> = {
   pay_acquiring_merchant: "",
   pay_acquiring_secret: "",
   pay_acquiring_comment: "",
+
+  vpnpay_same_as_premium: "0",
+  vpn_price_month: "",
+  vpn_currency: "RUB",
+  vpnpay_sbp_enabled: "0",
+  vpnpay_sbp_phone: "",
+  vpnpay_sbp_bank: "",
+  vpnpay_sbp_recipient: "",
+  vpnpay_sbp_comment: "",
+  vpnpay_acquiring_enabled: "0",
+  vpnpay_acquiring_provider: "",
+  vpnpay_acquiring_link: "",
+  vpnpay_acquiring_merchant: "",
+  vpnpay_acquiring_secret: "",
+  vpnpay_acquiring_comment: "",
+
+  paylink_enabled: "0",
+  paylink_auto_activate: "0",
+  paylink_reserve_minutes: "60",
+  paylink_instruction: "",
 
   bizpay_same_as_premium: "0",
   bizpay_org_name: "",
@@ -274,4 +338,52 @@ export async function readBusinessRequisitesText(): Promise<string> {
 export function encodePaymentValue(key: PaymentKey, value: string): string {
   if (PAYMENT_SECRET_KEYS.includes(key) && value) return encrypt(value);
   return value;
+}
+
+/**
+ * PAYLINK: цена и способы оплаты подписки «Ускоренный интернет» для клиента.
+ *
+ * Собрано тем же правилом, что и для Premium: включённые способы и никаких
+ * секретов. При `vpnpay_same_as_premium = "1"` способы берутся от Premium, но цена
+ * остаётся своей: один терминал не означает одинаковую стоимость услуг.
+ */
+export async function readVpnPaymentMethods(): Promise<PublicPaymentMethods> {
+  const config = await readPaymentConfig();
+  const price = config.vpn_price_month;
+  const currency = config.vpn_currency || "RUB";
+
+  if (config.vpnpay_same_as_premium === "1") {
+    const premium = await readPublicPaymentMethods();
+    return { priceMonth: price || premium.priceMonth, currency, methods: premium.methods };
+  }
+
+  const methods: PublicPaymentMethod[] = [];
+
+  if (config.vpnpay_sbp_enabled === "1" && config.vpnpay_sbp_phone) {
+    methods.push({
+      id: "sbp",
+      label: "СБП-перевод",
+      fields: [
+        { label: "Телефон", value: config.vpnpay_sbp_phone },
+        { label: "Банк", value: config.vpnpay_sbp_bank },
+        { label: "Получатель", value: config.vpnpay_sbp_recipient },
+      ].filter((f) => f.value),
+      comment: config.vpnpay_sbp_comment || undefined,
+    });
+  }
+
+  if (
+    config.vpnpay_acquiring_enabled === "1" &&
+    (config.vpnpay_acquiring_link || config.vpnpay_acquiring_provider)
+  ) {
+    methods.push({
+      id: "acquiring",
+      label: "Интернет-эквайринг",
+      fields: [{ label: "Провайдер", value: config.vpnpay_acquiring_provider }].filter((f) => f.value),
+      link: config.vpnpay_acquiring_link || undefined,
+      comment: config.vpnpay_acquiring_comment || undefined,
+    });
+  }
+
+  return { priceMonth: price, currency, methods };
 }

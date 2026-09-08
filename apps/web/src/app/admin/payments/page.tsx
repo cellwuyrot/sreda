@@ -10,6 +10,8 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 /* PAY-TEMPLATE: именованные шаблоны реквизитов — отдельная вкладка. */
 import PaymentRequisiteManager from "@/components/admin/PaymentRequisiteManager";
+/* PAYLINK: пул платёжных ссылок банка — своя вкладка. */
+import PaymentLinkManager from "@/components/admin/PaymentLinkManager";
 
 /**
  * PREMIUM-PAY / BUSINESS-SUB: платёжные реквизиты проекта.
@@ -37,6 +39,29 @@ interface PaymentSettings {
   pay_acquiring_secret: string;
   pay_acquiring_comment: string;
   pay_acquiring_secret_set?: string;
+
+  /* VPN-SUB: вторая платная подписка — «Ускоренный интернет». */
+  vpnpay_same_as_premium: string;
+  vpn_price_month: string;
+  vpn_currency: string;
+  vpnpay_sbp_enabled: string;
+  vpnpay_sbp_phone: string;
+  vpnpay_sbp_bank: string;
+  vpnpay_sbp_recipient: string;
+  vpnpay_sbp_comment: string;
+  vpnpay_acquiring_enabled: string;
+  vpnpay_acquiring_provider: string;
+  vpnpay_acquiring_link: string;
+  vpnpay_acquiring_merchant: string;
+  vpnpay_acquiring_secret: string;
+  vpnpay_acquiring_comment: string;
+  vpnpay_acquiring_secret_set?: string;
+
+  /* PAYLINK: общие правила оплаты по ссылке. */
+  paylink_enabled: string;
+  paylink_auto_activate: string;
+  paylink_reserve_minutes: string;
+  paylink_instruction: string;
 
   /* Бизнес */
   bizpay_same_as_premium: string;
@@ -77,6 +102,26 @@ const EMPTY: PaymentSettings = {
   pay_acquiring_merchant: "",
   pay_acquiring_secret: "",
   pay_acquiring_comment: "",
+
+  vpnpay_same_as_premium: "0",
+  vpn_price_month: "",
+  vpn_currency: "RUB",
+  vpnpay_sbp_enabled: "0",
+  vpnpay_sbp_phone: "",
+  vpnpay_sbp_bank: "",
+  vpnpay_sbp_recipient: "",
+  vpnpay_sbp_comment: "",
+  vpnpay_acquiring_enabled: "0",
+  vpnpay_acquiring_provider: "",
+  vpnpay_acquiring_link: "",
+  vpnpay_acquiring_merchant: "",
+  vpnpay_acquiring_secret: "",
+  vpnpay_acquiring_comment: "",
+
+  paylink_enabled: "0",
+  paylink_auto_activate: "0",
+  paylink_reserve_minutes: "60",
+  paylink_instruction: "",
 
   bizpay_same_as_premium: "0",
   bizpay_org_name: "",
@@ -131,6 +176,7 @@ export default function AdminPaymentsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [secretSet, setSecretSet] = useState(false);
+  const [vpnSecretSet, setVpnSecretSet] = useState(false);
   const [bizSecretSet, setBizSecretSet] = useState(false);
   /* FIX-PAY-SAVE: до этого обрабатывался только res.ok, а 4xx/5xx уходили в
      пустоту: кнопка гасла, ошибки не было, реквизиты не сохранялись. Текст
@@ -139,7 +185,9 @@ export default function AdminPaymentsPage() {
   /* BUSINESS-SUB: две группы реквизитов на одном полотне читались бы как одна
      длинная анкета, и ошибка «ввёл телефон бизнеса в поле Premium» была бы
      вопросом времени. Закладки делают разделение видимым. */
-  const [tab, setTab] = useState<"premium" | "business" | "templates">("premium");
+  const [tab, setTab] = useState<
+    "premium" | "vpn" | "paylink" | "business" | "templates"
+  >("premium");
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/admin");
@@ -161,6 +209,7 @@ export default function AdminPaymentsPage() {
           }
           const data = (payload || {}) as Record<string, string>;
           setSecretSet(data.pay_acquiring_secret_set === "1");
+          setVpnSecretSet(data.vpnpay_acquiring_secret_set === "1");
           setBizSecretSet(data.bizpay_acquiring_secret_set === "1");
           /* Замаскированные секреты не подставляем в поля — иначе первое же
              сохранение записало бы в базу строку с точками вместо ключа. */
@@ -168,6 +217,7 @@ export default function AdminPaymentsPage() {
             ...prev,
             ...data,
             pay_acquiring_secret: "",
+            vpnpay_acquiring_secret: "",
             bizpay_acquiring_secret: "",
           }));
         })
@@ -208,15 +258,22 @@ export default function AdminPaymentsPage() {
       if (check.ok) {
         const data = (await check.json()) as Record<string, string>;
         setSecretSet(data.pay_acquiring_secret_set === "1");
+        setVpnSecretSet(data.vpnpay_acquiring_secret_set === "1");
         setBizSecretSet(data.bizpay_acquiring_secret_set === "1");
         setSettings((prev) => ({
           ...prev,
           ...data,
           pay_acquiring_secret: "",
+          vpnpay_acquiring_secret: "",
           bizpay_acquiring_secret: "",
         }));
       } else {
-        setSettings((s) => ({ ...s, pay_acquiring_secret: "", bizpay_acquiring_secret: "" }));
+        setSettings((s) => ({
+          ...s,
+          pay_acquiring_secret: "",
+          vpnpay_acquiring_secret: "",
+          bizpay_acquiring_secret: "",
+        }));
       }
 
       setSaved(true);
@@ -239,12 +296,21 @@ export default function AdminPaymentsPage() {
 
   const sbpOn = settings.pay_sbp_enabled === "1";
   const acqOn = settings.pay_acquiring_enabled === "1";
+  const vpnSame = settings.vpnpay_same_as_premium === "1";
+  const vpnSbpOn = settings.vpnpay_sbp_enabled === "1";
+  const vpnAcqOn = settings.vpnpay_acquiring_enabled === "1";
+  const payLinkOn = settings.paylink_enabled === "1";
+  const payLinkAuto = settings.paylink_auto_activate === "1";
   const bizSame = settings.bizpay_same_as_premium === "1";
   const bizSbpOn = settings.bizpay_sbp_enabled === "1";
   const bizAcqOn = settings.bizpay_acquiring_enabled === "1";
 
   const tabs = [
     { id: "premium" as const, label: "Premium" },
+    /* VPN-SUB: второй тип подписки настраивался негде — теперь есть где. */
+    { id: "vpn" as const, label: "Ускоренный интернет" },
+    /* PAYLINK: пул ссылок и подтверждение поступлений. */
+    { id: "paylink" as const, label: "Оплата по ссылке" },
     { id: "business" as const, label: "Бизнес" },
     /* PAY-TEMPLATE: третья вкладка — справочник шаблонов, а не ещё одна форма. */
     { id: "templates" as const, label: "Шаблоны счетов" },
@@ -262,8 +328,8 @@ export default function AdminPaymentsPage() {
           </Link>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Платежи</h1>
           <p className="text-neutral-500 text-sm mt-1">
-            Реквизиты, на которые поступает оплата. Подписка Premium и счета бизнеса
-            настраиваются отдельно.
+            Реквизиты, на которые поступает оплата. Две подписки — Premium и Ускоренный
+            интернет — и счета бизнеса настраиваются отдельно.
           </p>
         </div>
 
@@ -293,6 +359,197 @@ export default function AdminPaymentsPage() {
         >
           {tab === "templates" ? (
             <PaymentRequisiteManager />
+          ) : tab === "paylink" ? (
+            <>
+              {/* PAYLINK: ссылка банка не сообщает сайту об оплате, поэтому здесь
+                  решается главное: кто подтверждает зачисление. */}
+              <div className={cardClass + " space-y-4"}>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
+                    Оплата по ссылке
+                  </h2>
+                  <Toggle
+                    on={payLinkOn}
+                    onClick={() => update({ paylink_enabled: payLinkOn ? "0" : "1" })}
+                    label={payLinkOn ? "Включена" : "Выключена"}
+                  />
+                </div>
+                <p className="text-xs text-neutral-500">
+                  В настройках профиля появляется кнопка оплаты: человеку выдаётся одна
+                  свободная ссылка из пула ниже. Одна ссылка = одна подписка.
+                </p>
+                <div className={payLinkOn ? "space-y-4" : "space-y-4 opacity-50 pointer-events-none"}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                        Включать подписку сразу после «Я оплатил»{" "}
+                        <InfoTooltip text="Статичная ссылка банка не присылает сайту уведомлений о зачислении. Если включить эту настройку, подписка выдаётся по словам плательщика, без сверки с выпиской." />
+                      </div>
+                      <p className="text-xs text-neutral-500 mt-1">
+                        По умолчанию выключено: заявка попадает в список ниже, и подписку
+                        выдаёте вы после проверки зачисления.
+                      </p>
+                    </div>
+                    <Toggle
+                      on={payLinkAuto}
+                      onClick={() => update({ paylink_auto_activate: payLinkAuto ? "0" : "1" })}
+                      label={payLinkAuto ? "Автоматически" : "Подтверждаю сам"}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>Сколько держать ссылку за плательщиком, минут</label>
+                      <input
+                        inputMode="numeric"
+                        value={settings.paylink_reserve_minutes}
+                        onChange={(e) => update({ paylink_reserve_minutes: e.target.value.replace(/[^\d]/g, "") })}
+                        placeholder="60"
+                        className={inputClass}
+                      />
+                      <p className="text-xs text-neutral-500 mt-2">
+                        Если человек не отметил оплату за это время, ссылка вернётся в пул.
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Инструкция для плательщика</label>
+                    <textarea
+                      value={settings.paylink_instruction}
+                      onChange={(e) => update({ paylink_instruction: e.target.value })}
+                      rows={3}
+                      placeholder="Откройте ссылку, оплатите счёт в приложении банка и вернитесь на сайт."
+                      className={inputClass + " resize-none"}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <PaymentLinkManager />
+            </>
+          ) : tab === "vpn" ? (
+            <>
+              {/* VPN-SUB: чаще всего деньги идут на те же реквизиты, что и за Premium,
+                  но цена у второй подписки всегда своя. */}
+              <div className={cardClass}>
+                <h2 className="text-base font-semibold text-neutral-900 dark:text-white mb-4">
+                  Стоимость подписки
+                </h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Цена за месяц</label>
+                    <input
+                      inputMode="numeric"
+                      value={settings.vpn_price_month}
+                      onChange={(e) => update({ vpn_price_month: e.target.value.replace(/[^\d]/g, "") })}
+                      placeholder="199"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Валюта</label>
+                    <input
+                      value={settings.vpn_currency}
+                      onChange={(e) => update({ vpn_currency: e.target.value.slice(0, 8) })}
+                      placeholder="RUB"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className={cardClass + " space-y-3"}>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
+                    Отдельные реквизиты
+                  </h2>
+                  <Toggle
+                    on={!vpnSame}
+                    onClick={() => update({ vpnpay_same_as_premium: vpnSame ? "0" : "1" })}
+                    label={vpnSame ? "Как у Premium" : "Свои реквизиты"}
+                  />
+                </div>
+                <p className="text-xs text-neutral-500">
+                  При значении «Как у Premium» подписка оплачивается теми же способами, что
+                  Premium, а цена берётся отсюда — дублировать реквизиты не нужно.
+                </p>
+              </div>
+
+              <div className={vpnSame ? "space-y-6 opacity-50 pointer-events-none" : "space-y-6"}>
+                <div className={cardClass + " space-y-4"}>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-semibold text-neutral-900 dark:text-white">СБП-перевод</h2>
+                    <Toggle
+                      on={vpnSbpOn}
+                      onClick={() => update({ vpnpay_sbp_enabled: vpnSbpOn ? "0" : "1" })}
+                      label={vpnSbpOn ? "Включён" : "Выключен"}
+                    />
+                  </div>
+                  <div className={vpnSbpOn ? "space-y-4" : "space-y-4 opacity-50 pointer-events-none"}>
+                    <div>
+                      <label className={labelClass}>Номер телефона получателя</label>
+                      <input value={settings.vpnpay_sbp_phone} onChange={(e) => update({ vpnpay_sbp_phone: e.target.value })} placeholder="+7 900 000-00-00" className={inputClass} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelClass}>Банк получателя</label>
+                        <input value={settings.vpnpay_sbp_bank} onChange={(e) => update({ vpnpay_sbp_bank: e.target.value })} placeholder="Например, Т-Банк" className={inputClass} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Имя получателя</label>
+                        <input value={settings.vpnpay_sbp_recipient} onChange={(e) => update({ vpnpay_sbp_recipient: e.target.value })} placeholder="Иван И." className={inputClass} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Комментарий / инструкция</label>
+                      <textarea value={settings.vpnpay_sbp_comment} onChange={(e) => update({ vpnpay_sbp_comment: e.target.value })} rows={2} placeholder="В комментарии к переводу укажите ваш username." className={inputClass + " resize-none"} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className={cardClass + " space-y-4"}>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Интернет-эквайринг</h2>
+                    <Toggle
+                      on={vpnAcqOn}
+                      onClick={() => update({ vpnpay_acquiring_enabled: vpnAcqOn ? "0" : "1" })}
+                      label={vpnAcqOn ? "Включён" : "Выключен"}
+                    />
+                  </div>
+                  <div className={vpnAcqOn ? "space-y-4" : "space-y-4 opacity-50 pointer-events-none"}>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelClass}>Провайдер</label>
+                        <input value={settings.vpnpay_acquiring_provider} onChange={(e) => update({ vpnpay_acquiring_provider: e.target.value })} placeholder="ЮKassa, Тинькофф…" className={inputClass} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Идентификатор магазина</label>
+                        <input value={settings.vpnpay_acquiring_merchant} onChange={(e) => update({ vpnpay_acquiring_merchant: e.target.value })} placeholder="shopId / terminalKey" className={inputClass} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Платёжная ссылка</label>
+                      <input value={settings.vpnpay_acquiring_link} onChange={(e) => update({ vpnpay_acquiring_link: e.target.value })} placeholder="https://…" className={inputClass} />
+                    </div>
+                    <div>
+                      <label className={labelClass}>
+                        Секретный ключ {vpnSecretSet && <span className="text-emerald-500 text-xs font-normal">· сохранён</span>}{" "}
+                        <InfoTooltip text="Хранится зашифрованным. Ключ второй подписки отделён от ключа Premium." />
+                      </label>
+                      <input type="password" value={settings.vpnpay_acquiring_secret} onChange={(e) => update({ vpnpay_acquiring_secret: e.target.value })} placeholder={vpnSecretSet ? "•••••• (оставьте пустым, чтобы не менять)" : "Секретный ключ провайдера"} className={inputClass} />
+                      {vpnSecretSet && (
+                        <button type="button" onClick={() => save({ vpnpay_acquiring_secret_clear: true })} className="mt-2 text-xs text-red-500 hover:text-red-400">
+                          Удалить сохранённый ключ
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <label className={labelClass}>Комментарий / инструкция</label>
+                      <textarea value={settings.vpnpay_acquiring_comment} onChange={(e) => update({ vpnpay_acquiring_comment: e.target.value })} rows={2} placeholder="Например: после оплаты пришлите чек администратору." className={inputClass + " resize-none"} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
           ) : tab === "premium" ? (
             <>
               {/* Цена */}

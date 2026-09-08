@@ -153,6 +153,9 @@ model User {
   vpnSubsGranted         VpnSubscription[]           @relation("VpnSubGranter") // VPN-PLAN
   premiumSubscriptions   PremiumSubscription[]       @relation("UserPremiumSubs") // PREMIUM-PAY
   premiumSubsGranted     PremiumSubscription[]       @relation("PremiumSubGranter") // PREMIUM-PAY
+  paymentLinksReserved   PaymentLink[]               @relation("PaymentLinkReserved") // PAYLINK
+  paymentLinksUsed       PaymentLink[]               @relation("PaymentLinkUsed") // PAYLINK
+  paymentLinksConfirmed  PaymentLink[]               @relation("PaymentLinkConfirmed") // PAYLINK
   /// PROFILE-WALL: личная страница — свои записи, комментарии, просмотры и подписки.
   wallPosts              WallPost[]                  @relation("WallAuthor") // PROFILE-WALL
   wallComments           WallComment[]               @relation("WallCommentAuthor") // PROFILE-WALL
@@ -2439,3 +2442,62 @@ model EmailDomainWhitelist {
 /// ABOUT-BLOCKS: лендинг-блоки страницы /about.
 /// Каждый блок = заголовок + описание + опциональное медиа (фото/видео),
 /// настраиваемый макет, форма, свечение и отступ.
+
+/// PAYLINK: пул одноразовых платёжных ссылок. Одна ссылка = одна подписка.
+///
+/// Ссылка банка не сообщает сайту о зачислении, поэтому жизненный путь хранится
+/// здесь: FREE → RESERVED (выдана человеку) → AWAITING (он нажал «Я оплатил») → USED
+/// (оплата подтверждена, подписка выдана). Повторно ссылка не выдаётся никогда.
+model PaymentLink {
+  id                   String    @id @default(cuid())
+
+  /// PREMIUM | VPN — какая из двух подписок оплачивается этой ссылкой.
+  kind                 String    @db.VarChar(16)
+  /// month | quarter | year | lifetime — срок, на который даётся подписка.
+  plan                 String    @default("month") @db.VarChar(16)
+  /// Сумма ссылки в рублях — как в PremiumSubscription.amount, чтобы суммы
+  /// подписки и ссылки были сравнимы без пересчёта.
+  amount               Int       @default(0)
+  currency             String    @default("RUB") @db.VarChar(8)
+
+  /// Сама ссылка. Уникальна: дважды загруженный список не должен дать две
+  /// подписки по одному и тому же платежу.
+  url                  String    @unique @db.VarChar(500)
+  /// Пометка администратора (партия ссылок, банк, номер счёта).
+  label                String?   @db.VarChar(200)
+
+  /// FREE | RESERVED | AWAITING | USED | DISABLED — см. lib/paymentLinks.ts.
+  status               String    @default("FREE") @db.VarChar(16)
+
+  /// Кому ссылка выдана сейчас. SetNull: удалённый профиль не должен
+  /// уносить историю платежей.
+  reservedById         String?
+  reservedBy           User?     @relation("PaymentLinkReserved", fields: [reservedById], references: [id], onDelete: SetNull)
+  reservedAt           DateTime?
+  /// До какого момента бронь держится. Иначе один человек, открывший
+  /// страницу и не заплативший, забрал бы ссылку навсегда.
+  reservationExpiresAt DateTime?
+
+  /// Когда плательщик сообщил об оплате и что он указал (чек, время, СБП-id).
+  paidReportedAt       DateTime?
+  payerReference       String?   @db.VarChar(200)
+
+  /// Кто в итоге получил подписку и кто подтвердил зачисление.
+  usedById             String?
+  usedBy               User?     @relation("PaymentLinkUsed", fields: [usedById], references: [id], onDelete: SetNull)
+  usedAt               DateTime?
+  confirmedById        String?
+  confirmedBy          User?     @relation("PaymentLinkConfirmed", fields: [confirmedById], references: [id], onDelete: SetNull)
+  /// id выданной подписки (PremiumSubscription или VpnSubscription) — строкой,
+  /// так как таблицы две, а связь нужна только для следа в журнале.
+  subscriptionId       String?   @db.VarChar(64)
+
+  note                 String?   @db.Text
+  createdById          String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([kind, status])
+  @@index([reservedById])
+  @@index([usedById])
+}
