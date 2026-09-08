@@ -23,6 +23,8 @@ import { cacheNotifyPrefs } from "@/lib/notifyPrefs";
 import { hasPremium } from "@/lib/premium";
 import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
+/* PAYLINK: самостоятельная оплата по ссылке банка — один блок на каждую подписку. */
+import PaymentLinkCheckout from "@/components/premium/PaymentLinkCheckout";
 import {
   eventToBrowserKeys,
   browserKeysHaveMainKey,
@@ -2133,6 +2135,13 @@ export default function SettingsPage() {
                 {!vpnViaPremium && payDetails(vpnPlanActive
                   ? "Для продления укажите в комментарии к платежу username и «Интернет»."
                   : "В комментарии к платежу укажите username и «Интернет» — иначе платёж примут за Premium.")}
+
+                {/* PAYLINK: если администратор загрузил ссылки — платить можно сразу, не спрашивая реквизиты. */}
+                {!vpnViaPremium && (
+                  <div className="mt-3">
+                    <PaymentLinkCheckout kind="VPN" />
+                  </div>
+                )}
               </div>
             </Section>
 
@@ -2176,6 +2185,13 @@ export default function SettingsPage() {
                   payDetails(premiumActive
                     ? "Для продления укажите в комментарии к платежу ваш username."
                     : "В комментарии к платежу укажите ваш username — по нему администратор найдёт аккаунт.")
+                )}
+
+                {/* PAYLINK: тот же сценарий для Premium — свой пул ссылок. */}
+                {!byRole && (
+                  <div className="mt-3">
+                    <PaymentLinkCheckout kind="PREMIUM" />
+                  </div>
                 )}
               </div>
             </Section>
