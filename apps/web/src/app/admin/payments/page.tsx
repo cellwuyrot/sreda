@@ -132,6 +132,10 @@ export default function AdminPaymentsPage() {
   const [saved, setSaved] = useState(false);
   const [secretSet, setSecretSet] = useState(false);
   const [bizSecretSet, setBizSecretSet] = useState(false);
+  /* FIX-PAY-SAVE: до этого обрабатывался только res.ok, а 4xx/5xx уходили в
+     пустоту: кнопка гасла, ошибки не было, реквизиты не сохранялись. Текст
+     ошибки приходит из API и показывается как есть. */
+  const [error, setError] = useState<string | null>(null);
   /* BUSINESS-SUB: две группы реквизитов на одном полотне читались бы как одна
      длинная анкета, и ошибка «ввёл телефон бизнеса в поле Premium» была бы
      вопросом времени. Закладки делают разделение видимым. */
@@ -143,9 +147,19 @@ export default function AdminPaymentsPage() {
 
   useEffect(() => {
     if (session?.user?.role === "ADMIN") {
-      fetch("/api/admin/payments")
-        .then((r) => (r.ok ? r.json() : {}))
-        .then((data: Record<string, string>) => {
+      /* no-store: реквизиты меняются в этой же админке, кэшированный ответ
+         показывал бы прежние значения сразу после сохранения. */
+      fetch("/api/admin/payments", { cache: "no-store" })
+        .then(async (r) => {
+          const payload = await r.json().catch(() => null);
+          if (!r.ok) {
+            setError(
+              (payload as { error?: string } | null)?.error ||
+                `Не удалось загрузить реквизиты: сервер ответил ${r.status}.`,
+            );
+            return;
+          }
+          const data = (payload || {}) as Record<string, string>;
           setSecretSet(data.pay_acquiring_secret_set === "1");
           setBizSecretSet(data.bizpay_acquiring_secret_set === "1");
           /* Замаскированные секреты не подставляем в поля — иначе первое же
@@ -157,6 +171,13 @@ export default function AdminPaymentsPage() {
             bizpay_acquiring_secret: "",
           }));
         })
+        .catch((e: unknown) =>
+          setError(
+            e instanceof Error
+              ? `Запрос реквизитов не дошёл до сервера: ${e.message}`
+              : "Запрос реквизитов не дошёл до сервера.",
+          ),
+        )
         .finally(() => setLoading(false));
     }
   }, [session]);
@@ -165,20 +186,49 @@ export default function AdminPaymentsPage() {
 
   const save = async (extra: Record<string, unknown> = {}) => {
     setSaving(true);
-    const res = await fetch("/api/admin/payments", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...settings, ...extra }),
-    });
-    setSaving(false);
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/payments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...settings, ...extra }),
+      });
+      const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+
+      if (!res.ok) {
+        /* Причину отказа показываем дословно: «сохранил и ничего не изменилось» —
+           худший из возможных ответов формы. */
+        setError(payload?.error || `Реквизиты не сохранены: сервер ответил ${res.status}.`);
+        return;
+      }
+
+      /* Контрольное перечитывание: «Сохранено» показываем только после того, как
+         база вернула записанные значения. Заодно поля обновляются тем, что в БД. */
+      const check = await fetch("/api/admin/payments", { cache: "no-store" });
+      if (check.ok) {
+        const data = (await check.json()) as Record<string, string>;
+        setSecretSet(data.pay_acquiring_secret_set === "1");
+        setBizSecretSet(data.bizpay_acquiring_secret_set === "1");
+        setSettings((prev) => ({
+          ...prev,
+          ...data,
+          pay_acquiring_secret: "",
+          bizpay_acquiring_secret: "",
+        }));
+      } else {
+        setSettings((s) => ({ ...s, pay_acquiring_secret: "", bizpay_acquiring_secret: "" }));
+      }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-      if (settings.pay_acquiring_secret) setSecretSet(true);
-      if (settings.bizpay_acquiring_secret) setBizSecretSet(true);
-      if (extra.pay_acquiring_secret_clear) setSecretSet(false);
-      if (extra.bizpay_acquiring_secret_clear) setBizSecretSet(false);
-      setSettings((s) => ({ ...s, pay_acquiring_secret: "", bizpay_acquiring_secret: "" }));
+    } catch (e: unknown) {
+      setError(
+        e instanceof Error
+          ? `Запрос не дошёл до сервера: ${e.message}`
+          : "Запрос не дошёл до сервера.",
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -494,6 +544,15 @@ export default function AdminPaymentsPage() {
                 </div>
               </div>
             </>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300"
+            >
+              {error}
+            </div>
           )}
 
           {/* Шаблоны сохраняются каждый своей кнопкой — общее «Сохранить» там лишнее. */}
