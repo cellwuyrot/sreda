@@ -139,6 +139,21 @@ ok("в пуле можно загружать сразу несколько сс
 ok("в пуле видны заявки на подтверждение", manager.includes("AWAITING"));
 ok("пул предупреждает об исчерпании ссылок", manager.includes("stats.free"));
 
+/* Сборка падала на том, что в диалог передавалось поле `description`, которого
+   в `ConfirmOptions` нет: текст диалога там называется `message` и он обязательный. */
+const dialogCalls = manager.split("confirmDialog({").slice(1);
+ok("диалоги подтверждения вообще есть", dialogCalls.length >= 2, String(dialogCalls.length));
+ok(
+  "диалоги используют только известные поля",
+  dialogCalls.every((call) => {
+    const body = call.slice(0, call.indexOf("})"));
+    if (/\bdescription\s*:/.test(body)) return false;
+    if (!/\bmessage\s*:/.test(body)) return false;
+    const allowed = ["title", "message", "confirmText", "cancelText", "danger"];
+    return [...body.matchAll(/^\s*(\w+)\s*:/gm)].every((m) => allowed.includes(m[1]));
+  }),
+);
+
 /* Сборка падала из-за того, что клиентский компонент тянул серверный модуль,
    а тот через prisma/auth — ioredis с узловыми net/tls/dns. Сторожим границу. */
 const kinds = code("src/lib/paymentLinkKinds.ts");
