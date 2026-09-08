@@ -79,3 +79,11 @@ export function isEncrypted(value: string): boolean {
   }
   return parts.length === 3 && parts[0].length === IV_LENGTH * 2 && parts[1].length === TAG_LENGTH * 2;
 }
+
+/**
+ * FIX-PAY-SAVE: задан ли на сервере ключ шифрования. Нужен, чтобы админ-API мог
+ * отказать с понятным текстом ДО записи, а не падать посреди сохранения.
+ */
+export function hasEncryptionSecret(): boolean {
+  return Boolean(process.env.ENCRYPTION_SECRET || process.env.NEXTAUTH_SECRET);
+}
