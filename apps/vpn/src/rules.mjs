@@ -43,6 +43,31 @@ export function parseDump(stdout) {
 }
 
 /**
+ * Телеметрия для отчёта из карты пиров parseDump().
+ *
+ * NETLINK-NO-SILENT: вынесено отдельной чистой функцией ровно ради одного
+ * инварианта. Если чтение счётчиков (`awg show <iface> dump`) провалилось,
+ * index.mjs передаёт сюда `null` — и функция возвращает ПУСТОЙ объект `{}`, а не
+ * `{ handshakes: [], transfers: [] }`. Разница принципиальна: пустые массивы
+ * сервер принял бы за «успешный отчёт без трафика» и мог бы затереть учёт, а
+ * отсутствие полей он просто не трогает. Пустой Map (пиров нет, но чтение
+ * удалось) — это честные пустые массивы: они уходят как есть.
+ *
+ * @param {Map<string, {handshakeUnix:number, rxBytes:number, txBytes:number}>|null|undefined} peers
+ * @returns {{handshakes: Array, transfers: Array}|{}}
+ */
+export function telemetryFromPeers(peers) {
+  if (!peers) return {};
+  const handshakes = [];
+  const transfers = [];
+  for (const [key, info] of peers) {
+    if (info.handshakeUnix > 0) handshakes.push({ publicKey: key, atMs: info.handshakeUnix * 1000 });
+    transfers.push({ publicKey: key, rx: info.rxBytes, tx: info.txBytes });
+  }
+  return { handshakes, transfers };
+}
+
+/**
  * Список allowed-ips к сравнимому виду.
  *
  * `wg` печатает их через запятую с пробелом, а при пустом списке — «(none)».
