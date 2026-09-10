@@ -21,6 +21,7 @@ import {
   mssValue,
   normalizeAllowed,
   parseDump,
+  telemetryFromPeers,
   parseInterfaceParams,
   peerChanges,
   policeBurstKb,
@@ -82,6 +83,53 @@ describe("parseDump", () => {
   it("обрезанные строки пропускаются", () => {
     const peers = parseDump([IFACE_LINE, `${KEY1}\t(none)`, dumpLine(KEY2, "10.8.0.3/32")].join("\n"));
     expect([...peers.keys()]).toEqual([KEY2]);
+  });
+});
+
+/* NETLINK-NO-SILENT: главный смысл telemetryFromPeers — отличить «счётчики
+   прочтены, но пиров нет» (честные пустые массивы) от «`awg show dump`
+   упал, читать нечего» (полей вообще нет). От этого различия зависит,
+   затрёт ли сервер учёт нулями или просто не тронет его. */
+describe("telemetryFromPeers", () => {
+  it("ОШИБКА чтения (null) — ПУСТОЙ объект, а не пустые массивы", () => {
+    const telemetry = telemetryFromPeers(null);
+    // Ключей handshakes/transfers быть не должно — иначе сервер примет
+    // пустой отчёт за успешный и может затереть расход.
+    expect(telemetry).toEqual({});
+    expect("transfers" in telemetry).toBe(false);
+    expect("handshakes" in telemetry).toBe(false);
+  });
+
+  it("пустая карта (чтение удалось, пиров нет) — честные пустые массивы", () => {
+    const telemetry = telemetryFromPeers(new Map());
+    expect(telemetry).toEqual({ handshakes: [], transfers: [] });
+  });
+
+  it("RX/TX каждого пира попадают в transfers как есть", () => {
+    const peers = parseDump(
+      [
+        IFACE_LINE,
+        dumpLine(KEY1, "10.8.0.2/32", "1750000000", "4096", "2048"),
+        dumpLine(KEY2, "10.8.0.3/32", "0", "100", "50"),
+      ].join("\n"),
+    );
+    const { transfers } = telemetryFromPeers(peers);
+    expect(transfers).toEqual([
+      { publicKey: KEY1, rx: 4096, tx: 2048 },
+      { publicKey: KEY2, rx: 100, tx: 50 },
+    ]);
+  });
+
+  it("рукопожатие попадает в handshakes только когда оно было", () => {
+    const peers = parseDump(
+      [
+        IFACE_LINE,
+        dumpLine(KEY1, "10.8.0.2/32", "1750000000", "1", "1"),
+        dumpLine(KEY2, "10.8.0.3/32", "0", "1", "1"),
+      ].join("\n"),
+    );
+    const { handshakes } = telemetryFromPeers(peers);
+    expect(handshakes).toEqual([{ publicKey: KEY1, atMs: 1750000000 * 1000 }]);
   });
 });
 

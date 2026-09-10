@@ -375,6 +375,73 @@ describe("GET /api/vpn/me", () => {
     expect(json).toHaveProperty("serviceEnabled");
     expect(json).toHaveProperty("entitled");
   });
+
+  /* NETLINK: та же usageView кормит и ConnectionMenu, и PremiumInfoModal — т.е.
+     «Premium» и «Ускоренный интернет» показывают ОДИН и тот же расход из этого ответа
+     (требования 5–7). Здесь проверяем, что /api/vpn/me отдаёт ИМЕННО сохранённые
+     rxBytes+txBytes, а не ноль. */
+  it("отдаёт реальный usage = RX + TX из сохранённого пира", async () => {
+    const measuredAt = new Date("2026-09-10T12:00:00.000Z");
+    vi.mocked(getVpnSettings).mockResolvedValue({
+      ...MOCK_SETTINGS,
+      trafficLimitGb: 250,
+      usagePeriodDays: 30,
+      overLimitAction: "BLOCK",
+      throttleKbps: 2048,
+    } as never);
+    prismaMock.vpnPeer.findUnique.mockResolvedValue({
+      ...MOCK_PEER,
+      rxBytes: 4_000_000_000,
+      txBytes: 2_000_000_000,
+      usageResetAt: new Date("2026-09-01T00:00:00.000Z"),
+      usageUpdatedAt: measuredAt,
+      node: {
+        name: "vpn-eu",
+        region: "eu-west",
+        lastReport: null,
+        lastSeenAt: null,
+        endpointHost: "vpn.example.com",
+        transport: "OBFUSCATED",
+        obfuscation: null,
+      },
+    } as never);
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    // Расход — ровно RX+TX, без ложного сброса в 0.
+    expect(json.traffic.usedBytes).toBe(6_000_000_000);
+    // Есть telemetry → measuredAt заполнен (а не null = «данные ещё не получены»).
+    expect(json.traffic.measuredAt).toBe(measuredAt.toISOString());
+  });
+
+  it("телеметрии нет → measuredAt = null (данные ещё не получены)", async () => {
+    vi.mocked(getVpnSettings).mockResolvedValue({
+      ...MOCK_SETTINGS,
+      trafficLimitGb: 250,
+      usagePeriodDays: 30,
+      overLimitAction: "BLOCK",
+      throttleKbps: 2048,
+    } as never);
+    prismaMock.vpnPeer.findUnique.mockResolvedValue({
+      ...MOCK_PEER,
+      rxBytes: 0,
+      txBytes: 0,
+      usageResetAt: new Date("2026-09-01T00:00:00.000Z"),
+      usageUpdatedAt: null,
+      node: {
+        name: "vpn-eu",
+        region: "eu-west",
+        lastReport: null,
+        lastSeenAt: null,
+        endpointHost: "vpn.example.com",
+        transport: "OBFUSCATED",
+        obfuscation: null,
+      },
+    } as never);
+    const res = await GET();
+    const json = await res.json();
+    expect(json.traffic.measuredAt).toBeNull();
+  });
 });
 
 // ── DELETE ──────────────────────────────────────────────────────────────────
