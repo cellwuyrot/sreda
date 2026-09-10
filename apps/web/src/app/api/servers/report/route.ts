@@ -141,6 +141,13 @@ export async function POST(req: Request) {
      интерфейса они начинаются с нуля. Поэтому в расход идёт прирост, а не само
      число: иначе одна перезагрузка узла списала бы человеку весь его трафик
      второй раз, а откат счётчика назад дал бы отрицательный расход. */
+  /* NETLINK-NO-SILENT: провалы сохранения расхода больше не глотаются. Раньше
+     критический vpnPeer.update стоял с `.catch(() => null)`: любая ошибка записи
+     (недоступная БД, отсутствующая колонка после незакатанной миграции и т.п.)
+     тихо исчезала, rxBytes/txBytes/usageUpdatedAt не сохранялись, а отчёт всё
+     равно отвечал 200 — расход «не доходил до VpnPeer» без единой строки в логе.
+     Теперь такие ошибки считаем и по итогу цикла отдаём честный HTTP 500. */
+  let usageUpdateFailures = 0;
   if (node.kind === "VPN" && Array.isArray((body as { transfers?: unknown })?.transfers)) {
     const settings = await getVpnSettings();
     const transfers = (body as { transfers: unknown[] }).transfers.slice(0, 500);
@@ -170,8 +177,10 @@ export async function POST(req: Request) {
          молчащем узле выглядел в клиенте так же, как честный ноль. */
       const expired = periodExpired(peer.usageResetAt, settings.usagePeriodDays);
       const measuredAt = new Date();
-      await prisma.vpnPeer
-        .update({
+      const savedRx = expired ? deltaRx : peer.rxBytes + deltaRx;
+      const savedTx = expired ? deltaTx : peer.txBytes + deltaTx;
+      try {
+        await prisma.vpnPeer.update({
           where: { id: peer.id },
           data: expired
             ? {
@@ -189,9 +198,28 @@ export async function POST(req: Request) {
                 lastTx: rawTx,
                 usageUpdatedAt: measuredAt,
               },
-        })
-        .catch(() => null);
+        });
+        // Диагностика: id пира — внутренний, ключей/адресов тут нет.
+        console.log(`AWG report: updated peer=${peer.id} rx=${savedRx} tx=${savedTx}`);
+      } catch (err) {
+        usageUpdateFailures += 1;
+        console.error(
+          `AWG report: ОШИБКА обновления VpnPeer peer=${peer.id} rx=${savedRx} tx=${savedTx}:`,
+          err,
+        );
+      }
     }
+  }
+
+  /* Хотя бы одно сохранение расхода упало — отвечаем ошибкой, а не тихим 200.
+     Узел повторит отчёт через несколько секунд, действующие туннели при этом не
+     рвутся (список пиров узел меняет только на успешный ответ), зато проблема
+     учёта становится видимой и в логах узла, и по коду ответа. */
+  if (usageUpdateFailures > 0) {
+    return NextResponse.json(
+      { error: "peer usage update failed", failed: usageUpdateFailures },
+      { status: 500 },
+    );
   }
 
   const main = await prisma.serverNode.findFirst({

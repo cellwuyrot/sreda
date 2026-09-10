@@ -65,7 +65,21 @@ export async function POST(req: Request) {
   if (!targetUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const startedAt = new Date();
-  const expiresAt = computeExpiry(plan, startedAt);
+
+  /* FIX-RENEW: продление считается ОТ КОНЦА действующего оплаченного срока, а не
+     от сегодня. Раньше здесь было computeExpiry(plan, startedAt) = now + срок,
+     и досрочная оплата (например, 20.09 при сроке до 01.10) сжигала оставшиеся
+     оплаченные дни. Точка отсчёта — самая поздняя ещё действующая подписка.
+     Так же считает оплата по ссылке (lib/paymentLinks.ts) и VPN-подписка; приводим
+     поведение к единому. Пожизненные подписки (expiresAt = null) в базу не берём:
+     их бессрочность и так побеждает в расчёте конца срока в /api/vpn/me. */
+  const activePremium = await prisma.premiumSubscription.findFirst({
+    where: { userId, status: "active", expiresAt: { not: null, gt: startedAt } },
+    orderBy: { expiresAt: "desc" },
+    select: { expiresAt: true },
+  });
+  const base = activePremium?.expiresAt ?? startedAt;
+  const expiresAt = computeExpiry(plan, base);
 
   const subscription = await prisma.premiumSubscription.create({
     data: {
