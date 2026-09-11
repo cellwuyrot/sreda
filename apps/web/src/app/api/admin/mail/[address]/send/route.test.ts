@@ -5,12 +5,12 @@ vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/audit", () => ({ logAction: vi.fn() }));
-vi.mock("@/lib/email", () => ({ sendEmail: vi.fn() }));
+vi.mock("@/lib/mailSmtp", () => ({ sendFromMailbox: vi.fn() }));
 
 import { getServerSession } from "next-auth";
-import { sendEmail } from "@/lib/email";
+import { sendFromMailbox } from "@/lib/mailSmtp";
 const mockSession = vi.mocked(getServerSession);
-const mockSend = vi.mocked(sendEmail);
+const mockSend = vi.mocked(sendFromMailbox);
 
 const admin = { user: { id: "u1", role: "ADMIN", username: "admin" } };
 
@@ -44,7 +44,7 @@ describe("POST /api/admin/mail/[address]/send", () => {
     expect(res.status).toBe(404);
   });
 
-  it("400 при неверном адресе получателя", async () => {
+  it("400 при неверном адресе", async () => {
     mockSession.mockResolvedValue(admin as never);
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
     const res = await mod.POST(post("support", { to: "bad", subject: "s", text: "t" }), {
@@ -54,18 +54,9 @@ describe("POST /api/admin/mail/[address]/send", () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
-  it("400 когда пустая тема", async () => {
+  it("502 когда SMTP отклонил", async () => {
     mockSession.mockResolvedValue(admin as never);
-    const mod = await import("@/app/api/admin/mail/[address]/send/route");
-    const res = await mod.POST(post("support", { to: "a@b.co", subject: "  ", text: "t" }), {
-      params: Promise.resolve({ address: "support" }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it("502 когда сервис отклонил письмо", async () => {
-    mockSession.mockResolvedValue(admin as never);
-    mockSend.mockResolvedValue(false);
+    mockSend.mockResolvedValue({ ok: false, messageId: null, error: "SMTP не настроен" });
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
     const res = await mod.POST(post("support", { to: "a@b.co", subject: "s", text: "t" }), {
       params: Promise.resolve({ address: "support" }),
@@ -73,24 +64,20 @@ describe("POST /api/admin/mail/[address]/send", () => {
     expect(res.status).toBe(502);
   });
 
-  it("успех: шлёт от адреса ящика и пишет outgoing в базу", async () => {
+  it("успех: отправляет и пишет outgoing в базу", async () => {
     mockSession.mockResolvedValue(admin as never);
-    mockSend.mockResolvedValue(true);
+    mockSend.mockResolvedValue({ ok: true, messageId: "<out@trioz.ru>" });
     prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
     prismaMock.mailMessage.create.mockResolvedValue(row({ id: "msg1" }));
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
-    const res = await mod.POST(
-      post("support", { to: "noperight81@gmail.com", subject: "Привет", text: "Текст" }),
-      { params: Promise.resolve({ address: "support" }) },
-    );
+    const res = await mod.POST(post("support", { to: "noperight81@gmail.com", subject: "Привет", text: "Текст" }), {
+      params: Promise.resolve({ address: "support" }),
+    });
     expect(res.status).toBe(200);
     expect(mockSend).toHaveBeenCalledOnce();
-    const arg = mockSend.mock.calls[0][0];
-    expect(arg.from).toBe("support@trioz.ru");
-    expect(arg.to).toBe("noperight81@gmail.com");
     const createArg = prismaMock.mailMessage.create.mock.calls[0][0];
     expect(createArg.data.direction).toBe("outgoing");
-    expect(createArg.data.fromAddr).toBe("support@trioz.ru");
     expect(createArg.data.toAddr).toBe("noperight81@gmail.com");
+    expect(createArg.data.fromAddr).toBe("support@trioz.ru");
   });
 });

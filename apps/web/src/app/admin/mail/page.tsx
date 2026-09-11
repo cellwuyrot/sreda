@@ -69,6 +69,7 @@ export default function AdminMailPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [sending, setSending] = useState(false);
   const [composeTo, setComposeTo] = useState("");
@@ -109,6 +110,64 @@ export default function AdminMailPage() {
     if (selected) loadRows(selected, tab);
   }, [selected, tab, loadRows]);
 
+  // Проверить почту — сходить в ящики по IMAP и подтянуть новые входящие.
+  const poll = useCallback(async () => {
+    setPolling(true);
+    setNote(null);
+    try {
+      const res = await fetch("/api/mail/poll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selected ? { address: selected } : {}),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setNote(data?.errors?.[0]?.error || data?.error || "Не удалось проверить почту");
+      } else {
+        setNote(`Получено новых писем: ${data?.stored ?? 0}`);
+        if (selected) loadRows(selected, tab);
+        fetch("/api/admin/mail", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => d?.mailboxes && setMailboxes(d.mailboxes))
+          .catch(() => {});
+      }
+    } catch {
+      setNote("Не удалось проверить почту");
+    } finally {
+      setPolling(false);
+    }
+  }, [selected, tab, loadRows]);
+
+  // Отправить письмо от имени выбранного ящика.
+  const sendMail = useCallback(async () => {
+    if (!selected) return;
+    setSending(true);
+    setNote(null);
+    try {
+      const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: composeTo, subject: composeSubject, text: composeText }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setNote(data?.error || "Отправка не удалась");
+        return;
+      }
+      setComposeTo("");
+      setComposeSubject("");
+      setComposeText("");
+      setShowCompose(false);
+      setNote("Письмо отправлено");
+      setTab("outgoing");
+      loadRows(selected, "outgoing");
+    } catch {
+      setNote("Отправка не удалась");
+    } finally {
+      setSending(false);
+    }
+  }, [selected, composeTo, composeSubject, composeText, loadRows]);
+
   const archive = useCallback(
     async (id: string, archived: boolean) => {
       if (!selected) return;
@@ -127,37 +186,6 @@ export default function AdminMailPage() {
       }
     },
     [selected, tab, loadRows],
-  );
-
-  // PROJECT-MAIL: отправка письма от имени выбранного ящика. Уходит через
-  // почтовый сервис (от адреса ящика), сразу попадает в «Исходящие».
-  const sendMail = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!selected || sending) return;
-      setSending(true);
-      setNote(null);
-      try {
-        const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to: composeTo, subject: composeSubject, text: composeText }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(data?.error || "Не удалось отправить письмо");
-        setComposeTo("");
-        setComposeSubject("");
-        setComposeText("");
-        setShowCompose(false);
-        if (tab === "outgoing") loadRows(selected, "outgoing");
-        else setTab("outgoing");
-      } catch (err) {
-        setNote(err instanceof Error ? err.message : "Не удалось отправить письмо");
-      } finally {
-        setSending(false);
-      }
-    },
-    [selected, sending, composeTo, composeSubject, composeText, tab, loadRows],
   );
 
   if (status === "loading") {
@@ -226,14 +254,27 @@ export default function AdminMailPage() {
                     <p className="text-sm font-semibold text-neutral-900 dark:text-white">{activeBox.address}</p>
                     <p className="text-xs text-neutral-500 dark:text-gray-400">{activeBox.label}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={poll}
+                      disabled={polling}
+                      className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
+                    >
+                      <Icon path={<><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v5h-5" /></>} />
+                      {polling ? "Проверка…" : "Проверить почту"}
+                    </button>
                     <button
                       onClick={() => setShowCompose((v) => !v)}
-                      className="rounded-lg border border-violet-400/60 px-3 py-1.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-500/10 dark:border-cyan-500/50 dark:text-cyan-400 dark:hover:bg-cyan-500/10"
+                      className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500"
                     >
-                      {showCompose ? "Закрыть" : "Написать письмо"}
+                      <Icon path={<><path d="M12 5v14" /><path d="M5 12h14" /></>} />
+                      Написать
                     </button>
-                    <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-white/5">
+                  </div>
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-white/5">
                     {TABS.map((t) => (
                       <button
                         key={t.id}
@@ -247,55 +288,53 @@ export default function AdminMailPage() {
                         {t.label}
                       </button>
                     ))}
-                    </div>
                   </div>
                 </div>
 
-                {note && <p className="mt-3 text-xs text-red-500">{note}</p>}
+                {note && <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">{note}</p>}
 
                 {showCompose && (
-                  <form
-                    onSubmit={sendMail}
-                    className="mt-4 space-y-3 rounded-xl border border-violet-300/50 bg-violet-500/5 p-4 dark:border-cyan-500/30 dark:bg-cyan-500/5"
-                  >
-                    <p className="text-xs text-neutral-500 dark:text-gray-400">
-                      Письмо уйдёт от имени{" "}
-                      <span className="font-medium text-neutral-800 dark:text-white">{activeBox.address}</span>
+                  <div className="mt-4 space-y-2 rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
+                    <p className="text-xs font-medium text-neutral-500 dark:text-gray-400">
+                      Новое письмо от {activeBox.address}
                     </p>
                     <input
                       type="email"
-                      required
                       value={composeTo}
                       onChange={(e) => setComposeTo(e.target.value)}
-                      placeholder="Кому (email)"
-                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-800 dark:text-white dark:focus:border-cyan-500/50"
+                      placeholder="Кому (например noperight81@gmail.com)"
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:focus:border-cyan-500/50"
                     />
                     <input
                       type="text"
-                      required
                       value={composeSubject}
                       onChange={(e) => setComposeSubject(e.target.value)}
                       placeholder="Тема"
-                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-800 dark:text-white dark:focus:border-cyan-500/50"
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:focus:border-cyan-500/50"
                     />
                     <textarea
-                      required
                       value={composeText}
                       onChange={(e) => setComposeText(e.target.value)}
                       placeholder="Текст письма"
-                      rows={6}
-                      className="w-full resize-y rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-800 dark:text-white dark:focus:border-cyan-500/50"
+                      rows={5}
+                      className="w-full resize-y rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:focus:border-cyan-500/50"
                     />
                     <div className="flex justify-end gap-2">
                       <button
-                        type="submit"
+                        onClick={() => setShowCompose(false)}
+                        className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:text-neutral-800 dark:text-gray-400 dark:hover:text-white"
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        onClick={sendMail}
                         disabled={sending}
-                        className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-500 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                        className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
                       >
                         {sending ? "Отправка…" : "Отправить"}
                       </button>
                     </div>
-                  </form>
+                  </div>
                 )}
 
                 <div className="mt-4 space-y-2">

@@ -346,12 +346,11 @@ async function sendViaService(
   subject: string,
   html: string,
   text: string,
-  from?: string,
 ): Promise<boolean> {
   const info = await siteInfo();
   try {
     const res = await request("/api/emails", {
-      from_email: from || fromAddress(info),
+      from_email: fromAddress(info),
       to: email,
       subject,
       html,
@@ -376,14 +375,13 @@ async function sendViaSmtp(
   subject: string,
   html: string,
   text: string,
-  from?: string,
 ): Promise<boolean> {
   if (!legacyTransporter) return false;
   try {
     await legacyTransporter.sendMail({
       from: {
         name: "TrioZ",
-        address: from || process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@trioz.ru",
+        address: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@trioz.ru",
       },
       to: email,
       subject,
@@ -419,14 +417,6 @@ async function sendViaSmtp(
  * которое человек только что совершил.
  */
 export interface OutgoingEmail {
-  /**
-   * Адрес отправителя (@trioz.ru). Позволяет слать не только от noreply, но и
-   * от любого ящика домена (support@, sales@, …): ключ почтового сервиса
-   * привязан к домену, а не к одному адресу, поэтому from_email того же домена
-   * не упирается в защиту от подмены отправителя. Без него берётся адрес по
-   * умолчанию (sender сайта сервиса).
-   */
-  from?: string;
   to: string;
   subject: string;
   html: string;
@@ -436,8 +426,8 @@ export interface OutgoingEmail {
 export async function sendEmail(mail: OutgoingEmail): Promise<boolean> {
   if (!mail.to) return false;
   return useService
-    ? sendViaService(mail.to, mail.subject, mail.html, mail.text, mail.from)
-    : sendViaSmtp(mail.to, mail.subject, mail.html, mail.text, mail.from);
+    ? sendViaService(mail.to, mail.subject, mail.html, mail.text)
+    : sendViaSmtp(mail.to, mail.subject, mail.html, mail.text);
 }
 
 export async function sendVerificationEmail(
