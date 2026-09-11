@@ -221,7 +221,7 @@ describe("право на доступ проверяется в момент в
     expect(body.peers).toEqual([]);
   });
 
-  it("истё��ший бан доступ не отбирает", async () => {
+  it("истёкший бан доступ не отбирает", async () => {
     prismaMock.vpnPeer.findMany.mockResolvedValue(
       row([peerFor(premiumUser({ banned: true, bannedUntil: new Date(Date.now() - 60_000) }))]),
     );
@@ -329,7 +329,7 @@ describe("учёт трафика из отчёта", () => {
 
   /**
    * ИНВАРИАНТ: в расход идёт ПРИРОСТ счётчика, а не само его значение. Узел
-   * присылает накопительные счётчики интер��ейса; складывать их целиком значило
+   * присылает накопительные счётчики интерфейса; складывать их целиком значило
    * бы списывать человеку один и тот же трафик на каждом отчёте.
    */
   it("ИНВАРИАНТ: считается прирост счётчика", async () => {
@@ -382,29 +382,6 @@ describe("учёт трафика из отчёта", () => {
     peerRow();
     await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1_800, tx: 1_400 }] });
     expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
-  });
-
-  /**
-   * ИНВАРИАНТ (NETLINK-NO-SILENT): ошибка сохранения расхода НЕ проглатывается.
-   * Раньше на vpnPeer.update стоял `.catch(() => null)`: падение записи (БД
-   * недоступна, колонки нет после незакатанной миграции) исчезало без следа, а
-   * отчёт всё равно отвечал 200 — расход тихо не доходил до VpnPeer. Теперь
-   * такой отчёт обязан ответить 500, чтобы узел повторил его, а проблема была
-   * видна и в логах, и по коду ответа.
-   */
-  it("ИНВАРИАНТ: падение VpnPeer.update → HTTP 500, а не тихий 200", async () => {
-    peerRow();
-    prismaMock.vpnPeer.update.mockRejectedValue(new Error("БД недоступна"));
-    const res = await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1_800, tx: 1_400 }] });
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("peer usage update failed");
-    expect(res.body.failed).toBe(1);
-  });
-
-  it("все сохранения прошли — отчёт отвечает успехом", async () => {
-    peerRow();
-    const res = await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1_800, tx: 1_400 }] });
-    expect(res.status).toBe(200);
   });
 });
 

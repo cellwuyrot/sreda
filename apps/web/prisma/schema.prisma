@@ -2501,3 +2501,47 @@ model PaymentLink {
   @@index([reservedById])
   @@index([usedById])
 }
+
+// PROJECT-MAIL: почтовые ящики домена trioz.ru, привязанные к проекту, и
+// история писем по каждому из них. Ящики создаются на хостинге домена руками —
+// здесь хранится их реестр (единый список-источник в lib/projectMail.ts заводит
+// эти строки через seed) и последние письма для листинга в админ-панели.
+//
+// Почта у проекта уже работает: коды входа уходят через собственный почтовый
+// сервис (lib/email.ts). Входящие и исходящие письма клиентских/партнёрских
+// ящиков складывает сюда сервис через вебхук POST /api/mail/ingest.
+model ProjectMailbox {
+  id        String        @id @default(cuid())
+  address   String        @unique // info@trioz.ru
+  localPart String        @unique // info
+  label     String                 // короткая подпись для списка
+  purpose   String        @db.Text // назначение из брифа домена
+  active    Boolean       @default(true)
+  order     Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  MailMessage[]
+
+  @@index([order])
+}
+
+model MailMessage {
+  id        String         @id @default(cuid())
+  mailboxId String
+  mailbox   ProjectMailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  direction String         // incoming | outgoing
+  fromAddr  String
+  toAddr    String
+  subject   String         @db.Text
+  preview   String         @db.Text // короткий предпросмотр тела для строки списка
+  bodyText  String         @db.Text
+  bodyHtml  String?        @db.Text
+  // RFC Message-ID письма — чтобы вебхук не задваивал одно и то же сообщение.
+  messageId String?        @unique
+  archived  Boolean        @default(false)
+  sentAt    DateTime       @default(now())
+  createdAt DateTime       @default(now())
+
+  @@index([mailboxId, archived, sentAt])
+  @@index([mailboxId, direction, archived, sentAt])
+}

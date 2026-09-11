@@ -31,7 +31,6 @@ import {
   chainFillCommands,
   exitRules,
   parseDump,
-  telemetryFromPeers,
   mssCommands,
   parseInterfaceParams,
   peerChanges,
@@ -348,12 +347,12 @@ async function applyMss() {
 async function report(publicKey) {
   /* NETLINK-NO-SILENT: провал `awg show <iface> dump` больше НЕ превращается в
      пустой Map. Раньше `.catch(() => new Map())` отдавал пустой список как
-     успешный результат: отчёт уходил с нулевой телеметрией, transfers были
-     пусты, и расход просто не доходил до VpnPeer — при этом никакой ошибки
+     успешный результат: отчёт уходил на сервер с нулевой телеметрией, transfers
+     были пусты, и расход просто не доходил до VpnPeer — при этом никакой ошибки
      нигде не было видно. Теперь ошибку чтения счётчиков пишем в лог понятным
      текстом и НЕ выдаём пустой список за настоящий: поля telemetry в таком
-     отчёте опускаются, а VPN продолжает работать (приведение списка пиров
-     живёт в отдельном applyPeers). */
+     отчёте опускаются, а VPN продолжает работать (приведение списка пиров живёт
+     в отдельном applyPeers). */
   let peers = null;
   try {
     peers = await currentPeers();
@@ -366,13 +365,24 @@ async function report(publicKey) {
     peers = null;
   }
 
-  /* NETLINK-TRANSFERS: накопительные счётчики трафика и рукопожатия по каждому пиру.
-     Само построение — в чистой telemetryFromPeers() (rules.mjs), чтобы главный
-     инвариант «провал чтения счётчиков ≠ пустой отчёт» можно было проверить
-     тестом. parseDump() читает rxBytes/txBytes из `awg show dump` — это накопительные
-     счётчики с момента подъёма интерфейса; главный сервер сам считает прирост. */
+  // Рукопожатия — чтобы владелец видел в интерфейсе, живёт ли его подключение.
+  const handshakes = [];
   if (peers) {
     for (const [key, info] of peers) {
+      if (info.handshakeUnix > 0) handshakes.push({ publicKey: key, atMs: info.handshakeUnix * 1000 });
+    }
+  }
+
+  /* NETLINK-TRANSFERS: накопительные счётчики трафика по каждому пиру.
+
+     parseDump() читает rxBytes/txBytes из `wg show dump` — это накопительные
+     счётчики с момента подъёма интерфейса. Главный сервер само считает прирост,
+     сравнивая с предыдущим значением (lastRx/lastTx) и обрабатывая
+     сброс при перезапуске интерфейса (когда счётчик становится меньше предыдущего). */
+  const transfers = [];
+  if (peers) {
+    for (const [key, info] of peers) {
+      transfers.push({ publicKey: key, rx: info.rxBytes, tx: info.txBytes });
       /* Диагностика без утечки секретов: публичный ключ пира не секрет, но в лог
          идёт укороченным (8 символов) — этого хватает сопоставить строку с
          пиром, и полный ключ не оседает в журналах. rx/tx — накопительные байты
@@ -380,7 +390,6 @@ async function report(publicKey) {
       log(`AWG telemetry: peer=${key.slice(0, 8)}… rx=${info.rxBytes} tx=${info.txBytes}`);
     }
   }
-  const telemetry = telemetryFromPeers(peers);
 
   /* FIX-TELEMETRY: в отчёте больше нет ни версии агента, ни времени работы.
      Обоих полей никто не использовал для работы сервиса, зато они отвечают на
@@ -400,10 +409,10 @@ async function report(publicKey) {
        только для подстановки в клиентский профиль. */
     obfuscation: readInterfaceParams(),
     /* NETLINK-NO-SILENT: telemetry-поля кладём в отчёт ТОЛЬКО когда счётчики
-       реально прочитаны. Если `awg show dump` не удался, telemetryFromPeers(null)
-       возвращает пустой объект — handshakes/transfers опускаются целиком, и сервер
-       не трогает учёт (пустые массивы не перезаписывают расход нулями). */
-    ...telemetry,
+       реально прочитаны. Если `awg show dump` не удался, handshakes/transfers
+       опускаются целиком — сервер тогда не трогает учёт (пустые массивы не
+       перезаписывают сохранённый расход нулями). */
+    ...(peers ? { handshakes, transfers } : {}),
   };
 
   const res = await fetch(`${CONFIG.mainUrl}/api/servers/report`, {
@@ -459,7 +468,7 @@ async function main() {
   const privateKey = await ensurePrivateKey();
   const publicKey = await derivePublicKey(privateKey);
   /* FIX-LOGKEY: в журнал идёт лишь начало публичного ключа. Он не секретен, но
-     однозначно определяет узел, а журналы уезжают в сборщики и выдачи
+     однозначно определяет узел, а журналы уезжают в сборщи��и и выдачи
      поддержки; для сверки с панелью восьми символов достаточно. */
   log(`узел готов (агент ${VERSION}): интерфейс ${CONFIG.iface}, публичный ключ ${publicKey.slice(0, 8)}…`);
 
