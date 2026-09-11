@@ -1,6 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import "dotenv/config";
+// PROJECT-MAIL: единый список ящиков домена — относительный путь, чтобы seed
+// не зависел от алиасов tsconfig.
+import { PROJECT_MAILBOXES, mailboxAddress } from "../src/lib/projectMail";
 
 const prisma = new PrismaClient();
 
@@ -218,7 +221,7 @@ async function main() {
     create: {
       title: "Настольная Игра: Перо Измерений — Вельд'Эран",
       slug: "velderan-board-game",
-      content: `# Настольная Игра: Перо Измерений — Вельд'Эран\n\nНастольная игра «Вельд'Эран» — это стратегическая игра, действие которой разворачивается во вселенной T.Р.И.О.Z.\n\n## Особенности\n\n- Развивает стратегическое мышление\n- Уникальная механика измерений\n- Погружение в лор вселенной\n- Для 2-6 игроков\n\n*Задача данного направления — создание легкодоступных для людей развлекательных товаров, направленных на развитие мышления.*`,
+      content: `# Настольная Игра: Перо Измерений — Вельд'Эран\n\nНастольная игра «Вельд'Эран» — это стратегическая игра, действие которой разворачивается во вселенной T.Р.И.О.Z.\n\n## Особенности\n\n- Развивает стратегическое мышление\n- Уникальная механика измерений\n- Погружение в лор вселенной\n- Для 2-6 игроков\n\n*Задача данного направления — ��оздание легкодоступных для людей развлекательных товаров, направленных на развитие мышления.*`,
       category: "Игры",
       tags: "boardgame,velderan,pero",
       published: true,
@@ -237,6 +240,24 @@ async function main() {
       where: { windowKey: win.windowKey },
       update: win,
       create: win,
+    });
+  }
+
+  // PROJECT-MAIL: реестр почтовых ящиков домена. Единый список-источник живёт в
+  // lib/projectMail.ts, чтобы админ-панель и посев не разъезжались. Ящики уже
+  // созданы на хостинге домена — здесь только их метаданные для листинга.
+  for (const box of PROJECT_MAILBOXES) {
+    const address = mailboxAddress(box.localPart);
+    await prisma.projectMailbox.upsert({
+      where: { localPart: box.localPart },
+      update: { address, label: box.label, purpose: box.purpose, order: box.order },
+      create: {
+        address,
+        localPart: box.localPart,
+        label: box.label,
+        purpose: box.purpose,
+        order: box.order,
+      },
     });
   }
 
