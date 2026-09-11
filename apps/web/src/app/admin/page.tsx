@@ -96,6 +96,10 @@ const GROUPS: NavGroup[] = [
       { title: "Сборки", description: "APK и установщик Windows: сборка на сервере, журнал, готовые файлы", href: "/admin/builds", icon: <Icon path={<><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" /></>} /> },
       /* SERVER-MESH: реестр главного и дочерних серверов. */
       { title: "Серверы", description: "Главный сервер и дочерние узлы: связка, токены, состояние", href: "/admin/servers", icon: <Icon path={<><rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" /><path d="M7 8h.01M7 17h.01" /></>} />, countKey: "serverNodes" },
+      /* PROJECT-MAIL: почтовые ящики домена trioz.ru — входящие/исходящие,
+         скачивание письма (.eml) и архив. Почта уже висит на SMTP-сервере
+         (коды входа), поэтому дополнительные ящики — вопрос настройки домена. */
+      { title: "Email и обработка данных", description: "Почтовые ящики домена: входящие/исходящие, скачивание, архив", href: "/admin/mail", icon: <Icon path={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>} /> },
     ],
   },
 ];
@@ -202,7 +206,7 @@ export default function AdminPage() {
     { label: "Сообществ", value: stats.groups },
     { label: "Каналов", value: stats.channels },
     { label: "Статей", value: stats.articles },
-    /* Услуги — это записи раздела «Услуги» (их создаёт админ, а 11 штук
+    /* Услуги — это записи раздела «Услуги» (их соз��аёт админ, а 11 штук
        заводит prisma/seed.ts при первичном наполнении базы). Показываем
        сколько из них опубликовано, чтобы число не выглядело взявшимся
        из ниоткуда. */
