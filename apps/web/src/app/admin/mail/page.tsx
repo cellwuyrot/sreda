@@ -69,7 +69,6 @@ export default function AdminMailPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const [polling, setPolling] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [sending, setSending] = useState(false);
   const [composeTo, setComposeTo] = useState("");
@@ -108,34 +107,6 @@ export default function AdminMailPage() {
 
   useEffect(() => {
     if (selected) loadRows(selected, tab);
-  }, [selected, tab, loadRows]);
-
-  // Проверить почту — сходить в ящики по IMAP и подтянуть новые входящие.
-  const poll = useCallback(async () => {
-    setPolling(true);
-    setNote(null);
-    try {
-      const res = await fetch("/api/mail/poll", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selected ? { address: selected } : {}),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setNote(data?.errors?.[0]?.error || data?.error || "Не удалось проверить почту");
-      } else {
-        setNote(`Получено новых писем: ${data?.stored ?? 0}`);
-        if (selected) loadRows(selected, tab);
-        fetch("/api/admin/mail", { cache: "no-store" })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => d?.mailboxes && setMailboxes(d.mailboxes))
-          .catch(() => {});
-      }
-    } catch {
-      setNote("Не удалось проверить почту");
-    } finally {
-      setPolling(false);
-    }
   }, [selected, tab, loadRows]);
 
   // Отправить письмо от имени выбранного ящика.
@@ -255,14 +226,6 @@ export default function AdminMailPage() {
                     <p className="text-xs text-neutral-500 dark:text-gray-400">{activeBox.label}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={poll}
-                      disabled={polling}
-                      className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
-                    >
-                      <Icon path={<><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v5h-5" /></>} />
-                      {polling ? "Проверка…" : "Проверить почту"}
-                    </button>
                     <button
                       onClick={() => setShowCompose((v) => !v)}
                       className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500"
