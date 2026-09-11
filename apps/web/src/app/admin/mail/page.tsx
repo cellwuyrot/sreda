@@ -69,6 +69,11 @@ export default function AdminMailPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [showCompose, setShowCompose] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [composeTo, setComposeTo] = useState("");
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeText, setComposeText] = useState("");
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/connect");
@@ -122,6 +127,37 @@ export default function AdminMailPage() {
       }
     },
     [selected, tab, loadRows],
+  );
+
+  // PROJECT-MAIL: отправка письма от имени выбранного ящика. Уходит через
+  // почтовый сервис (от адреса ящика), сразу попадает в «Исходящие».
+  const sendMail = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selected || sending) return;
+      setSending(true);
+      setNote(null);
+      try {
+        const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: composeTo, subject: composeSubject, text: composeText }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "Не удалось отправить письмо");
+        setComposeTo("");
+        setComposeSubject("");
+        setComposeText("");
+        setShowCompose(false);
+        if (tab === "outgoing") loadRows(selected, "outgoing");
+        else setTab("outgoing");
+      } catch (err) {
+        setNote(err instanceof Error ? err.message : "Не удалось отправить письмо");
+      } finally {
+        setSending(false);
+      }
+    },
+    [selected, sending, composeTo, composeSubject, composeText, tab, loadRows],
   );
 
   if (status === "loading") {
@@ -190,7 +226,14 @@ export default function AdminMailPage() {
                     <p className="text-sm font-semibold text-neutral-900 dark:text-white">{activeBox.address}</p>
                     <p className="text-xs text-neutral-500 dark:text-gray-400">{activeBox.label}</p>
                   </div>
-                  <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-white/5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowCompose((v) => !v)}
+                      className="rounded-lg border border-violet-400/60 px-3 py-1.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-500/10 dark:border-cyan-500/50 dark:text-cyan-400 dark:hover:bg-cyan-500/10"
+                    >
+                      {showCompose ? "Закрыть" : "Написать письмо"}
+                    </button>
+                    <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-white/5">
                     {TABS.map((t) => (
                       <button
                         key={t.id}
@@ -204,10 +247,56 @@ export default function AdminMailPage() {
                         {t.label}
                       </button>
                     ))}
+                    </div>
                   </div>
                 </div>
 
                 {note && <p className="mt-3 text-xs text-red-500">{note}</p>}
+
+                {showCompose && (
+                  <form
+                    onSubmit={sendMail}
+                    className="mt-4 space-y-3 rounded-xl border border-violet-300/50 bg-violet-500/5 p-4 dark:border-cyan-500/30 dark:bg-cyan-500/5"
+                  >
+                    <p className="text-xs text-neutral-500 dark:text-gray-400">
+                      Письмо уйдёт от имени{" "}
+                      <span className="font-medium text-neutral-800 dark:text-white">{activeBox.address}</span>
+                    </p>
+                    <input
+                      type="email"
+                      required
+                      value={composeTo}
+                      onChange={(e) => setComposeTo(e.target.value)}
+                      placeholder="Кому (email)"
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-800 dark:text-white dark:focus:border-cyan-500/50"
+                    />
+                    <input
+                      type="text"
+                      required
+                      value={composeSubject}
+                      onChange={(e) => setComposeSubject(e.target.value)}
+                      placeholder="Тема"
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-800 dark:text-white dark:focus:border-cyan-500/50"
+                    />
+                    <textarea
+                      required
+                      value={composeText}
+                      onChange={(e) => setComposeText(e.target.value)}
+                      placeholder="Текст письма"
+                      rows={6}
+                      className="w-full resize-y rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-800 dark:text-white dark:focus:border-cyan-500/50"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="submit"
+                        disabled={sending}
+                        className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-500 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                      >
+                        {sending ? "Отправка…" : "Отправить"}
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 <div className="mt-4 space-y-2">
                   {loadingRows && <p className="text-sm text-neutral-400">Загрузка писем…</p>}
