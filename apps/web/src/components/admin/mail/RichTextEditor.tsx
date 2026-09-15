@@ -19,7 +19,7 @@ function ToolbarButton({ label, title, onAction }: ToolbarButtonProps) {
         event.preventDefault();
         onAction();
       }}
-      style={{ padding: "4px 8px", border: "1px solid #d7d7e0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 13 }}
+      className="inline-flex h-8 items-center justify-center rounded-md border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:border-cyan-400/40 dark:hover:bg-cyan-500/10 dark:hover:text-cyan-300"
     >
       {label}
     </button>
@@ -86,25 +86,25 @@ export function RichTextEditor({ html, onChange }: { html: string; onChange: (ht
   };
 
   return (
-    <div style={{ border: "1px solid #d7d7e0", borderRadius: 8, overflow: "hidden" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: 6, borderBottom: "1px solid #eee", background: "#fafafc" }}>
-        <ToolbarButton label="B" onAction={() => execCommand("bold")} />
-        <ToolbarButton label="I" onAction={() => execCommand("italic")} />
-        <ToolbarButton label="U" onAction={() => execCommand("underline")} />
-        <ToolbarButton label="S" onAction={() => execCommand("strikeThrough")} />
+    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-white/10 dark:bg-neutral-950/40">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-200 bg-neutral-50 p-2 dark:border-white/10 dark:bg-white/[0.025]">
+        <ToolbarButton label="B" title="Жирный" onAction={() => execCommand("bold")} />
+        <ToolbarButton label="I" title="Курсив" onAction={() => execCommand("italic")} />
+        <ToolbarButton label="U" title="Подчёркнутый" onAction={() => execCommand("underline")} />
+        <ToolbarButton label="S" title="Зачёркнутый" onAction={() => execCommand("strikeThrough")} />
         <ToolbarButton label="H1" onAction={() => execCommand("formatBlock", "<h1>")} />
         <ToolbarButton label="H2" onAction={() => execCommand("formatBlock", "<h2>")} />
         <ToolbarButton label="H3" onAction={() => execCommand("formatBlock", "<h3>")} />
         <ToolbarButton label="• Список" onAction={() => execCommand("insertUnorderedList")} />
         <ToolbarButton label="1. Список" onAction={() => execCommand("insertOrderedList")} />
-        <ToolbarButton label="❝" onAction={() => execCommand("formatBlock", "<blockquote>")} />
+        <ToolbarButton label="❝" title="Цитата" onAction={() => execCommand("formatBlock", "<blockquote>")} />
         <ToolbarButton label="Ссылка" onAction={insertLink} />
-        <ToolbarButton label="—" onAction={() => execCommand("insertHorizontalRule")} />
-        <ToolbarButton label="←" onAction={() => execCommand("justifyLeft")} />
-        <ToolbarButton label="≡" onAction={() => execCommand("justifyCenter")} />
-        <ToolbarButton label="→" onAction={() => execCommand("justifyRight")} />
-        <ToolbarButton label="↶" onAction={() => execCommand("undo")} />
-        <ToolbarButton label="↷" onAction={() => execCommand("redo")} />
+        <ToolbarButton label="—" title="Разделитель" onAction={() => execCommand("insertHorizontalRule")} />
+        <ToolbarButton label="←" title="По левому краю" onAction={() => execCommand("justifyLeft")} />
+        <ToolbarButton label="≡" title="По центру" onAction={() => execCommand("justifyCenter")} />
+        <ToolbarButton label="→" title="По правому краю" onAction={() => execCommand("justifyRight")} />
+        <ToolbarButton label="↶" title="Отменить" onAction={() => execCommand("undo")} />
+        <ToolbarButton label="↷" title="Повторить" onAction={() => execCommand("redo")} />
         <ToolbarButton label="Картинка" onAction={insertImage} />
         <ToolbarButton label="CTA" onAction={insertCTA} />
         <ToolbarButton label="Блок" onAction={insertCallout} />
@@ -115,7 +115,7 @@ export function RichTextEditor({ html, onChange }: { html: string; onChange: (ht
             setFontSize(Number(event.currentTarget.value));
             event.currentTarget.value = "";
           }}
-          style={{ border: "1px solid #d7d7e0", borderRadius: 6, fontSize: 13 }}
+          className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-xs text-neutral-700 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-950 dark:text-gray-300 dark:focus:border-cyan-400/60"
         >
           <option value="">Размер</option>
           {FONT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
@@ -127,10 +127,10 @@ export function RichTextEditor({ html, onChange }: { html: string; onChange: (ht
             execCommand("foreColor", event.currentTarget.value);
             event.currentTarget.value = "";
           }}
-          style={{ border: "1px solid #d7d7e0", borderRadius: 6, fontSize: 13 }}
+          className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-xs text-neutral-700 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-950 dark:text-gray-300 dark:focus:border-cyan-400/60"
         >
           <option value="">Цвет</option>
-          {COLORS.map((color) => <option key={color} value={color} style={{ color }}>{color}</option>)}
+          {COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
         </select>
       </div>
       <div
@@ -138,7 +138,8 @@ export function RichTextEditor({ html, onChange }: { html: string; onChange: (ht
         contentEditable
         onInput={emit}
         suppressContentEditableWarning
-        style={{ minHeight: 240, padding: 16, fontFamily: "Arial, Helvetica, system-ui, sans-serif", fontSize: 16, lineHeight: 1.6, outline: "none" }}
+        className="min-h-[280px] bg-white px-4 py-3 text-[15px] leading-6 text-neutral-900 outline-none dark:bg-neutral-950/20 dark:text-gray-100"
+        style={{ fontFamily: "Arial, Helvetica, system-ui, sans-serif" }}
       />
     </div>
   );
