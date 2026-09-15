@@ -1338,8 +1338,7 @@ function ConnectPageInner() {
                         setGroupDetail({ ...groupDetail, rules });
                       }}
                       onAutoSelectChannel={() => {
-                        const entryId = pickEntryChannel(groupDetail.channels, parseGroupTheme(groupDetail.theme));
-                        const entryChannel = groupDetail.channels.find((c) => c.id === entryId);
+                        const entryChannel = pickEntryChannel(groupDetail.channels, parseGroupTheme(groupDetail.theme));
                         if (entryChannel) handleChannelClick(entryChannel);
                       }}
                     />
