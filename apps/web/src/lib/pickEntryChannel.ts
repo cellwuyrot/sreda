@@ -1,13 +1,13 @@
+import type { Channel } from "@/components/connect/groupTypes";
 import { parseGroupTheme } from "@/lib/groupTheme";
 
-export interface EntryChannel { id: string; name?: string; type?: string; }
 export interface EntryChannelTheme { defaultChannelId?: string; }
 
-export function isTextChannel(c: EntryChannel): boolean {
+export function isTextChannel(c: Channel): boolean {
   return !c.type || c.type === "TEXT" || c.type === "text";
 }
 
-export function pickEntryChannel(channels: EntryChannel[], themeOrRaw: unknown): EntryChannel | null {
+export function pickEntryChannel(channels: Channel[], themeOrRaw: unknown): Channel | null {
   const text = (channels || []).filter(isTextChannel);
   if (text.length === 0) return null;
   const theme: EntryChannelTheme = typeof themeOrRaw === "string"
