@@ -605,7 +605,7 @@ export default function GroupSettingsModal({
 						title="Дизайн сообщества"
 						subtitle="Фон переписки и каналов, шрифт, баннер и частицы. Видят все участники."
 					>
-						<DesignPanel groupId={group.id} theme={group.theme ?? null} onSaved={() => onUpdated()} />
+						<DesignPanel groupId={group.id} theme={group.theme ?? null} channels={group.channels} onSaved={() => onUpdated()} />
 					</Section>
 				);
 			case "overview":

@@ -70,6 +70,8 @@ import { requestNotifyPermission } from "@/lib/appNotify"; // ANDROID-NOTIFY
 import ConnectionLostShield from "@/components/connect/overlays/ConnectionLostShield";
 import PremiumInfoModal from "@/components/connect/overlays/PremiumInfoModal";
 import PageConfirmModal from "@/components/connect/overlays/PageConfirmModal";
+import { parseGroupTheme } from "@/lib/groupTheme";
+import { pickEntryChannel } from "@/lib/pickEntryChannel";
 
 /* ─── Mobile view state ─── */
 /* MOBILE-DRAWER: экранов в стеке два — список сообществ и чат группы.
@@ -286,9 +288,7 @@ function ConnectPageInner() {
        иначе на кадр подставится канал предыдущей. */
     if (activeSection !== "communities" || !groupDetail || groupDetail.id !== selectedGroup) return;
     if (selectedChannel && groupDetail.channels.some((c) => c.id === selectedChannel)) return;
-    const first =
-      groupDetail.channels.find((c) => c.type === "TEXT" && !c.parentId) ??
-      groupDetail.channels.find((c) => c.type === "TEXT");
+    const first = pickEntryChannel(groupDetail.channels, parseGroupTheme(groupDetail.theme));
     if (first) {
       setSelectedChannel(first.id);
     } else {
@@ -354,7 +354,7 @@ function ConnectPageInner() {
         // Правила ещё не приняты → показываем гейт правил, канал не открываем.
         // Условие точно совпадает с веткой рендера GroupRulesGate ниже.
         const rulesGated = !data.isMain && !!data.rules && !data.rulesAccepted && data.myRole === "MEMBER";
-        const firstText = data.channels.find((c) => c.type === "TEXT");
+        const firstText = pickEntryChannel(data.channels, parseGroupTheme(data.theme));
         setSelectedChannel(!pendingDeepLink && !rulesGated && firstText ? firstText.id : null);
       }
     }
@@ -1338,8 +1338,9 @@ function ConnectPageInner() {
                         setGroupDetail({ ...groupDetail, rules });
                       }}
                       onAutoSelectChannel={() => {
-                        const firstText = groupDetail.channels.find(c => c.type === "TEXT");
-                        if (firstText) handleChannelClick(firstText);
+                        const entryId = pickEntryChannel(groupDetail.channels, parseGroupTheme(groupDetail.theme));
+                        const entryChannel = groupDetail.channels.find((c) => c.id === entryId);
+                        if (entryChannel) handleChannelClick(entryChannel);
                       }}
                     />
                   )}
