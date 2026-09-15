@@ -16,20 +16,22 @@ export interface MailSendLogInput {
 
 export async function logMailSend(input: MailSendLogInput): Promise<void> {
   try {
-    await (prisma as any).mailSendLog.create({ data: {
-      userId: input.userId || null,
-      userName: input.userName,
-      fromAddress: input.fromAddress,
-      fromName: input.fromName || null,
-      toAddr: input.to.join(", "),
-      ccAddr: input.cc?.length ? input.cc.join(", ") : null,
-      bccAddr: input.bcc?.length ? input.bcc.join(", ") : null,
-      subject: input.subject,
-      attachmentCount: input.attachmentCount,
-      templateKey: input.templateKey || null,
-      messageId: input.messageDbId || null,
-    } });
-  } catch (e) {
-    console.log("[mail-audit]", JSON.stringify({ ...input, to: input.to.join(","), at: new Date().toISOString() }));
+    await prisma.mailSendLog.create({
+      data: {
+        userId: input.userId || null,
+        userName: input.userName,
+        fromAddress: input.fromAddress,
+        fromName: input.fromName || null,
+        toAddr: input.to.join(", "),
+        ccAddr: input.cc?.length ? input.cc.join(", ") : null,
+        bccAddr: input.bcc?.length ? input.bcc.join(", ") : null,
+        subject: input.subject,
+        attachmentCount: input.attachmentCount,
+        templateKey: input.templateKey || null,
+        messageId: input.messageDbId || null,
+      },
+    });
+  } catch (error: unknown) {
+    console.log("[mail-audit]", JSON.stringify({ ...input, to: input.to.join(","), error: error instanceof Error ? error.message : String(error), at: new Date().toISOString() }));
   }
 }

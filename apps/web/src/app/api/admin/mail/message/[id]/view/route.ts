@@ -1,14 +1,38 @@
-import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const s = await getServerSession(authOptions);
-  if (!s?.user || (s.user as any).role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user || session.user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await ctx.params;
-  const m = await (prisma as any).mailMessage.findUnique({ where: { id }, include: { attachments: true } }).catch(() => null);
-  if (!m) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
-  const message = { id: m.id, fromAddr: m.fromAddr, fromName: m.fromName, toAddr: m.toAddr, ccAddr: m.ccAddr, bccAddr: m.bccAddr, subject: m.subject, bodyHtml: m.bodyHtml, templateKey: m.templateKey, sentByName: m.sentByName, sentAt: m.createdAt, attachments: (m.attachments || []).map((a: any) => ({ id: a.id, name: a.name, mime: a.mime, size: a.size, inline: a.inline, url: `/api/admin/mail/attachment/${a.id}` })) };
-  return NextResponse.json({ message });
+  const message = await prisma.mailMessage.findUnique({
+    where: { id },
+    include: { attachments: true },
+  }).catch(() => null);
+  if (!message) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
+  return NextResponse.json({
+    message: {
+      id: message.id,
+      fromAddr: message.fromAddr,
+      fromName: message.fromName,
+      toAddr: message.toAddr,
+      ccAddr: message.ccAddr,
+      bccAddr: message.bccAddr,
+      subject: message.subject,
+      bodyHtml: message.bodyHtml,
+      templateKey: message.templateKey,
+      sentByName: message.sentByName,
+      sentAt: message.createdAt,
+      attachments: message.attachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        mime: attachment.mime,
+        size: attachment.size,
+        inline: attachment.inline,
+        url: `/api/admin/mail/attachment/${attachment.id}`,
+      })),
+    },
+  });
 }
