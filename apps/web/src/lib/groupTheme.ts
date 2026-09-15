@@ -96,6 +96,8 @@ export interface GroupTheme {
 	preset: string;
 	/** Оформление сообщества главнее личного Premium-оформления. */
 	priority: boolean;
+	/** GROUP-SKIN: id текстового канала по умолчанию при входе ("" — авто). */
+	defaultChannelId: string;
 	/** Область переписки. */
 	chat: GroupSurface;
 	/** Панель текстовых каналов. */
@@ -170,6 +172,7 @@ export const GROUP_THEME_DEFAULT: GroupTheme = {
 	enabled: false,
 	preset: "none",
 	priority: true,
+	defaultChannelId: "",
 	chat: surface(),
 	channels: surface(),
 	voice: surface(),
@@ -383,6 +386,8 @@ export function normalizeGroupTheme(raw: unknown): GroupTheme {
 		enabled: bool(r.enabled, base.enabled),
 		preset: typeof r.preset === "string" && r.preset.length <= 24 ? r.preset : "custom",
 		priority: bool(r.priority, base.priority),
+		defaultChannelId:
+			typeof r.defaultChannelId === "string" ? r.defaultChannelId.slice(0, 40) : base.defaultChannelId,
 		chat: normalizeSurface(r.chat, base.chat),
 		channels: normalizeSurface(r.channels, base.channels),
 		voice: normalizeSurface(r.voice, base.voice),

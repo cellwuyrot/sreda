@@ -42,6 +42,8 @@ interface Props {
   theme: string | null | undefined;
   /** Сообщить родителю о сохранённом оформлении, чтобы вид обновился без перезагрузки. */
   onSaved?: (theme: string) => void;
+  /** GROUP-SKIN: каналы сообщества для выбора канала по умолчанию. */
+  channels?: { id: string; name: string; type: string; parentId?: string | null }[];
 }
 
 /* Палитра фиксированная: раздел живёт внутри тёмной модалки настроек. */
@@ -55,7 +57,7 @@ const FIELD =
 /** Картинки лежат в самой записи темы, поэтому потолок на файл скромный. */
 const MAX_UPLOAD = 320 * 1024;
 
-type TabId = "presets" | "surfaces" | "banner" | "accent" | "particles";
+type TabId = "presets" | "surfaces" | "banner" | "accent" | "particles" | "entry";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "presets", label: "Пресеты" },
@@ -63,6 +65,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "banner", label: "Баннер" },
   { id: "accent", label: "Цвет и шрифт" },
   { id: "particles", label: "Частицы" },
+  { id: "entry", label: "Канал входа" },
 ];
 
 /* ───────────────────────── Мелкие элементы ───────────────────────── */
@@ -541,7 +544,7 @@ function ThemePreview({ theme, narrow }: { theme: GroupTheme; narrow: boolean })
 
 /* ─────────────────────── Основной компонент ───────────────────── */
 
-export default function DesignPanel({ groupId, theme, onSaved }: Props) {
+export default function DesignPanel({ groupId, theme, onSaved, channels }: Props) {
   const initial = useMemo(() => parseGroupTheme(theme ?? null), [theme]);
   const [draft, setDraft] = useState<GroupTheme>(initial);
   const [tab, setTab] = useState<TabId>("presets");
@@ -654,6 +657,34 @@ export default function DesignPanel({ groupId, theme, onSaved }: Props) {
             </button>
           ))}
         </div>
+
+        {tab === "entry" ? (
+          <div className={`${CARD} space-y-2`}>
+            <p className="text-[11px] leading-snug text-white/45">
+              GROUP-SKIN: какой текстовый канал открывается при входе в сообщество.
+            </p>
+            <select
+              className={FIELD}
+              value={draft.defaultChannelId || ""}
+              onChange={(e) => patch({ defaultChannelId: e.target.value })}
+            >
+              <option value="">Авто (первый текстовый канал)</option>
+              {(channels || [])
+                .filter((c) => c.type === "TEXT" || c.type === "text")
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    # {c.name}
+                  </option>
+                ))}
+            </select>
+            {draft.defaultChannelId &&
+            !(channels || []).some((c) => c.id === draft.defaultChannelId) ? (
+              <p className="text-[11px] text-amber-300/80">
+                Выбранный канал больше не существует — откроется первый текстовый.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {tab === "presets" ? (
           <div className={`${CARD} space-y-2`}>

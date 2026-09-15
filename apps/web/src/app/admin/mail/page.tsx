@@ -6,16 +6,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAdminBackHref, useAdminBackLabel } from "@/components/admin/useAdminBackHref";
+import MailComposer, { type ComposerTemplate, type ReplyContext } from "@/components/admin/mail/MailComposer";
+import SentMessageView from "@/components/admin/mail/SentMessageView";
 
 /**
  * PROJECT-MAIL: раздел «Email и обработка данных» админ-панели.
  *
- * Слева — ящики домена trioz.ru (info, sales, …), справа — история писем
- * выбранного ящика: входящие, исходящие и архив, до 10 писем в листинге.
- * Каждое письмо можно скачать (.eml) и архивировать / вернуть из архива.
- *
- * Сами ящики заводятся на хостинге домена и посевом базы — здесь их не
- * создают и не удаляют, только читают переписку.
+ * Слева — ящики домена trioz.ru, справа — история писем выбранного ящика
+ * (входящие/исходящие/архив) и полноценный композер письма: получатели
+ * To/CC/BCC, тема, Rich Text/Markdown, вложения, подпись, шаблоны,
+ * предпросмотр, черновики и подтверждение перед отправкой.
  */
 
 type Direction = "incoming" | "outgoing";
@@ -63,6 +63,7 @@ export default function AdminMailPage() {
   const router = useRouter();
 
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [templates, setTemplates] = useState<ComposerTemplate[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("incoming");
   const [rows, setRows] = useState<MailRow[]>([]);
@@ -70,10 +71,8 @@ export default function AdminMailPage() {
   const [loadingRows, setLoadingRows] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [showCompose, setShowCompose] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [composeTo, setComposeTo] = useState("");
-  const [composeSubject, setComposeSubject] = useState("");
-  const [composeText, setComposeText] = useState("");
+  const [replyCtx, setReplyCtx] = useState<ReplyContext | null>(null);
+  const [viewId, setViewId] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/connect");
@@ -89,6 +88,10 @@ export default function AdminMailPage() {
       })
       .catch(() => {})
       .finally(() => setLoadingList(false));
+    fetch("/api/admin/mail/templates", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setTemplates(data?.templates ?? []))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -109,40 +112,23 @@ export default function AdminMailPage() {
     if (selected) loadRows(selected, tab);
   }, [selected, tab, loadRows]);
 
-  // Отправить письмо от имени выбранного ящика.
-  const sendMail = useCallback(async () => {
-    if (!selected) return;
-    setSending(true);
-    setNote(null);
-    try {
-      const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: composeTo, subject: composeSubject, text: composeText }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setNote(data?.error || "Отправка не удалась");
-        return;
-      }
-      setComposeTo("");
-      setComposeSubject("");
-      setComposeText("");
-      setShowCompose(false);
-      setNote("Письмо отправлено");
-      setTab("outgoing");
-      loadRows(selected, "outgoing");
-    } catch {
-      setNote("Отправка не удалась");
-    } finally {
-      setSending(false);
-    }
-  }, [selected, composeTo, composeSubject, composeText, loadRows]);
+  const openCompose = useCallback((reply?: ReplyContext | null) => {
+    setReplyCtx(reply || null);
+    setShowCompose(true);
+    setViewId(null);
+  }, []);
+
+  const onSent = useCallback(() => {
+    setShowCompose(false);
+    setReplyCtx(null);
+    setNote("Письмо отправлено");
+    setTab("outgoing");
+    if (selected) loadRows(selected, "outgoing");
+  }, [selected, loadRows]);
 
   const archive = useCallback(
     async (id: string, archived: boolean) => {
       if (!selected) return;
-      // Оптимистично убираем строку — она уйдёт в другую вкладку.
       setRows((prev) => prev.filter((m) => m.id !== id));
       try {
         const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}`, {
@@ -185,7 +171,7 @@ export default function AdminMailPage() {
           </Link>
           <h1 className="mt-2 text-lg font-semibold text-neutral-900 dark:text-white">Email и обработка данных</h1>
           <p className="mt-1 text-sm text-neutral-500 dark:text-gray-400">
-            Почтовые ящики домена trioz.ru: входящие и исходящие письма, скачивание и архив.
+            Почтовые ящики домена trioz.ru: композер писем, история, скачивание и архив.
           </p>
         </div>
 
@@ -198,7 +184,7 @@ export default function AdminMailPage() {
               return (
                 <button
                   key={box.localPart}
-                  onClick={() => setSelected(box.localPart)}
+                  onClick={() => { setSelected(box.localPart); setShowCompose(false); setViewId(null); }}
                   className={`w-full rounded-xl border px-3.5 py-3 text-left transition-all duration-200 ${
                     isActive
                       ? "border-violet-400/60 bg-violet-500/5 dark:border-cyan-500/50 dark:bg-cyan-500/5"
@@ -216,7 +202,7 @@ export default function AdminMailPage() {
             })}
           </div>
 
-          {/* Правая колонка: листинг */}
+          {/* Правая колонка */}
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
             {activeBox ? (
               <>
@@ -227,14 +213,33 @@ export default function AdminMailPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => setShowCompose((v) => !v)}
+                      onClick={() => (showCompose ? setShowCompose(false) : openCompose(null))}
                       className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500"
                     >
                       <Icon path={<><path d="M12 5v14" /><path d="M5 12h14" /></>} />
-                      Написать
+                      {showCompose ? "Свернуть" : "Написать"}
                     </button>
                   </div>
                 </div>
+
+                {showCompose && (
+                  <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
+                    <MailComposer
+                      mailboxes={mailboxes.map((m) => ({ localPart: m.localPart, address: m.address, label: m.label }))}
+                      templates={templates}
+                      initialMailbox={selected || undefined}
+                      replyTo={replyCtx}
+                      onSent={onSent}
+                      onCancel={() => { setShowCompose(false); setReplyCtx(null); }}
+                    />
+                  </div>
+                )}
+
+                {viewId && (
+                  <div className="mt-4 rounded-xl border border-neutral-200 p-4 dark:border-white/10">
+                    <SentMessageView messageId={viewId} onClose={() => setViewId(null)} />
+                  </div>
+                )}
 
                 <div className="mt-4 flex justify-end">
                   <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-white/5">
@@ -256,50 +261,6 @@ export default function AdminMailPage() {
 
                 {note && <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">{note}</p>}
 
-                {showCompose && (
-                  <div className="mt-4 space-y-2 rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
-                    <p className="text-xs font-medium text-neutral-500 dark:text-gray-400">
-                      Новое письмо от {activeBox.address}
-                    </p>
-                    <input
-                      type="email"
-                      value={composeTo}
-                      onChange={(e) => setComposeTo(e.target.value)}
-                      placeholder="Кому (например noperight81@gmail.com)"
-                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:focus:border-cyan-500/50"
-                    />
-                    <input
-                      type="text"
-                      value={composeSubject}
-                      onChange={(e) => setComposeSubject(e.target.value)}
-                      placeholder="Тема"
-                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:focus:border-cyan-500/50"
-                    />
-                    <textarea
-                      value={composeText}
-                      onChange={(e) => setComposeText(e.target.value)}
-                      placeholder="Текст письма"
-                      rows={5}
-                      className="w-full resize-y rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:focus:border-cyan-500/50"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => setShowCompose(false)}
-                        className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:text-neutral-800 dark:text-gray-400 dark:hover:text-white"
-                      >
-                        Отмена
-                      </button>
-                      <button
-                        onClick={sendMail}
-                        disabled={sending}
-                        className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
-                      >
-                        {sending ? "Отправка…" : "Отправить"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 <div className="mt-4 space-y-2">
                   {loadingRows && <p className="text-sm text-neutral-400">Загрузка писем…</p>}
                   {!loadingRows && rows.length === 0 && (
@@ -308,10 +269,7 @@ export default function AdminMailPage() {
                     </p>
                   )}
                   {rows.map((m) => (
-                    <div
-                      key={m.id}
-                      className="rounded-xl border border-neutral-200 px-3.5 py-3 dark:border-white/10"
-                    >
+                    <div key={m.id} className="rounded-xl border border-neutral-200 px-3.5 py-3 dark:border-white/10">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -331,6 +289,27 @@ export default function AdminMailPage() {
                           <p className="mt-1 line-clamp-2 text-xs text-neutral-400 dark:text-gray-500">{m.preview}</p>
                         </div>
                         <div className="flex flex-shrink-0 flex-col gap-1.5">
+                          {m.direction === "outgoing" && (
+                            <button
+                              onClick={() => { setViewId(m.id); setShowCompose(false); }}
+                              className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
+                            >
+                              <Icon path={<><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>} />
+                              Просмотр
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openCompose({
+                              messageId: m.id,
+                              subject: m.subject,
+                              quotedHtml: `<p>— ${formatDate(m.sentAt)}, ${m.direction === "incoming" ? m.fromAddr : m.toAddr}:</p><p>${m.preview}</p>`,
+                              to: [m.direction === "incoming" ? m.fromAddr : m.toAddr],
+                            })}
+                            className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
+                          >
+                            <Icon path={<><path d="M9 17 4 12l5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></>} />
+                            Ответить
+                          </button>
                           <a
                             href={`/api/admin/mail/message/${m.id}/download`}
                             className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"

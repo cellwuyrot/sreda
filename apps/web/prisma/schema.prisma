@@ -2536,6 +2536,16 @@ model MailMessage {
   preview   String         @db.Text // короткий предпросмотр тела для строки списка
   bodyText  String         @db.Text
   bodyHtml  String?        @db.Text
+  // PROJECT-MAIL: расширенные поля композера.
+  fromName        String?
+  ccAddr          String?   @db.Text
+  bccAddr         String?   @db.Text
+  attachmentsMeta String?   @db.Text
+  templateKey     String?
+  sentById        String?
+  sentByName      String?
+  inReplyToMid    String?
+  attachments     MailAttachment[]
   // RFC Message-ID письма — чтобы вебхук не задваивал одно и то же сообщение.
   messageId String?        @unique
   archived  Boolean        @default(false)
@@ -2544,4 +2554,79 @@ model MailMessage {
 
   @@index([mailboxId, archived, sentAt])
   @@index([mailboxId, direction, archived, sentAt])
+}
+
+
+// PROJECT-MAIL: вложения отправленных писем.
+model MailAttachment {
+  id        String      @id @default(cuid())
+  messageId String
+  message   MailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  name      String
+  mime      String
+  size      Int
+  inline    Boolean     @default(false)
+  contentB64 String     @db.Text
+  createdAt DateTime    @default(now())
+
+  @@index([messageId])
+}
+
+// PROJECT-MAIL: шаблоны писем.
+model MailTemplate {
+  key         String   @id
+  name        String
+  subject     String   @default("")
+  format      String   @default("html")
+  body        String   @db.Text
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// PROJECT-MAIL: черновики композера (один на автора+ящик).
+model MailDraft {
+  id              String   @id @default(cuid())
+  authorId        String
+  localPart       String
+  fromName        String?
+  toAddr          String?  @db.Text
+  ccAddr          String?  @db.Text
+  bccAddr         String?  @db.Text
+  subject         String?  @db.Text
+  format          String   @default("html")
+  body            String?  @db.Text
+  attachmentsMeta String?  @db.Text
+  templateKey     String?
+  updatedAt       DateTime @updatedAt
+
+  @@unique([authorId, localPart])
+}
+
+// PROJECT-MAIL: подписи ящиков.
+model MailSignature {
+  localPart String   @id
+  html      String   @db.Text
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+// PROJECT-MAIL: журнал отправок.
+model MailSendLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  userName        String
+  fromAddress     String
+  fromName        String?
+  toAddr          String   @db.Text
+  ccAddr          String?  @db.Text
+  bccAddr         String?  @db.Text
+  subject         String
+  attachmentCount Int      @default(0)
+  templateKey     String?
+  messageId       String?
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
 }

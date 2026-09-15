@@ -12,11 +12,24 @@ import nodemailer from "nodemailer";
 import { getSmtpConfig, getAccount } from "./mailAccounts";
 import { mailboxAddress, findMailbox } from "./projectMail";
 
+export interface SmtpAttachment {
+  filename: string;
+  contentBase64: string;
+  contentType?: string;
+  cid?: string;
+}
+
 export interface SendFromMailboxInput {
   to: string;
   subject: string;
   text: string;
   html?: string | null;
+  cc?: string;
+  bcc?: string;
+  fromName?: string;
+  inReplyTo?: string | null;
+  attachments?: SmtpAttachment[];
+  inlineImages?: SmtpAttachment[];
 }
 
 export interface SendResult {
@@ -52,12 +65,29 @@ export async function sendFromMailbox(
   });
 
   try {
+    const allAttachments = [
+      ...(input.attachments || []).map((a) => ({
+        filename: a.filename,
+        content: Buffer.from(a.contentBase64, "base64"),
+        ...(a.contentType ? { contentType: a.contentType } : {}),
+      })),
+      ...(input.inlineImages || []).map((a) => ({
+        filename: a.filename,
+        content: Buffer.from(a.contentBase64, "base64"),
+        cid: a.cid,
+        ...(a.contentType ? { contentType: a.contentType } : {}),
+      })),
+    ];
     const info = await transport.sendMail({
-      from: { name: `TrioZ — ${def.label}`, address },
+      from: { name: input.fromName || `TrioZ — ${def.label}`, address },
       to: input.to,
+      ...(input.cc ? { cc: input.cc } : {}),
+      ...(input.bcc ? { bcc: input.bcc } : {}),
       subject: input.subject,
       text: input.text,
       ...(input.html ? { html: input.html } : {}),
+      ...(input.inReplyTo ? { inReplyTo: input.inReplyTo, references: input.inReplyTo } : {}),
+      ...(allAttachments.length ? { attachments: allAttachments } : {}),
       headers: { "X-Mailer": "TrioZ Ecosystem" },
     });
     return { ok: true, messageId: info.messageId || null };

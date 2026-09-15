@@ -22,6 +22,7 @@ import MessageArea from "@/components/connect/MessageArea";
 import { applyChatAppearance, loadChatAppearance } from "@/lib/chatAppearance";
 import { applyPremiumSkin, loadPremiumSkin, PREMIUM_SKIN_EVENT } from "@/lib/premiumSkin"; // PREMIUM-SKIN
 import GroupThemeLayer from "@/components/connect/GroupThemeLayer"; // GROUP-SKIN
+import { pickEntryChannel } from "@/lib/pickEntryChannel"; // GROUP-SKIN: канал по умолчанию
 import QAPanel from "@/components/connect/QAPanel";
 import AppealsPanel from "@/components/connect/AppealsPanel";
 import WikiPanel from "@/components/connect/WikiPanel";
@@ -286,9 +287,7 @@ function ConnectPageInner() {
        иначе на кадр подставится канал предыдущей. */
     if (activeSection !== "communities" || !groupDetail || groupDetail.id !== selectedGroup) return;
     if (selectedChannel && groupDetail.channels.some((c) => c.id === selectedChannel)) return;
-    const first =
-      groupDetail.channels.find((c) => c.type === "TEXT" && !c.parentId) ??
-      groupDetail.channels.find((c) => c.type === "TEXT");
+    const first = pickEntryChannel(groupDetail.channels, (groupDetail as any).theme);
     if (first) {
       setSelectedChannel(first.id);
     } else {
@@ -354,7 +353,7 @@ function ConnectPageInner() {
         // Правила ещё не приняты → показываем гейт правил, канал не открываем.
         // Условие точно совпадает с веткой рендера GroupRulesGate ниже.
         const rulesGated = !data.isMain && !!data.rules && !data.rulesAccepted && data.myRole === "MEMBER";
-        const firstText = data.channels.find((c) => c.type === "TEXT");
+        const firstText = pickEntryChannel(data.channels, (data as any).theme);
         setSelectedChannel(!pendingDeepLink && !rulesGated && firstText ? firstText.id : null);
       }
     }
@@ -1338,7 +1337,7 @@ function ConnectPageInner() {
                         setGroupDetail({ ...groupDetail, rules });
                       }}
                       onAutoSelectChannel={() => {
-                        const firstText = groupDetail.channels.find(c => c.type === "TEXT");
+                        const firstText = pickEntryChannel(groupDetail.channels, (groupDetail as any).theme);
                         if (firstText) handleChannelClick(firstText);
                       }}
                     />
