@@ -40,7 +40,7 @@ export function MailComposer({ mailboxes, templates, replyTo, defaultMailbox, on
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const draftTimer = useRef<any>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const imgInput = useRef<HTMLInputElement>(null);
   const currentAddress = mailboxes.find((m) => m.localPart === mailbox)?.address || "";
@@ -118,7 +118,7 @@ export function MailComposer({ mailboxes, templates, replyTo, defaultMailbox, on
       if (!res.ok) { setError(d?.error || "\u041e\u0448\u0438\u0431\u043a\u0430 \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0438"); setSending(false); setConfirming(false); return; }
       setNotice("\u041f\u0438\u0441\u044c\u043c\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e"); setConfirming(false);
       setTo([]); setCc([]); setBcc([]); setSubject(""); setBody(""); setAttachments([]); setInlineImages([]); setTemplateKey("");
-    } catch (e: any) { setError(e?.message || "\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u0435\u0442\u0438"); } finally { setSending(false); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Ошибка сети"); }
   };
 
   const totalSize = [...attachments, ...inlineImages].reduce((s, a) => s + a.size, 0);

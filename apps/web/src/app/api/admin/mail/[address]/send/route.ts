@@ -12,6 +12,8 @@ import { sanitizeEmailHtml, sanitizeSignatureHtml } from "@/lib/mailSanitize";
 import { logMailSend } from "@/lib/mailAudit";
 import { logAction } from "@/lib/audit";
 
+interface IncomingAttachment { name?: unknown; size?: unknown; mime?: unknown; content?: unknown; cid?: unknown; }
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ address: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -35,6 +37,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ address: s
   const contentHtml = format === "markdown"
     ? markdownToHtml(applyVariables(rawBody, variables))
     : applyVariables(rawBody, variables);
+  const attachments: IncomingAttachment[] = Array.isArray(body?.attachments) ? body.attachments as IncomingAttachment[] : [];
+  const inlineImages: IncomingAttachment[] = Array.isArray(body?.inlineImages) ? body.inlineImages as IncomingAttachment[] : [];
+  const allAttachments = [...attachments, ...inlineImages];
   let signatureHtml = "";
   try {
     const sig = await prisma.mailSignature.findUnique({ where: { localPart: def.localPart } });
@@ -44,13 +49,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ address: s
   const fullHtml = buildEmailHtml({ bodyHtml: innerSafe, subject, signatureHtml });
   const safeHtml = sanitizeEmailHtml(fullHtml);
   const plainText = htmlToText(innerSafe) + (signatureHtml ? "\n\n" + htmlToText(signatureHtml) : "");
-  const attachments = Array.isArray(body?.attachments) ? body.attachments : [];
-  const inlineImages = Array.isArray(body?.inlineImages) ? body.inlineImages : [];
-  const allAttachments = [...attachments, ...inlineImages];
-  const setCheck = checkAttachmentSet(allAttachments.map((a: any) => ({ name: String(a.name || ""), size: Number(a.size || 0), mime: String(a.mime || "") })));
+  const setCheck = checkAttachmentSet(allAttachments.map((a) => ({ name: String(a.name || ""), size: Number(a.size || 0), mime: String(a.mime || "") })));
   if (!setCheck.ok) return NextResponse.json({ error: setCheck.error }, { status: 400 });
   const decode = (raw: unknown) => Buffer.from(String(raw || ""), "base64");
-  const mailAttachments = allAttachments.map((a: any) => ({ filename: String(a.name || "attachment"), content: decode(a.content), contentType: String(a.mime || "application/octet-stream"), ...(a.cid ? { cid: String(a.cid) } : {}) }));
+  const mailAttachments = allAttachments.map((a) => ({ filename: String(a.name || "attachment"), content: decode(a.content), contentType: String(a.mime || "application/octet-stream"), ...(a.cid ? { cid: String(a.cid) } : {}) }));
   const fromName = String(body?.fromName || "").trim().slice(0, 120);
   const result = await sendFromMailbox(def.localPart, {
     fromName: fromName || undefined,
@@ -62,7 +64,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ address: s
   const mailbox = await prisma.projectMailbox.upsert({
     where: { localPart: def.localPart }, update: {}, create: { address: mailboxAddress(def.localPart), localPart: def.localPart, label: def.label, purpose: def.purpose, order: def.order },
   });
-  const meta = allAttachments.map((a: any) => ({ name: String(a.name || ""), size: Number(a.size || 0), mime: String(a.mime || ""), inline: !!a.cid }));
+  const meta = allAttachments.map((a) => ({ name: String(a.name || ""), size: Number(a.size || 0), mime: String(a.mime || ""), inline: !!a.cid }));
   const saved = await prisma.mailMessage.create({ data: {
     mailboxId: mailbox.id, direction: "outgoing", fromAddr: mailboxAddress(def.localPart), fromName: fromName || null,
     toAddr: rc.to.join(", "), ccAddr: rc.cc.length ? rc.cc.join(", ") : null, bccAddr: rc.bcc.length ? rc.bcc.join(", ") : null,
