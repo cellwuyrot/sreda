@@ -38,6 +38,7 @@ import { alertDialog } from "@/components/ui/ConfirmDialog";
 
 interface Props {
   groupId: string;
+  channels?: Array<{ id: string; name?: string | null; type: string; parentId?: string | null }>;
   /** Сырое значение Group.theme из карточки сообщества. */
   theme: string | null | undefined;
   /** Сообщить родителю о сохранённом оформлении, чтобы вид обновился без перезагрузки. */
@@ -55,7 +56,7 @@ const FIELD =
 /** Картинки лежат в самой записи темы, поэтому потолок на файл скромный. */
 const MAX_UPLOAD = 320 * 1024;
 
-type TabId = "presets" | "surfaces" | "banner" | "accent" | "particles";
+type TabId = "presets" | "surfaces" | "banner" | "accent" | "particles" | "entry";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "presets", label: "Пресеты" },
@@ -63,6 +64,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "banner", label: "Баннер" },
   { id: "accent", label: "Цвет и шрифт" },
   { id: "particles", label: "Частицы" },
+  { id: "entry", label: "Вход" },
 ];
 
 /* ───────────────────────── Мелкие элементы ───────────────────────── */
@@ -541,7 +543,7 @@ function ThemePreview({ theme, narrow }: { theme: GroupTheme; narrow: boolean })
 
 /* ─────────────────────── Основной компонент ───────────────────── */
 
-export default function DesignPanel({ groupId, theme, onSaved }: Props) {
+export default function DesignPanel({ groupId, theme, onSaved, channels = [] }: Props) {
   const initial = useMemo(() => parseGroupTheme(theme ?? null), [theme]);
   const [draft, setDraft] = useState<GroupTheme>(initial);
   const [tab, setTab] = useState<TabId>("presets");
@@ -754,6 +756,23 @@ export default function DesignPanel({ groupId, theme, onSaved }: Props) {
           </div>
         ) : null}
 
+
+        {tab === "entry" ? (
+          <div className={`${CARD} space-y-2`}>
+            <div className="text-xs font-medium text-white/80">Канал при входе</div>
+            <p className="text-[11px] leading-snug text-white/35">Выберите текстовый канал, который будет открываться первым. Если канал удалён, будет выбран первый доступный текстовый канал.</p>
+            <select
+              value={draft.defaultChannelId}
+              onChange={(e) => patch({ defaultChannelId: e.target.value.slice(0, 40) })}
+              className={FIELD}
+            >
+              <option value="">Авто — первый общий канал</option>
+              {channels.filter((c) => c.type === "TEXT").map((c) => (
+                <option key={c.id} value={c.id}>{c.name || c.id}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         {tab === "particles" ? (
           <div className={`${CARD} space-y-2`}>
             <Chips
