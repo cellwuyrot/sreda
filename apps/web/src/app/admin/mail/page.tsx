@@ -70,6 +70,7 @@ export default function AdminMailPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [templates, setTemplates] = useState<Array<{ key: string; name: string; subject: string; format: string; body: string }>>([]);
 
@@ -94,21 +95,72 @@ export default function AdminMailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadRows = useCallback((localPart: string, which: Tab) => {
+  const refreshMailboxSummary = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/mail", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setMailboxes(data?.mailboxes ?? []);
+    } catch {}
+  }, []);
+
+  const syncIncoming = useCallback(async (localPart: string) => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/mail/poll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: localPart }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const details = Array.isArray(data?.errors) ? data.errors.map((e: { error?: string }) => e?.error).filter(Boolean).join("; ") : "";
+        setNote(details ? `Не удалось проверить почту: ${details}` : "Не удалось проверить входящие письма");
+        return false;
+      }
+      if (Array.isArray(data?.errors) && data.errors.length) {
+        const details = data.errors.map((e: { error?: string }) => e?.error).filter(Boolean).join("; ");
+        setNote(details ? `Почта проверена с ошибкой: ${details}` : "Почта проверена с частичной ошибкой");
+      } else if (Number(data?.stored || 0) > 0) {
+        setNote(`Получено новых писем: ${data.stored}`);
+      } else {
+        setNote("Входящие проверены: новых писем нет");
+      }
+      await refreshMailboxSummary();
+      return true;
+    } catch {
+      setNote("Не удалось проверить входящие письма");
+      return false;
+    } finally {
+      setSyncing(false);
+    }
+  }, [refreshMailboxSummary]);
+
+  const loadRows = useCallback(async (localPart: string, which: Tab, sync = which === "incoming") => {
     setLoadingRows(true);
-    setNote(null);
+    if (sync) await syncIncoming(localPart);
     const params = new URLSearchParams();
     if (which === "archive") params.set("archived", "1");
     else params.set("direction", which);
-    fetch(`/api/admin/mail/${encodeURIComponent(localPart)}?${params.toString()}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setRows(data?.messages ?? []))
-      .catch(() => setRows([]))
-      .finally(() => setLoadingRows(false));
-  }, []);
+    try {
+      const res = await fetch(`/api/admin/mail/${encodeURIComponent(localPart)}?${params.toString()}`, { cache: "no-store" });
+      const data = res.ok ? await res.json() : null;
+      setRows(data?.messages ?? []);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoadingRows(false);
+    }
+  }, [syncIncoming]);
 
   useEffect(() => {
-    if (selected) loadRows(selected, tab);
+    if (!selected) return;
+    void loadRows(selected, tab);
+    if (tab !== "incoming") return;
+    const timer = window.setInterval(() => {
+      void loadRows(selected, "incoming");
+    }, 30000);
+    return () => window.clearInterval(timer);
   }, [selected, tab, loadRows]);
 
   const archive = useCallback(
@@ -198,6 +250,17 @@ export default function AdminMailPage() {
                     <p className="text-xs text-neutral-500 dark:text-gray-400">{activeBox.label}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      disabled={syncing}
+                      onClick={async () => {
+                        if (!selected) return;
+                        await syncIncoming(selected);
+                        await loadRows(selected, tab, false);
+                      }}
+                      className="rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
+                    >
+                      {syncing ? "Проверяем…" : "Проверить почту"}
+                    </button>
                     <button
                       onClick={() => setShowCompose((v) => !v)}
                       className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500"
