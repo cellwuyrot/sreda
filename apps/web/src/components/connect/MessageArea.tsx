@@ -481,7 +481,7 @@ const MessageRow = memo(function MessageRow({
                     Превью ссылки лежит здесь же и по той же причине: при
                     монтировании оно заново ходит за описанием страницы.
 
-                    Скрытые игнором сообщ����ния остаются заглушкой: вложения там
+                    Скрытые игнором сообщ������ния остаются заглушкой: вложения там
                     пока��ывать нельзя, в этом и ��мысл. */}
                 {!hiddenByIgnore && (
                   <>
@@ -705,7 +705,7 @@ export default function MessageArea({
   const [replyTo, setReplyTo] = useState<{ id: string; name: string; content: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
-  /* Тариф обрезал истори��: сервер присылает число дней, чтобы подпись в чате не
+  /* Тариф обрезал истор����: сервер присылает число дней, чтобы подпись в чате не
      расходилась с фактическим фильт��ом (см. lib/premiumLimits). */
   const [forwardToast, setForwardToast] = useState(false);
   const [forwardMsg, setForwardMsg] = useState<{ content: string; userName: string } | null>(null);
@@ -1249,7 +1249,7 @@ export default function MessageArea({
    *    именно потому, что не хочет листать.
    *
    * 2. Куда важнее: при уходе вверх хвост ленты вынут из дерева и заменён
-   *    нижней распоркой, высота которой — ОЦЕНКА (см. hooks/useMessageWindow).
+   *    нижней распоркой, высота ��оторой — ОЦЕНКА (см. hooks/useMessageWindow).
    *    Прокрутка приезжала в конец распорки; там срабатывал обработчик, хвост
    *    отрисовывался по-настоящему, оценка сменялась фактической высотой — и
    *    низ уезжал. Со стороны это и выглядит как «нажал, а в конец не встало».
@@ -1718,11 +1718,9 @@ export default function MessageArea({
       /* Сначала окно: пока сверху есть загруженные, но не отрисованные строки,
          за новой страницей идти рано — иначе память копится зря. */
       syncWindow();
-      if (el.scrollTop < 600 && winHiddenAbove === 0 && hasMore && nextCursor && !scrollFetchLock.current) {
+      if (el.scrollTop - winPadTop < 600 && winHiddenAbove === 0 && hasMore && nextCursor && !scrollFetchLock.current) {
         scrollFetchLock.current = true;
-        fetchMessages(nextCursor).finally(() => {
-          setTimeout(() => { scrollFetchLock.current = false; }, 300);
-        });
+        fetchMessages(nextCursor).finally(() => { scrollFetchLock.current = false; });
       }
     });
   };
