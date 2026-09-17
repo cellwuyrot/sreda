@@ -74,26 +74,29 @@ function foldersKey(kind: ArchiveKind): string {
   return `${FOLDERS_KEY}:${kind}`;
 }
 
+function parseFolderList(parsed: unknown): DmFolder[] {
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((item): item is DmFolder =>
+      !!item && typeof item === "object" &&
+      typeof (item as DmFolder).id === "string" &&
+      typeof (item as DmFolder).name === "string")
+    .map((item) => ({
+      id: item.id,
+      name: item.name.slice(0, FOLDER_NAME_MAX),
+      convIds: Array.isArray(item.convIds)
+        ? item.convIds.filter((x): x is string => typeof x === "string")
+        : [],
+    }))
+    .slice(0, MAX_FOLDERS);
+}
+
 function readFolders(kind: ArchiveKind): DmFolder[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(foldersKey(kind));
     if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item): item is DmFolder =>
-        !!item && typeof item === "object" &&
-        typeof (item as DmFolder).id === "string" &&
-        typeof (item as DmFolder).name === "string")
-      .map((item) => ({
-        id: item.id,
-        name: item.name.slice(0, FOLDER_NAME_MAX),
-        convIds: Array.isArray(item.convIds)
-          ? item.convIds.filter((x): x is string => typeof x === "string")
-          : [],
-      }))
-      .slice(0, MAX_FOLDERS);
+    return parseFolderList(JSON.parse(raw));
   } catch {
     return [];
   }
@@ -104,8 +107,33 @@ function writeFolders(kind: ArchiveKind, list: DmFolder[]): void {
   try {
     window.localStorage.setItem(foldersKey(kind), JSON.stringify(list));
   } catch {
-    /* хранилище недоступно — раскладка просто не доживёт до следующего запуска */
+    /* хранилище недоступно */
   }
+}
+
+/* DM-FOLDER-SYNC: загрузить папки с сервера (при ошибке — вернуть локальный кэш). */
+async function fetchFoldersFromServer(kind: ArchiveKind): Promise<DmFolder[]> {
+  try {
+    const res = await fetch(`/api/dm/folders?kind=${encodeURIComponent(kind)}`, { credentials: "include" });
+    if (!res.ok) return readFolders(kind);
+    const data = await res.json() as { folders?: unknown };
+    const list = parseFolderList(data.folders);
+    writeFolders(kind, list);
+    return list;
+  } catch {
+    return readFolders(kind);
+  }
+}
+
+/* DM-FOLDER-SYNC: сохранить папки на сервере и в локальный кэш. */
+function saveFoldersToServer(kind: ArchiveKind, list: DmFolder[]): void {
+  writeFolders(kind, list);
+  fetch("/api/dm/folders", {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, folders: list }),
+  }).catch(() => { /* сеть недоступна — кэш уже обновлён */ });
 }
 
 // FIX-DM-SORT: направление ранжирования (см. convTime).
@@ -184,15 +212,19 @@ export default function DMConversationList({
     null
   >(null);
 
-  /* Папки читаются после появления списка и при смене раздела. */
+  /* DM-FOLDER-SYNC: папки читаются при появлении списка.
+     Мгновенно показываем кэш (localStorage), затем подтягиваем актуальное с сервера:
+     десктоп и веб читают одно хранилище, поэтому папки синхронизированы. */
   useEffect(() => {
     setFolders(readFolders(archiveKind));
     setDraft(null);
+    void fetchFoldersFromServer(archiveKind).then(setFolders);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [archiveKind]);
 
   const persistFolders = useCallback((next: DmFolder[]) => {
     setFolders(next);
-    writeFolders(archiveKind, next);
+    saveFoldersToServer(archiveKind, next);
   }, [archiveKind]);
 
   /** Создать папку; если задан convId — сразу положить в неё разговор. */
@@ -509,9 +541,14 @@ export default function DMConversationList({
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm truncate flex items-center gap-1.5 ${hasUnread ? "font-bold text-neutral-900 dark:text-white" : "font-medium text-neutral-900 dark:text-white"}`}>
                     <span className="truncate">{isVault ? "Сейф" : conv.other.name}</span>
-                    {/* Связка для администрации: заявку ещё никто не взял. Это
-                        единственное состояние очереди, требующее действия, —
-                        только его и показываем прямо в списке. */}
+                    {conv.secure && (
+                      <span
+                        title="Одноразовый чат • Сообщения шифруются на вашем устройстве • Удаляется при закрытии вкладки"
+                        className="flex-shrink-0 w-4 h-4 rounded-full bg-green-500/15 border border-green-500/30 text-green-600 dark:text-green-400 text-[9px] font-bold inline-flex items-center justify-center cursor-help"
+                      >
+                        ?
+                      </span>
+                    )}
                     {conv.business?.party === "handler" && !conv.business.handlerName && (
                       <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[10px] font-medium bg-amber-400/20 text-amber-600 dark:text-amber-300">
                         не взято
