@@ -149,6 +149,28 @@ export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeSuppor
               {!e2eeReady ? "Нет ключа" : e2eeEnabled ? "Защищённый" : "Открытый"}
             </span>
           </button>
+          {/* Инфо об эфемерной природе зашифрованного чата */}
+          {e2eeSupported && e2eeEnabled && (
+            <div className="relative group">
+              <button
+                type="button"
+                className="w-6 h-6 rounded-full border border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400 text-[11px] font-bold flex items-center justify-center hover:bg-green-500/20 transition-colors"
+                aria-label="Как работает защищённый чат"
+              >
+                ?
+              </button>
+              <div className="absolute right-0 top-8 z-50 hidden group-hover:block w-72 p-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-[11px] text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                <p className="font-semibold text-neutral-900 dark:text-white mb-1.5">Одноразовый зашифрованный чат</p>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li>Сообщения шифруются на вашем устройстве— сервер не знает их содержания.</li>
+                  <li>Чат автоматически удаляется при закрытии вкладки или выходе из раздела.</li>
+                  <li>История не хранится — перезагрузив страницу вы её не увидите.</li>
+                  <li>Переслать сообщения из него нельзя.</li>
+                </ul>
+                <p className="mt-1.5 text-neutral-400">Чтобы вернуться в обычную переписку — нажмите на замок в шапке.</p>
+              </div>
+            </div>
+          )}
         )}
       </div>
     </header>

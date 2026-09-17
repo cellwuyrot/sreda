@@ -74,38 +74,64 @@ function foldersKey(kind: ArchiveKind): string {
   return `${FOLDERS_KEY}:${kind}`;
 }
 
-function readFolders(kind: ArchiveKind): DmFolder[] {
+function parseFolders(parsed: unknown): DmFolder[] {
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((item): item is DmFolder =>
+      !!item && typeof item === "object" &&
+      typeof (item as DmFolder).id === "string" &&
+      typeof (item as DmFolder).name === "string")
+    .map((item) => ({
+      id: item.id,
+      name: item.name.slice(0, FOLDER_NAME_MAX),
+      convIds: Array.isArray(item.convIds)
+        ? item.convIds.filter((x): x is string => typeof x === "string")
+        : [],
+    }))
+    .slice(0, MAX_FOLDERS);
+}
+
+function readFoldersLocal(kind: ArchiveKind): DmFolder[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(foldersKey(kind));
     if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item): item is DmFolder =>
-        !!item && typeof item === "object" &&
-        typeof (item as DmFolder).id === "string" &&
-        typeof (item as DmFolder).name === "string")
-      .map((item) => ({
-        id: item.id,
-        name: item.name.slice(0, FOLDER_NAME_MAX),
-        convIds: Array.isArray(item.convIds)
-          ? item.convIds.filter((x): x is string => typeof x === "string")
-          : [],
-      }))
-      .slice(0, MAX_FOLDERS);
+    return parseFolders(JSON.parse(raw));
   } catch {
     return [];
   }
 }
 
-function writeFolders(kind: ArchiveKind, list: DmFolder[]): void {
+function writeFoldersLocal(kind: ArchiveKind, list: DmFolder[]): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(foldersKey(kind), JSON.stringify(list));
+  } catch { /* хранилище недоступно */ }
+}
+
+async function fetchFoldersFromServer(kind: ArchiveKind): Promise<DmFolder[]> {
+  try {
+    const res = await fetch(`/api/dm/folders?kind=${encodeURIComponent(kind)}`, { credentials: "include" });
+    if (!res.ok) return readFoldersLocal(kind);
+    const data = await res.json();
+    const list = parseFolders(data.folders);
+    writeFoldersLocal(kind, list); // обновляем кэш
+    return list;
   } catch {
-    /* хранилище недоступно — раскладка просто не доживёт до следующего запуска */
+    return readFoldersLocal(kind);
   }
+}
+
+async function saveFoldersToServer(kind: ArchiveKind, list: DmFolder[]): Promise<void> {
+  writeFoldersLocal(kind, list); // сразу в кэш, чтобы не терять при сбое сети
+  try {
+    await fetch("/api/dm/folders", {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, folders: list }),
+    });
+  } catch { /* сеть недоступна — кэш уже сохранён */ }
 }
 
 // FIX-DM-SORT: направление ранжирования (см. convTime).
@@ -184,15 +210,19 @@ export default function DMConversationList({
     null
   >(null);
 
-  /* Папки читаются после появления списка и при смене раздела. */
+  /* Папки читаются с сервера при монтировании и смене раздела;
+     localStorage служит мгновенным кэшем на время ожидания. */
   useEffect(() => {
-    setFolders(readFolders(archiveKind));
+    // Мгновенно показываем кэш, потом подтягиваем актуальное с сервера
+    setFolders(readFoldersLocal(archiveKind));
     setDraft(null);
+    void fetchFoldersFromServer(archiveKind).then(setFolders);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [archiveKind]);
 
   const persistFolders = useCallback((next: DmFolder[]) => {
     setFolders(next);
-    writeFolders(archiveKind, next);
+    void saveFoldersToServer(archiveKind, next);
   }, [archiveKind]);
 
   /** Создать папку; если задан convId — сразу положить в неё разговор. */
@@ -509,9 +539,16 @@ export default function DMConversationList({
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm truncate flex items-center gap-1.5 ${hasUnread ? "font-bold text-neutral-900 dark:text-white" : "font-medium text-neutral-900 dark:text-white"}`}>
                     <span className="truncate">{isVault ? "Сейф" : conv.other.name}</span>
-                    {/* Связка для администрации: заявку ещё никто не взял. Это
-                        единственное состояние очереди, требующее действия, —
-                        только его и показываем прямо в списке. */}
+                    {/* Знак вопроса для зашифрованного чата */}
+                    {conv.secure && (
+                      <span
+                        title="Одноразовый зашифрованный чат•Сообщения шифруются на вашем устройстве — сервер не знает их содержание.•Чат автоматически удаляется при закрытии вкладки.•Переслать сообщения из него нельзя."
+                        className="flex-shrink-0 w-4 h-4 rounded-full bg-green-500/15 border border-green-500/30 text-green-600 dark:text-green-400 text-[9px] font-bold flex items-center justify-center cursor-help"
+                      >
+                        ?
+                      </span>
+                    )}
+                    {/* Связка для администрации: заявку ещё никто не взял. */}
                     {conv.business?.party === "handler" && !conv.business.handlerName && (
                       <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[10px] font-medium bg-amber-400/20 text-amber-600 dark:text-amber-300">
                         не взято
