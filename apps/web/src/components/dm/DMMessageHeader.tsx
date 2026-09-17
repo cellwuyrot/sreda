@@ -171,7 +171,6 @@ export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeSuppor
               </div>
             </div>
           )}
-        )}
       </div>
     </header>
   );
