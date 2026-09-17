@@ -497,18 +497,15 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     };
   }, [currentUserId]);
 
-  // ── Ephemeral secure chat: clean up on tab close and panel unmount ──────────
-  // Одноразовый чат: удаляем все SECURE-разговоры при закрытии вкладки и размонтировании панели.
+  // ── Ephemeral secure chat: clean up when tab closes or panel unmounts ──────
   useEffect(() => {
-    const cleanup = () => {
-      navigator.sendBeacon("/api/dm/secure-cleanup");
-    };
+    const cleanup = () => navigator.sendBeacon("/api/dm/secure-cleanup");
     window.addEventListener("beforeunload", cleanup);
     window.addEventListener("pagehide", cleanup);
     return () => {
       window.removeEventListener("beforeunload", cleanup);
       window.removeEventListener("pagehide", cleanup);
-      // Размонтирование панели (навигация в другой раздел) — тоже чистим
+      // При размонтировании (уход в другой раздел) — тоже чистим
       void fetch("/api/dm/secure-cleanup", { method: "POST", credentials: "include" }).catch(() => {});
     };
   }, []);
