@@ -121,56 +121,55 @@ export default function DMMessageHeader({ other, subtitle, e2eeReady, e2eeSuppor
         <HeaderButton active={showPinned} label="Закреплённые сообщения" onClick={onTogglePinned}>
           <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3h6l1 7 2 2H6l2-2 1-7ZM12 12v9"/></svg>
         </HeaderButton>
-        {/* FIX-E2EEBTN: кнопка режима переписки. Три состояния вместо двух:
-            защищённый, открытый и «ключа пока нет». Третье раньше просто прятало
-            кнопку, и различить «функция ещё не готова» и «функцию убрали» было нельзя. */}
+        {/* FIX-E2EEBTN: кнопка режима переписки + кнопка ? для эфемерного чата. */}
         {e2eeSupported && (
-          <button
-            type="button"
-            onClick={onToggleE2EE}
-            title={e2eeReady ? (e2eeEnabled ? "Шифрование включено" : "Перейти в защищённый режим") : (e2eeHint ?? "Защищённый режим пока недоступен")}
-            aria-label={e2eeReady ? (e2eeEnabled ? "Шифрование включено" : "Перейти в защищённый режим") : "Защищённый режим пока недоступен"}
-            aria-pressed={e2eeReady ? e2eeEnabled : undefined}
-            className={`h-10 px-3 rounded-xl border inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:focus-visible:ring-cyan-400 ${
-              !e2eeReady
-                ? "bg-[var(--cn-card)] border-dashed border-[var(--cn-border)] text-neutral-400 dark:text-neutral-500 hover:bg-[var(--cn-hover)]"
-                : e2eeEnabled
-                  ? "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"
-                  : "bg-[var(--cn-card)] border-[var(--cn-border)] text-neutral-500 dark:text-neutral-400 hover:bg-[var(--cn-hover)]"
-            }`}
-          >
-            {e2eeReady ? (
-              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-            ) : (
-              /* Открытый замок: состояние «шифрование есть, но пока не налажено». */
-              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M8 10V7a4 4 0 0 1 8 0"/></svg>
-            )}
-            <span className="hidden sm:inline text-[11px] font-medium">
-              {!e2eeReady ? "Нет ключа" : e2eeEnabled ? "Защищённый" : "Открытый"}
-            </span>
-          </button>
-          {/* Инфо об эфемерной природе зашифрованного чата */}
-          {e2eeSupported && e2eeEnabled && (
-            <div className="relative group">
-              <button
-                type="button"
-                className="w-6 h-6 rounded-full border border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400 text-[11px] font-bold flex items-center justify-center hover:bg-green-500/20 transition-colors"
-                aria-label="Как работает защищённый чат"
-              >
-                ?
-              </button>
-              <div className="absolute right-0 top-8 z-50 hidden group-hover:block w-72 p-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-[11px] text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                <p className="font-semibold text-neutral-900 dark:text-white mb-1.5">Одноразовый зашифрованный чат</p>
-                <ul className="space-y-1 list-disc list-inside">
-                  <li>Сообщения шифруются на вашем устройстве— сервер не знает их содержания.</li>
-                  <li>Чат автоматически удаляется при закрытии вкладки или выходе из раздела.</li>
-                  <li>История не хранится — перезагрузив страницу вы её не увидите.</li>
-                  <li>Переслать сообщения из него нельзя.</li>
-                </ul>
-                <p className="mt-1.5 text-neutral-400">Чтобы вернуться в обычную переписку — нажмите на замок в шапке.</p>
+          <>
+            <button
+              type="button"
+              onClick={onToggleE2EE}
+              title={e2eeReady ? (e2eeEnabled ? "Шифрование включено" : "Перейти в защищённый режим") : (e2eeHint ?? "Защищённый режим пока недоступен")}
+              aria-label={e2eeReady ? (e2eeEnabled ? "Шифрование включено" : "Перейти в защищённый режим") : "Защищённый режим пока недоступен"}
+              aria-pressed={e2eeReady ? e2eeEnabled : undefined}
+              className={`h-10 px-3 rounded-xl border inline-flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:focus-visible:ring-cyan-400 ${
+                !e2eeReady
+                  ? "bg-[var(--cn-card)] border-dashed border-[var(--cn-border)] text-neutral-400 dark:text-neutral-500 hover:bg-[var(--cn-hover)]"
+                  : e2eeEnabled
+                    ? "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"
+                    : "bg-[var(--cn-card)] border-[var(--cn-border)] text-neutral-500 dark:text-neutral-400 hover:bg-[var(--cn-hover)]"
+              }`}
+            >
+              {e2eeReady ? (
+                <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              ) : (
+                <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M8 10V7a4 4 0 0 1 8 0"/></svg>
+              )}
+              <span className="hidden sm:inline text-[11px] font-medium">
+                {!e2eeReady ? "Нет ключа" : e2eeEnabled ? "Защищённый" : "Открытый"}
+              </span>
+            </button>
+            {e2eeEnabled && (
+              <div className="relative group">
+                <button
+                  type="button"
+                  className="w-6 h-6 rounded-full border border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400 text-[11px] font-bold flex items-center justify-center hover:bg-green-500/20 transition-colors"
+                  aria-label="Как работает защищённый чат"
+                >
+                  ?
+                </button>
+                <div className="absolute right-0 top-8 z-50 hidden group-hover:block w-72 p-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-[11px] text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                  <p className="font-semibold text-neutral-900 dark:text-white mb-1.5">Одноразовый зашифрованный чат</p>
+                  <ul className="space-y-1 list-disc list-inside">
+                    <li>Сообщения шифруются на вашем устройстве — сервер не знает их содержания.</li>
+                    <li>Чат автоматически удаляется при закрытии вкладки или выходе из раздела.</li>
+                    <li>История не хранится — перезагрузив страницу вы её не увидите.</li>
+                    <li>Переслать сообщения из него нельзя.</li>
+                  </ul>
+                  <p className="mt-1.5 text-neutral-400">Чтобы вернуться в обычную переписку — нажмите на замок в шапке.</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </>
+        )}
       </div>
     </header>
   );
