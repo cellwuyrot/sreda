@@ -497,6 +497,22 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     };
   }, [currentUserId]);
 
+  // ── Ephemeral secure chat: clean up on tab close and panel unmount ──────────
+  // Одноразовый чат: удаляем все SECURE-разговоры при закрытии вкладки и размонтировании панели.
+  useEffect(() => {
+    const cleanup = () => {
+      navigator.sendBeacon("/api/dm/secure-cleanup");
+    };
+    window.addEventListener("beforeunload", cleanup);
+    window.addEventListener("pagehide", cleanup);
+    return () => {
+      window.removeEventListener("beforeunload", cleanup);
+      window.removeEventListener("pagehide", cleanup);
+      // Размонтирование панели (навигация в другой раздел) — тоже чистим
+      void fetch("/api/dm/secure-cleanup", { method: "POST", credentials: "include" }).catch(() => {});
+    };
+  }, []);
+
   // ── Fetch peer's public key when a conversation opens ─────────────────────
   const fetchPeerKey = useCallback(async (peerId: string) => {
     try {
@@ -1746,7 +1762,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               other={otherUser.id === currentUserId ? { ...otherUser, name: "Сейф" } : otherUser}
               /* FIX-E2EECHAT: человек должен видеть, в каком из двух разговоров он пишет:
                  имя собеседника в обоих одно и то же. */
-              subtitle={isSecureConv ? "Защищённый чат • сквозное шифрование" : businessSubtitle}
+              subtitle={isSecureConv ? "Одноразовый • сквозное шифрование • удаляется при закрытии вкладки" : businessSubtitle}
               e2eeReady={e2eeReady}
               /* FIX-E2EEBTN: в деловом разговоре шифрования нет намеренно (его читает
                  вся администрация по роли), там кнопки быть не должно. В личной
