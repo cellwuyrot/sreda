@@ -99,7 +99,7 @@ export async function canAccessUpload(userId: string, path: string): Promise<Upl
 async function computeVerdict(userId: string, path: string): Promise<UploadVerdict> {
   const record = await prisma.uploadedFile.findUnique({
     where: { path },
-    select: { uploaderId: true, channelId: true, conversationId: true, taskId: true },
+    select: { uploaderId: true, channelId: true, conversationId: true, taskId: true, dir: true },
   });
   if (!record) return "unknown";
 
@@ -126,6 +126,14 @@ async function computeVerdict(userId: string, path: string): Promise<UploadVerdi
     const permissions = await getChannelPermissions(userId, task.channelId);
     return permissions?.canView ? "allow" : "deny";
   }
+
+  /* FIX-SRVDOC-ACCESS: документы услуг и проектов хранятся в каталоге `documents/`
+     и не имеют привязки к каналу, диалогу или задаче — они приложены к услуге
+     напрямую через поле `Service.documents`. Клиент должен иметь возможность
+     открыть/скачать документ, иначе он соглашается с условиями, которых ему
+     никто не показал. Любой вошедший пользователь получает доступ: анонимам
+     сервер уже ответил 401 на шаге проверки сессии выше (в server.ts). */
+  if (record.dir === "documents") return "allow";
 
   /* Файл без привязки (например материал проекта) виден только загрузившему —
      проверка выше уже не сработала, значит это чужой человек. */
