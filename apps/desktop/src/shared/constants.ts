@@ -56,6 +56,8 @@ export const IPC = {
   GET_SCREEN_SOURCES: "desktop:get-screen-sources",
   /** Clear the Chromium HTTP/disk cache (safe — no logout). */
   CLEAR_CACHE: "desktop:clear-cache",
+  /** Ручное восстановление главного окна; main проверяет sender и origin. */
+  RECOVER_WINDOW: "desktop:recovery-request",
   /** Clear selected Chromium storage types (cookies = logout). */
   CLEAR_STORAGE: "desktop:clear-storage",
   /** НОВОЕ: стабильный ID устройства (SHA-256-хэш MAC-адресов) для блокировок по устройству. */

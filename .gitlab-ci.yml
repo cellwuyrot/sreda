@@ -186,6 +186,8 @@ deploy:
     # the whole stack going down. That collapses the long 502 window (and the
     # desktop "рассинхронизация") into a brief, self-healing blip.
     - docker-compose up -d --no-deps app
+    # Новый static-том должен быть смонтирован и в уже работающий nginx.
+    - docker-compose up -d --no-deps nginx
     # Publish freshly built desktop installers straight into the desktop_data
     # volume the app serves from. The `desktop-build` job now runs on every
     # default-branch pipeline (and on tags), so a normal production deploy

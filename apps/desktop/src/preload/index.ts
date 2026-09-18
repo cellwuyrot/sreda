@@ -50,6 +50,9 @@ const api = {
    */
   clearCache: (): Promise<void> => ipcRenderer.invoke(IPC.CLEAR_CACHE),
 
+  /** Ручной выход из аварийного состояния. Не удаляет cookie и localStorage. */
+  recoverWindow: (): Promise<boolean> => ipcRenderer.invoke(IPC.RECOVER_WINDOW),
+
   /**
    * Clears the specified Chromium storage types.
    * Passing `["cookies"]` will log the user out.
@@ -193,6 +196,20 @@ const api = {
 export type TriozDesktopApi = typeof api;
 
 contextBridge.exposeInMainWorld("triozDesktop", api);
+
+// Локальный аварийный экран работает даже без Next.js, React и доступа к сети.
+window.addEventListener("DOMContentLoaded", () => {
+  if (window.location.protocol !== "file:") return;
+  const button = document.getElementById("tz-recovery-retry") as HTMLButtonElement | null;
+  if (!button) return;
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    button.textContent = "Восстанавливаем…";
+    void api.recoverWindow().then((accepted) => {
+      if (!accepted) { button.disabled = false; button.textContent = "Повторить"; }
+    }).catch(() => { button.disabled = false; button.textContent = "Повторить"; });
+  });
+});
 
 /*
  * UPD-BTN: единственное, что оболочка рисует поверх страницы, — кнопка

@@ -11,12 +11,10 @@ import {
   safeInAppPath,
 } from "../shared/navigation";
 import {
-  watchStaleAssets,
-  watchBlankRender,
-  markRenderHealthy,
-  voiceCallActive,
-  preventDocumentCaching, // FIX-BLANK2
-  startCacheMaintenance, // FIX-BLANK2
+  installRecovery,
+  recoveryOwnsNavigation,
+  recoverWindow,
+  voiceCallActive
 } from "./recovery"; // FIX-BLANK
 
 interface WindowState {
@@ -251,7 +249,11 @@ export function createMainWindow(): BrowserWindow {
   };
 
   const scheduleReload = (reason: string): void => {
-    if (retryTimer || !mainWindow || mainWindow.isDestroyed()) return;
+    if (retryTimer || !mainWindow || mainWindow.isDestroyed() || recoveryOwnsNavigation(mainWindow)) return;
+    if (voiceCallActive()) {
+      void recoverWindow(mainWindow, reason);
+      return;
+    }
     const delay = RETRY_DELAYS_MS[Math.min(retryCount, RETRY_DELAYS_MS.length - 1)];
     retryCount += 1;
     console.warn(`[window] ${reason} — showing splash, retrying in ${delay}ms (attempt ${retryCount})`);
@@ -259,7 +261,10 @@ export function createMainWindow(): BrowserWindow {
     mainWindow.loadFile(splashFile).catch(() => undefined);
     retryTimer = setTimeout(() => {
       retryTimer = null;
-      if (mainWindow && !mainWindow.isDestroyed()) loadApp();
+      if (mainWindow && !mainWindow.isDestroyed() && !recoveryOwnsNavigation(mainWindow)) {
+        if (voiceCallActive()) void recoverWindow(mainWindow, reason);
+        else loadApp();
+      }
     }, delay);
   };
 
@@ -283,26 +288,18 @@ export function createMainWindow(): BrowserWindow {
       scheduleReload(`server returned ${httpResponseCode}`);
     } else if (httpResponseCode > 0 && httpResponseCode < 400) {
       retryCount = 0;
-      markRenderHealthy(); // FIX-BLANK: страница ответила нормально
+      // HTTP 200 не означает, что React уже отрисовал интерфейс.
     }
   });
 
-  // FIX-BLANK: два сторожа против «тёмного экрана» (см. recovery.ts):
-  //  • 404 на /_next/static/* — устаревший HTML из кеша ссылается на чанки,
-  //    которых на сервере уже нет (после деплоя веб-части);
-  //  • пустой DOM через несколько секунд после загрузки — страховка от любой
-  //    другой причины несостоявшегося рендера.
-  // Оба лечатся сбросом HTTP-кеша и перезагрузкой — БЕЗ удаления cookie,
-  // поэтому пользователь остаётся в аккаунте.
-  watchStaleAssets(mainWindow, appOrigin);
-  watchBlankRender(mainWindow, appOrigin);
-
-  /* FIX-BLANK2: главное лекарство — не кешировать сам HTML: именно в нём список
-     чанков конкретной сборки. Статика продолжает кешироваться как раньше.
-     Плюс тихая чистка раз в 15 минут как подстраховка на случай, если что-то
-     всё же осядет в кеше мимо этого правила. */
-  preventDocumentCaching(appOrigin);
-  startCacheMaintenance(mainWindow);
+  // FIX-BLANK3: один механизм восстановления, без удаления кеша по таймеру.
+  installRecovery(mainWindow, {
+    getStartUrl: () => new URL(DEFAULT_START_PATH, getConfig().appUrl).toString(),
+    beforeRecovery: () => {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+    },
+  });
 
   // Paint a local splash immediately, then load the real /connect page. Electron
   // keeps the splash on screen until the remote page is ready to render, so the
@@ -385,6 +382,8 @@ export function createMainWindow(): BrowserWindow {
   });
 
   mainWindow.on("closed", () => {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
     mainWindow = null;
     pipSavedState = null;
     screenShareActive = false;

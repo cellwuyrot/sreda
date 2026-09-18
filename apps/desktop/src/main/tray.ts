@@ -55,8 +55,8 @@ function buildMenu(): Electron.Menu {
         const win = getMainWindow();
         if (!win) return;
         focusMainWindow();
-        // force: человек попросил сам — откладывать нечего, даже если идёт разговор.
-        void clearCacheAndReload(win, "ручная перезагрузка из трея", { force: true });
+        // Ручное действие обходит лимит автоматических попыток и отсрочку звонка.
+        void clearCacheAndReload(win, "ручная перезагрузка из трея", { manual: true });
       },
     },
     { type: "separator" },
