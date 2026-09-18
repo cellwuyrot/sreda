@@ -76,9 +76,8 @@ export default function ServiceDocsBar({ serviceId }: { serviceId?: string | nul
           {docs.map((doc) => (
             <li key={doc.id}>
               <a
-                href={doc.url}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`${doc.url}?dl=1&name=${encodeURIComponent(doc.name)}`}
+                download={doc.name}
                 className="flex items-center gap-2 rounded-lg px-2 py-1 text-xs text-neutral-700 transition hover:bg-white dark:text-gray-200 dark:hover:bg-white/5"
               >
                 <span className="truncate">{doc.name}</span>
