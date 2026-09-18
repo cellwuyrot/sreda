@@ -24,6 +24,13 @@ export const MIN_THROTTLE_KBPS = 128;
 export const MAX_THROTTLE_KBPS = 1_000_000;
 
 /**
+ * После этого времени последнее значение от узла нельзя показывать как свежее.
+ * Стандартный интервал отчёта узла — 60 секунд; две минуты оставляют запас
+ * для краткого сбоя, но не маскируют остановившийся учёт.
+ */
+export const USAGE_MEASUREMENT_STALE_MS = 2 * 60_000;
+
+/**
  * Что происходит после исчерпания лимита.
  *
  * Вариантов ровно два, и оба исполнимы. Снятие соединения делает главный
@@ -78,6 +85,22 @@ export interface TrafficSettingsSubject {
  */
 export function isUsageUnlimited(subject?: { role?: string | null } | null): boolean {
   return isAdminRole(subject?.role);
+}
+
+/**
+ * Есть ли у показания узла недопустимо большой возраст.
+ *
+ * `null` означает «узел ещё не присылал учёт» и обрабатывается отдельно;
+ * испорченная дата тоже не может считаться свежей. Функция не делает выводов
+ * о самом расходе — только запрещает выдавать старый снимок за актуальный.
+ */
+export function isUsageMeasurementStale(
+  measuredAt: Date | string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!measuredAt) return false;
+  const at = toDate(measuredAt).getTime();
+  return !Number.isFinite(at) || now.getTime() - at > USAGE_MEASUREMENT_STALE_MS;
 }
 
 export interface UsageView {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
@@ -9,7 +9,7 @@ import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
 import { isAndroidShell } from "@/lib/shell"; // VPN-ANDROID
-import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage"; // NETLINK
+import { daysLeftLabel, formatTraffic, isUsageMeasurementStale } from "@/lib/connectionUsage"; // NETLINK
 import { useLinkMetrics } from "@/lib/useLinkMetrics"; // FIX-LINKSTATS
 
 /* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
@@ -197,9 +197,17 @@ function tunnelSinceLabel(iso: string | null): string {
   return `подключено ${Math.floor(hours / 24)} дн назад`;
 }
 
+/* Узел по умолчанию отчитывается раз в минуту. Проверяем показания раз в
+   30 секунд только в видимом окне, не создавая опрос в скрытых вкладках. */
+const VPN_STATE_REFRESH_MS = 30_000;
+
 function VpnPanel({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<VpnState | null>(null);
-  const [failed, setFailed] = useState(false);
+  /* Успешный снимок не выбрасывается при временном сбое: статус отдельно
+     объясняет, можно ли считать показанные цифры актуальными. */
+  const [refreshState, setRefreshState] = useState<"loading" | "fresh" | "stale" | "unavailable">("loading");
+  const hasStateRef = useRef(false);
+  const refreshInFlightRef = useRef<Promise<VpnState | null> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   /* Выбранный режим до нажатия кнопки. В браузере по умолчанию «весь трафик» — этого
@@ -331,14 +339,15 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  const refresh = useCallback(async (): Promise<VpnState | null> => {
+  const refresh = useCallback((): Promise<VpnState | null> => {
+    /* Одновременные потребители получают один и тот же результат, а не null.
+       Это важно и для повторного запуска эффекта в React StrictMode. */
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
+    const pending = (async (): Promise<VpnState | null> => {
     try {
-      const res = await fetch("/api/vpn/me");
+      const res = await fetch("/api/vpn/me", { cache: "no-store" });
       const data = res.ok ? await res.json().catch(() => null) : null;
-      if (!data || typeof data !== "object") {
-        setFailed(true);
-        return null;
-      }
+      if (!data || typeof data !== "object") throw new Error("Некорректный ответ состояния");
       const next: VpnState = {
         serviceEnabled: data.serviceEnabled === true,
         entitled: data.entitled === true,
@@ -349,12 +358,20 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         servers: Array.isArray(data.servers) ? data.servers : [],
       };
       setState(next);
-      setFailed(false);
+      hasStateRef.current = true;
+      setRefreshState("fresh");
       return next;
     } catch {
-      setFailed(true);
+      /* Показываем последний ответ только как снимок: обнулять его означало бы
+         прятать известный расход, а выдавать за текущий — вводить в заблуждение. */
+      setRefreshState(hasStateRef.current ? "stale" : "unavailable");
       return null;
+    } finally {
+      refreshInFlightRef.current = null;
     }
+    })();
+    refreshInFlightRef.current = pending;
+    return pending;
   }, []);
 
   /* Переезд на другой сервер меняет адрес и точку подключения. Если туннель
@@ -401,6 +418,22 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     });
     return () => {
       cancelled = true;
+    };
+  }, [refresh]);
+
+  /* Автообновление живёт только вместе с открытым окном. В скрытой вкладке
+     таймер ничего не запрашивает; при возврате делаем один немедленный снимок. */
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    const interval = window.setInterval(refreshWhenVisible, VPN_STATE_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
     };
   }, [refresh]);
 
@@ -468,16 +501,36 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const plan = state?.plan ?? null;
   const traffic = state?.traffic ?? null;
   const servers = Array.isArray(state?.servers) ? state.servers : [];
-  const limitGb = Number(traffic?.limitGb) || 0;
-  const usedBytes = Number(traffic?.usedBytes) || 0;
+  const limitGb =
+    typeof traffic?.limitGb === "number" && Number.isFinite(traffic.limitGb) && traffic.limitGb >= 0
+      ? traffic.limitGb
+      : null;
+  const usedBytes =
+    typeof traffic?.usedBytes === "number" && Number.isFinite(traffic.usedBytes) && traffic.usedBytes >= 0
+      ? traffic.usedBytes
+      : null;
   const remainingBytes =
-    traffic?.remainingBytes === null || traffic?.remainingBytes === undefined
-      ? null
-      : Number(traffic.remainingBytes) || 0;
-  const share = Number(traffic?.share) || 0;
+    typeof traffic?.remainingBytes === "number" && Number.isFinite(traffic.remainingBytes) && traffic.remainingBytes >= 0
+      ? traffic.remainingBytes
+      : null;
+  const share =
+    typeof traffic?.share === "number" && Number.isFinite(traffic.share)
+      ? Math.max(0, Math.min(100, traffic.share))
+      : 0;
   const overLimit = traffic?.overLimit === true;
   const throttleMbits = Math.max(1, Math.round((Number(traffic?.throttleKbps) || 0) / 1024));
-  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt;
+  /* Число ноль допустимо только после реального отчёта. Старый/неполный ответ
+     не имеет права превратиться в «0 ГБ» через Number(... ) || 0. */
+  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt && usedBytes !== null;
+  const usedTrafficText = usedBytes === null ? null : formatTraffic(usedBytes);
+  const measurementStale = measured && isUsageMeasurementStale(traffic?.measuredAt);
+  const trafficButtonText = !traffic
+    ? "Учёт трафика недоступен"
+    : !measured
+      ? "Учёт: ждём отчёт узла"
+      : measurementStale || refreshState === "stale"
+        ? `Учёт устарел · было ${usedTrafficText ?? "расход недоступен"}`
+        : `Израсходовано ${usedTrafficText ?? "расход недоступен"}`;
 
   return (
     <div className="relative p-6 text-neutral-900 dark:text-white">
@@ -487,7 +540,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-neutral-400 dark:text-white/40">TZ Premium · Надёжное соединение</p>
             <h3 className="mt-1 text-xl font-semibold">Защищённое соединение</h3>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">Входит в Premium — включается одной кнопкой</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">Одно соединение для Premium и «Ускоренного интернета»</p>
           </div>
           <button onClick={onClose} className="rounded-xl p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-white/[0.07] dark:hover:text-white" aria-label="Закрыть"><XIcon size={15} style={{ color: "inherit" }} /></button>
         </div>
@@ -503,8 +556,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             onClick={() => void togglePower()}
             disabled={!powerReady}
             aria-pressed={active}
-            aria-label={powerLabel}
-            title={powerReady ? powerLabel : powerHint}
+            aria-label={`${powerLabel}. ${trafficButtonText}`}
+            title={powerReady ? `${powerLabel}. ${trafficButtonText}` : powerHint}
             className={`relative grid h-28 w-28 place-items-center rounded-full border outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-cyan-400/60 ${
               powerReady ? "cursor-pointer hover:scale-[1.03] active:scale-95" : "cursor-not-allowed opacity-70"
             } ${active
@@ -521,13 +574,23 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               <path d="M12 2v10" />
               <path d="M6.35 5.35a8 8 0 1 0 11.3 0" />
             </svg>
+            {/* Расход привязан к самой кнопке включения: его видно до действия,
+                в том числе у отдельного тарифа «Ускоренный интернет». */}
+            <span className="absolute inset-x-2 bottom-2 text-center text-[9px] font-medium leading-[1.05]" aria-hidden>
+              {trafficButtonText}
+            </span>
           </button>
 
-          {state === null && !failed && (
+          {state === null && refreshState === "loading" && (
             <strong className="mt-4 text-sm text-neutral-500 dark:text-white/50">Проверяем состояние…</strong>
           )}
-          {failed && (
+          {refreshState === "unavailable" && (
             <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Состояние недоступно</strong>
+          )}
+          {state && refreshState === "stale" && (
+            <strong className="mt-4 text-center text-sm text-amber-700 dark:text-amber-300">
+              Последние данные могут быть неактуальны
+            </strong>
           )}
 
           {state && !state.entitled && (
@@ -633,23 +696,35 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Трафик</span>
               <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                {limitGb > 0 ? `до ${limitGb} ГБ` : "без ограничения"}
+                {limitGb === null ? "лимит не указан" : limitGb > 0 ? `до ${limitGb} ГБ` : "без ограничения"}
                 {traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}
               </span>
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-white/10">
-              <div
-                className={`h-full rounded-full transition-all ${overLimit ? "bg-red-500" : share > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
-                style={{ width: `${Math.max(2, Math.min(100, share))}%` }}
-              />
-            </div>
+            {limitGb !== null && limitGb > 0 && measured && (
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-white/10">
+                <div
+                  className={`h-full rounded-full transition-all ${overLimit ? "bg-red-500" : share > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
+                  style={{ width: `${Math.max(2, Math.min(100, share))}%` }}
+                />
+              </div>
+            )}
             <p className="mt-2 text-[11px] text-neutral-500 dark:text-white/45">
               <strong className="text-neutral-900 dark:text-white">
-                {remainingBytes === null ? "Без ограничения" : `Осталось ${formatTraffic(remainingBytes)}`}
+                {!measured
+                  ? "Расход пока не учтён"
+                  : limitGb === 0
+                    ? "Без ограничения"
+                    : remainingBytes !== null
+                      ? `Осталось ${formatTraffic(remainingBytes)}`
+                      : "Остаток недоступен"}
               </strong>{" "}
               {/* NETLINK-FRESH: пока учёта с узла не было, цифры расхода нет — и
                   ноль здесь был бы уверенным неверным ответом. */}
-              {measured ? `· израсходовано ${formatTraffic(usedBytes)}` : "· расход с узла ещё не приходил"}
+              {!measured
+                ? "· расход с узла ещё не приходил"
+                : measurementStale || refreshState === "stale"
+                  ? `· учёт устарел: было ${usedTrafficText ?? "расход недоступен"}`
+                  : `· израсходовано ${usedTrafficText ?? "расход недоступен"}`}
             </p>
             {overLimit && (
               <p className="mt-2 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
@@ -782,14 +857,28 @@ export default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }:
      и возвращает его в поле entitled. Сессия о подписке VPN не знает ничего,
      поэтому спрашиваем сервер напрямую. При Premium запрос не нужен. */
   const [vpnEntitled, setVpnEntitled] = useState<boolean | null>(isPremium ? true : null);
+  const [accessCheckFailed, setAccessCheckFailed] = useState(false);
 
   useEffect(() => {
     if (isPremium) return;
     let alive = true;
     fetch("/api/vpn/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (alive) setVpnEntitled(data?.entitled === true); })
-      .catch(() => { if (alive) setVpnEntitled(false); });
+      .then(async (r) => {
+        if (!r.ok) throw new Error("Не удалось проверить доступ");
+        const data: unknown = await r.json();
+        if (!data || typeof data !== "object") throw new Error("Некорректный ответ доступа");
+        return data as { entitled?: unknown };
+      })
+      .then((data) => {
+        if (!alive) return;
+        setVpnEntitled(data.entitled === true);
+        setAccessCheckFailed(false);
+      })
+      .catch(() => {
+        /* Ошибка сети не означает, что у подписчика нет доступа: не заменяем
+           окно VPN витриной покупки на основании отсутствующего ответа. */
+        if (alive) setAccessCheckFailed(true);
+      });
     return () => { alive = false; };
   }, [isPremium]);
 
@@ -800,7 +889,9 @@ export default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }:
         {vpnEntitled === null ? (
           /* Короткая пауза вместо мигания витриной: показать подписчику
               «купите Premium» и тут же заменить на тумблер хуже, чем подождать мгновение. */
-          <div className="grid h-56 place-items-center text-sm text-neutral-400 dark:text-white/40">Проверяем доступ…</div>
+          <div className="grid h-56 place-items-center px-6 text-center text-sm text-neutral-400 dark:text-white/40">
+            {accessCheckFailed ? "Не удалось проверить доступ. Закройте окно и попробуйте снова." : "Проверяем доступ…"}
+          </div>
         ) : vpnEntitled ? (
           <VpnPanel onClose={onClose} />
         ) : (

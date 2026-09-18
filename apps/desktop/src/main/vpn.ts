@@ -185,7 +185,7 @@ function knownDirs(): string[] {
 async function findExecutable(exe: string): Promise<string | null> {
   const finder = process.platform === "win32" ? "where" : "which";
   try {
-    const { stdout } = await run(finder, [exe]);
+    const { stdout } = await run(finder, [exe], { windowsHide: true, timeout: 10_000 });
     const first = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean);
     if (first && existsSync(first)) return first;
   } catch {
