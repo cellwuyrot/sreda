@@ -398,7 +398,7 @@ export default function GroupSettingsModal({
 		const res = await fetch(`/api/groups/${group.id}/members/${memberId}`, {
 			method: "PATCH",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ role }),
+			body: JSON.stringify(role === "GUIDE" ? { role, guidedDays } : { role }),
 		});
 		if (!res.ok) {
 			const data = await res.json().catch(() => null);
@@ -408,6 +408,18 @@ export default function GroupSettingsModal({
 		onUpdated();
 		// Снимок группы обновит родитель, но список вкладки живёт отдельно.
 		setMemberReload((n) => n + 1);
+	};
+
+	// pendingGuide: memberId of member being assigned GUIDE (waiting for days input)
+	const [pendingGuide, setPendingGuide] = useState<{ memberId: string } | null>(null);
+
+	const handleRoleSelectChange = (memberId: string, role: string) => {
+		if (role === 'GUIDE') {
+			setPendingGuide({ memberId });
+		} else {
+			setPendingGuide(null);
+			void handleRoleChange(memberId, role);
+		}
 	};
 
 	const handleKick = (m: GroupMember) => {
@@ -915,7 +927,7 @@ export default function GroupSettingsModal({
 										{manageable && (
 											<select
 												value={m.role}
-												onChange={(e) => handleRoleChange(m.id, e.target.value)}
+												onChange={(e) => handleRoleSelectChange(m.id, e.target.value)}
 												className="text-[11px] bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-white/10 rounded-lg px-1.5 py-1 text-neutral-700 dark:text-gray-300 flex-shrink-0"
 												aria-label={`Роль @${m.user.username}`}
 											>
@@ -924,6 +936,26 @@ export default function GroupSettingsModal({
 												<option value="MODERATOR">Модератор</option>
 												{isOwner && <option value="ADMIN">Админ</option>}
 											</select>
+										{pendingGuide?.memberId === m.id && (
+											<div className="flex items-center gap-1 mt-1 p-1.5 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-400/20">
+												<span className="text-[10px] text-teal-700 dark:text-teal-300 whitespace-nowrap">Дней:</span>
+												<input
+													type="number"
+													min={1}
+													max={365}
+													defaultValue={7}
+													onChange={(e) => setGuidedDays(Math.max(1, Math.min(365, Number(e.target.value) || 1)))}
+													className="w-12 text-[11px] bg-white dark:bg-neutral-800 border border-teal-300 dark:border-teal-400/40 rounded px-1 py-0.5 text-neutral-900 dark:text-white text-center focus:outline-none"
+													onKeyDown={(e) => { if (e.key === 'Enter') { void handleRoleChange(m.id, 'GUIDE'); setPendingGuide(null); } if (e.key === 'Escape') setPendingGuide(null); }}
+												/>
+												<button onClick={() => { void handleRoleChange(m.id, 'GUIDE'); setPendingGuide(null); }} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-500 hover:bg-teal-600 text-white transition-colors">
+													✓
+												</button>
+												<button onClick={() => setPendingGuide(null)} className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-gray-300 hover:opacity-80 transition-opacity">
+													✕
+												</button>
+											</div>
+										)}
 										)}
 										{kickable && (
 											<div className="flex items-center gap-1 flex-shrink-0">

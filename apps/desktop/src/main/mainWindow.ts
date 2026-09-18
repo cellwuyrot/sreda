@@ -1,4 +1,5 @@
 import { BrowserWindow, shell, app, nativeTheme, Notification } from "electron";
+import { existsSync } from "node:fs";
 import Store from "electron-store";
 import path from "path";
 import { getConfig } from "./config";
@@ -194,7 +195,14 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     backgroundColor: "#0b0d12",
     autoHideMenuBar: true,
-    icon: path.join(__dirname, "../../resources/icon.png"),
+    // FIX-ICON: PNG генерируется из docs/logostol.png скриптом prepare-icons.mjs
+    // и закоммичен как resources/icon.png. Если он почему-то не попал в сборку
+    // (прямой вызов electron-builder без npm run build), падаем на .ico.
+    icon: (() => {
+      const png = path.join(__dirname, "../../resources/icon.png");
+      const ico = path.join(__dirname, "../../resources/icon.ico");
+      return existsSync(png) ? png : ico;
+    })(),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,

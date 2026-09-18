@@ -1,4 +1,5 @@
 import { Tray, Menu, nativeImage, app } from "electron";
+import { existsSync } from "node:fs";
 import path from "path";
 import { focusMainWindow, getMainWindow, setQuitting } from "./mainWindow";
 import { clearCacheAndReload } from "./recovery"; // FIX-BLANK
@@ -22,7 +23,10 @@ const TRAY_SIZE = 32;
  * (сама подкрашивает её под светлую или тёмную тему).
  */
 function trayImage(): Electron.NativeImage {
-  const source = nativeImage.createFromPath(path.join(__dirname, "../../resources/tray.png"));
+  // FIX-ICON: tray.png закоммичен, но если его нет — берём icon.ico как fallback.
+  const trayPng = path.join(__dirname, "../../resources/tray.png");
+  const trayIco = path.join(__dirname, "../../resources/icon.ico");
+  const source = nativeImage.createFromPath(existsSync(trayPng) ? trayPng : trayIco);
   // Исходник крупный (1024): уменьшаем сами, иначе система масштабирует грубо.
   const image = source.isEmpty() ? source : source.resize({ width: TRAY_SIZE, height: TRAY_SIZE, quality: "best" });
   if (process.platform !== "darwin" || image.isEmpty()) return image;
