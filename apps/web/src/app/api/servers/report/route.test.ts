@@ -350,6 +350,14 @@ describe("учёт трафика из отчёта", () => {
     expect(data.txBytes).toBe(500 + 50);
   });
 
+  it("неполный счётчик пропускается, а не сбрасывается до нуля", async () => {
+    peerRow();
+    await call({ report: {}, transfers: [{ publicKey: KEY, rx: 1_800 }] });
+    /* Нельзя записать lastTx=0: следующий корректный отчёт иначе воспримется
+       как рост с нуля и повторно спишет уже учтённый трафик. */
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
+  });
+
   /**
    * ИНВАРИАНТ: отметка «учёт дошёл» ставится тем же запросом, что и цифры.
    * Без неё клиент не может отличить честный ноль от молчащего узла — и
@@ -431,6 +439,17 @@ describe("лимит трафика в списке пиров", () => {
     const res = await call({ report: {} });
     expect(res.body.peers).toHaveLength(1);
     expect(res.body.peers[0].throttleKbps).toBe(0);
+  });
+
+  it("администратор сообщества не обходит лимит проекта", async () => {
+    settingsWithLimit();
+    /* Групповая роль намеренно не выбирается и не участвует в расчёте: только
+       глобальный user.role === ADMIN — исключение из лимита. */
+    prismaMock.vpnPeer.findMany.mockResolvedValue(
+      row([peerFor(premiumUser({ role: "USER", groupRole: "ADMIN" }), { rxBytes: 200 * GB, txBytes: 100 * GB })]),
+    );
+    const res = await call({ report: {} });
+    expect(res.body.peers).toEqual([]);
   });
 
   it("правило «снизить скорость»: подписчик остаётся, но с потолком", async () => {

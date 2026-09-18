@@ -11,6 +11,7 @@ import {
   BYTES_IN_GB,
   formatTraffic,
   isTrafficBlocked,
+  isUsageMeasurementStale,
   isUsageUnlimited,
   periodExpired,
   usageView,
@@ -47,6 +48,23 @@ describe("isUsageUnlimited", () => {
     expect(isUsageUnlimited({ role: "CONSULTANT" })).toBe(false);
     expect(isUsageUnlimited(null)).toBe(false);
     expect(isUsageUnlimited({})).toBe(false);
+  });
+
+  it("владелец, модератор и вымышленный администратор сообщества не получают безлимит", () => {
+    /* Это названия ролей ВНУТРИ группы, а не глобальная роль пользователя.
+       В API передаётся только user.role, поэтому они не могут дать VPN-льготу. */
+    expect(isUsageUnlimited({ role: "OWNER" })).toBe(false);
+    expect(isUsageUnlimited({ role: "MODERATOR" })).toBe(false);
+    expect(isUsageUnlimited({ role: "GROUP_ADMIN" })).toBe(false);
+  });
+});
+
+describe("свежесть учёта", () => {
+  it("отличает ещё не поступивший учёт от устаревшего снимка", () => {
+    expect(isUsageMeasurementStale(null, NOW)).toBe(false);
+    expect(isUsageMeasurementStale(new Date(NOW.getTime() - 119_000), NOW)).toBe(false);
+    expect(isUsageMeasurementStale(new Date(NOW.getTime() - 121_000), NOW)).toBe(true);
+    expect(isUsageMeasurementStale("не дата", NOW)).toBe(true);
   });
 });
 
