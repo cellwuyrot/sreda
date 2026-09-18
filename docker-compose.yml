@@ -120,6 +120,9 @@ services:
       # вне public/, содержимое отдаётся только после проверки входа.
       - uploads_private:/app/apps/web/storage/uploads
       - desktop_data:/app/apps/web/public/desktop
+      # Immutable Next.js assets are copied here before server.ts starts. This
+      # volume is intentionally never pruned by the app or compose deployment.
+      - next_static_data:/app/next-static
     networks:
       - trioz-net
 
@@ -165,6 +168,9 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/maintenance.html:/etc/nginx/html/__maintenance.html:ro
       - nginx_certs:/etc/nginx/certs
+      # Nginx serves retained build-specific Next assets without involving the
+      # current app. The fallback proxy in nginx.conf handles cache misses.
+      - next_static_data:/usr/share/nginx/retained-next-static:ro
     depends_on:
       - app
     networks:
@@ -178,6 +184,9 @@ volumes:
   uploads_data:
   uploads_private:
   desktop_data:
+  # Never delete this volume during normal deploys: it contains assets still
+  # referenced by already-open Electron pages and older installed clients.
+  next_static_data:
   nginx_certs:
 
 networks:
