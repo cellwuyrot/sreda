@@ -56,7 +56,7 @@ protocols:
 
 mac:
   category: public.app-category.social-networking
-  icon: build/icon.png
+  icon: resources/icon.png
   extraResources:
     - from: resources/wireguard/darwin
       to: wireguard
@@ -79,7 +79,7 @@ win:
       to: app/dist/main/wasapi_capture.node
   # .ico отдельно не держим: electron-builder делает его из png сам, а лишняя
   # копия картинки в git означала бы старый логотип при следующей смене.
-  icon: build/icon.ico
+  icon: resources/icon.ico
   # FIX-SEC: обновление ставится тихо и само (см. src/main/updater.ts), поэтому
   # подмена файла на раздающем сервере или перехват по пути — это выполнение
   # любого кода на машине пользователя. Единственная защита — подпись: без
@@ -112,7 +112,7 @@ nsisWeb:
   appPackageUrl: https://trioz.ru/desktop/
 
 linux:
-  icon: build/icon.png
+  icon: resources/icon.png
   category: Network
   extraResources:
     - from: resources/wireguard/linux

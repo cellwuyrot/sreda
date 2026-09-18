@@ -29,7 +29,5 @@ skills-lock.json
 
 # Иконки: раскладываются из docs/logostol.png скриптом scripts/prepare-icons.mjs
 # при сборке. В git не хранятся, чтобы копии логотипа не расходились.
+# build/icon.ico и resources/*.png коммитятся в git (см. prepare-icons.mjs)
 build/icon.png
-build/icon.ico
-resources/icon.png
-resources/tray.png

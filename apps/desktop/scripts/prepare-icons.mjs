@@ -33,6 +33,25 @@ const TARGETS = [
   join(desktopRoot, "resources", "tray.png"),  // трей (уменьшается на лету)
 ];
 
+/* FIX-ICON-ICO: electron-builder конвертирует PNG → ICO только на Windows-раннере.
+   При кросс-компиляции под Windows с Linux (Wine / GitHub Actions ubuntu-latest)
+   конвертация молча пропускается — установщик собирается без иконки.
+   Решение: копируем уже готовый resources/icon.ico (он хранится в git) в build/,
+   откуда electron-builder его и подхватывает без какой-либо конвертации. */
+const ICO_SRC = join(desktopRoot, "resources", "icon.ico");
+const ICO_DST = join(desktopRoot, "build",     "icon.ico");
+if (existsSync(ICO_SRC)) {
+  mkdirSync(dirname(ICO_DST), { recursive: true });
+  const srcBuf = readFileSync(ICO_SRC);
+  const needsCopy = !existsSync(ICO_DST) || statSync(ICO_DST).size !== statSync(ICO_SRC).size || !readFileSync(ICO_DST).equals(srcBuf);
+  if (needsCopy) {
+    copyFileSync(ICO_SRC, ICO_DST);
+    console.log("[icons] build/icon.ico скопирован из resources/icon.ico");
+  }
+} else {
+  console.warn("[icons] предупреждение: resources/icon.ico не найден — build/icon.ico не создан.");
+}
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function fail(message) {
