@@ -62,10 +62,17 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 # config.
 COPY --from=builder /app/apps/web ./apps/web
 
-# Create uploads directory with correct permissions
+# The retention bootstrap runs before server.ts and is deliberately kept outside
+# the web workspace so local npm dev/start commands are unchanged.
+COPY --from=builder /app/scripts/retain-next-static.mjs ./scripts/retain-next-static.mjs
+
+# Create uploads and the initial retained-static volume seed with correct
+# permissions. Docker copies this directory into an empty named volume on its
+# first mount; subsequent image upgrades never remove the volume's old builds.
 RUN mkdir -p apps/web/public/uploads/avatars apps/web/public/uploads/admin \
-    apps/web/public/uploads/messages apps/web/public/uploads/badges && \
-    chown -R nextjs:nodejs apps/web/public/uploads
+    apps/web/public/uploads/messages apps/web/public/uploads/badges \
+    /app/next-static/_next/static && \
+    chown -R nextjs:nodejs apps/web/public/uploads /app/next-static
 
 # Self-hosted desktop installer store (mounted as a persistent volume in
 # docker-compose). Installers are published here after build; served by
@@ -81,6 +88,8 @@ EXPOSE 3000
 
 # Run the custom Next.js + Socket.IO server from the web workspace. Its cwd must
 # be apps/web so Next finds .next/ and the relative src/ imports resolve; the
-# hoisted root node_modules is still on the resolution path.
+# hoisted root node_modules is still on the resolution path. Before it starts,
+# retain this build's immutable assets in the named volume so old Electron pages
+# can still load their build-specific URLs.
 WORKDIR /app/apps/web
-CMD ["npx", "tsx", "server.ts"]
+CMD ["sh", "-lc", "node /app/scripts/retain-next-static.mjs --source /app/apps/web/.next/static --destination /app/next-static/_next/static && exec npx tsx server.ts"]

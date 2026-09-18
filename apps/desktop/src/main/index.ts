@@ -10,7 +10,7 @@ import { initAutoUpdate } from "./updater";
 import { applyAutoLaunch } from "./autoLaunch";
 import { registerIpc } from "./ipc";
 import { registerWasapiIpc } from "./wasapiCapture"; // WASAPI-SS
-import { invalidateCacheOnVersionChange, stopCacheMaintenance } from "./recovery"; // FIX-BLANK
+import { invalidateCacheOnVersionChange, stopRecovery } from "./recovery"; // FIX-BLANK3
 import { registerMediaCacheScheme, installMediaCache } from "./mediaCache"; // FIX-CLIENTMEDIA
 import { syncOverlay, destroyOverlay } from "./overlay"; // FIX-OVL
 import { startActivityWatcher, stopActivityWatcher, resendActivity } from "./activity"; // FIX-ACT
@@ -98,7 +98,7 @@ function installApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function onReady(): void {
+async function onReady(): Promise<void> {
   const config = getConfig();
 
   // FIX-BLANK: клиент обновился (electron-updater) → сборка веб-части почти
@@ -106,7 +106,7 @@ function onReady(): void {
   // чанков. Сбрасываем HTTP-кеш до создания окна, иначе закешированный HTML
   // прошлой сборки запросит удалённые /_next/static/* и мы получим пустой
   // (тёмный) экран. Cookie не трогаем — сессия сохраняется.
-  void invalidateCacheOnVersionChange();
+  await invalidateCacheOnVersionChange();
 
   // FIX-CLIENTMEDIA: аватары, иконки сообществ и фоны отдаются с локального
   // диска — сервер их больше не пережимает и не отдаёт повторно. Ставим до
@@ -169,7 +169,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   setQuitting(true);
-  stopCacheMaintenance(); // FIX-BLANK2
+  stopRecovery(); // FIX-BLANK3
   destroyOverlay(); // FIX-OVL
   unregisterShortcuts();
   stopBadgePolling();

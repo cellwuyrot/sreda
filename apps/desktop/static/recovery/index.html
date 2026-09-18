@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+  <title>TZ.Connect — восстановление</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0b0d12; color: #eef1f7; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; }
+    main { max-width: 520px; padding: 32px; }
+    h1 { font-size: 25px; }
+    p { color: #b6bfce; line-height: 1.6; }
+    button { padding: 13px 20px; border: 0; border-radius: 9px; background: #86d7eb; color: #10212b; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+    small { display: block; margin-top: 20px; color: #929daf; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Не удалось восстановить интерфейс</h1>
+    <p>Автоматические попытки остановлены, чтобы приложение не перезагружалось бесконечно. Проверьте подключение к интернету и попробуйте ещё раз.</p>
+    <button id="tz-recovery-retry" type="button">Перезагрузить без кеша</button>
+    <p>Вход в аккаунт и настройки сохранятся. Ручная перезагрузка прерывает текущий звонок и может удалить неотправленный черновик.</p>
+    <small>Если кнопка не отвечает: меню значка приложения в трее → «Перезагрузить без кеша». Если не помогает — полностью закройте приложение и запустите снова.</small>
+  </main>
+</body>
+</html>

@@ -1,353 +1,340 @@
-import { app, session, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain, powerMonitor, session } from "electron";
+import { IPC } from "../shared/constants";
 import Store from "electron-store";
+import path from "path";
+import { pathToFileURL } from "url";
 
-/**
- * FIX-BLANK: восстановление после «тёмного экрана».
- *
- * Симптом: окно открывается почти-чёрным (виден только `backgroundColor`
- * главного окна), заголовок при этом правильный — «TZ.Connect — Мессенджер
- * Т.Р.И.О.Z». Лечилось только полным удалением и переустановкой приложения.
- *
- * Причина: Electron держит HTTP-кеш на диске (в userData), а веб-часть — это
- * Next.js, который на каждую сборку генерирует НОВЫЕ имена чанков
- * (`/_next/static/chunks/<hash>.js`) и удаляет старые. nginx отдаёт эти файлы с
- * `Cache-Control: public, max-age=31536000, immutable`. Если в кеше осел HTML
- * прошлой сборки, после обновления сервера он ссылается на чанки, которых на
- * сервере уже нет: HTML грузится успешно (поэтому `title` правильный и ни
- * `did-fail-load`, ни проверка 5xx в mainWindow не срабатывают), а весь JS
- * отдаёт 404 — React не монтируется, страница остаётся пустой. Переустановка
- * «помогала» только потому, что удаляла userData вместе с кешем.
- *
- * Три уровня защиты:
- *  1. `invalidateCacheOnVersionChange` — после автообновления клиента кеш кода
- *     сбрасывается на старте (сборка сменилась → старым чанкам верить нельзя);
- *  2. `watchStaleAssets` — ловим 404 на `/_next/static/*`: это точная подпись
- *     устаревшего HTML, чистим кеш и перезагружаем без него;
- *  3. `watchBlankRender` — страховка от любой другой причины: если через
- *     несколько секунд после загрузки в DOM нет ни одного элемента приложения,
- *     перезагружаемся с чистым кешем.
- *
- * ВАЖНО: чистим только HTTP-кеш (`clearCache`), но НЕ `clearStorageData` —
- * иначе удалятся cookie сессии NextAuth и пользователя выбросит из аккаунта.
+/** Восстановление — один цикл на окно, а не отдельный reload на каждый 404.
+ * Cookie, localStorage и пользовательские файлы никогда не удаляются.
  */
+const MAX_ATTEMPTS = 2;
+const VOICE_TTL_MS = 10_000;
+const PROBE_TIMEOUT_MS = 4_000;
+const LOAD_TIMEOUT_MS = 30_000;
+const STABLE_MS = 30_000;
+const CHECK_INTERVAL_MS = 60_000;
+export const RECOVERY_REQUEST = IPC.RECOVER_WINDOW;
+const recoveryFile = path.join(__dirname, "../../static/recovery/index.html");
+const recoveryFileUrl = pathToFileURL(recoveryFile).href;
+const store = new Store<{ cacheAppVersion: string }>({ name: "recovery", defaults: { cacheAppVersion: "" } });
 
-const store = new Store<{ cacheAppVersion: string }>({
-  name: "recovery",
-  defaults: { cacheAppVersion: "" },
-});
-
-/** Сколько ждать монтирования React после загрузки страницы. */
-const BLANK_CHECK_DELAY_MS = 6000;
-
-/** Чтобы не попасть в цикл «перезагрузка → пусто → перезагрузка». */
-let recoveriesDone = 0;
-const MAX_RECOVERIES = 2;
-
-/** Сбросить счётчик после успешного рендера (следующий сбой снова лечим). */
-export function markRenderHealthy(): void {
-  recoveriesDone = 0;
-}
-
-/* ── Разговор важнее самолечения ──────────────────────────────────────
- *
- * Перезагрузка окна сносит дерево React вместе с VoiceProvider, то есть
- * выбрасывает человека из голосового канала. Обычно это оправдано: чинить
- * тёмный экран больше нечем. Но один случай оказался массовым и обидным.
- *
- * Сервер обновляется — Next.js генерирует чанки с новыми именами и удаляет
- * старые. Открытая страница продолжает работать: её код уже в памяти. А вот
- * переход в раздел, который ещё не загружался (настройки, админка, панель
- * канала), тянет чанк ПРОШЛОЙ сборки, получает 404 — и сторож ниже честно
- * лечит «устаревший HTML» перезагрузкой. Со стороны это выглядит так: сидишь
- * в голосовом канале, открываешь настройки — и вылетаешь из разговора.
- *
- * Поэтому во время разговора автоматическая перезагрузка откладывается.
- * Кеш чистится сразу (он ничего не ломает), а сама перезагрузка ждёт конца
- * звонка. Ручная перезагрузка из трея проходит всегда: её попросил человек.
- *
- * О разговоре main-процесс узнаёт из состояния оверлея, которое веб-часть
- * присылает примерно раз в секунду (см. overlay.ts). Если сигналы прекратились
- * (вкладка умерла, окно перезагрузилось), через VOICE_SIGNAL_TTL_MS считаем,
- * что разговора нет: иначе одна потерянная отправка навсегда запретила бы
- * лечение тёмного экрана. */
-
-const VOICE_SIGNAL_TTL_MS = 10_000;
-const PENDING_CHECK_MS = 2000;
-
+type Health = "healthy" | "unhealthy" | "unknown";
+type Request = { reason: string; clearCache?: boolean; manual?: boolean };
+type Options = {
+  getStartUrl: () => string;
+  beforeRecovery: () => void;
+  onResume?: () => void;
+};
+type State = {
+  win: BrowserWindow;
+  options: Options;
+  attempts: number;
+  generation: number;
+  busy: Promise<void> | null;
+  pending: Request | null;
+  failed: boolean;
+  disposed: boolean;
+  checking: boolean;
+  badChecks: number;
+  healthySince: number;
+  httpStatus: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  interval: ReturnType<typeof setInterval>;
+  pendingWatch: ReturnType<typeof setInterval>;
+  dispose: () => void;
+};
+const states = new Map<BrowserWindow, State>();
 let voiceSignalAt = 0;
-let pendingRecovery: { win: BrowserWindow; reason: string } | null = null;
-let pendingTimer: ReturnType<typeof setInterval> | null = null;
+let ipcInstalled = false;
 
-function isVoiceActive(): boolean {
-  return voiceSignalAt > 0 && Date.now() - voiceSignalAt < VOICE_SIGNAL_TTL_MS;
-}
-
-/** Идёт ли сейчас разговор — нужно и окну, чтобы не гасить его навигацией. */
 export function voiceCallActive(): boolean {
-  return isVoiceActive();
+  return voiceSignalAt > 0 && Date.now() - voiceSignalAt < VOICE_TTL_MS;
 }
-
-/** Сообщить, идёт ли сейчас разговор. Зовётся из overlay.ts. */
 export function setVoiceActive(active: boolean): void {
   voiceSignalAt = active ? Date.now() : 0;
-  if (!active) flushPendingRecovery();
+  if (!active) for (const state of states.values()) flushPending(state);
 }
-
-function flushPendingRecovery(): void {
-  const pending = pendingRecovery;
-  if (!pending) return;
-  pendingRecovery = null;
-  if (pendingTimer) {
-    clearInterval(pendingTimer);
-    pendingTimer = null;
-  }
-  if (pending.win.isDestroyed()) return;
-  void clearCacheAndReload(pending.win, `${pending.reason}; разговор закончился`, { force: true });
+function alive(state: State): boolean {
+  return !state.disposed && !state.win.isDestroyed() && !state.win.webContents.isDestroyed();
 }
-
-function armPendingWatch(): void {
-  if (pendingTimer) return;
-  pendingTimer = setInterval(() => {
-    if (!isVoiceActive()) flushPendingRecovery();
-  }, PENDING_CHECK_MS);
+function sameOrigin(state: State, url: string): boolean {
+  try { return new URL(url).origin === new URL(state.options.getStartUrl()).origin; }
+  catch { return false; }
 }
-
-/**
- * Очистить HTTP-кеш и перезагрузить страницу мимо кеша.
- * Cookie и localStorage не трогаем — сессия пользователя сохраняется.
- */
-export async function clearCacheAndReload(
-  win: BrowserWindow,
-  reason: string,
-  opts?: { force?: boolean },
-): Promise<void> {
-  if (win.isDestroyed()) return;
-
-  if (!opts?.force && isVoiceActive()) {
-    // Кеш чистим сразу — это безопасно и к перезагрузке готовит.
-    try {
-      await session.defaultSession.clearCache();
-      await session.defaultSession.clearCodeCaches({ urls: [] });
-    } catch { /* не смертельно: перезагрузим позже всё равно */ }
-    pendingRecovery = { win, reason };
-    armPendingWatch();
-    console.warn(`[recovery] ${reason} — идёт разговор, перезагрузку откладываем до его конца`);
-    return;
-  }
-
-  if (recoveriesDone >= MAX_RECOVERIES) {
-    console.warn(`[recovery] ${reason} — лимит попыток исчерпан, оставляем как есть`);
-    return;
-  }
-  recoveriesDone += 1;
-  console.warn(`[recovery] ${reason} — чистим кеш и перезагружаем (попытка ${recoveriesDone})`);
+function isFallback(state: State): boolean {
+  return state.win.webContents.getURL().split(/[?#]/, 1)[0] === recoveryFileUrl;
+}
+function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
+async function bounded<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await session.defaultSession.clearCache();
-    // Скомпилированный кеш JS живёт отдельно от HTTP-кеша: без его сброса
-    // Chromium может подтянуть код удалённого чанка из code cache.
-    await session.defaultSession.clearCodeCaches({ urls: [] });
-  } catch (err) {
-    console.error("[recovery] не удалось очистить кеш:", err);
-  }
-  if (!win.isDestroyed()) win.webContents.reloadIgnoringCache();
+    return await Promise.race([work, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("recovery timeout")), ms);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
-/**
- * Уровень 1. После обновления клиента (electron-updater) сбрасываем кеш кода
- * один раз: версия приложения сменилась, значит сборка веб-части почти
- * наверняка тоже — старые чанки в кеше уже мусор.
+/** Ошибка/таймаут выполнения JS — неизвестное состояние, НЕ успех.
+ * Одно неизвестное состояние не повод прерывать звонок или текущую навигацию.
  */
-export async function invalidateCacheOnVersionChange(): Promise<void> {
-  const current = app.getVersion();
-  const seen = store.get("cacheAppVersion");
-  if (seen === current) return;
-  store.set("cacheAppVersion", current);
-  if (!seen) return; // первая установка — кеша ещё нет, чистить нечего
-  console.log(`[recovery] версия изменилась ${seen} → ${current}: сбрасываем HTTP-кеш`);
+async function probe(state: State): Promise<Health> {
+  if (!alive(state)) return "unknown";
+  const wc = state.win.webContents;
+  if (wc.isCrashed()) return "unhealthy";
+  if (wc.isLoadingMainFrame() || !sameOrigin(state, wc.getURL())) return "unknown";
+  if (state.httpStatus >= 400) return "unhealthy";
+  const generation = state.generation;
   try {
-    await session.defaultSession.clearCache();
-    await session.defaultSession.clearCodeCaches({ urls: [] });
-  } catch (err) {
-    console.error("[recovery] сброс кеша при смене версии не удался:", err);
-  }
+    const result = await bounded(wc.executeJavaScript(`(() => {
+      const body = document.body;
+      if (!body || document.readyState === "loading") return false;
+      const visible = (el) => {
+        if (typeof el.checkVisibility === "function" && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+        const style = getComputedStyle(el);
+        if (style.visibility === "hidden" || style.display === "none" || Number(style.opacity) === 0) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+      };
+      const controls = Array.from(body.querySelectorAll("button, a[href], input, textarea, [role=button]"));
+      const messages = Array.from(body.querySelectorAll("h1, h2, p, [role=alert]"));
+      return controls.some(visible) || messages.some((el) => visible(el) && (el.innerText || "").trim().length > 20);
+    })()`), PROBE_TIMEOUT_MS);
+    if (!alive(state) || generation !== state.generation) return "unknown";
+    return result === true ? "healthy" : "unhealthy";
+  } catch { return "unknown"; }
 }
-
-/**
- * Уровень 2. 404 на статике Next.js — точная подпись устаревшего HTML в кеше.
- * Одного такого ответа достаточно: чиним сразу, не дожидаясь таймера.
- */
-export function watchStaleAssets(win: BrowserWindow, appOrigin: string): void {
-  session.defaultSession.webRequest.onCompleted({ urls: [`${appOrigin}/_next/static/*`] }, (details) => {
-    if (details.statusCode !== 404) return;
-    void clearCacheAndReload(win, `статика сборки отдала 404 (${details.url})`);
-  });
+function noteHealthy(state: State): void {
+  state.badChecks = 0;
+  if (!state.healthySince) state.healthySince = Date.now();
+  // Только реальный, устойчивый UI возвращает автоматический бюджет.
+  if (Date.now() - state.healthySince >= STABLE_MS) state.attempts = 0;
 }
-
-/**
- * Уровень 3. Страховка: через {@link BLANK_CHECK_DELAY_MS} после загрузки
- * проверяем, смонтировалось ли приложение. Пустой `<body>` (нет ни одного
- * элемента с текстом) означает, что рендер не состоялся.
- */
-/* ═══════════════════════════════════════════════════════════════════
-   FIX-BLANK2: почему трёх уровней выше оказалось мало
-
-   Все три сторожа — лечение ПОСЛЕ того, как человек увидел чёрное окно, и каждый
-   из них промахивается в своём случае:
-
-   • уровень 1 срабатывает только при смене версии КЛИЕНТА. Но сервер выкатывается
-     гораздо чаще, чем обновляется десктоп: версия та же, сборка другая;
-   • уровень 2 ждёт 404 на /_next/static/*. Если старый HTML и старые чанки лежат в
-     кеше вместе (а они там и лежат вместе: `immutable`, год хранения), сетевого
-     запроса не будет вовсе — и 404 не придёт никогда. Старый код бодро запускается
-     и умирает уже на общении с новым сервером (другие payload build id,
-     несовпадение RSC-потока) — белый экран без единого 404;
-   • уровень 3 считал страницу живой при ЛЮБОМ `svg`/`img` в DOM. А упавшее дерево
-     React обычно оставляет в разметке каркас с одной-двумя иконками — проверка
-     отвечала «всё хорошо» на том самом чёрном экране, который должна была поймать.
-
-   Отсюда три добавления ниже: запрет кешировать сам HTML (лечит причину),
-   честная проверка «интерфейс есть» и тихое обслуживание кеша раз в 15 минут.
-   ══════════════════════════════════════════════════════════════════ */
-
-/**
- * Уровень 0 — лечение причины, а не последствий.
- *
- * Сам HTML-документ — единственный файл, который в этой схеме нельзя брать из
- * кеша: именно он содержит список чанков конкретной сборки. Статика с хешем в
- * имени может и должна кешироваться годами — её не трогаем, иначе каждый запуск
- * тянул бы весь код заново.
- *
- * Стоит это одного условного запроса на открытие окна: документ всё равно
- * отдаётся Next.js без тяжёлой работы, а цена ошибки — нерабочее приложение до
- * ручной чистки кеша.
- */
-export function preventDocumentCaching(appOrigin: string): void {
-  session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: [`${appOrigin}/*`] },
-    (details, callback) => {
-      if (details.resourceType === "mainFrame") {
-        details.requestHeaders["Cache-Control"] = "no-cache";
-        details.requestHeaders["Pragma"] = "no-cache";
-      }
-      callback({ requestHeaders: details.requestHeaders });
-    },
-  );
+function scheduleCheck(state: State, ms = 5_000): void {
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = setTimeout(() => { state.timer = null; void check(state); }, ms);
 }
-
-/**
- * Отрисован ли интерфейс на самом деле.
- *
- * Проверяем не «есть хоть что-то в DOM», а признаки живого приложения: видимый
- * текст или сколько-нибудь развесистое дерево с элементами управления. Одинокая
- * иконка на пустом фоне — это и есть тот самый чёрный экран.
- */
-async function rendererLooksAlive(win: BrowserWindow): Promise<boolean> {
-  if (win.isDestroyed()) return true;
+async function check(state: State): Promise<void> {
+  if (!alive(state) || state.busy || state.failed || state.checking) return;
+  if (state.win.webContents.isLoadingMainFrame() || !sameOrigin(state, state.win.webContents.getURL())) return;
+  state.checking = true;
+  const generation = state.generation;
   try {
-    return (await win.webContents.executeJavaScript(
-      `(() => {
-         const b = document.body;
-         if (!b) return false;
-         const text = (b.innerText || "").replace(/\s+/g, "").length;
-         const controls = b.querySelectorAll("button, a[href], input, textarea, canvas").length;
-         return text > 20 || controls >= 3;
-       })()`,
-      true,
-    )) as boolean;
-  } catch {
-    /* Окно закрылось или JS не выполнить — лучше не лечить, чем перезагрузить вслепую. */
-    return true;
-  }
+    const health = await probe(state);
+    if (!alive(state) || generation !== state.generation || state.busy) return;
+    if (health === "healthy") { noteHealthy(state); return; }
+    state.healthySince = 0;
+    state.badChecks += 1;
+    if (state.badChecks < 2) { scheduleCheck(state); return; }
+    void requestRecovery(state, { reason: `интерфейс недоступен (${health})` });
+  } finally { state.checking = false; }
+}
+function flushPending(state: State): void {
+  if (!state.pending || state.busy || voiceCallActive() || !alive(state)) return;
+  const request = state.pending;
+  state.pending = null;
+  void requestRecovery(state, request);
 }
 
-/**
- * Тихое обслуживание кеша раз в 15 минут.
- *
- * Делает ровно то, что человек делает руками, но без него и без перезагрузки:
- * выкидывает из кеша всё, что успело там осесть. Открытая страница от этого не
- * страдает: её код уже в памяти, а картинки и аватары живут в отдельном
- * локальном кеше (mediaCache), который здесь не трогается.
- *
- * Заодно — осмотр окна: если интерфейса нет, человек сейчас смотрит на чёрный
- * прямоугольник — такое лечится перезагрузкой сразу.
- *
- * Чего здесь сознательно НЕТ: периодической перезагрузки «на всякий случай». Она
- * сносит дерево React вместе с VoiceProvider, то есть выбрасывает из разговора и теряет
- * недописанное сообщение — цена выше пользы.
- */
-const CACHE_MAINTENANCE_MS = 15 * 60 * 1000;
-let maintenanceTimer: ReturnType<typeof setInterval> | null = null;
-
-export function startCacheMaintenance(win: BrowserWindow): void {
-  stopCacheMaintenance();
-  maintenanceTimer = setInterval(() => {
-    void runCacheMaintenance(win);
-  }, CACHE_MAINTENANCE_MS);
+async function clearCaches(win: BrowserWindow): Promise<void> {
+  // Используем сессию именно этого окна, не глобальную defaultSession.
+  await win.webContents.session.clearCache();
+  await win.webContents.session.clearCodeCaches({ urls: [] });
 }
-
-export function stopCacheMaintenance(): void {
-  if (maintenanceTimer) {
-    clearInterval(maintenanceTimer);
-    maintenanceTimer = null;
-  }
+async function showFailure(state: State): Promise<void> {
+  if (!alive(state)) return;
+  state.failed = true;
+  state.pending = null;
+  state.options.beforeRecovery();
+  try { await bounded(state.win.loadFile(recoveryFile), LOAD_TIMEOUT_MS); }
+  catch (err) { console.error("[recovery] локальный экран недоступен; используйте меню трея", err); }
 }
-
-async function runCacheMaintenance(win: BrowserWindow): Promise<void> {
-  if (win.isDestroyed()) {
-    stopCacheMaintenance();
-    return;
+async function reloadAndVerify(state: State, clearCache: boolean): Promise<boolean> {
+  if (clearCache) {
+    try { await bounded(clearCaches(state.win), 10_000); }
+    catch (err) { console.warn("[recovery] очистка кеша не завершилась", err); }
   }
+  if (!alive(state)) return false;
+  const wc = state.win.webContents;
+  const current = wc.getURL();
+  const target = sameOrigin(state, current) ? current : state.options.getStartUrl();
+  state.httpStatus = 0;
   try {
-    await session.defaultSession.clearCache();
-    await session.defaultSession.clearCodeCaches({ urls: [] });
-  } catch (err) {
-    console.warn("[recovery] плановая чистка кеша не удалась:", err);
+    // loadURL позволяет дождаться загрузки. no-cache заставляет перепроверить
+    // документ; новая HTML-сборка указывает на новые хешированные чанки.
+    await bounded(state.win.loadURL(target, { extraHeaders: "Cache-Control: no-cache\r\nPragma: no-cache\r\n" }), LOAD_TIMEOUT_MS);
+  } catch { return false; }
+  // Даём React время на гидратацию. Единственный did-finish-load не успех.
+  for (let i = 0; i < 4 && alive(state); i += 1) {
+    await delay(3_000);
+    if (!alive(state)) return false;
+    if (await probe(state) === "healthy") return true;
   }
-  /* Перезагружаем только то, что и так уже не работает. */
-  if (await rendererLooksAlive(win)) {
-    markRenderHealthy();
-    return;
-  }
-  await clearCacheAndReload(win, "плановая проверка: интерфейс не отрисован");
+  return false;
 }
-
-export function watchBlankRender(win: BrowserWindow, appOrigin: string): void {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  const cancel = (): void => {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
+async function runRecovery(state: State, request: Request): Promise<void> {
+  state.options.beforeRecovery();
+  state.failed = false;
+  state.healthySince = 0;
+  state.badChecks = 0;
+  // Ручное действие даёт новый бюджет, но не бесконечный цикл.
+  if (request.manual) state.attempts = 0;
+  while (alive(state) && state.attempts < MAX_ATTEMPTS) {
+    if (!request.manual && voiceCallActive()) { state.pending = request; return; }
+    state.attempts += 1;
+    console.warn(`[recovery] ${request.reason}; попытка ${state.attempts}/${MAX_ATTEMPTS}`);
+    if (await reloadAndVerify(state, request.clearCache === true)) {
+      state.healthySince = Date.now();
+      scheduleCheck(state, STABLE_MS);
+      return;
     }
+    if (alive(state) && state.attempts < MAX_ATTEMPTS) await delay(2_000);
+  }
+  if (!request.manual && voiceCallActive()) { state.pending = request; return; }
+  if (alive(state)) await showFailure(state);
+}
+function requestRecovery(state: State, request: Request): Promise<void> {
+  if (!alive(state)) return Promise.resolve();
+  if (state.busy) return state.busy; // объединяем все 404/таймеры текущего цикла
+  if (state.failed && !request.manual) return Promise.resolve();
+  if (!request.manual && voiceCallActive()) {
+    state.pending = { ...request, clearCache: request.clearCache || state.pending?.clearCache };
+    return Promise.resolve();
+  }
+  state.pending = null;
+  // Promise.then фиксирует busy ДО первого побочного эффекта/события loadURL.
+  state.busy = Promise.resolve().then(() => runRecovery(state, request))
+    .catch(async (err) => { console.error("[recovery] ошибка восстановления", err); await showFailure(state); })
+    .finally(() => { state.busy = null; flushPending(state); });
+  return state.busy;
+}
+
+/** Сетевая ошибка тоже проходит через отсрочку звонка, но не чистит кеш. */
+export function recoverWindow(win: BrowserWindow, reason: string): Promise<void> {
+  const state = states.get(win);
+  return state ? requestRecovery(state, { reason }) : Promise.resolve();
+}
+
+/** Ручной путь используется треем и проверенным IPC, не внутренней отсрочкой. */
+export function clearCacheAndReload(win: BrowserWindow, reason: string, opts?: { manual?: boolean }): Promise<void> {
+  const state = states.get(win);
+  return state ? requestRecovery(state, { reason, manual: opts?.manual, clearCache: true }) : Promise.resolve();
+}
+export function recoveryOwnsNavigation(win: BrowserWindow): boolean {
+  const state = states.get(win);
+  return !!state && (!!state.busy || state.failed);
+}
+
+export async function invalidateCacheOnVersionChange(): Promise<void> {
+  const version = app.getVersion();
+  const previous = store.get("cacheAppVersion");
+  if (version === previous) return;
+  try {
+    if (previous) {
+      // На старте окна ещё нет; только здесь используется defaultSession.
+      await bounded(session.defaultSession.clearCache(), 10_000);
+      await bounded(session.defaultSession.clearCodeCaches({ urls: [] }), 10_000);
+    }
+    // Не запоминаем успешную миграцию до фактического завершения очистки.
+    store.set("cacheAppVersion", version);
+  } catch (err) { console.warn("[recovery] кеш версии не обновлён; повторим при следующем запуске", err); }
+}
+
+/** Подписки устанавливаются один раз на окно и снимаются при его закрытии. */
+export function installRecovery(win: BrowserWindow, options: Options): void {
+  states.get(win)?.dispose();
+  const state: State = {
+    win, options, attempts: 0, generation: 0, busy: null, pending: null,
+    failed: false, disposed: false, checking: false, badChecks: 0,
+    healthySince: 0, httpStatus: 0, timer: null,
+    interval: setInterval(() => { void check(state); }, CHECK_INTERVAL_MS),
+    // Renderer может перестать слать voice=false. После TTL не ждём целую минуту.
+    pendingWatch: setInterval(() => flushPending(state), 2_000),
+    dispose: () => undefined,
   };
+  states.set(win, state);
+  const wc = win.webContents;
+  const onStart = (): void => { state.generation += 1; state.healthySince = 0; state.badChecks = 0; };
+  const onFinish = (): void => { if (!state.busy && !state.failed) scheduleCheck(state, 15_000); };
+  const onNavigate = (_e: Electron.Event, url: string, status: number): void => {
+    if (sameOrigin(state, url)) state.httpStatus = status;
+  };
+  const onGone = (_e: Electron.Event, details: Electron.RenderProcessGoneDetails): void => {
+    voiceSignalAt = 0; // погибший renderer уже не может поддерживать звонок
+    console.warn(`[recovery] render-process-gone: ${details.reason}, exit=${details.exitCode}`);
+    if (state.failed) return; // ручной путь через трей остаётся доступен
+    void requestRecovery(state, { reason: `renderer завершился (${details.reason})` });
+  };
+  const onUnresponsive = (): void => { state.healthySince = 0; scheduleCheck(state); };
+  const onWake = (): void => {
+    state.healthySince = 0;
+    options.onResume?.();
+    scheduleCheck(state, 5_000);
+  };
+  const onShow = (): void => { scheduleCheck(state, 2_000); };
+  wc.on("did-start-loading", onStart);
+  wc.on("did-finish-load", onFinish);
+  wc.on("did-navigate", onNavigate);
+  wc.on("render-process-gone", onGone);
+  win.on("unresponsive", onUnresponsive);
+  win.on("show", onShow);
+  win.on("restore", onShow);
+  win.on("focus", onShow);
+  powerMonitor.on("resume", onWake);
 
-  win.webContents.on("did-start-loading", cancel);
-
-  win.webContents.on("did-finish-load", () => {
-    cancel();
-    const url = win.isDestroyed() ? "" : win.webContents.getURL();
-    // Локальный splash — не наш случай: он рисуется намеренно и пуст по тексту.
-    if (!url.startsWith(appOrigin)) return;
-
-    timer = setTimeout(() => {
-      timer = null;
-      if (win.isDestroyed()) return;
-      /* FIX-BLANK2: раньше считалось, что хватит любого svg/img. Но упавшее дерево
-         React оставляет в разметке каркас с парой иконок — и сторож отвечал
-         «отрисовано» на том самом чёрном экране. */
-      rendererLooksAlive(win)
-        .then((rendered: boolean) => {
-          if (rendered) {
-            markRenderHealthy();
-            return;
-          }
-          void clearCacheAndReload(win, "страница загрузилась, но интерфейс не отрисовался");
-        })
-        .catch(() => {
-          /* окно закрылось или JS не выполнить — молча выходим */
-        });
-    }, BLANK_CHECK_DELAY_MS);
+  // Эти события webRequest глобальны для сессии: только один владелец главного
+  // окна. Origin проверяется при каждом запросе, включая смену appUrl в настройках.
+  const webRequest = wc.session.webRequest;
+  webRequest.onBeforeSendHeaders({ urls: ["http://*/*", "https://*/*"] }, (details, callback) => {
+    if (details.webContentsId === wc.id && details.resourceType === "mainFrame" && sameOrigin(state, details.url)) {
+      details.requestHeaders["Cache-Control"] = "no-cache";
+      details.requestHeaders.Pragma = "no-cache";
+    }
+    callback({ requestHeaders: details.requestHeaders });
   });
+  webRequest.onCompleted({ urls: ["http://*/*", "https://*/*"] }, (details) => {
+    if (!alive(state) || details.webContentsId !== wc.id || details.statusCode !== 404 || !sameOrigin(state, details.url)) return;
+    const pathname = new URL(details.url).pathname;
+    if (pathname.startsWith("/_next/static/") && /\.(?:js|css)$/.test(pathname)) {
+      // URL без query: не пишем токены и параметры пользователя в журнал.
+      console.warn(`[recovery] устаревший ресурс: ${pathname}`);
+      void requestRecovery(state, { reason: "404 ресурса веб-сборки", clearCache: true });
+    }
+  });
+  state.dispose = () => {
+    state.disposed = true;
+    state.pending = null;
+    win.removeListener("closed", state.dispose);
+    if (state.timer) clearTimeout(state.timer);
+    clearInterval(state.interval);
+    clearInterval(state.pendingWatch);
+    wc.removeListener("did-start-loading", onStart);
+    wc.removeListener("did-finish-load", onFinish);
+    wc.removeListener("did-navigate", onNavigate);
+    wc.removeListener("render-process-gone", onGone);
+    win.removeListener("unresponsive", onUnresponsive);
+    win.removeListener("show", onShow);
+    win.removeListener("restore", onShow);
+    win.removeListener("focus", onShow);
+    powerMonitor.removeListener("resume", onWake);
+    webRequest.onBeforeSendHeaders(null);
+    webRequest.onCompleted(null);
+    states.delete(win);
+  };
+  win.once("closed", state.dispose);
 
-  win.on("closed", cancel);
+  if (!ipcInstalled) {
+    ipcInstalled = true;
+    ipcMain.handle(RECOVERY_REQUEST, (event) => {
+      const current = [...states.values()].find((s) => s.win.webContents === event.sender);
+      // Только главное окно и главный frame нашего сайта/локальной ошибки.
+      if (!current || !alive(current) || event.senderFrame !== event.sender.mainFrame) return false;
+      const url = event.senderFrame.url;
+      if (!sameOrigin(current, url) && !(current.failed && isFallback(current))) return false;
+      void clearCacheAndReload(current.win, "ручная кнопка восстановления", { manual: true });
+      return true;
+    });
+  }
+}
+export function stopRecovery(): void {
+  for (const state of [...states.values()]) state.dispose();
 }
