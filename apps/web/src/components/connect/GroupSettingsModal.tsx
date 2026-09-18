@@ -925,6 +925,7 @@ export default function GroupSettingsModal({
 											{ROLE_LABEL[m.role] ?? m.role}
 										</span>
 										{manageable && (
+											<>
 											<select
 												value={m.role}
 												onChange={(e) => handleRoleSelectChange(m.id, e.target.value)}
@@ -936,7 +937,7 @@ export default function GroupSettingsModal({
 												<option value="MODERATOR">Модератор</option>
 												{isOwner && <option value="ADMIN">Админ</option>}
 											</select>
-										{pendingGuide?.memberId === m.id && (
+											{pendingGuide?.memberId === m.id && (
 											<div className="flex items-center gap-1 mt-1 p-1.5 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-400/20">
 												<span className="text-[10px] text-teal-700 dark:text-teal-300 whitespace-nowrap">Дней:</span>
 												<input
@@ -956,6 +957,7 @@ export default function GroupSettingsModal({
 												</button>
 											</div>
 										)}
+											</>
 										)}
 										{kickable && (
 											<div className="flex items-center gap-1 flex-shrink-0">
