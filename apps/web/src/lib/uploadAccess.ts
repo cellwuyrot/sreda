@@ -99,7 +99,7 @@ export async function canAccessUpload(userId: string, path: string): Promise<Upl
 async function computeVerdict(userId: string, path: string): Promise<UploadVerdict> {
   const record = await prisma.uploadedFile.findUnique({
     where: { path },
-    select: { uploaderId: true, channelId: true, conversationId: true, taskId: true },
+    select: { uploaderId: true, channelId: true, conversationId: true, taskId: true, dir: true },
   });
   if (!record) return "unknown";
 
