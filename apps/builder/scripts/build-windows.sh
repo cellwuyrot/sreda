@@ -63,6 +63,12 @@ echo "TRIOZ_VERSION=$VERSION"
 nice -n 15 ionice -c3 npm ci
 
 cd apps/desktop
+
+# FIX-ICON: без npm run build (который включает npm run icons / prepare-icons.mjs)
+# иконки build/icon.ico и resources/icon.png не появляются, и установщик
+# собирается без иконки. Запускаем сборку явно — она идемпотентна.
+npm run build
+
 # --publish never: файлы кладём мы сами, никуда их выкладывать не надо.
 nice -n 15 ionice -c3 npx electron-builder --win --publish never
 
