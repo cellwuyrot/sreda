@@ -63,12 +63,14 @@ function psQuote(value: string): string {
  */
 async function elevatedScript(script: string): Promise<number> {
   const encoded = Buffer.from(script, "utf16le").toString("base64");
-  const inner = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encoded}`;
+  // Явно скрываем и повышенный PowerShell, а не только стартовое окно.
+  // Запрос UAC остаётся системным и никогда не обходится.
+  const inner = `-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand ${encoded}`;
   const outer =
     `$p = Start-Process -FilePath 'powershell.exe' -ArgumentList ${psQuote(inner)} ` +
     `-Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode`;
   try {
-    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", outer], {
+    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", outer], {
       windowsHide: true,
       timeout: 120_000,
     });

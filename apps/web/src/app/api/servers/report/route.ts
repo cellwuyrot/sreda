@@ -155,8 +155,21 @@ export async function POST(req: Request) {
       if (!item || typeof item !== "object") continue;
       const { publicKey, rx, tx } = item as { publicKey?: unknown; rx?: unknown; tx?: unknown };
       if (!isValidWireGuardKey(publicKey)) continue;
-      const rawRx = typeof rx === "number" && Number.isFinite(rx) && rx >= 0 ? rx : 0;
-      const rawTx = typeof tx === "number" && Number.isFinite(tx) && tx >= 0 ? tx : 0;
+      /* Неполный отчёт не равен нулевому счётчику. Если принять отсутствующее
+         поле за 0, сохранится ложный «перезапуск» интерфейса, а следующий
+         корректный накопительный счётчик спишется повторно целиком. */
+      if (
+        typeof rx !== "number" ||
+        !Number.isFinite(rx) ||
+        rx < 0 ||
+        typeof tx !== "number" ||
+        !Number.isFinite(tx) ||
+        tx < 0
+      ) {
+        continue;
+      }
+      const rawRx = rx;
+      const rawTx = tx;
       const peer = await prisma.vpnPeer.findFirst({
         where: { nodeId: node.id, publicKey },
         select: { id: true, rxBytes: true, txBytes: true, lastRx: true, lastTx: true, usageResetAt: true },

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PremiumMark from "@/components/connect/PremiumMark";
 import { LINK_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
-import { daysLeftLabel, formatTraffic } from "@/lib/connectionUsage";
+import { daysLeftLabel, formatTraffic, isUsageMeasurementStale } from "@/lib/connectionUsage";
 
 /**
  * NETLINK: кнопка «TZ» — состояние соединения, а не только вход в окно.
@@ -83,20 +83,28 @@ export default function ConnectionMenu({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [stale, setStale] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
+  /* Не стираем последний честный снимок из-за краткой ошибки сети. Реф нужен,
+     чтобы обработчик загрузки не зависел от самого снимка и не пересоздавался. */
+  const hasStateRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/vpn/me");
+      const res = await fetch("/api/vpn/me", { cache: "no-store" });
       if (!res.ok) throw new Error("Не удалось получить состояние");
       const data: unknown = await res.json();
       /* Ответ проверяется на тип, а не принимается на веру: строка или null вместо
          объекта иначе дойдёт до рендера и сломает его. */
       setState(data && typeof data === "object" ? (data as ConnectionState) : {});
+      hasStateRef.current = true;
+      setStale(false);
       setError("");
     } catch (e) {
-      setState(null);
+      /* Последний ответ может быть полезен, но после неудачного обновления он
+         обязан быть помечен как устаревший, а не выглядеть текущим. */
+      setStale(hasStateRef.current);
       setError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
       setLoading(false);
@@ -188,16 +196,27 @@ export default function ConnectionMenu({
   const servers = Array.isArray(state?.servers) ? (state?.servers as ServerChoice[]) : [];
   const serviceEnabled = state?.serviceEnabled !== false;
   const entitled = state?.entitled === true;
-  const limitGb = typeof traffic?.limitGb === "number" ? traffic.limitGb : null;
-  const usedBytes = typeof traffic?.usedBytes === "number" ? traffic.usedBytes : 0;
-  const remainingBytes = typeof traffic?.remainingBytes === "number" ? traffic.remainingBytes : null;
+  const limitGb =
+    typeof traffic?.limitGb === "number" && Number.isFinite(traffic.limitGb) && traffic.limitGb >= 0
+      ? traffic.limitGb
+      : null;
+  const usedBytes =
+    typeof traffic?.usedBytes === "number" && Number.isFinite(traffic.usedBytes) && traffic.usedBytes >= 0
+      ? traffic.usedBytes
+      : null;
+  const remainingBytes =
+    typeof traffic?.remainingBytes === "number" && Number.isFinite(traffic.remainingBytes) && traffic.remainingBytes >= 0
+      ? traffic.remainingBytes
+      : null;
   const overLimit = traffic?.overLimit === true;
-  const share = typeof traffic?.share === "number" ? Math.max(0, Math.min(100, traffic.share)) : 0;
+  const share = typeof traffic?.share === "number" && Number.isFinite(traffic.share) ? Math.max(0, Math.min(100, traffic.share)) : 0;
   const throttleMbits = typeof traffic?.throttleKbps === "number" ? Math.round((traffic.throttleKbps / 1024) * 10) / 10 : 0;
   /* NETLINK-FRESH: расход показываем цифрой только когда он ДЕЙСТВИТЕЛЬНО пришёл
      с узла. Пока учёта не было, «израсходовано 0 ГБ» — не осторожная оценка, а
      неправда: трафик в это время идёт, просто мимо счёта. */
-  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt;
+  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt && usedBytes !== null;
+  const usedTrafficText = usedBytes === null ? null : formatTraffic(usedBytes);
+  const measurementStale = measured && isUsageMeasurementStale(traffic?.measuredAt);
   const planLabel = plan?.label || (entitled ? "Доступ есть" : `Нет подписки ${LINK_PLAN_QUOTED}`);
   const active = !!peer && serviceEnabled && entitled && !overLimit;
   const tone = share >= 100 ? "bg-red-500" : share >= 80 ? "bg-amber-500" : "bg-green-500";
@@ -236,9 +255,11 @@ export default function ConnectionMenu({
                 {loading
                   ? "Проверяем…"
                   : !state
-                    ? "Состояние неизвестно"
-                    : !serviceEnabled
-                      ? "Сервис временно выключен"
+                    ? "Состояние недоступно"
+                    : stale
+                      ? "Данные могут быть неактуальны"
+                      : !serviceEnabled
+                        ? "Сервис временно выключен"
                       : active
                         ? "Включено"
                         : peer
@@ -289,28 +310,34 @@ export default function ConnectionMenu({
                       Трафик
                     </p>
                     <p className="text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                      {limitGb === null || limitGb === 0
-                        ? "без ограничения"
-                        : `до ${limitGb} ГБ${traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}`}
+                      {limitGb === null
+                        ? "лимит не указан"
+                        : limitGb === 0
+                          ? "без ограничения"
+                          : `до ${limitGb} ГБ${traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}`}
                     </p>
                   </div>
-                  {limitGb !== null && limitGb > 0 && (
+                  {limitGb !== null && limitGb > 0 && measured && (
                     <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                       <div className={`h-full rounded-full ${tone}`} style={{ width: `${share}%` }} />
                     </div>
                   )}
                   <p className="mt-1 text-xs font-medium">
-                    {limitGb === null || limitGb === 0
-                      ? measured
-                        ? `Израсходовано ${formatTraffic(usedBytes)}`
-                        : "Расход пока не учтён"
-                      : overLimit
-                        ? "Лимит исчерпан"
-                        : `Осталось ${formatTraffic(remainingBytes ?? 0)}`}
+                    {!measured
+                      ? "Расход пока не учтён"
+                      : limitGb === 0
+                        ? `Израсходовано ${usedTrafficText ?? "расход недоступен"}`
+                        : overLimit
+                          ? "Лимит исчерпан"
+                          : remainingBytes !== null
+                            ? `Осталось ${formatTraffic(remainingBytes)}`
+                            : "Остаток недоступен"}
                     <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
-                      {measured
-                        ? `· израсходовано ${formatTraffic(usedBytes)}`
-                        : "· узел ещё не присылал расход"}
+                      {!measured
+                        ? "· узел ещё не присылал расход"
+                        : measurementStale
+                          ? `· учёт устарел: ${usedTrafficText ?? "расход недоступен"}`
+                          : `· израсходовано ${usedTrafficText ?? "расход недоступен"}`}
                     </span>
                   </p>
                   {overLimit && (
