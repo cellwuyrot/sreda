@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PremiumMark from "@/components/connect/PremiumMark";
 import { LINK_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
-import { daysLeftLabel, formatTraffic, isUsageMeasurementStale } from "@/lib/connectionUsage";
+import { daysLeftLabel } from "@/lib/connectionUsage";
 
 /**
  * NETLINK: кнопка «TZ» — состояние соединения, а не только вход в окно.
  *
- * Всё, что человек спрашивает чаще всего — «включено ли», «сколько осталось
- * трафика», «до какого числа подписка», «можно ли сменить сервер», — живёт здесь.
+ * Всё, что человек спрашивает чаще всего — «включено ли», «до какого числа
+ * подписка», «можно ли сменить сервер», — живёт здесь.
  *
  * Выдача ключей СОЗНАТЕЛЬНО не дублируется: приватный ключ рождается только в
  * браузере и показывается один раз — его надо успеть сохранить, а узкая плашка,
@@ -17,10 +17,8 @@ import { daysLeftLabel, formatTraffic, isUsageMeasurementStale } from "@/lib/con
  * переключает сервер; выдача осталась в окне, на которое ведёт «Настроить».
  *
  * ВАЖНОЕ об устойчивости. Все поля ответа считаются НЕОБЯЗАТЕЛЬНЫМИ, даже если
- * сервер всегда их присылает. Первая же версия читала `state.traffic.overLimit`
- * напрямую — и при ответе без этого поля (старый сервер, кэш оболочки,
- * незавершённое развёртывание) рендер падал, а вместе с ним граница ошибок
- * убирала весь мессенджер. Кнопка в углу не вправе уносить с собой переписку.
+ * сервер всегда их присылает. Ответ со старой/частичной формой не должен ломать
+ * панель или весь мессенджер. Кнопка в углу не вправе уносить с собой переписку.
  */
 
 interface ServerChoice {
@@ -43,26 +41,9 @@ interface ConnectionState {
     note?: string;
     until?: string | null;
   } | null;
-  traffic?: {
-    usedBytes?: number;
-    limitBytes?: number;
-    /** Без лимита — null, а не большое число. */
-    remainingBytes?: number | null;
-    /** Доля расхода 0…100, уже в процентах. */
-    share?: number;
-    overLimit?: boolean;
-    periodEnd?: string;
-    limitGb?: number;
-    overLimitAction?: string;
-    throttleKbps?: number;
-    /** NETLINK-FRESH: когда расход последний раз приходил с узла. */
-    measuredAt?: string | null;
-  } | null;
   servers?: ServerChoice[] | null;
   peer?: { enabled?: boolean; nodeId?: string; node?: { name?: string; region?: string } | null } | null;
 }
-
-const CONNECTION_STATE_REFRESH_MS = 30_000;
 
 interface ConnectionMenuProps {
   isPremium: boolean;
@@ -90,58 +71,33 @@ export default function ConnectionMenu({
   /* Не стираем последний честный снимок из-за краткой ошибки сети. Реф нужен,
      чтобы обработчик загрузки не зависел от самого снимка и не пересоздавался. */
   const hasStateRef = useRef(false);
-  /* Открытие, таймер, focus и ручное обновление могут совпасть. Один GET на
-     всех потребителей сохраняет последнюю цифру и не создаёт шторм запросов. */
-  const loadInFlightRef = useRef<Promise<void> | null>(null);
 
-  const load = useCallback((): Promise<void> => {
-    if (loadInFlightRef.current) return loadInFlightRef.current;
+  const load = useCallback(async () => {
     setLoading(true);
-    const pending = (async () => {
-      try {
-        const res = await fetch("/api/vpn/me", { cache: "no-store" });
-        if (!res.ok) throw new Error("Не удалось получить состояние");
-        const data: unknown = await res.json();
-        /* Ответ проверяется на тип, а не принимается на веру: строка или null вместо
-           объекта иначе дойдёт до рендера и сломает его. */
-        setState(data && typeof data === "object" ? (data as ConnectionState) : {});
-        hasStateRef.current = true;
-        setStale(false);
-        setError("");
-      } catch (e) {
-        /* Последний ответ может быть полезен, но после неудачного обновления он
-           обязан быть помечен как устаревший, а не выглядеть текущим. */
-        setStale(hasStateRef.current);
-        setError(e instanceof Error ? e.message : "Ошибка сети");
-      } finally {
-        setLoading(false);
-        loadInFlightRef.current = null;
-      }
-    })();
-    loadInFlightRef.current = pending;
-    return pending;
+    try {
+      const res = await fetch("/api/vpn/me", { cache: "no-store" });
+      if (!res.ok) throw new Error("Не удалось получить состояние");
+      const data: unknown = await res.json();
+      /* Ответ проверяется на тип, а не принимается на веру: строка или null вместо
+         объекта иначе дойдёт до рендера и сломает его. */
+      setState(data && typeof data === "object" ? (data as ConnectionState) : {});
+      hasStateRef.current = true;
+      setStale(false);
+      setError("");
+    } catch (e) {
+      /* Последний ответ может быть полезен, но после неудачного обновления он
+         обязан быть помечен как устаревший, а не выглядеть текущим. */
+      setStale(hasStateRef.current);
+      setError(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  /* Первый снимок нужен только при открытии. Пока меню открыто, обновляем его
-     как модалку: таймер работает только на видимой вкладке, а focus/возврат
-     видимости дают один немедленный GET. */
+  /* Состояние запрашивается только при открытии: значок на виду всегда, и фоновый
+     опрос ради числа, которое никто не смотрит, — запрос на каждого открытого клиента. */
   useEffect(() => {
     if (open) void load();
-  }, [open, load]);
-
-  useEffect(() => {
-    if (!open) return;
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    const interval = window.setInterval(refreshWhenVisible, CONNECTION_STATE_REFRESH_MS);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("focus", refreshWhenVisible);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("focus", refreshWhenVisible);
-    };
   }, [open, load]);
 
   useEffect(() => {
@@ -214,40 +170,13 @@ export default function ConnectionMenu({
     }
   };
 
-  /* ── Безопасные значения ──
-     Всё, что ниже идёт в разметку, берётся только отсюда: ни одного чтения
-     вложенного поля ответа напрямую. */
   const peer = state?.peer ?? null;
-  const traffic = state?.traffic ?? null;
   const plan = state?.plan ?? null;
   const servers = Array.isArray(state?.servers) ? (state?.servers as ServerChoice[]) : [];
   const serviceEnabled = state?.serviceEnabled !== false;
   const entitled = state?.entitled === true;
-  const limitGb =
-    typeof traffic?.limitGb === "number" && Number.isFinite(traffic.limitGb) && traffic.limitGb >= 0
-      ? traffic.limitGb
-      : null;
-  const usedBytes =
-    typeof traffic?.usedBytes === "number" && Number.isFinite(traffic.usedBytes) && traffic.usedBytes >= 0
-      ? traffic.usedBytes
-      : null;
-  const remainingBytes =
-    typeof traffic?.remainingBytes === "number" && Number.isFinite(traffic.remainingBytes) && traffic.remainingBytes >= 0
-      ? traffic.remainingBytes
-      : null;
-  const overLimit = traffic?.overLimit === true;
-  const share = typeof traffic?.share === "number" && Number.isFinite(traffic.share) ? Math.max(0, Math.min(100, traffic.share)) : 0;
-  const throttleMbits = typeof traffic?.throttleKbps === "number" ? Math.round((traffic.throttleKbps / 1024) * 10) / 10 : 0;
-  /* NETLINK-FRESH: расход показываем цифрой только когда он ДЕЙСТВИТЕЛЬНО пришёл
-     с узла. Пока учёта не было, «израсходовано 0 ГБ» — не осторожная оценка, а
-     неправда: трафик в это время идёт, просто мимо счёта. */
-  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt && usedBytes !== null;
-  const usedTrafficText = usedBytes === null ? null : formatTraffic(usedBytes);
-  const measurementStale = measured && isUsageMeasurementStale(traffic?.measuredAt);
-  const trafficStale = measurementStale || stale;
   const planLabel = plan?.label || (entitled ? "Доступ есть" : `Нет подписки ${LINK_PLAN_QUOTED}`);
-  const active = !!peer && serviceEnabled && entitled && !overLimit;
-  const tone = share >= 100 ? "bg-red-500" : share >= 80 ? "bg-amber-500" : "bg-green-500";
+  const active = !!peer && serviceEnabled && entitled;
 
   return (
     <div className="relative" ref={boxRef}>
@@ -295,26 +224,14 @@ export default function ConnectionMenu({
                           : "Выключено"}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={() => void load()}
-                disabled={loading}
-                className="rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:bg-white/5 disabled:cursor-wait disabled:opacity-50"
-                style={{ borderColor: "var(--cn-border)", color: "var(--cn-muted)" }}
-                aria-label={loading ? "Обновляем данные соединения" : "Обновить данные соединения"}
-              >
-                {loading ? "Обновляем…" : "Обновить"}
-              </button>
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  active ? "bg-green-500/15 text-green-400" : "bg-white/10"
-                }`}
-                style={active ? undefined : { color: "var(--cn-muted)" }}
-              >
-                {active ? "Вкл" : "Выкл"}
-              </span>
-            </div>
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                active ? "bg-green-500/15 text-green-400" : "bg-white/10"
+              }`}
+              style={active ? undefined : { color: "var(--cn-muted)" }}
+            >
+              {active ? "Вкл" : "Выкл"}
+            </span>
           </div>
 
           {error && <p className="mt-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-[11px] text-red-400">{error}</p>}
@@ -341,56 +258,7 @@ export default function ConnectionMenu({
                 </p>
               </div>
 
-              {/* Остаток трафика — полоской: два больших числа рядом глазом не
-                  сравниваются, а длина — сравнивается. */}
-              {traffic && (
-                <div className="mt-2">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                      Трафик
-                    </p>
-                    <p className="text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                      {limitGb === null
-                        ? "лимит не указан"
-                        : limitGb === 0
-                          ? "без ограничения"
-                          : `до ${limitGb} ГБ${traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}`}
-                    </p>
-                  </div>
-                  {limitGb !== null && limitGb > 0 && measured && (
-                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                      <div className={`h-full rounded-full ${tone}`} style={{ width: `${share}%` }} />
-                    </div>
-                  )}
-                  <p className="mt-1 text-xs font-medium">
-                    {!measured
-                      ? "Нет данных"
-                      : limitGb === 0
-                        ? `Израсходовано ${usedTrafficText ?? "расход недоступен"}`
-                        : overLimit
-                          ? "Лимит исчерпан"
-                          : remainingBytes !== null
-                            ? `Осталось ${formatTraffic(remainingBytes)}`
-                            : "Остаток недоступен"}
-                    <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
-                      {!measured
-                        ? "· узел ещё не присылал расход"
-                        : trafficStale
-                          ? `· учёт устарел: ${usedTrafficText ?? "расход недоступен"}`
-                          : limitGb === 0
-                            ? "· данные с узла получены"
-                            : `· израсходовано ${usedTrafficText ?? "расход недоступен"}`}
-                    </span>
-                  </p>
-                  {overLimit && (
-                    <p className="mt-1 text-[11px] text-amber-400">
-                      {traffic.overLimitAction === "THROTTLE"
-                        ? `Скорость снижена до ${throttleMbits} Мбит/с до конца периода.`
-                        : "Соединение отключено до конца периода."}
-                    </p>
-                  )}
-                </div>
-              )}
+
 
               {/* Выбор сервера — только те, куда действительно можно сесть. */}
               <div className="mt-3">
