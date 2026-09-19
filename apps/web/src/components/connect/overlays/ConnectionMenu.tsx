@@ -62,6 +62,8 @@ interface ConnectionState {
   peer?: { enabled?: boolean; nodeId?: string; node?: { name?: string; region?: string } | null } | null;
 }
 
+const CONNECTION_STATE_REFRESH_MS = 30_000;
+
 interface ConnectionMenuProps {
   isPremium: boolean;
   /** Открыть окно Premium: там выдаются ключи и собирается профиль. */
@@ -88,33 +90,58 @@ export default function ConnectionMenu({
   /* Не стираем последний честный снимок из-за краткой ошибки сети. Реф нужен,
      чтобы обработчик загрузки не зависел от самого снимка и не пересоздавался. */
   const hasStateRef = useRef(false);
+  /* Открытие, таймер, focus и ручное обновление могут совпасть. Один GET на
+     всех потребителей сохраняет последнюю цифру и не создаёт шторм запросов. */
+  const loadInFlightRef = useRef<Promise<void> | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback((): Promise<void> => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     setLoading(true);
-    try {
-      const res = await fetch("/api/vpn/me", { cache: "no-store" });
-      if (!res.ok) throw new Error("Не удалось получить состояние");
-      const data: unknown = await res.json();
-      /* Ответ проверяется на тип, а не принимается на веру: строка или null вместо
-         объекта иначе дойдёт до рендера и сломает его. */
-      setState(data && typeof data === "object" ? (data as ConnectionState) : {});
-      hasStateRef.current = true;
-      setStale(false);
-      setError("");
-    } catch (e) {
-      /* Последний ответ может быть полезен, но после неудачного обновления он
-         обязан быть помечен как устаревший, а не выглядеть текущим. */
-      setStale(hasStateRef.current);
-      setError(e instanceof Error ? e.message : "Ошибка сети");
-    } finally {
-      setLoading(false);
-    }
+    const pending = (async () => {
+      try {
+        const res = await fetch("/api/vpn/me", { cache: "no-store" });
+        if (!res.ok) throw new Error("Не удалось получить состояние");
+        const data: unknown = await res.json();
+        /* Ответ проверяется на тип, а не принимается на веру: строка или null вместо
+           объекта иначе дойдёт до рендера и сломает его. */
+        setState(data && typeof data === "object" ? (data as ConnectionState) : {});
+        hasStateRef.current = true;
+        setStale(false);
+        setError("");
+      } catch (e) {
+        /* Последний ответ может быть полезен, но после неудачного обновления он
+           обязан быть помечен как устаревший, а не выглядеть текущим. */
+        setStale(hasStateRef.current);
+        setError(e instanceof Error ? e.message : "Ошибка сети");
+      } finally {
+        setLoading(false);
+        loadInFlightRef.current = null;
+      }
+    })();
+    loadInFlightRef.current = pending;
+    return pending;
   }, []);
 
-  /* Состояние запрашивается только при открытии: значок на виду всегда, и фоновый
-     опрос ради числа, которое никто не смотрит, — запрос на каждого открытого клиента. */
+  /* Первый снимок нужен только при открытии. Пока меню открыто, обновляем его
+     как модалку: таймер работает только на видимой вкладке, а focus/возврат
+     видимости дают один немедленный GET. */
   useEffect(() => {
     if (open) void load();
+  }, [open, load]);
+
+  useEffect(() => {
+    if (!open) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const interval = window.setInterval(refreshWhenVisible, CONNECTION_STATE_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+    };
   }, [open, load]);
 
   useEffect(() => {
@@ -217,6 +244,7 @@ export default function ConnectionMenu({
   const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt && usedBytes !== null;
   const usedTrafficText = usedBytes === null ? null : formatTraffic(usedBytes);
   const measurementStale = measured && isUsageMeasurementStale(traffic?.measuredAt);
+  const trafficStale = measurementStale || stale;
   const planLabel = plan?.label || (entitled ? "Доступ есть" : `Нет подписки ${LINK_PLAN_QUOTED}`);
   const active = !!peer && serviceEnabled && entitled && !overLimit;
   const tone = share >= 100 ? "bg-red-500" : share >= 80 ? "bg-amber-500" : "bg-green-500";
@@ -267,14 +295,26 @@ export default function ConnectionMenu({
                           : "Выключено"}
               </p>
             </div>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                active ? "bg-green-500/15 text-green-400" : "bg-white/10"
-              }`}
-              style={active ? undefined : { color: "var(--cn-muted)" }}
-            >
-              {active ? "Вкл" : "Выкл"}
-            </span>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading}
+                className="rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:bg-white/5 disabled:cursor-wait disabled:opacity-50"
+                style={{ borderColor: "var(--cn-border)", color: "var(--cn-muted)" }}
+                aria-label={loading ? "Обновляем данные соединения" : "Обновить данные соединения"}
+              >
+                {loading ? "Обновляем…" : "Обновить"}
+              </button>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  active ? "bg-green-500/15 text-green-400" : "bg-white/10"
+                }`}
+                style={active ? undefined : { color: "var(--cn-muted)" }}
+              >
+                {active ? "Вкл" : "Выкл"}
+              </span>
+            </div>
           </div>
 
           {error && <p className="mt-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-[11px] text-red-400">{error}</p>}
@@ -324,7 +364,7 @@ export default function ConnectionMenu({
                   )}
                   <p className="mt-1 text-xs font-medium">
                     {!measured
-                      ? "Расход пока не учтён"
+                      ? "Нет данных"
                       : limitGb === 0
                         ? `Израсходовано ${usedTrafficText ?? "расход недоступен"}`
                         : overLimit
@@ -335,9 +375,11 @@ export default function ConnectionMenu({
                     <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
                       {!measured
                         ? "· узел ещё не присылал расход"
-                        : measurementStale
+                        : trafficStale
                           ? `· учёт устарел: ${usedTrafficText ?? "расход недоступен"}`
-                          : `· израсходовано ${usedTrafficText ?? "расход недоступен"}`}
+                          : limitGb === 0
+                            ? "· данные с узла получены"
+                            : `· израсходовано ${usedTrafficText ?? "расход недоступен"}`}
                     </span>
                   </p>
                   {overLimit && (
