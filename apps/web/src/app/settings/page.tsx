@@ -2107,7 +2107,7 @@ export default function SettingsPage() {
                 <ul className="mt-3 space-y-1.5 text-xs">
                   <li className="flex gap-2 text-neutral-600 dark:text-gray-300">
                     <span className="text-cyan-500">✓</span>
-                    <span>Кнопка «TZ» в TZ.Connect — выбор сервера, остаток трафика и срок подписки</span>
+                    <span>Кнопка «TZ» в TZ.Connect — выбор сервера и срок подписки</span>
                   </li>
                   <li className="flex gap-2 text-neutral-600 dark:text-gray-300">
                     <span className="text-cyan-500">✓</span>

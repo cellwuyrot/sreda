@@ -9,7 +9,7 @@ import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
 import { isAndroidShell } from "@/lib/shell"; // VPN-ANDROID
-import { daysLeftLabel, formatTraffic, isUsageMeasurementStale } from "@/lib/connectionUsage"; // NETLINK
+import { daysLeftLabel } from "@/lib/connectionUsage";
 import { useLinkMetrics } from "@/lib/useLinkMetrics"; // FIX-LINKSTATS
 
 /* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
@@ -59,28 +59,11 @@ interface VpnPeerState {
   };
 }
 
-/* NETLINK-2: то, что раньше показывала отдельная плашка над значком «TZ».
-   Плашка убрана: два экрана об одном и том же расходятся тем быстрее, чем
-   чаще правятся. Все поля необязательные: ответ без них (старый сервер,
-   кэш оболочки) должен просто скрыть блок, а не уронить окно. */
 interface PlanState {
   kind?: "premium" | "link" | "none";
   label?: string;
   note?: string;
   until?: string | null;
-}
-
-interface TrafficState {
-  usedBytes?: number;
-  remainingBytes?: number | null;
-  share?: number;
-  overLimit?: boolean;
-  periodEnd?: string;
-  limitGb?: number;
-  overLimitAction?: string;
-  throttleKbps?: number;
-  /** NETLINK-FRESH: когда расход последний раз приходил с узла. */
-  measuredAt?: string | null;
 }
 
 interface ServerChoice {
@@ -98,7 +81,6 @@ interface VpnState {
   nodeReady: boolean;
   peer: (VpnPeerState & { nodeId?: string }) | null;
   plan?: PlanState | null;
-  traffic?: TrafficState | null;
   servers?: ServerChoice[] | null;
 }
 
@@ -206,7 +188,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   /* Успешный снимок не выбрасывается при временном сбое: статус отдельно
      объясняет, можно ли считать показанные цифры актуальными. */
   const [refreshState, setRefreshState] = useState<"loading" | "fresh" | "stale" | "unavailable">("loading");
-  const [refreshing, setRefreshing] = useState(false);
   const hasStateRef = useRef(false);
   const refreshInFlightRef = useRef<Promise<VpnState | null> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -344,7 +325,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     /* Одновременные потребители получают один и тот же результат, а не null.
        Это важно и для повторного запуска эффекта в React StrictMode. */
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
-    setRefreshing(true);
     const pending = (async (): Promise<VpnState | null> => {
     try {
       const res = await fetch("/api/vpn/me", { cache: "no-store" });
@@ -356,7 +336,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         nodeReady: data.nodeReady === true,
         peer: data.peer ?? null,
         plan: data.plan ?? null,
-        traffic: data.traffic ?? null,
         servers: Array.isArray(data.servers) ? data.servers : [],
       };
       setState(next);
@@ -364,13 +343,12 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       setRefreshState("fresh");
       return next;
     } catch {
-      /* Показываем последний ответ только как снимок: обнулять его означало бы
-         прятать известный расход, а выдавать за текущий — вводить в заблуждение. */
+      /* Показываем последний ответ только как снимок: после ошибки он помечается
+         устаревшим, но не очищается, чтобы состояние соединения не дёргалось. */
       setRefreshState(hasStateRef.current ? "stale" : "unavailable");
       return null;
     } finally {
       refreshInFlightRef.current = null;
-      setRefreshing(false);
     }
     })();
     refreshInFlightRef.current = pending;
@@ -498,50 +476,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     ? "Подготавливаем доступ…"
     : "Сервер не готов принять подключение";
 
-  /* NETLINK-2: ответ читается только через эти переменные. Прямое обращение к
-     вложенным полям уже один раз уронило весь мессенджер, когда сервер ответил
-     старой формой без traffic. Окно о соединении не вправе ронять клиент. */
   const plan = state?.plan ?? null;
-  const traffic = state?.traffic ?? null;
   const servers = Array.isArray(state?.servers) ? state.servers : [];
-  const limitGb =
-    typeof traffic?.limitGb === "number" && Number.isFinite(traffic.limitGb) && traffic.limitGb >= 0
-      ? traffic.limitGb
-      : null;
-  const usedBytes =
-    typeof traffic?.usedBytes === "number" && Number.isFinite(traffic.usedBytes) && traffic.usedBytes >= 0
-      ? traffic.usedBytes
-      : null;
-  const remainingBytes =
-    typeof traffic?.remainingBytes === "number" && Number.isFinite(traffic.remainingBytes) && traffic.remainingBytes >= 0
-      ? traffic.remainingBytes
-      : null;
-  const share =
-    typeof traffic?.share === "number" && Number.isFinite(traffic.share)
-      ? Math.max(0, Math.min(100, traffic.share))
-      : 0;
-  const overLimit = traffic?.overLimit === true;
-  const throttleMbits = Math.max(1, Math.round((Number(traffic?.throttleKbps) || 0) / 1024));
-  /* Число ноль допустимо только после реального отчёта. Старый/неполный ответ
-     не имеет права превратиться в «0 ГБ» через Number(... ) || 0. */
-  const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt && usedBytes !== null;
-  const usedTrafficText = usedBytes === null ? null : formatTraffic(usedBytes);
-  const measurementStale = measured && isUsageMeasurementStale(traffic?.measuredAt);
-  /* На самом круге только короткий счётчик. Подробности и причины отсутствия
-     показаний живут ниже, чтобы не превращать выключатель в нечитаемую плашку. */
-  const trafficButtonText = measured ? usedTrafficText ?? "—" : "Нет данных";
-  const trafficDetails = !traffic
-    ? "Учёт трафика недоступен: данных нет"
-    : !measured
-      ? "Учёт: ждём отчёт узла"
-      : measurementStale || refreshState === "stale"
-        ? `Учёт устарел · было ${usedTrafficText ?? "расход недоступен"}`
-        : `Расход учтён: ${usedTrafficText ?? "расход недоступен"}`;
-  /* Длинная версия остаётся доступной ассистивным технологиям, но не занимает
-     место внутри круга и не дублирует подпись под ним. */
-  const trafficAriaDetails = measured && !measurementStale && refreshState !== "stale"
-    ? `Израсходовано ${usedTrafficText ?? "расход недоступен"}`
-    : trafficDetails;
 
   return (
     <div className="relative p-6 text-neutral-900 dark:text-white">
@@ -567,8 +503,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             onClick={() => void togglePower()}
             disabled={!powerReady}
             aria-pressed={active}
-            aria-label={`${powerLabel}. ${trafficAriaDetails}. ${trafficButtonText}`}
-            title={powerReady ? `${powerLabel}. ${trafficAriaDetails}. ${trafficButtonText}` : powerHint}
+            aria-label={powerLabel}
+            title={powerReady ? powerLabel : powerHint}
             className={`relative grid h-28 w-28 place-items-center rounded-full border outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-cyan-400/60 ${
               powerReady ? "cursor-pointer hover:scale-[1.03] active:scale-95" : "cursor-not-allowed opacity-70"
             } ${active
@@ -585,25 +521,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               <path d="M12 2v10" />
               <path d="M6.35 5.35a8 8 0 1 0 11.3 0" />
             </svg>
-            {/* Расход привязан к самой кнопке включения: его видно до действия,
-                в том числе у отдельного тарифа «Ускоренный интернет». */}
-            <span className="absolute inset-x-3 bottom-2 max-w-[88px] truncate text-center text-xs font-medium tabular-nums leading-tight" aria-hidden>
-              {trafficButtonText}
-            </span>
           </button>
-
-          <div className="mt-3 w-full max-w-sm text-center">
-            <p className="text-xs leading-relaxed text-neutral-600 dark:text-white/65">{trafficDetails}</p>
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              disabled={refreshing}
-              className="mt-2 rounded-xl border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-50 disabled:cursor-wait disabled:opacity-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/5"
-              aria-label="Обновить данные расхода"
-            >
-              {refreshing ? "Обновляем…" : "Обновить данные"}
-            </button>
-          </div>
 
           {state === null && refreshState === "loading" && (
             <strong className="mt-4 text-sm text-neutral-500 dark:text-white/50">Проверяем состояние…</strong>
@@ -692,9 +610,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </p>
         )}
 
-        {/* ── Тариф, расход и сервер ──
-            NETLINK-2: раньше жило в отдельной плашке над значком. Каждое значение
-            читается защитно: ответ без этих полей обязан просто скрыть блок. */}
+        {/* ── Тариф и сервер ── */}
         {plan && (
           <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
             <div className="flex items-baseline justify-between gap-3">
@@ -715,53 +631,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {traffic && (
-          <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Трафик</span>
-              <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                {limitGb === null
-                  ? "лимит не указан"
-                  : limitGb === 0
-                    ? "без ограничения"
-                    : `до ${limitGb} ГБ${traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}`}
-              </span>
-            </div>
-            {limitGb !== null && limitGb > 0 && measured && (
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-white/10">
-                <div
-                  className={`h-full rounded-full transition-all ${overLimit ? "bg-red-500" : share > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
-                  style={{ width: `${Math.max(2, Math.min(100, share))}%` }}
-                />
-              </div>
-            )}
-            <p className="mt-2 text-[11px] text-neutral-500 dark:text-white/45">
-              <strong className="text-neutral-900 dark:text-white">
-                {!measured
-                  ? "Расход пока не учтён"
-                  : limitGb === 0
-                    ? "Без ограничения"
-                    : remainingBytes !== null
-                      ? `Осталось ${formatTraffic(remainingBytes)}`
-                      : "Остаток недоступен"}
-              </strong>{" "}
-              {/* NETLINK-FRESH: пока учёта с узла не было, цифры расхода нет — и
-                  ноль здесь был бы уверенным неверным ответом. */}
-              {!measured
-                ? "· расход с узла ещё не приходил"
-                : measurementStale || refreshState === "stale"
-                  ? `· учёт устарел: было ${usedTrafficText ?? "расход недоступен"}`
-                  : `· израсходовано ${usedTrafficText ?? "расход недоступен"}`}
-            </p>
-            {overLimit && (
-              <p className="mt-2 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
-                {traffic.overLimitAction === "THROTTLE"
-                  ? `Лимит исчерпан — скорость снижена до ${throttleMbits} Мбит/с до конца периода.`
-                  : "Лимит исчерпан — соединение отключено до конца периода."}
-              </p>
-            )}
-          </div>
-        )}
+
 
         {/* ── FIX-LINKSTATS: состояние канала ──
             Задержка обновляется сама каждые пять секунд, скорость — только по кнопке:
