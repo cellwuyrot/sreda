@@ -1,3 +1,9 @@
+/**
+ * MAIL-KIT: тесты отправки письма с ящика домена.
+ *
+ * Тело письма роут читает из поля `body` (так его и присылает MailComposer);
+ * тесты раньше посылали `text` и потому падали на «Пустое письмо».
+ */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prismaMock, row } from "@/test/prismaMock";
 
@@ -38,7 +44,7 @@ describe("POST /api/admin/mail/[address]/send", () => {
   it("404 на неизвестный ящик", async () => {
     mockSession.mockResolvedValue(admin as never);
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
-    const res = await mod.POST(post("nobody", { to: "a@b.co", subject: "s", text: "t" }), {
+    const res = await mod.POST(post("nobody", { to: "a@b.co", subject: "s", body: "t" }), {
       params: Promise.resolve({ address: "nobody" }),
     });
     expect(res.status).toBe(404);
@@ -47,7 +53,7 @@ describe("POST /api/admin/mail/[address]/send", () => {
   it("400 при неверном адресе", async () => {
     mockSession.mockResolvedValue(admin as never);
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
-    const res = await mod.POST(post("support", { to: "bad", subject: "s", text: "t" }), {
+    const res = await mod.POST(post("support", { to: "bad", subject: "s", body: "t" }), {
       params: Promise.resolve({ address: "support" }),
     });
     expect(res.status).toBe(400);
@@ -58,7 +64,7 @@ describe("POST /api/admin/mail/[address]/send", () => {
     mockSession.mockResolvedValue(admin as never);
     mockSend.mockResolvedValue({ ok: false, messageId: null, error: "SMTP не настроен" });
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
-    const res = await mod.POST(post("support", { to: "a@b.co", subject: "s", text: "t" }), {
+    const res = await mod.POST(post("support", { to: "a@b.co", subject: "s", body: "t" }), {
       params: Promise.resolve({ address: "support" }),
     });
     expect(res.status).toBe(502);
@@ -70,7 +76,7 @@ describe("POST /api/admin/mail/[address]/send", () => {
     prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
     prismaMock.mailMessage.create.mockResolvedValue(row({ id: "msg1" }));
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
-    const res = await mod.POST(post("support", { to: "noperight81@gmail.com", subject: "Привет", text: "Текст" }), {
+    const res = await mod.POST(post("support", { to: "noperight81@gmail.com", subject: "Привет", body: "Текст" }), {
       params: Promise.resolve({ address: "support" }),
     });
     expect(res.status).toBe(200);

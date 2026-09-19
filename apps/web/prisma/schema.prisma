@@ -2545,12 +2545,16 @@ model MailMessage {
   sentByName String?
   inReplyToMid String?
   attachments MailAttachment[]
-  // RFC Message-ID письма — чтобы вебхук не задваивал одно и то же сообщение.
-  messageId String?        @unique
+  // Ключ дедупликации письма: RFC Message-ID либо синтетический ключ
+  // (lib/projectMail.syntheticMessageId) для писем без заголовка.
+  // Уникальность — в пределах ящика: одно и то же письмо, адресованное двум
+  // ящикам домена, должно лежать в истории каждого из них.
+  messageId String?
   archived  Boolean        @default(false)
   sentAt    DateTime       @default(now())
   createdAt DateTime       @default(now())
 
+  @@unique([mailboxId, messageId])
   @@index([mailboxId, archived, sentAt])
   @@index([mailboxId, direction, archived, sentAt])
 }

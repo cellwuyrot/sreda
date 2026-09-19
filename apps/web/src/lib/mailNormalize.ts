@@ -8,7 +8,7 @@
  */
 
 import type { ParsedMail, AddressObject } from "mailparser";
-import { previewFromText } from "./projectMail";
+import { previewFromText, syntheticMessageId } from "./projectMail";
 
 /** Письмо в виде, готовом для записи в базу (MailMessage). */
 export interface NormalizedIncoming {
@@ -19,7 +19,12 @@ export interface NormalizedIncoming {
   preview: string;
   bodyText: string;
   bodyHtml: string | null;
-  messageId: string | null;
+  /**
+   * Ключ дедупликации: настоящий RFC Message-ID письма, а если его в письме
+   * нет — посчитанный нами синтетический (см. syntheticMessageId). Никогда не
+   * null: без ключа повторный опрос ящика создавал дубль.
+   */
+  messageId: string;
   sentAt: Date;
 }
 
@@ -43,16 +48,26 @@ function addressText(addr: AddressObject | AddressObject[] | undefined): string 
 export function normalizeParsed(parsed: ParsedLike, fallbackTo: string): NormalizedIncoming {
   const bodyText = (parsed.text || "").toString();
   const bodyHtml = typeof parsed.html === "string" ? parsed.html : null;
-  const subject = (parsed.subject || "(без темы)").toString();
+  const subject = (parsed.subject || "(без темы)").toString().slice(0, 2000);
+  const fromAddr = addressText(parsed.from).slice(0, 320);
+  const sentAt = parsed.date instanceof Date && !isNaN(parsed.date.getTime()) ? parsed.date : new Date();
   return {
     direction: "incoming",
-    fromAddr: addressText(parsed.from).slice(0, 320),
+    fromAddr,
     toAddr: (addressText(parsed.to) || fallbackTo).slice(0, 320),
-    subject: subject.slice(0, 2000),
+    subject,
     preview: previewFromText(bodyText || subject),
     bodyText,
     bodyHtml,
-    messageId: parsed.messageId ? String(parsed.messageId).slice(0, 400) : null,
-    sentAt: parsed.date instanceof Date && !isNaN(parsed.date.getTime()) ? parsed.date : new Date(),
+    messageId: parsed.messageId
+      ? String(parsed.messageId).slice(0, 400)
+      : syntheticMessageId({
+          localPart: fallbackTo.split("@")[0],
+          fromAddr,
+          subject,
+          sentAt,
+          bodyText,
+        }),
+    sentAt,
   };
 }

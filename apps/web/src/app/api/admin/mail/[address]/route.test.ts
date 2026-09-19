@@ -3,7 +3,9 @@
  *
  * Проверяется то, что важно для этого экрана:
  *   • читать и архивировать может только администратор;
- *   • листинг ограничен 10 письмами и фильтруется по направлению;
+ *   • страница истории: направление, архив, лимит, смещение и потолок лимита;
+ *   • поиск и фильтр папки уходят в базу, а не режут загруженную страницу;
+ *   • ответ отдаёт total/hasMore — по ним UI листает историю;
  *   • неизвестный ящик — 404;
  *   • архивация трогает только письмо своего ящика.
  */
@@ -44,8 +46,35 @@ async function callPatch(address: string, body: unknown) {
   return { status: res.status, body: await res.json() };
 }
 
+/** Ящик посеян, писем нет — минимум для проверки формы запроса. */
+function seeded() {
+  prismaMock.projectMailbox.findUnique.mockResolvedValue(row({ id: "m-info", localPart: "info" }));
+  prismaMock.mailMessage.count.mockResolvedValue(row(0));
+  prismaMock.mailMessage.findMany.mockResolvedValue(row([]));
+}
+
+type Contains = { contains: string; mode: "insensitive" };
+type FindManyArg = {
+  take: number;
+  skip: number;
+  orderBy: Array<Record<string, string>>;
+  where: {
+    mailboxId: string;
+    archived: boolean;
+    direction?: string;
+    AND?: Array<{ OR?: Array<Record<string, Contains>> } & Record<string, Contains | unknown>>;
+  };
+};
+
+/** Аргумент последнего findMany — то, что роут реально спросил у базы. */
+function findManyArg(): FindManyArg {
+  const calls = prismaMock.mailMessage.findMany.mock.calls;
+  return calls[calls.length - 1][0] as unknown as FindManyArg;
+}
+
 beforeEach(() => {
   mockSession.mockReset();
+  prismaMock.mailMessage.findMany.mockClear();
 });
 
 describe("GET /api/admin/mail/[address]", () => {
@@ -61,28 +90,78 @@ describe("GET /api/admin/mail/[address]", () => {
     expect(res.status).toBe(404);
   });
 
-  it("ограничивает выборку 10 письмами и фильтрует incoming", async () => {
+  it("страница по умолчанию — 25 писем с начала, фильтр по направлению", async () => {
     asAdmin();
-    prismaMock.projectMailbox.findUnique.mockResolvedValue(row({ id: "m-info", localPart: "info" }));
-    prismaMock.mailMessage.findMany.mockResolvedValue(row([]));
+    seeded();
     await callGet("info", "?direction=incoming");
-    const arg = prismaMock.mailMessage.findMany.mock.calls[0][0] as {
-      take: number;
-      where: { direction?: string; archived: boolean; mailboxId: string };
-    };
-    expect(arg.take).toBe(10);
+    const arg = findManyArg();
+    expect(arg.take).toBe(25);
+    expect(arg.skip).toBe(0);
     expect(arg.where.direction).toBe("incoming");
     expect(arg.where.archived).toBe(false);
     expect(arg.where.mailboxId).toBe("m-info");
   });
 
-  it("?archived=1 показывает архив", async () => {
+  it("limit и offset листают историю, лимит ограничен сверху", async () => {
+    asAdmin();
+    seeded();
+    await callGet("info", "?direction=incoming&limit=50&offset=75");
+    expect(findManyArg().take).toBe(50);
+    expect(findManyArg().skip).toBe(75);
+
+    prismaMock.mailMessage.findMany.mockClear();
+    await callGet("info", "?limit=5000");
+    expect(findManyArg().take).toBe(100);
+  });
+
+  it("сортировка с добором по id — страницы не перетасовываются", async () => {
+    asAdmin();
+    seeded();
+    await callGet("info", "?direction=incoming");
+    expect(findManyArg().orderBy).toEqual([{ sentAt: "desc" }, { id: "desc" }]);
+  });
+
+  it("?archived=1 показывает архив и умеет направление внутри архива", async () => {
+    asAdmin();
+    seeded();
+    await callGet("info", "?archived=1&direction=outgoing");
+    expect(findManyArg().where.archived).toBe(true);
+    expect(findManyArg().where.direction).toBe("outgoing");
+  });
+
+  it("поиск уходит в базу по теме, адресам и предпросмотру", async () => {
+    asAdmin();
+    seeded();
+    await callGet("info", "?direction=incoming&q=%D0%BE%D0%BF%D0%BB%D0%B0%D1%82%D0%B0");
+    const and = findManyArg().where.AND;
+    const or = and?.[0]?.OR ?? [];
+    expect(or).toHaveLength(4);
+    expect(or.map((c) => Object.keys(c)[0])).toEqual(["subject", "fromAddr", "toAddr", "preview"]);
+    expect(or[0].subject).toEqual({ contains: "оплата", mode: "insensitive" });
+  });
+
+  it("фильтр папки уходит в базу вместе с поиском", async () => {
+    asAdmin();
+    seeded();
+    await callGet("info", "?direction=incoming&q=%D0%B0&from=support%40&subject=%D1%81%D1%87%D1%91%D1%82");
+    const and = findManyArg().where.AND ?? [];
+    expect(and).toHaveLength(3);
+    expect(and[1]).toEqual({ fromAddr: { contains: "support@", mode: "insensitive" } });
+    expect(and[2]).toEqual({ subject: { contains: "счёт", mode: "insensitive" } });
+  });
+
+  it("отдаёт total и hasMore для пагинации", async () => {
     asAdmin();
     prismaMock.projectMailbox.findUnique.mockResolvedValue(row({ id: "m-info", localPart: "info" }));
-    prismaMock.mailMessage.findMany.mockResolvedValue(row([]));
-    await callGet("info", "?archived=1");
-    const arg = prismaMock.mailMessage.findMany.mock.calls[0][0] as { where: { archived: boolean } };
-    expect(arg.where.archived).toBe(true);
+    prismaMock.mailMessage.count.mockResolvedValue(row(42));
+    prismaMock.mailMessage.findMany.mockResolvedValue(row([{ id: "x1" }]));
+    const res = await callGet("info", "?direction=incoming&limit=1");
+    expect(res.body).toMatchObject({ total: 42, offset: 0, limit: 1, hasMore: true });
+
+    prismaMock.mailMessage.count.mockResolvedValue(row(2));
+    prismaMock.mailMessage.findMany.mockResolvedValue(row([{ id: "x1" }, { id: "x2" }]));
+    const last = await callGet("info", "?direction=incoming");
+    expect(last.body.hasMore).toBe(false);
   });
 
   it("ящик ещё не посеян — пустой список", async () => {
@@ -91,6 +170,8 @@ describe("GET /api/admin/mail/[address]", () => {
     const res = await callGet("sales");
     expect(res.status).toBe(200);
     expect(res.body.messages).toEqual([]);
+    expect(res.body.total).toBe(0);
+    expect(res.body.hasMore).toBe(false);
   });
 });
 

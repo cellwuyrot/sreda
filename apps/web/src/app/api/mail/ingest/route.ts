@@ -4,8 +4,10 @@ import prisma from "@/lib/prisma";
 import {
   findMailbox,
   isMailDirection,
+  isUniqueViolation,
   mailboxAddress,
   previewFromText,
+  syntheticMessageId,
 } from "@/lib/projectMail";
 
 /**
@@ -139,6 +141,7 @@ export async function POST(req: NextRequest) {
   const bodyHtml = typeof body.html === "string" ? body.html : null;
   const messageId = typeof body.messageId === "string" ? body.messageId.slice(0, 400) : null;
   const sentAt = body.sentAt ? new Date(body.sentAt as string) : new Date();
+  const safeSentAt = isNaN(sentAt.getTime()) ? new Date() : sentAt;
 
   // Ящик домена — тот конец, который принадлежит нам: для входящих это "to",
   // для исходящих — "from".
@@ -162,26 +165,43 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Дедуп по Message-ID: сервис может повторить вебхук при ретрае.
-  if (messageId) {
-    const dup = await prisma.mailMessage.findUnique({ where: { messageId } });
-    if (dup) return NextResponse.json({ ok: true, id: dup.id, deduped: true });
-  }
-
-  const created = await prisma.mailMessage.create({
-    data: {
-      mailboxId: mailbox.id,
-      direction,
+  // Дедуп в пределах ящика: сервис может повторить вебхук при ретрае. Если
+  // Message-ID не пришёл, считаем ключ по содержимому — иначе каждый ретрай
+  // создавал бы копию письма.
+  const dedupKey =
+    messageId ||
+    syntheticMessageId({
+      localPart: def.localPart,
       fromAddr,
-      toAddr,
       subject,
-      preview: previewFromText(bodyText || subject),
+      sentAt: safeSentAt,
       bodyText,
-      bodyHtml,
-      messageId,
-      sentAt: isNaN(sentAt.getTime()) ? new Date() : sentAt,
-    },
+    });
+  const dup = await prisma.mailMessage.findFirst({
+    where: { mailboxId: mailbox.id, messageId: dedupKey },
+    select: { id: true },
   });
+  if (dup) return NextResponse.json({ ok: true, id: dup.id, deduped: true });
 
-  return NextResponse.json({ ok: true, id: created.id });
+  try {
+    const created = await prisma.mailMessage.create({
+      data: {
+        mailboxId: mailbox.id,
+        direction,
+        fromAddr,
+        toAddr,
+        subject,
+        preview: previewFromText(bodyText || subject),
+        bodyText,
+        bodyHtml,
+        messageId: dedupKey,
+        sentAt: safeSentAt,
+      },
+    });
+    return NextResponse.json({ ok: true, id: created.id });
+  } catch (error) {
+    // Параллельный ретрай того же вебхука — письмо уже записано.
+    if (isUniqueViolation(error)) return NextResponse.json({ ok: true, deduped: true });
+    throw error;
+  }
 }
