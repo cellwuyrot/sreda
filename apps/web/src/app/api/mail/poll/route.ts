@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { timingSafeEqual } from "crypto";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { PROJECT_MAILBOXES, mailboxAddress, findMailbox } from "@/lib/projectMail";
+import { PROJECT_MAILBOXES, mailboxAddress, isUniqueViolation } from "@/lib/projectMail";
 import { fetchRecent } from "@/lib/mailImap";
 
 /**
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
 
   let fetched = 0;
   let stored = 0;
+  let duplicates = 0;
   const errors: Array<{ address: string; error: string }> = [];
 
   for (const def of targets) {
@@ -69,26 +70,40 @@ export async function POST(req: NextRequest) {
       });
 
       for (const msg of messages) {
-        // Дедуп по Message-ID: повторный опрос не должен плодить дубли.
-        if (msg.messageId) {
-          const dup = await prisma.mailMessage.findUnique({ where: { messageId: msg.messageId } });
-          if (dup) continue;
-        }
-        await prisma.mailMessage.create({
-          data: {
-            mailboxId: mailbox.id,
-            direction: "incoming",
-            fromAddr: msg.fromAddr,
-            toAddr: msg.toAddr,
-            subject: msg.subject,
-            preview: msg.preview,
-            bodyText: msg.bodyText,
-            bodyHtml: msg.bodyHtml,
-            messageId: msg.messageId,
-            sentAt: msg.sentAt,
-          },
+        // Дедуп в пределах ящика: у каждого письма ключ есть всегда (настоящий
+        // Message-ID либо синтетический), поэтому повторный опрос не плодит
+        // копии — а одно письмо на два ящика домена попадает в оба.
+        const dup = await prisma.mailMessage.findFirst({
+          where: { mailboxId: mailbox.id, messageId: msg.messageId },
+          select: { id: true },
         });
-        stored += 1;
+        if (dup) {
+          duplicates += 1;
+          continue;
+        }
+        try {
+          await prisma.mailMessage.create({
+            data: {
+              mailboxId: mailbox.id,
+              direction: "incoming",
+              fromAddr: msg.fromAddr,
+              toAddr: msg.toAddr,
+              subject: msg.subject,
+              preview: msg.preview,
+              bodyText: msg.bodyText,
+              bodyHtml: msg.bodyHtml,
+              messageId: msg.messageId,
+              sentAt: msg.sentAt,
+            },
+          });
+          stored += 1;
+        } catch (error) {
+          // Два опроса могли пойти параллельно (кнопка и cron) и дойти до
+          // create с одним и тем же ключом. Уникальный индекс отсечёт второго:
+          // это дубль, а не сбой ящика — иначе одно письмо роняло весь опрос.
+          if (isUniqueViolation(error)) duplicates += 1;
+          else throw error;
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -99,10 +114,10 @@ export async function POST(req: NextRequest) {
   // Если не удалось ни один ящик — это ошибка конфигурации, а не частичный успех.
   if (errors.length === targets.length) {
     return NextResponse.json(
-      { ok: false, fetched, stored, errors },
+      { ok: false, fetched, stored, duplicates, errors },
       { status: 502 },
     );
   }
 
-  return NextResponse.json({ ok: true, fetched, stored, errors });
+  return NextResponse.json({ ok: true, fetched, stored, duplicates, errors });
 }

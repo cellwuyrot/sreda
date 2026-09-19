@@ -7,16 +7,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAdminBackHref, useAdminBackLabel } from "@/components/admin/useAdminBackHref";
 import MailComposer from "@/components/admin/mail/MailComposer";
+import { listingParams } from "@/lib/mailListing";
 
 /**
- * PROJECT-MAIL — раздел «Тема Email и обработка данных» админ-панели.
+ * PROJECT-MAIL — раздел «Email и обработка данных» админ-панели.
  *
  * Функции:
- *  1. Полное открытие письма — клик на строке разворачивает панель с bodyHtml.
- *  2. Поиск по текущему ящику — по теме, адресу отправителя/получателя.
+ *  1. История ящика постранично: «Показать ещё» и «показано X из Y».
+ *     Выборка, поиск и фильтр папки считаются в базе, а не по видимым строкам.
+ *  2. Полное открытие письма — клик на строке разворачивает панель с bodyHtml.
  *  3. Чёрный список адресов — вкладка «ЧС», CRUD через /api/admin/mail/blacklist.
- *  4. Режим папок — кнопка «Настройка папок», CRUD через /api/admin/mail/folders.
+ *  4. Режим папок — CRUD через /api/admin/mail/folders.
  *     Папка = сохранённый фильтр по направлению/адресу/теме.
+ *
+ * Чего здесь намеренно нет: опроса IMAP на клик по ящику и на переключение
+ * вкладок. Он был — и каждое нажатие тянуло почту заново, а сломанный дедуп
+ * плодил копии писем, из-за чего счётчики в списке ящиков росли от нажатий.
+ * Теперь почту забирает кнопка «Проверить почту» и cron (/api/mail/poll),
+ * а экран сам только перечитывает базу.
  */
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -31,8 +39,6 @@ interface Mailbox {
   label: string;
   purpose: string;
   active: boolean;
-  incoming: number;
-  outgoing: number;
 }
 
 interface MailRow {
@@ -95,26 +101,11 @@ function formatDate(iso: string): string {
   return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function matchesSearch(row: MailRow, q: string): boolean {
-  if (!q) return true;
-  const lq = q.toLowerCase();
-  return (
-    row.subject.toLowerCase().includes(lq) ||
-    row.fromAddr.toLowerCase().includes(lq) ||
-    row.toAddr.toLowerCase().includes(lq) ||
-    row.preview.toLowerCase().includes(lq)
-  );
-}
+/** Сколько писем запрашиваем за одну страницу листинга (совпадает с MAIL_PAGE_SIZE). */
+const PAGE_SIZE = 25;
 
-function matchesFolder(row: MailRow, folder: MailFolder | null): boolean {
-  if (!folder) return true;
-  const f = folder.filter;
-  if (f.direction && row.direction !== f.direction) return false;
-  if (f.fromContains && !row.fromAddr.toLowerCase().includes(f.fromContains.toLowerCase())) return false;
-  if (f.toContains && !row.toAddr.toLowerCase().includes(f.toContains.toLowerCase())) return false;
-  if (f.subjectContains && !row.subject.toLowerCase().includes(f.subjectContains.toLowerCase())) return false;
-  return true;
-}
+/** Как часто молча перечитываем текущую выборку из базы. */
+const REFRESH_MS = 30000;
 
 const FOLDER_COLORS = ["#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#6366f1"];
 const FOLDER_ICONS = ["📁", "⭐", "📌", "🔔", "📨", "📤", "💼", "💡"];
@@ -518,18 +509,33 @@ export default function AdminMailPage() {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<MainTab>("incoming");
+  const [archiveDir, setArchiveDir] = useState<Direction | "">("");
   const [sideTab, setSideTab] = useState<SideTab>("mail");
   const [rows, setRows] = useState<MailRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [templates, setTemplates] = useState<Array<{ key: string; name: string; subject: string; format: string; body: string }>>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const [activeFolder, setActiveFolder] = useState<MailFolder | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Сколько строк уже показано — нужно фоновому обновлению, чтобы перечитать
+   * ровно открытое окно истории, а не схлопнуть его до первой страницы.
+   * Через ref, а не через зависимость: иначе колбэк пересоздавался бы на
+   * каждую загруженную страницу и перезапускал таймер.
+   */
+  const loadedRef = useRef(0);
+  /** Номер последнего запроса: ответ отставшего запроса не должен перетирать свежий. */
+  const requestRef = useRef(0);
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/connect");
@@ -552,80 +558,126 @@ export default function AdminMailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const refreshMailboxSummary = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/mail", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      setMailboxes(data?.mailboxes ?? []);
-    } catch {}
-  }, []);
+  /**
+   * Загрузка страницы истории ящика.
+   *
+   * "replace" — первая страница (смена ящика, вкладки, поиска, папки);
+   * "append"  — «Показать ещё»: дописываем следующую страницу;
+   * "silent"  — фоновое обновление: перечитываем уже открытое окно, не мигая
+   *             спиннером и не сбрасывая развёрнутое письмо.
+   */
+  const load = useCallback(
+    async (mode: "replace" | "append" | "silent") => {
+      if (!selected) return;
+      const offset = mode === "append" ? loadedRef.current : 0;
+      const limit = mode === "silent" ? Math.max(PAGE_SIZE, loadedRef.current) : PAGE_SIZE;
+      const ticket = ++requestRef.current;
 
-  const syncIncoming = useCallback(async (localPart: string) => {
+      if (mode === "replace") setLoadingRows(true);
+      if (mode === "append") setLoadingMore(true);
+      try {
+        const qs = listingParams({
+          tab,
+          archiveDir,
+          query,
+          folder: activeFolder?.filter ?? null,
+          offset,
+          limit,
+        });
+        const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}?${qs}`, { cache: "no-store" });
+        const data = res.ok ? await res.json() : null;
+        // Пока ответ шёл, пользователь мог переключить ящик или вкладку.
+        if (ticket !== requestRef.current) return;
+        const page: MailRow[] = data?.messages ?? [];
+        setRows((prev) => (mode === "append" ? [...prev, ...page] : page));
+        setTotal(Number(data?.total ?? page.length));
+        setHasMore(Boolean(data?.hasMore));
+        loadedRef.current = mode === "append" ? offset + page.length : page.length;
+        if (mode === "replace") setExpandedId(null);
+      } catch {
+        if (ticket !== requestRef.current) return;
+        if (mode !== "silent") {
+          setRows([]);
+          setTotal(0);
+          setHasMore(false);
+          loadedRef.current = 0;
+        }
+      } finally {
+        if (mode === "replace") setLoadingRows(false);
+        if (mode === "append") setLoadingMore(false);
+      }
+    },
+    [selected, tab, archiveDir, query, activeFolder],
+  );
+
+  /**
+   * Забрать почту с сервера по IMAP. Только по явной команде: на клик по
+   * ящику это больше не висит — оттуда и росли счётчики.
+   */
+  const syncIncoming = useCallback(async () => {
+    if (!selected) return;
     setSyncing(true);
     try {
       const res = await fetch("/api/mail/poll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: localPart }),
+        body: JSON.stringify({ address: selected }),
       });
       const data = await res.json().catch(() => ({}));
+      const details = Array.isArray(data?.errors)
+        ? data.errors.map((e: { error?: string }) => e?.error).filter(Boolean).join("; ")
+        : "";
       if (!res.ok) {
-        const details = Array.isArray(data?.errors) ? data.errors.map((e: { error?: string }) => e?.error).filter(Boolean).join("; ") : "";
         setNote(details ? `Не удалось проверить почту: ${details}` : "Не удалось проверить входящие письма");
-        return false;
+        return;
       }
-      if (Array.isArray(data?.errors) && data.errors.length) {
-        const details = data.errors.map((e: { error?: string }) => e?.error).filter(Boolean).join("; ");
-        setNote(details ? `Почта проверена с ошибкой: ${details}` : "Почта проверена с частичной ошибкой");
+      if (details) {
+        setNote(`Почта проверена с ошибкой: ${details}`);
       } else if (Number(data?.stored || 0) > 0) {
         setNote(`Получено новых писем: ${data.stored}`);
       } else {
         setNote("Входящие проверены: новых писем нет");
       }
-      await refreshMailboxSummary();
-      return true;
+      await load("silent");
     } catch {
       setNote("Не удалось проверить входящие письма");
-      return false;
     } finally {
       setSyncing(false);
     }
-  }, [refreshMailboxSummary]);
+  }, [selected, load]);
 
-  const loadRows = useCallback(async (localPart: string, which: MainTab, sync = which === "incoming") => {
-    setLoadingRows(true);
-    if (sync) await syncIncoming(localPart);
-    const params = new URLSearchParams();
-    if (which === "archive") params.set("archived", "1");
-    else params.set("direction", which);
-    try {
-      const res = await fetch(`/api/admin/mail/${encodeURIComponent(localPart)}?${params.toString()}`, { cache: "no-store" });
-      const data = res.ok ? await res.json() : null;
-      setRows(data?.messages ?? []);
-      setExpandedId(null);
-    } catch {
-      setRows([]);
-    } finally {
-      setLoadingRows(false);
-    }
-  }, [syncIncoming]);
-
+  // Поиск с задержкой: в базу не стоит ходить на каждую букву.
   useEffect(() => {
-    if (!selected) return;
-    void loadRows(selected, tab);
-    if (tab !== "incoming") return;
-    const timer = window.setInterval(() => { void loadRows(selected, "incoming"); }, 30000);
-    return () => window.clearInterval(timer);
-  }, [selected, tab, loadRows]);
+    const timer = window.setTimeout(() => setQuery(search.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
-  // Сбрасываем поиск и развёрнутое письмо при смене ящика / вкладки
-  useEffect(() => { setSearch(""); setExpandedId(null); }, [selected, tab]);
+  // Смена ящика, вкладки, поиска или папки — читаем первую страницу заново.
+  useEffect(() => { void load("replace"); }, [load]);
+
+  // Фоновое обновление: только перечитывает базу, IMAP не трогает.
+  useEffect(() => {
+    if (!selected || sideTab !== "mail") return;
+    const timer = window.setInterval(() => { void load("silent"); }, REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [selected, sideTab, load]);
+
+  // Уведомление не должно висеть вечно.
+  useEffect(() => {
+    if (!note) return;
+    const timer = window.setTimeout(() => setNote(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [note]);
+
+  // Сбрасываем поиск и развёрнутое письмо при смене ящика / вкладки
+  useEffect(() => { setSearch(""); setQuery(""); setExpandedId(null); }, [selected, tab]);
 
   const archive = useCallback(
     async (id: string, archived: boolean) => {
       if (!selected) return;
       setRows((prev) => prev.filter((m) => m.id !== id));
+      setTotal((prev) => Math.max(0, prev - 1));
+      loadedRef.current = Math.max(0, loadedRef.current - 1);
       if (expandedId === id) setExpandedId(null);
       try {
         const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}`, {
@@ -636,10 +688,10 @@ export default function AdminMailPage() {
         if (!res.ok) throw new Error();
       } catch {
         setNote("Не удалось обновить письмо");
-        loadRows(selected, tab);
+        void load("replace");
       }
     },
-    [selected, tab, expandedId, loadRows],
+    [selected, expandedId, load],
   );
 
   if (status === "loading") {
@@ -665,8 +717,11 @@ export default function AdminMailPage() {
     { id: "folders", label: "Папки", icon: <Icon path={<><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></>} /> },
   ];
 
-  // Фильтрация писем по поиску + активной папке
-  const visibleRows = rows.filter((r) => matchesSearch(r, search) && matchesFolder(r, activeFolder));
+  const ARCHIVE_DIRS: { id: Direction | ""; label: string }[] = [
+    { id: "", label: "Все" },
+    { id: "incoming", label: "Входящие" },
+    { id: "outgoing", label: "Исходящие" },
+  ];
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
@@ -718,10 +773,6 @@ export default function AdminMailPage() {
                 >
                   <p className="text-sm font-semibold text-neutral-900 dark:text-white">{box.address}</p>
                   <p className="truncate text-xs text-neutral-500 dark:text-gray-400">{box.purpose}</p>
-                  <div className="mt-1.5 flex gap-3 text-[11px] text-neutral-400 dark:text-gray-500">
-                    <span>↓ {box.incoming}</span>
-                    <span>↑ {box.outgoing}</span>
-                  </div>
                 </button>
               );
             })}
@@ -751,7 +802,7 @@ export default function AdminMailPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <button
                         disabled={syncing}
-                        onClick={async () => { if (!selected) return; await syncIncoming(selected); await loadRows(selected, tab, false); }}
+                        onClick={() => { void syncIncoming(); }}
                         className="rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
                       >
                         {syncing ? "Проверяем…" : "Проверить почту"}
@@ -772,7 +823,7 @@ export default function AdminMailPage() {
                       {MAIN_TABS.map((t) => (
                         <button
                           key={t.id}
-                          onClick={() => setTab(t.id)}
+                          onClick={() => { setTab(t.id); if (t.id !== "archive") setArchiveDir(""); }}
                           className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                             tab === t.id
                               ? "bg-white text-violet-600 shadow-sm dark:bg-neutral-800 dark:text-cyan-400"
@@ -784,6 +835,26 @@ export default function AdminMailPage() {
                       ))}
                     </div>
 
+                    {/* Направление внутри архива: раньше архив валил входящие и
+                        исходящие в одну кучу, и раздельной истории там не было. */}
+                    {tab === "archive" && (
+                      <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-white/5">
+                        {ARCHIVE_DIRS.map((d) => (
+                          <button
+                            key={d.id || "all"}
+                            onClick={() => setArchiveDir(d.id)}
+                            className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                              archiveDir === d.id
+                                ? "bg-white text-violet-600 shadow-sm dark:bg-neutral-800 dark:text-cyan-400"
+                                : "text-neutral-500 hover:text-neutral-800 dark:text-gray-400 dark:hover:text-white"
+                            }`}
+                          >
+                            {d.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Поиск */}
                     <div className="relative flex-1 min-w-[160px]">
                       <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400">
@@ -793,7 +864,7 @@ export default function AdminMailPage() {
                         ref={searchRef}
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setExpandedId(null); }}
-                        placeholder="Поиск по ящику…"
+                        placeholder="Поиск по всей истории ящика…"
                         className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-1.5 pl-8 pr-3 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-violet-400 focus:bg-white focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-cyan-500 dark:focus:bg-white/10"
                       />
                       {search && (
@@ -825,7 +896,7 @@ export default function AdminMailPage() {
                         mailboxes={mailboxes}
                         templates={templates}
                         defaultMailbox={selected ?? undefined}
-                        onSent={() => { setShowCompose(false); setTab("outgoing"); if (selected) loadRows(selected, "outgoing"); }}
+                        onSent={() => { setShowCompose(false); setArchiveDir(""); setTab("outgoing"); }}
                       />
                       <div className="mt-2 flex justify-end">
                         <button onClick={() => setShowCompose(false)} className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:text-neutral-800 dark:text-gray-400 dark:hover:text-white">Отмена</button>
@@ -833,17 +904,25 @@ export default function AdminMailPage() {
                     </div>
                   )}
 
+                  {/* Сколько писем показано из всей выборки — без этого не
+                      видно, что история длиннее одной страницы. */}
+                  {!loadingRows && rows.length > 0 && (
+                    <p className="mt-3 text-[11px] text-neutral-400 dark:text-gray-500">
+                      Показано {rows.length} из {total}
+                    </p>
+                  )}
+
                   {/* Список писем */}
-                  <div className="mt-4 space-y-2">
+                  <div className="mt-2 space-y-2">
                     {loadingRows && <p className="text-sm text-neutral-400">Загрузка писем…</p>}
 
-                    {!loadingRows && visibleRows.length === 0 && (
+                    {!loadingRows && rows.length === 0 && (
                       <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400 dark:border-white/10 dark:text-gray-500">
-                        {search ? "Ничего не найдено" : tab === "archive" ? "В архиве пусто" : "Писем пока нет"}
+                        {query ? "Ничего не найдено" : tab === "archive" ? "В архиве пусто" : "Писем пока нет"}
                       </p>
                     )}
 
-                    {visibleRows.map((m) => (
+                    {rows.map((m) => (
                       <div key={m.id} className="rounded-xl border border-neutral-200 dark:border-white/10 overflow-hidden">
                         {/* Строка письма — клик разворачивает/сворачивает */}
                         <button
@@ -906,6 +985,18 @@ export default function AdminMailPage() {
                         )}
                       </div>
                     ))}
+
+                    {/* Пагинация: до этого всё, что старше десятого письма,
+                        было недостижимо из интерфейса вообще. */}
+                    {hasMore && (
+                      <button
+                        onClick={() => { void load("append"); }}
+                        disabled={loadingMore}
+                        className="w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-xs font-medium text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
+                      >
+                        {loadingMore ? "Загрузка…" : `Показать ещё (осталось ${total - rows.length})`}
+                      </button>
+                    )}
                   </div>
                 </>
               ) : (

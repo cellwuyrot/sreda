@@ -3,7 +3,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { findMailbox, isMailDirection, MAIL_LISTING_LIMIT } from "@/lib/projectMail";
+import {
+  findMailbox,
+  isMailDirection,
+  MAIL_PAGE_SIZE,
+  MAIL_PAGE_SIZE_MAX,
+} from "@/lib/projectMail";
 
 /**
  * PROJECT-MAIL: листинг писем одного ящика и архивация письма.
@@ -11,11 +16,33 @@ import { findMailbox, isMailDirection, MAIL_LISTING_LIMIT } from "@/lib/projectM
  * `address` в пути — это localPart (info, sales, …): стабильный идентификатор
  * без @ и точек, чтобы не воевать с кодированием URL.
  *
- * GET  — до MAIL_LISTING_LIMIT (10) последних писем. Необязательный
- *        ?direction=incoming|outgoing фильтрует направление; ?archived=1 показывает
- *        архив вместо активных.
+ * GET — страница истории ящика. Параметры:
+ *   direction=incoming|outgoing — направление (иначе оба);
+ *   archived=1                  — архив вместо активных;
+ *   q=…                         — поиск по теме, адресам и предпросмотру;
+ *   from=/to=/subject=          — фильтр папки (подстрока адреса/темы);
+ *   limit=…&offset=…            — окно выборки.
+ * Ответ: { messages, total, offset, limit, hasMore } — по total UI показывает
+ * «показано X из Y» и решает, рисовать ли кнопку «Показать ещё».
+ *
  * PATCH — архивировать/вернуть письмо: { id, archived: boolean }.
  */
+
+/** Целое из строки запроса с потолком и полом — чтобы limit нельзя было раздуть. */
+function intParam(raw: string | null, fallback: number, min: number, max: number): number {
+  if (raw === null || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+/** Подстрочный фильтр без учёта регистра — или ничего, если поле пустое. */
+function contains(field: "fromAddr" | "toAddr" | "subject", raw: string | null) {
+  const value = (raw || "").trim();
+  if (!value) return null;
+  return { [field]: { contains: value, mode: "insensitive" as const } };
+}
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ address: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -30,33 +57,75 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ address: st
   const mailbox = await prisma.projectMailbox.findUnique({ where: { localPart: address.toLowerCase() } });
   if (!mailbox) {
     // Ящик из канонического списка ещё не посеян — писем по нему пока нет.
-    return NextResponse.json({ messages: [] });
+    return NextResponse.json({ messages: [], total: 0, offset: 0, limit: MAIL_PAGE_SIZE, hasMore: false });
   }
 
-  const directionParam = req.nextUrl.searchParams.get("direction");
-  const archived = req.nextUrl.searchParams.get("archived") === "1";
+  // searchParams берём из req.url, а не из req.nextUrl: так роут одинаково
+  // работает и под Next, и под обычным Request в тестах.
+  const params = new URL(req.url).searchParams;
+  const directionParam = params.get("direction");
+  const archived = params.get("archived") === "1";
+  const query = (params.get("q") || "").trim();
+  const limit = intParam(params.get("limit"), MAIL_PAGE_SIZE, 1, MAIL_PAGE_SIZE_MAX);
+  const offset = intParam(params.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
 
-  const messages = await prisma.mailMessage.findMany({
-    where: {
-      mailboxId: mailbox.id,
-      archived,
-      ...(isMailDirection(directionParam) ? { direction: directionParam } : {}),
-    },
-    orderBy: { sentAt: "desc" },
-    take: MAIL_LISTING_LIMIT,
-    select: {
-      id: true,
-      direction: true,
-      fromAddr: true,
-      toAddr: true,
-      subject: true,
-      preview: true,
-      archived: true,
-      sentAt: true,
-    },
+  // Поиск идёт по базе, а не по загруженной странице: иначе «поиск по ящику»
+  // искал бы только среди строк текущей страницы листинга.
+  const search = query
+    ? {
+        OR: [
+          { subject: { contains: query, mode: "insensitive" as const } },
+          { fromAddr: { contains: query, mode: "insensitive" as const } },
+          { toAddr: { contains: query, mode: "insensitive" as const } },
+          { preview: { contains: query, mode: "insensitive" as const } },
+        ],
+      }
+    : null;
+
+  // Фильтр папки — тоже на стороне базы, чтобы папка отбирала письма по всей
+  // истории ящика, а не по видимой странице.
+  const folderFilters = [
+    contains("fromAddr", params.get("from")),
+    contains("toAddr", params.get("to")),
+    contains("subject", params.get("subject")),
+  ].filter((f): f is NonNullable<typeof f> => f !== null);
+
+  const where = {
+    mailboxId: mailbox.id,
+    archived,
+    ...(isMailDirection(directionParam) ? { direction: directionParam } : {}),
+    ...(search ? { AND: [search, ...folderFilters] } : folderFilters.length ? { AND: folderFilters } : {}),
+  };
+
+  const [total, messages] = await Promise.all([
+    prisma.mailMessage.count({ where }),
+    prisma.mailMessage.findMany({
+      where,
+      // Второй ключ сортировки нужен, чтобы письма с одинаковым sentAt
+      // (пачка из одного опроса) не перетасовывались между страницами.
+      orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+      skip: offset,
+      take: limit,
+      select: {
+        id: true,
+        direction: true,
+        fromAddr: true,
+        toAddr: true,
+        subject: true,
+        preview: true,
+        archived: true,
+        sentAt: true,
+      },
+    }),
+  ]);
+
+  return NextResponse.json({
+    messages,
+    total,
+    offset,
+    limit,
+    hasMore: offset + messages.length < total,
   });
-
-  return NextResponse.json({ messages });
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ address: string }> }) {

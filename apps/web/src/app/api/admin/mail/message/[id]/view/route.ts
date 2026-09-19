@@ -24,7 +24,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       bodyHtml: message.bodyHtml,
       templateKey: message.templateKey,
       sentByName: message.sentByName,
-      sentAt: message.createdAt,
+      // Именно sentAt: createdAt — это время записи в базу, и у писем,
+      // подтянутых по IMAP задним числом, оно расходилось с датой в списке.
+      sentAt: message.sentAt,
       attachments: message.attachments.map((attachment) => ({
         id: attachment.id,
         name: attachment.name,

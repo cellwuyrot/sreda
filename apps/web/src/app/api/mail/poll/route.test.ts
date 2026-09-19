@@ -20,7 +20,7 @@ function post(body: unknown, headers: Record<string, string> = {}) {
   return req as unknown as import("next/server").NextRequest;
 }
 
-function incoming(id: string, messageId: string | null) {
+function incoming(id: string, messageId: string) {
   return {
     direction: "incoming" as const,
     fromAddr: "client@example.com",
@@ -60,9 +60,9 @@ describe("POST /api/mail/poll", () => {
     mockFetch.mockResolvedValue([incoming("1", "<a@x>"), incoming("2", "<b@x>")]);
     prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
     // Первое письмо уже есть (дубль), второе — новое.
-    prismaMock.mailMessage.findUnique
+    prismaMock.mailMessage.findFirst
       .mockResolvedValueOnce(row({ id: "exists" }))
-      .mockResolvedValueOnce(null);
+      .mockResolvedValueOnce(row(null));
     prismaMock.mailMessage.create.mockResolvedValue(row({ id: "new" }));
 
     const mod = await import("@/app/api/mail/poll/route");
@@ -70,8 +70,40 @@ describe("POST /api/mail/poll", () => {
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(json.stored).toBe(1);
+    expect(json.duplicates).toBe(1);
     expect(json.fetched).toBe(2);
     expect(prismaMock.mailMessage.create).toHaveBeenCalledOnce();
+  });
+
+  it("дедуп ищет письмо в пределах ящика, а не по всей таблице", async () => {
+    mockSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as never);
+    mockFetch.mockResolvedValue([incoming("1", "<a@x>")]);
+    prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
+    prismaMock.mailMessage.findFirst.mockResolvedValue(row(null));
+    prismaMock.mailMessage.create.mockResolvedValue(row({ id: "new" }));
+
+    const mod = await import("@/app/api/mail/poll/route");
+    await mod.POST(post({ address: "support" }));
+    expect(prismaMock.mailMessage.findFirst).toHaveBeenCalledWith({
+      where: { mailboxId: "m1", messageId: "<a@x>" },
+      select: { id: true },
+    });
+  });
+
+  it("гонка двух опросов: P2002 — это дубль, а не сбой ящика", async () => {
+    mockSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as never);
+    mockFetch.mockResolvedValue([incoming("1", "<a@x>")]);
+    prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
+    prismaMock.mailMessage.findFirst.mockResolvedValue(row(null));
+    prismaMock.mailMessage.create.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
+
+    const mod = await import("@/app/api/mail/poll/route");
+    const res = await mod.POST(post({ address: "support" }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.stored).toBe(0);
+    expect(json.duplicates).toBe(1);
+    expect(json.errors).toEqual([]);
   });
 
   it("502 когда все ящики дали ошибку", async () => {
