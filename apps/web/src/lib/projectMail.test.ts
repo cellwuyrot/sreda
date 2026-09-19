@@ -8,6 +8,11 @@ import {
   previewFromText,
   buildEml,
   emlFileName,
+  isUniqueViolation,
+  syntheticMessageId,
+  MAIL_PAGE_SIZE,
+  MAIL_PAGE_SIZE_MAX,
+  MAIL_IMAP_FETCH_LIMIT,
 } from "./projectMail";
 
 describe("PROJECT_MAILBOXES — целостность списка", () => {
@@ -121,5 +126,59 @@ describe("buildEml", () => {
 describe("emlFileName", () => {
   it("безопасное имя .eml", () => {
     expect(emlFileName("clx123")).toBe("trioz-mail-clx123.eml");
+  });
+});
+
+describe("syntheticMessageId — ключ дедупликации письма без Message-ID", () => {
+  const base = {
+    localPart: "info",
+    fromAddr: "client@example.com",
+    subject: "Вопрос по счёту",
+    sentAt: new Date("2026-09-11T09:00:00Z"),
+    bodyText: "Здравствуйте",
+  };
+
+  it("устойчив: те же поля — тот же ключ", () => {
+    expect(syntheticMessageId(base)).toBe(syntheticMessageId({ ...base }));
+  });
+
+  it("узнаваемый формат synthetic:<sha256>", () => {
+    expect(syntheticMessageId(base)).toMatch(/^synthetic:[0-9a-f]{64}$/);
+  });
+
+  it("любое значимое поле меняет ключ", () => {
+    const key = syntheticMessageId(base);
+    expect(syntheticMessageId({ ...base, localPart: "sales" })).not.toBe(key);
+    expect(syntheticMessageId({ ...base, fromAddr: "other@example.com" })).not.toBe(key);
+    expect(syntheticMessageId({ ...base, subject: "Другая тема" })).not.toBe(key);
+    expect(syntheticMessageId({ ...base, sentAt: new Date("2026-09-11T09:00:01Z") })).not.toBe(key);
+    expect(syntheticMessageId({ ...base, bodyText: "Добрый день" })).not.toBe(key);
+  });
+
+  it("не склеивает соседние поля: сдвиг границы даёт другой ключ", () => {
+    const a = syntheticMessageId({ ...base, fromAddr: "ab", subject: "c" });
+    const b = syntheticMessageId({ ...base, fromAddr: "a", subject: "bc" });
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("isUniqueViolation", () => {
+  it("узнаёт P2002", () => {
+    expect(isUniqueViolation(Object.assign(new Error("dup"), { code: "P2002" }))).toBe(true);
+  });
+
+  it("прочие ошибки — не дубль", () => {
+    expect(isUniqueViolation(new Error("network"))).toBe(false);
+    expect(isUniqueViolation(Object.assign(new Error("x"), { code: "P2025" }))).toBe(false);
+    expect(isUniqueViolation(null)).toBe(false);
+    expect(isUniqueViolation(undefined)).toBe(false);
+  });
+});
+
+describe("лимиты листинга и опроса", () => {
+  it("страница меньше потолка, а окно опроса IMAP — не меньше страницы", () => {
+    expect(MAIL_PAGE_SIZE).toBeLessThanOrEqual(MAIL_PAGE_SIZE_MAX);
+    // Иначе листать было бы нечего: в базу попадало бы меньше, чем страница.
+    expect(MAIL_IMAP_FETCH_LIMIT).toBeGreaterThanOrEqual(MAIL_PAGE_SIZE);
   });
 });

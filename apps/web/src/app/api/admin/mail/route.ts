@@ -6,11 +6,17 @@ import { PROJECT_MAILBOXES, mailboxAddress } from "@/lib/projectMail";
 
 /**
  * PROJECT-MAIL: сводка почтовых ящиков домена для экрана «Email и обработка
- * данных». Отдаёт все ящики с числом писем (входящие/исходящие, без
- * архива) для левой колонки.
+ * данных» — левая колонка со списком ящиков.
  *
  * Список ящиков берётся из базы, но если посев ещё не прошёл (первый
  * деплой), подмешиваем канонический список из кода, чтобы экран не был пуст.
+ *
+ * Счётчиков писем здесь намеренно нет. Раньше роут отдавал число неархивных
+ * писем на ящик, и в списке висели значки «↓ 7 ↑ 3». Они выглядели как
+ * непрочитанные, но означали другое: число падало от архивации и росло от
+ * дублей повторного опроса — то есть менялось от нажатий на ящик. Сколько
+ * писем в текущей выборке, честно считает сам листинг
+ * (`/api/admin/mail/[address]` → `total`).
  */
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -20,28 +26,12 @@ export async function GET() {
 
   const boxes = await prisma.projectMailbox.findMany({ orderBy: { order: "asc" } });
 
-  // Счётчики одним запросом — группировка по ящику и направлению (без архива).
-  const grouped = await prisma.mailMessage.groupBy({
-    by: ["mailboxId", "direction"],
-    where: { archived: false },
-    _count: { _all: true },
-  });
-  const counts = new Map<string, { incoming: number; outgoing: number }>();
-  for (const g of grouped) {
-    const cur = counts.get(g.mailboxId) ?? { incoming: 0, outgoing: 0 };
-    if (g.direction === "incoming") cur.incoming = g._count._all;
-    else if (g.direction === "outgoing") cur.outgoing = g._count._all;
-    counts.set(g.mailboxId, cur);
-  }
-
   const fromDb = boxes.map((b) => ({
     localPart: b.localPart,
     address: b.address,
     label: b.label,
     purpose: b.purpose,
     active: b.active,
-    incoming: counts.get(b.id)?.incoming ?? 0,
-    outgoing: counts.get(b.id)?.outgoing ?? 0,
   }));
 
   // Если ящика из канонического списка ещё нет в базе — покажем его как пустой.
@@ -52,8 +42,6 @@ export async function GET() {
     label: m.label,
     purpose: m.purpose,
     active: true,
-    incoming: 0,
-    outgoing: 0,
   }));
 
   return NextResponse.json({ mailboxes: [...fromDb, ...missing] });

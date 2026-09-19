@@ -13,7 +13,7 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { getImapConfig, getAccount, type MailCreds } from "./mailAccounts";
-import { MAIL_LISTING_LIMIT, mailboxAddress } from "./projectMail";
+import { MAIL_IMAP_FETCH_LIMIT, mailboxAddress } from "./projectMail";
 import { normalizeParsed, type NormalizedIncoming } from "./mailNormalize";
 
 /**
@@ -23,7 +23,7 @@ import { normalizeParsed, type NormalizedIncoming } from "./mailNormalize";
  */
 export async function fetchRecent(
   localPart: string,
-  limit = MAIL_LISTING_LIMIT,
+  limit = MAIL_IMAP_FETCH_LIMIT,
 ): Promise<NormalizedIncoming[]> {
   const config = getImapConfig();
   if (!config) {
