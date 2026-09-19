@@ -206,6 +206,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   /* Успешный снимок не выбрасывается при временном сбое: статус отдельно
      объясняет, можно ли считать показанные цифры актуальными. */
   const [refreshState, setRefreshState] = useState<"loading" | "fresh" | "stale" | "unavailable">("loading");
+  const [refreshing, setRefreshing] = useState(false);
   const hasStateRef = useRef(false);
   const refreshInFlightRef = useRef<Promise<VpnState | null> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -343,6 +344,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     /* Одновременные потребители получают один и тот же результат, а не null.
        Это важно и для повторного запуска эффекта в React StrictMode. */
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
+    setRefreshing(true);
     const pending = (async (): Promise<VpnState | null> => {
     try {
       const res = await fetch("/api/vpn/me", { cache: "no-store" });
@@ -368,6 +370,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       return null;
     } finally {
       refreshInFlightRef.current = null;
+      setRefreshing(false);
     }
     })();
     refreshInFlightRef.current = pending;
@@ -524,13 +527,21 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const measured = typeof traffic?.measuredAt === "string" && !!traffic.measuredAt && usedBytes !== null;
   const usedTrafficText = usedBytes === null ? null : formatTraffic(usedBytes);
   const measurementStale = measured && isUsageMeasurementStale(traffic?.measuredAt);
-  const trafficButtonText = !traffic
-    ? "Учёт трафика недоступен"
+  /* На самом круге только короткий счётчик. Подробности и причины отсутствия
+     показаний живут ниже, чтобы не превращать выключатель в нечитаемую плашку. */
+  const trafficButtonText = measured ? usedTrafficText ?? "—" : "Нет данных";
+  const trafficDetails = !traffic
+    ? "Учёт трафика недоступен: данных нет"
     : !measured
       ? "Учёт: ждём отчёт узла"
       : measurementStale || refreshState === "stale"
         ? `Учёт устарел · было ${usedTrafficText ?? "расход недоступен"}`
-        : `Израсходовано ${usedTrafficText ?? "расход недоступен"}`;
+        : `Расход учтён: ${usedTrafficText ?? "расход недоступен"}`;
+  /* Длинная версия остаётся доступной ассистивным технологиям, но не занимает
+     место внутри круга и не дублирует подпись под ним. */
+  const trafficAriaDetails = measured && !measurementStale && refreshState !== "stale"
+    ? `Израсходовано ${usedTrafficText ?? "расход недоступен"}`
+    : trafficDetails;
 
   return (
     <div className="relative p-6 text-neutral-900 dark:text-white">
@@ -556,8 +567,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             onClick={() => void togglePower()}
             disabled={!powerReady}
             aria-pressed={active}
-            aria-label={`${powerLabel}. ${trafficButtonText}`}
-            title={powerReady ? `${powerLabel}. ${trafficButtonText}` : powerHint}
+            aria-label={`${powerLabel}. ${trafficAriaDetails}. ${trafficButtonText}`}
+            title={powerReady ? `${powerLabel}. ${trafficAriaDetails}. ${trafficButtonText}` : powerHint}
             className={`relative grid h-28 w-28 place-items-center rounded-full border outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-cyan-400/60 ${
               powerReady ? "cursor-pointer hover:scale-[1.03] active:scale-95" : "cursor-not-allowed opacity-70"
             } ${active
@@ -576,10 +587,23 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             </svg>
             {/* Расход привязан к самой кнопке включения: его видно до действия,
                 в том числе у отдельного тарифа «Ускоренный интернет». */}
-            <span className="absolute inset-x-2 bottom-2 text-center text-[9px] font-medium leading-[1.05]" aria-hidden>
+            <span className="absolute inset-x-3 bottom-2 max-w-[88px] truncate text-center text-xs font-medium tabular-nums leading-tight" aria-hidden>
               {trafficButtonText}
             </span>
           </button>
+
+          <div className="mt-3 w-full max-w-sm text-center">
+            <p className="text-xs leading-relaxed text-neutral-600 dark:text-white/65">{trafficDetails}</p>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={refreshing}
+              className="mt-2 rounded-xl border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-50 disabled:cursor-wait disabled:opacity-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/5"
+              aria-label="Обновить данные расхода"
+            >
+              {refreshing ? "Обновляем…" : "Обновить данные"}
+            </button>
+          </div>
 
           {state === null && refreshState === "loading" && (
             <strong className="mt-4 text-sm text-neutral-500 dark:text-white/50">Проверяем состояние…</strong>
@@ -696,8 +720,11 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Трафик</span>
               <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                {limitGb === null ? "лимит не указан" : limitGb > 0 ? `до ${limitGb} ГБ` : "без ограничения"}
-                {traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}
+                {limitGb === null
+                  ? "лимит не указан"
+                  : limitGb === 0
+                    ? "без ограничения"
+                    : `до ${limitGb} ГБ${traffic.periodEnd ? ` · сброс ${daysLeftLabel(traffic.periodEnd)}` : ""}`}
               </span>
             </div>
             {limitGb !== null && limitGb > 0 && measured && (
