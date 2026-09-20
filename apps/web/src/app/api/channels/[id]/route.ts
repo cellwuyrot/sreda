@@ -6,6 +6,8 @@ import { getIO } from "@/lib/socketEmit";
 import { getChannelPermissions } from "@/lib/connectPermissions";
 import { checkBan } from "@/lib/banCheck";
 import { isChannelType } from "@/lib/channelModules";
+import { validateChannelParent } from "@/lib/channelParentValidation";
+import type { Prisma } from "@prisma/client";
 
 async function checkChannelAdmin(userId: string, channelId: string) {
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
@@ -82,13 +84,66 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     hidden, sortOrder, channelGroupType,
     askAccess, answerAccess, askRoleIds, answerRoleIds, // FIX-QAACL
   } = await req.json();
+
+  if (name !== undefined) {
+    if (typeof name !== "string" || name.trim().length === 0) {
+      return NextResponse.json({ error: "Название канала не может быть пустым" }, { status: 400 });
+    }
+    if (name.trim().length > 100) {
+      return NextResponse.json({ error: "Имя канала слишком длинное (макс. 100 символов)" }, { status: 400 });
+    }
+  }
+  if (type !== undefined && !isChannelType(type)) {
+    return NextResponse.json({ error: "Некорректный тип канала" }, { status: 400 });
+  }
+  if (parentId !== undefined && parentId !== null && typeof parentId !== "string") {
+    return NextResponse.json({ error: "Некорректная родительская категория" }, { status: 400 });
+  }
+
+  const effectiveType = type === undefined ? channel.type : type;
+  const effectiveParentId =
+    parentId === undefined ? channel.parentId : typeof parentId === "string" && parentId ? parentId : null;
+  const parentError = await validateChannelParent({
+    parentId: effectiveParentId,
+    groupId: channel.groupId,
+    channelType: effectiveType,
+    currentChannelId: id,
+  });
+  if (parentError) return NextResponse.json({ error: parentError }, { status: 400 });
+
+  if (type !== undefined && type !== channel.type) {
+    const children = await prisma.channel.count({ where: { parentId: id } });
+    if (children > 0) {
+      return NextResponse.json(
+        { error: "Нельзя менять тип канала, пока в нём есть дочерние каналы" },
+        { status: 400 },
+      );
+    }
+  }
+  if (effectiveType === "CATEGORY" && channelGroupType !== undefined) {
+    const normalizedCategoryType = channelGroupType === "VOICE" ? "VOICE" : "TEXT";
+    const children = await prisma.channel.findMany({
+      where: { parentId: id },
+      select: { type: true },
+    });
+    const incompatible = children.some((child) =>
+      normalizedCategoryType === "VOICE" ? child.type !== "VOICE" : child.type === "VOICE",
+    );
+    if (incompatible) {
+      return NextResponse.json(
+        { error: "Тип категории не соответствует типам её дочерних каналов" },
+        { status: 400 },
+      );
+    }
+  }
+
   const data: Record<string, unknown> = {};
-  if (name !== undefined) data.name = name;
+  if (name !== undefined) data.name = name.trim();
   if (icon !== undefined) data.icon = icon;
   // Whitelist — общий с созданием канала (lib/channelModules.ts). В своей копии
   // здесь не хватало COMMUNITY: смена типа на «Общественность» молча не
   // применялась — тип не проходил проверку, и поле просто не попадало в data.
-  if (type !== undefined && isChannelType(type)) data.type = type;
+  if (type !== undefined) data.type = type;
   if (postAccess !== undefined && ["ALL", "MOD", "ADMIN"].includes(postAccess)) data.postAccess = postAccess;
   // FIX-NEWSACL: право читать канал (новости и прочие) — ALL / MOD / ADMIN.
   // Проверяется сервером в getChannelPermissions, поэтому ограничение нельзя
@@ -99,20 +154,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (askAccess !== undefined && ["ALL", "MOD", "ADMIN", "ROLES"].includes(askAccess)) data.askAccess = askAccess;
   if (answerAccess !== undefined && ["ALL", "MOD", "ADMIN", "ROLES"].includes(answerAccess)) data.answerAccess = answerAccess;
   if (isRestricted !== undefined) data.isRestricted = isRestricted;
-  if (parentId !== undefined) data.parentId = parentId || null;
-  if (channelGroupType !== undefined) data.channelGroupType = channelGroupType === "VOICE" ? "VOICE" : channelGroupType === null ? null : "TEXT";
-  if (slowmode !== undefined) data.slowmode = Math.max(0, Math.min(Number(slowmode) || 0, 3600));
+  if (parentId !== undefined) data.parentId = effectiveParentId;
+  if (channelGroupType !== undefined) {
+    data.channelGroupType =
+      effectiveType === "CATEGORY" ? (channelGroupType === "VOICE" ? "VOICE" : "TEXT") : null;
+  }
+  if (slowmode !== undefined) {
+    data.slowmode =
+      effectiveType === "VOICE" || effectiveType === "CATEGORY"
+        ? 0
+        : Math.max(0, Math.min(Number(slowmode) || 0, 3600));
+  }
   if (hidden !== undefined) data.hidden = !!hidden;
   if (sortOrder !== undefined && Number.isFinite(Number(sortOrder))) data.sortOrder = Math.trunc(Number(sortOrder));
 
-  const updated = await prisma.channel.update({
-    where: { id },
-    data,
-  });
-
   // FIX-QAACL: каждый список тегов перезаписывается независимо — раньше
   // deleteMany без scope стирал бы и права на вопросы/ответы.
-  const replaceRoles = async (scope: string, ids: unknown) => {
+  const replaceRoles = async (tx: Prisma.TransactionClient, scope: string, ids: unknown) => {
     if (!Array.isArray(ids)) return;
     // Явное приведение к unknown[] перед фильтром: тип-предикат тогда даёт
     // ровно string[], без опоры на то, как TS сузил Array.isArray.
@@ -120,15 +178,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       ...new Set((ids as unknown[]).filter((value): value is string => typeof value === "string")),
     ];
     if (clean.length > 0) {
-      const valid = await prisma.groupRole.findMany({
+      const valid = await tx.groupRole.findMany({
         where: { groupId: channel.groupId, id: { in: clean } },
         select: { id: true },
       });
       if (valid.length !== clean.length) throw new Error("BAD_ROLES");
     }
-    await prisma.channelRoleAccess.deleteMany({ where: { channelId: id, scope } });
+    await tx.channelRoleAccess.deleteMany({ where: { channelId: id, scope } });
     if (clean.length > 0) {
-      await prisma.channelRoleAccess.createMany({
+      await tx.channelRoleAccess.createMany({
         data: clean.map((roleId) => ({ channelId: id, roleId, scope })),
         skipDuplicates: true,
       });
@@ -136,14 +194,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   };
 
   try {
-    await replaceRoles("VIEW", roleIds);
-    await replaceRoles("ASK", askRoleIds);
-    await replaceRoles("ANSWER", answerRoleIds);
-  } catch {
-    return NextResponse.json({ error: "Одна или несколько ролей не принадлежат сообществу" }, { status: 400 });
+    const updated = await prisma.$transaction(async (tx) => {
+      await replaceRoles(tx, "VIEW", roleIds);
+      await replaceRoles(tx, "ASK", askRoleIds);
+      await replaceRoles(tx, "ANSWER", answerRoleIds);
+      return tx.channel.update({ where: { id }, data });
+    });
+    return NextResponse.json(updated);
+  } catch (error) {
+    if (error instanceof Error && error.message === "BAD_ROLES") {
+      return NextResponse.json({ error: "Одна или несколько ролей не принадлежат сообществу" }, { status: 400 });
+    }
+    console.error("[channels PUT] transaction failed", error);
+    return NextResponse.json({ error: "Не удалось сохранить настройки канала" }, { status: 500 });
   }
-
-  return NextResponse.json(updated);
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

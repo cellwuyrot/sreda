@@ -10,6 +10,7 @@ import { logGroupAction } from "@/lib/groupAudit";
 import { emitToUsers } from "@/lib/socketEmit";
 import { checkBan } from "@/lib/banCheck";
 import { GROUP_MEMBER_SELECT, MEMBERS_PAGE_SIZE, groupMemberOrder, withMemberOverrides } from "@/lib/groupMemberSelect";
+import { getChannelPermissionsBatch } from "@/lib/connectPermissions";
 
 /** Personal room ids of every member of a group, for socket broadcasts. */
 async function groupMemberIds(groupId: string): Promise<string[]> {
@@ -96,23 +97,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return true;
   });
 
-  // Filter restricted channels for non-admin members
-  if (!isAdminRole) {
-    const memberRecord = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: session.user.id, groupId: id } },
-      include: { tags: { select: { roleId: true } } },
-    });
-    const userRoleIds = new Set(memberRecord?.tags.map((t) => t.roleId) ?? []);
-
-    visibleChannels = visibleChannels.filter((ch) => {
-      // FIX-HIDDEN: скрытый канал обычный участник не видит в группе вообще;
-      // модераторам и выше список не фильтруется (ветка isAdminRole).
-      if (ch.hidden) return false;
-      if (!ch.isRestricted) return true;
-      if (ch.allowedRoles.length === 0) return true;
-      return ch.allowedRoles.some((a) => userRoleIds.has(a.roleId));
-    });
-  }
+  const permissions = await getChannelPermissionsBatch(
+    session.user.id,
+    visibleChannels.map((channel) => channel.id),
+  );
+  visibleChannels = visibleChannels.filter((channel) => permissions.get(channel.id)?.canView);
 
   return NextResponse.json({
     ...group,
