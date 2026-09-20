@@ -2965,13 +2965,15 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       });
 
       // Модератор выкинул нас из голосового канала
-      socket.on("voice:kick", () => {
+      socket.on("voice:kick", ({ channelId: targetChannelId }: { channelId: string }) => {
+        if (targetChannelId !== chId) return;
         void leaveVoiceRef.current("модератор отключил от голосового канала");
       });
 
       // Модератор принудительно заглушает микрофон
       // Не ссылаемся на setMuted (она объявлена позже в файле) — инлайним логику через refs.
-      socket.on("voice:force-mute", () => {
+      socket.on("voice:force-mute", ({ channelId: targetChannelId }: { channelId: string }) => {
+        if (targetChannelId !== chId) return;
         // FIX-FORCELOCK: ставим флаг — самостоятельно не снять
         isForceMutedRef.current = true;
         setIsForceMuted(true);
@@ -2984,7 +2986,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       });
 
       // Модератор принудительно заглушает микрофон + наушники (те же refs, без setMuted)
-      socket.on("voice:force-deafen", () => {
+      socket.on("voice:force-deafen", ({ channelId: targetChannelId }: { channelId: string }) => {
+        if (targetChannelId !== chId) return;
         // FIX-FORCELOCK: ставим оба флага
         isForceMutedRef.current = true;
         setIsForceMuted(true);
@@ -3006,7 +3009,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       });
 
       // Модератор снял принудительное заглушение микрофона
-      socket.on("voice:force-unmute", () => {
+      socket.on("voice:force-unmute", ({ channelId: targetChannelId }: { channelId: string }) => {
+        if (targetChannelId !== chId) return;
         isForceMutedRef.current = false;
         setIsForceMuted(false);
         // Разблокируем трек — пользователь сам решит включать ли
@@ -3018,7 +3022,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       });
 
       // Модератор снял принудительное заглушение микрофона + наушников
-      socket.on("voice:force-undeafen", () => {
+      socket.on("voice:force-undeafen", ({ channelId: targetChannelId }: { channelId: string }) => {
+        if (targetChannelId !== chId) return;
         isForceMutedRef.current = false;
         setIsForceMuted(false);
         isForceDeafenedRef.current = false;

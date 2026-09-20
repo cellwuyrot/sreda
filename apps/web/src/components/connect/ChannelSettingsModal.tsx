@@ -80,6 +80,7 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
   const [postAccess, setPostAccess] = useState<string>("ALL");
   const [readAccess, setReadAccess] = useState<string>("ALL");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const possibleParents = allChannels.filter(c => c.id !== channel.id && c.type === "CATEGORY" && ((c.channelGroupType === "VOICE" && type === "VOICE") || (c.channelGroupType !== "VOICE" && type !== "VOICE" && type !== "CATEGORY")));
 
@@ -99,25 +100,40 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
   }, [channel.id, groupId]);
 
   const handleSave = async () => {
+    if (isRestricted && selectedRoles.size === 0) {
+      setSaveError("Выберите хотя бы один тег с доступом");
+      return;
+    }
     setSaving(true);
-    await fetch(`/api/channels/${channel.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim(),
-        icon: icon.trim() || null,
-        type,
-        isRestricted,
-        slowmode,
-        postAccess, // FIX-NEWSACL
-        readAccess, // FIX-NEWSACL
-        roleIds: isRestricted ? Array.from(selectedRoles) : [],
-        parentId: parentId || null,
-      }),
-    });
-    setSaving(false);
-    onUpdated();
-    onClose();
+    setSaveError(null);
+    try {
+      const response = await fetch(`/api/channels/${channel.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          icon: icon.trim() || null,
+          type,
+          isRestricted,
+          ...(type !== "VOICE" && type !== "CATEGORY" ? { slowmode } : {}),
+          postAccess, // FIX-NEWSACL
+          readAccess, // FIX-NEWSACL
+          roleIds: isRestricted ? Array.from(selectedRoles) : [],
+          parentId: parentId || null,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setSaveError(payload?.error || `Не удалось сохранить настройки (${response.status})`);
+        return;
+      }
+      onUpdated();
+      onClose();
+    } catch {
+      setSaveError("Не удалось связаться с сервером");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleRole = (roleId: string) => {
@@ -236,8 +252,8 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
               <p className="text-xs text-neutral-400">Нет тегов. Создайте теги в настройках группы.</p>
             )}
 
-            {/* Slowmode */}
-            <div>
+            {/* Slowmode имеет смысл только там, где публикуются сообщения. */}
+            {type !== "VOICE" && type !== "CATEGORY" && <div>
               <CustomSelect
                 label="Слоумод (секунды между сообщениями)"
                 info="Пауза, которую участник должен выждать между своими сообщениями. На админов и модераторов не распространяется."
@@ -255,13 +271,14 @@ export function ChannelSettingsModal({ channel, groupId, allChannels, onClose, o
                   { value: "600", label: "10 мин" },
                 ]}
               />
-            </div>
+            </div>}
           </div>
         )}
 
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-neutral-100 dark:border-white/5">
+          {saveError && <p role="alert" className="mr-auto self-center text-xs text-red-500">{saveError}</p>}
           <button onClick={onClose} className="px-4 py-2 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">Отмена</button>
-          <button onClick={handleSave} disabled={saving || !name.trim()} className="px-4 py-2 bg-violet-500 dark:bg-cyan-600 text-white text-sm rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving || !name.trim() || (isRestricted && selectedRoles.size === 0)} className="px-4 py-2 bg-violet-500 dark:bg-cyan-600 text-white text-sm rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50">
             {saving ? "Сохранение..." : "Сохранить"}
           </button>
         </div>
