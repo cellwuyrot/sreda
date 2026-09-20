@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Attachment } from "./messageTypes";
 import { TriozText } from "@/components/ui/TriozEmoji";
 import CodeBlock from "./CodeBlock";
+import { parseMentions } from "@/lib/mentions";
 
 
 /* FIX-TAGMENTION: решётка в сообщениях исторически означала переход в канал.
@@ -25,6 +26,11 @@ export interface RenderOptions {
    * давала бы гонки между двумя открытыми сообществами.
    */
   emoji?: Map<string, string>;
+  /**
+   * Реальные участники текущей группы: username (lowercase) → ID.
+   * Без записи в этой карте произвольный `@text` остаётся обычным текстом.
+   */
+  mentionUsers?: Map<string, string>;
 }
 
 /**
@@ -249,6 +255,7 @@ function renderBlocks(text: string, options?: RenderOptions): ReactNode {
    функции: разъехавшийся номер не ошибка сборки, а молча пропавшая разметка. */
 function renderInline(text: string, options?: RenderOptions): ReactNode {
     const parts: ReactNode[] = [];
+    const mentionStarts = new Map(parseMentions(text).map((token) => [token.start, token]));
     const regex = /((https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|^- (.+)$|^## (.+)$|^> (.+)$|#(\S+)|@(everyone|[A-Za-z0-9_а-яА-ЯёЁ]+)|:([a-z0-9_]{2,32}):)/gm;
     let lastIndex = 0;
     let match;
@@ -336,13 +343,18 @@ function renderInline(text: string, options?: RenderOptions): ReactNode {
         if (trail) parts.push(<TriozText key={key++} text={trail} />);
       }
       else if (match[10]) {
-        if (match[10] === "everyone") {
+        const token = mentionStarts.get(match.index);
+        const normalized = match[10].toLowerCase();
+        if (!token) {
+          // Кандидат регулярки находится внутри e-mail/URL/слова.
+          parts.push(<TriozText key={key++} text={match[0]} />);
+        } else if (normalized === "everyone") {
           parts.push(<span key={key++} className="bg-amber-500/20 text-amber-600 dark:text-amber-300 px-1 rounded font-semibold">@everyone</span>);
-        } else {
+        } else if (options?.mentionUsers?.has(normalized)) {
           parts.push(
             <a
               key={key++}
-              href={`/profile/${match[10]}`}
+              href={`/profile/${encodeURIComponent(match[10])}`}
               onClick={(e) => e.stopPropagation()}
               title={`Открыть профиль @${match[10]}`}
               className="bg-violet-500/20 dark:bg-cyan-400/20 text-violet-600 dark:text-cyan-300 px-1 rounded font-medium hover:underline cursor-pointer"
@@ -350,6 +362,8 @@ function renderInline(text: string, options?: RenderOptions): ReactNode {
               @{match[10]}
             </a>
           );
+        } else {
+          parts.push(<TriozText key={key++} text={match[0]} />);
         }
       }
       else if (match[11]) {

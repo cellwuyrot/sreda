@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { findMentionQuery } from "@/lib/mentions";
 
 export interface MentionUser {
   id: string;
@@ -24,11 +25,7 @@ export const MENTION_LIMIT = 10;
  * Returns null when the caret is not inside a mention.
  */
 export function getMentionQuery(text: string, caret: number): MentionQuery | null {
-  const upto = text.slice(0, caret);
-  const match = upto.match(/(?:^|[\s([{>])@([A-Za-z0-9_а-яА-ЯёЁ]*)$/);
-  if (!match) return null;
-  const typed = match[1] ?? "";
-  return { query: typed.toLowerCase(), start: caret - typed.length - 1 };
+  return findMentionQuery(text, caret);
 }
 
 /**
@@ -61,6 +58,8 @@ export function insertMention(text: string, mention: MentionQuery, caret: number
 
 interface UseMentionsOptions {
   members: MentionUser[];
+  /** Серверный префиксный поиск для больших групп. */
+  searchMembers?: (query: string) => Promise<MentionUser[]>;
   /** Show the @everyone entry (group chats only) */
   includeEveryone?: boolean;
   /** Apply the new text + caret to the bound input */
@@ -81,14 +80,15 @@ export interface MentionEntry {
  * Call `update` on every change/caret move, `handleKeyDown` before your own
  * key handling, and render `<MentionPopupList>` with the returned entries.
  */
-export function useMentions({ members, includeEveryone = false, onApply }: UseMentionsOptions) {
+export function useMentions({ members, searchMembers, includeEveryone = false, onApply }: UseMentionsOptions) {
   const [mention, setMention] = useState<MentionQuery | null>(null);
+  const [remoteMembers, setRemoteMembers] = useState<MentionUser[]>([]);
   const [caret, setCaret] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const entries = useMemo<MentionEntry[]>(() => {
     if (!mention) return [];
-    const users = filterMentionUsers(members, mention.query).map((user) => ({
+    const users = filterMentionUsers(searchMembers ? remoteMembers : members, mention.query).map((user) => ({
       id: user.id,
       username: user.username as string,
       name: user.name ?? null,
@@ -100,7 +100,21 @@ export function useMentions({ members, includeEveryone = false, onApply }: UseMe
       list.push({ id: "everyone", username: "everyone", name: "Уведомить всех участников", isEveryone: true });
     }
     return [...list, ...users].slice(0, MENTION_LIMIT);
-  }, [mention, members, includeEveryone]);
+  }, [mention, members, remoteMembers, searchMembers, includeEveryone]);
+
+  useEffect(() => {
+    if (!mention || !searchMembers) {
+      setRemoteMembers([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      searchMembers(mention.query)
+        .then((items) => { if (!cancelled) setRemoteMembers(items); })
+        .catch(() => { if (!cancelled) setRemoteMembers([]); });
+    }, 180);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [mention?.query, searchMembers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = useCallback((value: string, caretPos: number) => {
     const found = getMentionQuery(value, caretPos);

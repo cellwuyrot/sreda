@@ -18,11 +18,15 @@ import Spinner from "@/components/ui/Spinner";
 import type { Message } from "./messageTypes";
 import { renderContent } from "./messageFormat";
 import { XIcon, ChatIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
+import { MentionPopupList, useMentions, type MentionUser } from "@/components/ui/MentionPopup";
 
 interface ThreadPanelProps {
   /* Свои эмодзи сообщества. Без этой карты `:name:` в ветке остался бы просто
      текстом — в самой ленте картинка, а в обсуждении того же сообщения нет. */
   emoji?: Map<string, string>;
+  mentionUsers?: Map<string, string>;
+  members: MentionUser[];
+  searchMembers?: (query: string) => Promise<MentionUser[]>;
   rootMessage: Message;
   replies: Message[];
   /** Экранная точка привязки окна (обычно под сообщением). */
@@ -38,11 +42,26 @@ interface ThreadPanelProps {
 
 const EDGE = 12; // минимальный отступ окна от краёв экрана
 
-export default function ThreadPanel({ rootMessage, replies, anchor, input, loading, sending, error, emoji, onInputChange, onSend, onClose }: ThreadPanelProps) {
+export default function ThreadPanel({ rootMessage, replies, anchor, input, loading, sending, error, emoji, mentionUsers, members, searchMembers, onInputChange, onSend, onClose }: ThreadPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const mentions = useMentions({
+    members,
+    searchMembers,
+    includeEveryone: true,
+    onApply: (next, caretAfter) => {
+      onInputChange(next);
+      requestAnimationFrame(() => {
+        const textarea = inputRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        textarea.selectionStart = caretAfter;
+        textarea.selectionEnd = caretAfter;
+      });
+    },
+  });
 
   // Держим список прокрученным к последнему ответу.
   useEffect(() => {
@@ -126,7 +145,7 @@ export default function ThreadPanel({ rootMessage, replies, anchor, input, loadi
                 <span className="text-xs font-semibold text-neutral-900 dark:text-white">{rootMessage.user.name}</span>
                 <time className="text-[10px] text-neutral-400">{new Date(rootMessage.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time>
               </div>
-              <div className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">{renderContent(rootMessage.content, { emoji })}</div>
+              <div className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">{renderContent(rootMessage.content, { emoji, mentionUsers })}</div>
             </div>
           </div>
         </div>
@@ -153,7 +172,7 @@ export default function ThreadPanel({ rootMessage, replies, anchor, input, loadi
                       <span className="text-xs font-semibold text-neutral-900 dark:text-white">{reply.user.name}</span>
                       <time className="text-[10px] text-neutral-400">{new Date(reply.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time>
                     </div>
-                    <div className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">{renderContent(reply.content, { emoji })}</div>
+                    <div className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">{renderContent(reply.content, { emoji, mentionUsers })}</div>
                   </div>
                 </article>
               ))}
@@ -162,12 +181,28 @@ export default function ThreadPanel({ rootMessage, replies, anchor, input, loadi
         </div>
 
         <footer className="shrink-0 border-t border-[var(--cn-border)] p-2.5">
-          <div className="flex items-end gap-2">
+          <div className="relative flex items-end gap-2">
+            {mentions.open && (
+              <MentionPopupList
+                entries={mentions.entries}
+                activeIndex={mentions.activeIndex}
+                onPick={(entry) => mentions.pick(entry, input)}
+                onHover={mentions.setActiveIndex}
+              />
+            )}
             <textarea
               ref={inputRef}
               value={input}
-              onChange={(e) => onInputChange(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+              onChange={(e) => {
+                onInputChange(e.target.value);
+                mentions.update(e.target.value, e.target.selectionStart ?? e.target.value.length);
+              }}
+              onClick={(e) => mentions.update(input, e.currentTarget.selectionStart ?? input.length)}
+              onBlur={() => setTimeout(mentions.close, 150)}
+              onKeyDown={(e) => {
+                if (mentions.handleKeyDown(e, input)) return;
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
+              }}
               placeholder="Ответить в ветке…"
               rows={1}
               className="input-field min-h-10 flex-1 resize-none !py-2 text-sm"

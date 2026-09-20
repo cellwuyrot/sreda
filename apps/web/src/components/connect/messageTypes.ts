@@ -60,6 +60,8 @@ export interface Message {
   deleted?: boolean;
   pinned?: boolean;
   attachments?: string | null;
+  /** JSON-массив ID, вычисленный сервером из content. */
+  mentions?: string | null;
   reactions?: Reaction[];
   replyTo?: ReplyTo | null;
   reads?: { userId: string }[];
