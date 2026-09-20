@@ -15,10 +15,8 @@ import { prismaMock, row } from "@/test/prismaMock";
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
-vi.mock("@/lib/socketEmit", () => ({ emitToUser: vi.fn() }));
 
 import { getServerSession } from "next-auth";
-import { emitToUser } from "@/lib/socketEmit";
 import { POST } from "./route";
 
 const mockSession = vi.mocked(getServerSession);
@@ -56,17 +54,19 @@ function mockRanks(callerRole: string | null, targetRole: string | null) {
 
 beforeEach(() => {
   unmuteCalls.length = 0;
-  vi.mocked(emitToUser).mockClear();
   mockSession.mockResolvedValue({ user: { id: "u1" } } as never);
   prismaMock.channel.findUnique.mockResolvedValue(row({ groupId: "g1" }));
   globals.__forceUnmuteUser = (channelId: string, targetUserId: string) => {
     unmuteCalls.push([channelId, targetUserId]);
+    return true;
   };
+  globals.__isUserInVoiceChannel = () => true;
   stubLock({ muted: true, deafened: false });
 });
 
 afterEach(() => {
   delete globals.__forceUnmuteUser;
+  delete globals.__isUserInVoiceChannel;
   delete globals.__voiceForceLock;
 });
 
@@ -132,14 +132,10 @@ describe("POST /api/voice/force-unmute", () => {
     expect((await POST(request(BODY))).status).toBe(403);
   });
 
-  /**
-   * ИНВАРИАНТ: цель узнаёт о снятии обоих замков сразу. Отдельного события «сняли
-   * только микрофон» больше нет: полумера оставляла человека без звука, и
-   * отличить её от поломки связи он не мог.
-   */
-  it("ИНВАРИАНТ: цели уходит снятие и микрофона, и наушников", async () => {
+  it("цель в другом голосовом канале → 409 и замок не меняется", async () => {
+    globals.__isUserInVoiceChannel = () => false;
     mockRanks("OWNER", "MEMBER");
-    await POST(request(BODY));
-    expect(emitToUser).toHaveBeenCalledWith("u2", "voice:force-undeafen", {});
+    expect((await POST(request(BODY))).status).toBe(409);
+    expect(unmuteCalls).toEqual([]);
   });
 });

@@ -14,7 +14,7 @@ import { messageLengthError } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
 import { checkCensor, recordCensorHits } from "@/lib/censorService";
 import { logGroupAction } from "@/lib/groupAudit";
-import { canActOn, rankOf, RANK_MODERATOR } from "@/lib/groupModeration";
+import { rankOf, RANK_MODERATOR } from "@/lib/groupModeration";
 import { applyMemberOverrides } from "@/lib/memberProfileOverrides"; // FIX-SRVCHAT
 import { resolveGroupMentions } from "@/lib/serverMentions";
 
@@ -582,7 +582,7 @@ export async function DELETE(req: NextRequest) {
 	   удалить любое в любой группе. Из-за этого пункта «удалить сообщение» не
 	   было и в контекстном меню: его нечем было обслужить.
 
-	   Теперь три пути: автор, модерация группы строго выше автора по рангу и
+	   Теперь три пути: автор, модератор+ группы независимо от ранга автора и
 	   администратор платформы. Последний оставлен намеренно — на нём держится
 	   разбор жалоб вне групп. */
 	const siteRole = (await prisma.user.findUnique({
@@ -595,19 +595,11 @@ export async function DELETE(req: NextRequest) {
 	const groupId = existing.channel?.groupId ?? null;
 
 	if (!isAuthor && !isSiteAdmin && groupId) {
-		const [mine, theirs] = await Promise.all([
-			prisma.groupMember.findUnique({
-				where: { userId_groupId: { userId: session.user.id, groupId } },
-				select: { role: true },
-			}),
-			prisma.groupMember.findUnique({
-				where: { userId_groupId: { userId: existing.userId, groupId } },
-				select: { role: true },
-			}),
-		]);
-		if (rankOf(mine?.role) >= RANK_MODERATOR && canActOn(mine?.role, theirs?.role ?? null)) {
-			asModerator = true;
-		}
+		const mine = await prisma.groupMember.findUnique({
+			where: { userId_groupId: { userId: session.user.id, groupId } },
+			select: { role: true },
+		});
+		asModerator = rankOf(mine?.role) >= RANK_MODERATOR;
 	}
 
 	if (!isAuthor && !isSiteAdmin && !asModerator) {

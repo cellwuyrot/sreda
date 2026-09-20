@@ -3,7 +3,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { effectiveRank, ROLE_RANK } from "@/lib/groupModeration";
-import { emitToUser } from "@/lib/socketEmit";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -26,7 +25,20 @@ export async function POST(req: Request) {
   });
   const targetRank = targetMembership ? effectiveRank(targetMembership) : ROLE_RANK.MEMBER;
   if (targetRank >= callerRank) return NextResponse.json({ error: "Rank too low" }, { status: 403 });
+  const isInChannel = (globalThis as Record<string, unknown>).__isUserInVoiceChannel;
+  if (typeof isInChannel !== "function") {
+    return NextResponse.json({ error: "Voice service unavailable" }, { status: 503 });
+  }
+  if (!(isInChannel as (channelId: string, userId: string) => boolean)(channelId, targetUserId)) {
+    return NextResponse.json({ error: "Target is not in this voice channel" }, { status: 409 });
+  }
 
-  emitToUser(targetUserId, "voice:kick", {});
+  const kick = (globalThis as Record<string, unknown>).__kickVoiceUser;
+  if (typeof kick !== "function") {
+    return NextResponse.json({ error: "Voice service unavailable" }, { status: 503 });
+  }
+  if (!(kick as (channelId: string, userId: string) => boolean)(channelId, targetUserId)) {
+    return NextResponse.json({ error: "Target changed voice channel" }, { status: 409 });
+  }
   return NextResponse.json({ ok: true });
 }
