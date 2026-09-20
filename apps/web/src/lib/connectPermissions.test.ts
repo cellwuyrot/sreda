@@ -31,6 +31,7 @@ function makeChannel(overrides: Partial<Record<string, unknown>> = {}) {
     answerAccess: "ALL",
     group: { paused: false },
     allowedRoles: [],
+    parent: null,
     ...overrides,
   };
 }
@@ -95,6 +96,48 @@ describe("getChannelPermissions: видимость канала", () => {
 
     const perms = await getChannelPermissions("u1", "chan-1");
     expect(perms!.canView).toBe(true);
+  });
+
+  it("MEMBER не видит restricted канал без выбранных ролей", async () => {
+    prismaMock.channel.findUnique.mockResolvedValue(row(makeChannel({ isRestricted: true, allowedRoles: [] })));
+    prismaMock.groupMember.findUnique.mockResolvedValue(row(makeMembership("MEMBER")));
+    expect((await getChannelPermissions("u1", "chan-1"))!.canView).toBe(false);
+  });
+
+  it("MODERATOR видит restricted канал без выбранных ролей", async () => {
+    prismaMock.channel.findUnique.mockResolvedValue(row(makeChannel({ isRestricted: true, allowedRoles: [] })));
+    prismaMock.groupMember.findUnique.mockResolvedValue(row(makeMembership("MODERATOR")));
+    expect((await getChannelPermissions("u1", "chan-1"))!.canView).toBe(true);
+  });
+
+  it("дочерний канал наследует запрет restricted CATEGORY", async () => {
+    prismaMock.channel.findUnique.mockResolvedValue(row(makeChannel({
+      parent: {
+        id: "category-1",
+        type: "CATEGORY",
+        isRestricted: true,
+        hidden: false,
+        readAccess: "ALL",
+        allowedRoles: [{ roleId: "vip", scope: "VIEW" }],
+      },
+    })));
+    prismaMock.groupMember.findUnique.mockResolvedValue(row(makeMembership("MEMBER")));
+    expect((await getChannelPermissions("u1", "chan-1"))!.canView).toBe(false);
+  });
+
+  it("роль родительской CATEGORY открывает дочерний канал", async () => {
+    prismaMock.channel.findUnique.mockResolvedValue(row(makeChannel({
+      parent: {
+        id: "category-1",
+        type: "CATEGORY",
+        isRestricted: true,
+        hidden: false,
+        readAccess: "ALL",
+        allowedRoles: [{ roleId: "vip", scope: "VIEW" }],
+      },
+    })));
+    prismaMock.groupMember.findUnique.mockResolvedValue(row({ role: "MEMBER", tags: [{ roleId: "vip" }] }));
+    expect((await getChannelPermissions("u1", "chan-1"))!.canView).toBe(true);
   });
 
   it("MEMBER не видит канал с readAccess=MOD", async () => {

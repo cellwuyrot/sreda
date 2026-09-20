@@ -56,6 +56,16 @@ const CHANNEL_SELECT = {
   answerAccess: true, // FIX-QAACL
   group: { select: { paused: true } },
   allowedRoles: { select: { roleId: true, scope: true } },
+  parent: {
+    select: {
+      id: true,
+      type: true,
+      isRestricted: true,
+      hidden: true,
+      readAccess: true,
+      allowedRoles: { select: { roleId: true, scope: true } },
+    },
+  },
 } as const;
 
 interface ChannelRow {
@@ -70,6 +80,14 @@ interface ChannelRow {
   answerAccess: string;
   group: { paused: boolean };
   allowedRoles: { roleId: string; scope: string }[];
+  parent: {
+    id: string;
+    type: string;
+    isRestricted: boolean;
+    hidden: boolean;
+    readAccess: string;
+    allowedRoles: { roleId: string; scope: string }[];
+  } | null;
 }
 
 interface MembershipRow {
@@ -98,7 +116,9 @@ function evaluate(channel: ChannelRow, membership: MembershipRow | null): Channe
   const askRoleIds = rolesInScope("ASK");
   const answerRoleIds = rolesInScope("ANSWER");
   const memberRoleIds = membership?.tags.map((entry) => entry.roleId) ?? [];
-  const hasAllowedCustomRole = allowedRoleIds.length === 0 || allowedRoleIds.some((id) => memberRoleIds.includes(id));
+  // Включённое ограничение с пустым списком — deny-by-default. Иначе UI
+  // обещает «никто не увидит», а прямой запрос получает доступ.
+  const hasAllowedCustomRole = allowedRoleIds.length > 0 && allowedRoleIds.some((id) => memberRoleIds.includes(id));
   const passesRestriction = !channel.isRestricted || canModerate || hasAllowedCustomRole;
   // FIX-HIDDEN: скрытые каналы доступны только модераторам и выше. Обычный
   // участник не видит их и не может читать/писать даже по прямой ссылке.
@@ -109,8 +129,30 @@ function evaluate(channel: ChannelRow, membership: MembershipRow | null): Channe
   // прежнее поведение, читают все участники.
   const passesReadAccess =
     channel.readAccess === "ADMIN" ? canManage : channel.readAccess === "MOD" ? canModerate : true;
+  /* Ограничения CATEGORY наследуются дочерним каналом. Собственные ACL ребёнка
+     могут только дополнительно сузить доступ, но не открыть закрытого родителя. */
+  const parent = channel.parent?.type === "CATEGORY" ? channel.parent : null;
+  const parentAllowedRoleIds = parent
+    ? parent.allowedRoles.filter((entry) => entry.scope === "VIEW").map((entry) => entry.roleId)
+    : [];
+  const passesParentRestriction =
+    !parent ||
+    !parent.isRestricted ||
+    canModerate ||
+    (parentAllowedRoleIds.length > 0 && parentAllowedRoleIds.some((id) => memberRoleIds.includes(id)));
+  const passesParentHidden = !parent || !parent.hidden || canModerate;
+  const passesParentReadAccess =
+    !parent ||
+    (parent.readAccess === "ADMIN" ? canManage : parent.readAccess === "MOD" ? canModerate : true);
   const canView =
-    isMember && passesRestriction && passesHidden && passesReadAccess && (!channel.group.paused || canBypassPause);
+    isMember &&
+    passesRestriction &&
+    passesHidden &&
+    passesReadAccess &&
+    passesParentRestriction &&
+    passesParentHidden &&
+    passesParentReadAccess &&
+    (!channel.group.paused || canBypassPause);
 
   /* Настройка раздела «кто может писать», выставленная руками админа. */
   const passesPostAccess =
@@ -154,7 +196,14 @@ function evaluate(channel: ChannelRow, membership: MembershipRow | null): Channe
   let denialReason: string | null = null;
   if (!isMember) denialReason = "Вы не состоите в этом сообществе";
   else if (channel.group.paused && !canBypassPause) denialReason = "Сообщество временно приостановлено";
-  else if (!passesRestriction || !passesHidden || !passesReadAccess) denialReason = "У вас нет доступа к этому каналу";
+  else if (
+    !passesRestriction ||
+    !passesHidden ||
+    !passesReadAccess ||
+    !passesParentRestriction ||
+    !passesParentHidden ||
+    !passesParentReadAccess
+  ) denialReason = "У вас нет доступа к этому каналу";
   else if (!passesPostAccess) denialReason = "В этом канале недостаточно прав для публикации";
 
   return {
@@ -189,7 +238,7 @@ function evaluate(channel: ChannelRow, membership: MembershipRow | null): Channe
 /**
  * Canonical channel authorization used by REST routes and Socket.IO.
  * A restricted channel is visible only to built-in moderators or members with
- * one of its custom allowed roles. Empty allowedRoles preserves legacy behavior.
+ * one of its custom allowed roles. Empty allowedRoles denies regular members.
  */
 export async function getChannelPermissions(userId: string, channelId: string): Promise<ChannelPermissions | null> {
   if (!userId || !channelId) return null;
@@ -241,6 +290,27 @@ export async function getChannelPermissionsBatch(
 
   for (const channel of channels) {
     result.set(channel.id, evaluate(channel, membershipByGroup.get(channel.groupId) ?? null));
+  }
+  return result;
+}
+
+/** Один канал для многих пользователей — используется приватным voice presence. */
+export async function getChannelPermissionsForUsers(
+  channelId: string,
+  userIds: string[],
+): Promise<Map<string, ChannelPermissions>> {
+  const result = new Map<string, ChannelPermissions>();
+  const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+  if (!channelId || uniqueUserIds.length === 0) return result;
+  const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: CHANNEL_SELECT });
+  if (!channel) return result;
+  const memberships = await prisma.groupMember.findMany({
+    where: { groupId: channel.groupId, userId: { in: uniqueUserIds } },
+    select: { userId: true, role: true, tags: { select: { roleId: true } } },
+  });
+  const byUser = new Map(memberships.map((membership) => [membership.userId, membership]));
+  for (const userId of uniqueUserIds) {
+    result.set(userId, evaluate(channel, byUser.get(userId) ?? null));
   }
   return result;
 }

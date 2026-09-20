@@ -5,6 +5,8 @@ import prisma from "@/lib/prisma";
 import { checkBan } from "@/lib/banCheck";
 import { rateLimit } from "@/lib/rateLimit";
 import { isChannelType } from "@/lib/channelModules";
+import { getChannelPermissionsBatch } from "@/lib/connectPermissions";
+import { validateChannelParent } from "@/lib/channelParentValidation";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -42,18 +44,11 @@ export async function GET(req: Request) {
 
   // Filter out restricted channels if user doesn't have the required role
   if (!isAdminRole) {
-    const memberRecord = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: session.user.id, groupId } },
-      include: { tags: { select: { roleId: true } } },
-    });
-    const userRoleIds = new Set(memberRecord?.tags.map((t) => t.roleId) ?? []);
-
-    const visible = channels.filter((ch) => {
-      if (!ch.isRestricted) return true;
-      const allowed = (ch as typeof ch & { allowedRoles?: { roleId: string }[] }).allowedRoles;
-      if (!allowed || allowed.length === 0) return true;
-      return allowed.some((a) => userRoleIds.has(a.roleId));
-    });
+    const permissions = await getChannelPermissionsBatch(
+      session.user.id,
+      channels.map((channel) => channel.id),
+    );
+    const visible = channels.filter((channel) => permissions.get(channel.id)?.canView);
 
     return NextResponse.json(visible.map(({ allowedRoles: _ar, ...rest }) => rest));
   }
@@ -108,48 +103,12 @@ export async function POST(req: NextRequest) {
 
   const normalizedGroupType = channelGroupType === "VOICE" ? "VOICE" : "TEXT";
 
-  if (channelType === "CATEGORY" && parentId) {
-    return NextResponse.json({ error: "Category cannot have parent" }, { status: 400 });
-  }
-
-  if (parentId) {
-    const parent = await prisma.channel.findUnique({
-      where: { id: parentId },
-      select: {
-        id: true,
-        type: true,
-        groupId: true,
-        parentId: true,
-        channelGroupType: true,
-        group: { select: { isMain: true, sectionsEnabled: true } },
-      },
-    });
-    if (!parent || parent.groupId !== groupId) {
-      return NextResponse.json({ error: "Invalid parent category" }, { status: 400 });
-    }
-    // Classic channel sidebars use CATEGORY parents. The main TZ Connect
-    // «Разделы» UI intentionally uses a top-level content block (NEWS/WIKI/…)
-    // as the visual parent of its list items, so allow that shape too.
-    const isSectionBlock =
-      !parent.parentId &&
-      parent.type !== "VOICE" &&
-      parent.type !== "APPEALS" &&
-      (parent.group.isMain || parent.group.sectionsEnabled);
-    if (parent.type !== "CATEGORY" && !isSectionBlock) {
-      return NextResponse.json({ error: "Parent must be a category" }, { status: 400 });
-    }
-    if (parent.type === "CATEGORY") {
-      const expectedType = parent.channelGroupType === "VOICE" ? "VOICE" : "TEXT";
-      if (expectedType === "VOICE" && channelType !== "VOICE") {
-        return NextResponse.json({ error: "Voice category can contain only voice channels" }, { status: 400 });
-      }
-      if (expectedType === "TEXT" && channelType === "VOICE") {
-        return NextResponse.json({ error: "Text category cannot contain voice channels" }, { status: 400 });
-      }
-    } else if (channelType === "VOICE" || channelType === "CATEGORY" || channelType === "APPEALS") {
-      return NextResponse.json({ error: "Этот тип нельзя добавить пунктом списка" }, { status: 400 });
-    }
-  }
+  const parentError = await validateChannelParent({
+    parentId: typeof parentId === "string" && parentId ? parentId : null,
+    groupId,
+    channelType,
+  });
+  if (parentError) return NextResponse.json({ error: parentError }, { status: 400 });
 
   const channel = await prisma.channel.create({
     data: {

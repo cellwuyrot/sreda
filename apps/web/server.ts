@@ -9,7 +9,11 @@ import prisma from "./src/lib/prisma";
 import { createReadStream, existsSync, statSync } from "fs";
 import { join, extname, sep, basename } from "path";
 import { resolveInstallerPath } from "./src/lib/desktopStore";
-import { getChannelPermissions } from "./src/lib/connectPermissions";
+import {
+  getChannelPermissions,
+  getChannelPermissionsBatch,
+  getChannelPermissionsForUsers,
+} from "./src/lib/connectPermissions";
 import { PRIVATE_UPLOAD_DIRS, publicUploadsRoot, resolveUploadPath, uploadContentType, parseByteRange } from "./src/lib/uploadPaths";
 import { canAccessUpload } from "./src/lib/uploadAccess";
 import { fetchRemote, remoteLocationFor } from "./src/lib/uploadOffload";
@@ -810,7 +814,21 @@ app.prepare().then(() => {
       groupId = await getChannelGroupId(channelId);
     } catch { /* канал мог быть удалён — шлём хотя бы участникам комнаты */ }
     if (groupId) {
-      io.to(`group-${groupId}`).to(`voice-${channelId}`).emit("voice-channel-users", { channelId, users });
+      /* Presence закрытого канала нельзя рассылать всей group-room. Проверяем
+         канонические права каждого сокета, включая ACL родительской категории. */
+      const sockets = await io.in(`group-${groupId}`).fetchSockets();
+      const socketAuth = sockets
+        .map((target) => ({ target, auth: authenticatedSockets.get(target.id) }))
+        .filter((entry): entry is { target: (typeof sockets)[number]; auth: AuthenticatedSocket } => !!entry.auth);
+      const permissions = await getChannelPermissionsForUsers(
+        channelId,
+        socketAuth.map((entry) => entry.auth.userId),
+      );
+      for (const { target, auth } of socketAuth) {
+        if (permissions.get(auth.userId)?.canView) {
+          target.emit("voice-channel-users", { channelId, users });
+        }
+      }
     } else {
       io.to(`voice-${channelId}`).emit("voice-channel-users", { channelId, users });
     }
@@ -819,11 +837,15 @@ app.prepare().then(() => {
 
   /** Событие всем живым сокетам человека: заглушение касается его устройств, а
       не одной вкладки, из которой он вошёл. */
-  const emitToUserSockets = (userId: string, event: string) => {
+  const emitToUserSockets = (userId: string, event: string, payload: Record<string, unknown>) => {
     for (const sid of Array.from(userSockets.get(userId) ?? [])) {
-      io.to(sid).emit(event, {});
+      io.to(sid).emit(event, payload);
     }
   };
+
+  const isUserInVoiceChannel = (channelId: string, userId: string): boolean =>
+    Array.from(voiceRooms.get(channelId)?.values() ?? []).some((user) => user.userId === userId);
+  (globalThis as Record<string, unknown>).__isUserInVoiceChannel = isUserInVoiceChannel;
 
   /** Применить замок к записи участника в комнате, если он там сейчас есть. */
   const applyLockToRoom = (channelId: string, userId: string, lock: ForceLock) => {
@@ -841,18 +863,20 @@ app.prepare().then(() => {
      комнату `dm-<id>`: так событие доходит и в том случае, когда маршрут App
      Router не нашёл io через getIO().
 
-     FIX-FORCELOCK-KEEP: замок пишется в отдельный реестр и НЕ зависит от того,
-     сидит ли человек в канале прямо сейчас. Заглушить можно и того, кто на
-     секунду отвалился: вернётся — замок применится при входе. */
+     FIX-FORCELOCK-KEEP: после применения замок пишется в отдельный реестр и
+     переживает реконнект. Само применение разрешено только когда цель сейчас
+     находится именно в указанном канале: это проверяют API и эта функция. */
   (globalThis as Record<string, unknown>).__forceMuteUser = (channelId: string, targetUserId: string, deafen: boolean) => {
+    if (!isUserInVoiceChannel(channelId, targetUserId)) return false;
     const previous = readForceLock(channelId, targetUserId);
     /* Наложение «мик + наушники» поверх «мика» усиливает замок; обратно —
        не ослабляет: снятие делает только force-unmute. */
     const lock: ForceLock = { muted: true, deafened: previous.deafened || deafen };
     voiceForceLocks.set(forceLockKey(channelId, targetUserId), lock);
     applyLockToRoom(channelId, targetUserId, lock);
-    emitToUserSockets(targetUserId, deafen ? "voice:force-deafen" : "voice:force-mute");
+    emitToUserSockets(targetUserId, deafen ? "voice:force-deafen" : "voice:force-mute", { channelId });
     void broadcastVoiceChannelUsers(channelId);
+    return true;
   };
 
   /**
@@ -865,10 +889,31 @@ app.prepare().then(() => {
    * невозможно ни объяснить, ни заметить.
    */
   (globalThis as Record<string, unknown>).__forceUnmuteUser = (channelId: string, targetUserId: string) => {
+    if (!isUserInVoiceChannel(channelId, targetUserId)) return false;
     voiceForceLocks.delete(forceLockKey(channelId, targetUserId));
     applyLockToRoom(channelId, targetUserId, { muted: false, deafened: false });
-    emitToUserSockets(targetUserId, "voice:force-undeafen");
+    emitToUserSockets(targetUserId, "voice:force-undeafen", { channelId });
     void broadcastVoiceChannelUsers(channelId);
+    return true;
+  };
+
+  (globalThis as Record<string, unknown>).__kickVoiceUser = (channelId: string, targetUserId: string) => {
+    const room = voiceRooms.get(channelId);
+    if (!room) return false;
+    let removed = false;
+    for (const [socketId, user] of Array.from(room.entries())) {
+      if (user.userId !== targetUserId) continue;
+      removed = true;
+      room.delete(socketId);
+      const target = io.sockets.sockets.get(socketId);
+      target?.leave(`voice-${channelId}`);
+      target?.emit("voice:kick", { channelId });
+      io.to(`voice-${channelId}`).emit("user-left", { socketId, silent: false });
+    }
+    if (!removed) return false;
+    if (room.size === 0) voiceRooms.delete(channelId);
+    void broadcastVoiceChannelUsers(channelId);
+    return true;
   };
 
   /** Текущий замок — маршруту он нужен, чтобы решить, какое звание требовать. */
@@ -1183,7 +1228,7 @@ app.prepare().then(() => {
         isForceDeafened: lock.deafened,
       };
       if (lock.muted) {
-        socket.emit(lock.deafened ? "voice:force-deafen" : "voice:force-mute", {});
+        socket.emit(lock.deafened ? "voice:force-deafen" : "voice:force-mute", { channelId });
       }
 
       if (!voiceRooms.has(channelId)) {
@@ -1257,12 +1302,9 @@ app.prepare().then(() => {
     // Query all voice channels at once — only channels in groups the
     // requesting user belongs to (was: leaked every private voice room).
     socket.on("get-all-voice-users", async () => {
-      const memberships = await prisma.groupMember.findMany({
-        where: { userId: authData.userId },
-        select: { groupId: true },
-      });
-      const allowedGroups = new Set(memberships.map((m) => m.groupId));
       const result: Record<string, VoiceUser[]> = {};
+      const channelIds = Array.from(voiceRooms.keys());
+      const permissions = await getChannelPermissionsBatch(authData.userId, channelIds);
       /* FIX-VOICEBADGE: списку сообществ нужна сводка «в каком сообществе сейчас
          кто-то говорит». Собираем её в том же проходе: группа канала уже
          посчитана, и второй круг запросов не нужен. Видно только свои сообщества —
@@ -1270,7 +1312,7 @@ app.prepare().then(() => {
       const byGroup: Record<string, { count: number; channelIds: string[] }> = {};
       for (const [chId, room] of voiceRooms) {
         const groupId = await getChannelGroupId(chId);
-        if (groupId && allowedGroups.has(groupId)) {
+        if (groupId && permissions.get(chId)?.canView) {
           const users = Array.from(room.values());
           result[chId] = users;
           if (users.length > 0) {
