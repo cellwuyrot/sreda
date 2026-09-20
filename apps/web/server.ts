@@ -18,6 +18,7 @@ import { createNotification, createNotificationsBulk } from "./src/lib/createNot
 import { randomUUID } from "node:crypto";
 import { queuePush } from "./src/lib/push";
 import { CALL_RING_MS, callSignalKinds } from "./src/lib/callProtocol";
+import { publishScheduledMessage } from "./src/lib/publishScheduledMessage";
 
 /* Строгий режим выдачи файлов: закрывать те, которых нет в указателе.
 
@@ -1873,22 +1874,24 @@ app.prepare().then(() => {
         take: 20,
       });
       for (const sm of due) {
-        // Create the real message with the same shape the /api/messages route
-        // returns, so clients render it identically (and key it by its own id).
-        const message = await prisma.message.create({
-          data: { content: sm.content, channelId: sm.channelId, userId: sm.userId },
-          include: {
-            user: { select: { id: true, name: true, username: true, avatar: true, role: true, avatarGlowEnabled: true, avatarGlowColors: true, profileBanner: true, lastSeen: true } },
-            reactions: { select: { id: true, emoji: true, userId: true, user: { select: { id: true, name: true } } } },
-            replyTo: { select: { id: true, content: true, user: { select: { id: true, name: true } } } },
-            reads: { select: { userId: true } },
-            _count: { select: { threadReplies: true } },
-          },
-        });
-        await prisma.scheduledMessage.update({ where: { id: sm.id }, data: { sent: true } });
-        // Clients join `channel-<id>` (see socketEmit.ts and the join-channel
-        // handler above), so the event must target that exact room name.
-        io.to(`channel-${sm.channelId}`).emit("new-message", message);
+        try {
+          await publishScheduledMessage(sm, (channelId, message) => {
+            io.to(`channel-${channelId}`).emit("new-message", message);
+          });
+        } catch (error) {
+          // Невалидное к моменту публикации сообщение не ретраим бесконечно.
+          await prisma.scheduledMessage.update({ where: { id: sm.id }, data: { sent: true } });
+          console.error("[Scheduled] rejected:", sm.id, error);
+          void createNotification({
+            userId: sm.userId,
+            type: "system",
+            title: "Отложенное сообщение не отправлено",
+            body: "К моменту публикации изменились права, ограничения или правила сообщества.",
+            link: `/connect?channel=${sm.channelId}`,
+            entityType: "scheduled_message",
+            entityId: sm.id,
+          });
+        }
       }
     } catch (err) {
       console.error("[Scheduled] Error:", err);

@@ -177,8 +177,23 @@ describe("прежняя разметка после добавления нов
   });
 
   it("ИНВАРИАНТ: упоминания участника и @everyone на месте", () => {
-    expect(markup("@ivan").querySelector("a")?.getAttribute("href")).toBe("/profile/ivan");
+    const users = new Map([["ivan", "user-1"]]);
+    expect(markup("@ivan", { mentionUsers: users }).querySelector("a")?.getAttribute("href")).toBe("/profile/ivan");
     expect(markup("@everyone").textContent).toBe("@everyone");
+  });
+
+  it.each(["часть@ivan.com", "foo@everyone.com", "test@ivan", "http://site/@ivan"])(
+    "не рисует mention внутри %s",
+    (text) => {
+      const container = markup(text, { mentionUsers: new Map([["ivan", "user-1"]]) });
+      expect(container.querySelector("[title^='Открыть профиль']")).toBeNull();
+      expect(container.querySelector(".bg-amber-500\\/20")).toBeNull();
+      expect(container.textContent).toBe(text);
+    },
+  );
+
+  it("не превращает неизвестный username в профиль", () => {
+    expect(markup("@unknown", { mentionUsers: new Map([["ivan", "user-1"]]) }).querySelector("a")).toBeNull();
   });
 
   it("ИНВАРИАНТ: свой эмодзи сообщества по-прежнему становится картинкой", () => {

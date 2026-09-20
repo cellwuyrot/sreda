@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { hasEveryoneMention, parseMentions } from "@/lib/mentions";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -17,12 +18,6 @@ export async function GET() {
   if (memberships.length === 0) {
     return NextResponse.json({ unread: {} });
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { username: true, name: true },
-  });
-  const uname = user?.username || user?.name || "";
 
   // Багфикс производительности: раньше на КАЖДЫЙ канал делалось 1–2 запроса
   // count (N+1); этот эндпоинт опрашивается каждые 15–30 секунд каждым
@@ -116,27 +111,24 @@ export async function GET() {
   }
 
   const mentionChannels: Record<string, boolean> = {};
-  if (uname && grouped.length > 0) {
-    // Багфикс: contains в PostgreSQL регистрозависим — @Yuna не считался
-    // упоминанием @yuna, хотя клиент и сервер создания уведомлений считали
-    // иначе. mode: "insensitive" выравнивает поведение.
-    const mentioned = await prisma.message.groupBy({
-      by: ["channelId"],
+  if (memberships.length > 0) {
+    /* Никаких contains("@username"): POST уже хранит вычисленные сервером ID,
+       а @everyone проверяется тем же parser, что renderer и отправка. */
+    const candidates = await prisma.message.findMany({
       where: {
         ...baseWhere,
-        AND: [
-          {
-            OR: [
-              { content: { contains: `@${uname}`, mode: "insensitive" as const } },
-              { content: { contains: "@everyone" } },
-            ],
-          },
-        ],
       },
-      _count: { _all: true },
+      select: { channelId: true, content: true, mentions: true },
     });
-    for (const g of mentioned) {
-      if (g._count._all > 0) mentionChannels[g.channelId] = true;
+    for (const message of candidates) {
+      let ids: string[] = [];
+      try { ids = message.mentions ? JSON.parse(message.mentions) : []; } catch { ids = []; }
+      // parseMentions вызван явно и для обычного токена: это сохраняет единое
+      // правило и для старых строк, созданных до серверного поля mentions.
+      const hasTokens = parseMentions(message.content).length > 0;
+      if (hasTokens && (ids.includes(session.user.id) || hasEveryoneMention(message.content))) {
+        mentionChannels[message.channelId] = true;
+      }
     }
   }
 

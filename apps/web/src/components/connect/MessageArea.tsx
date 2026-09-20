@@ -45,7 +45,8 @@ import ThreadPanel from "./ThreadPanel";
 import { useFileDropPaste } from "@/hooks/useFileDropPaste";
 import { downscaleForChat } from "@/lib/clientImageResize"; // FIX-NOSHARP
 import { getDesktopApi } from "@/lib/desktop";
-import { fetchAllGroupMembers } from "@/lib/groupMembersFetch";
+import { searchGroupMembers, type FetchedGroupMember } from "@/lib/groupMembersFetch";
+import { hasEveryoneMention, parseMentions } from "@/lib/mentions";
 import { uploadWithProgress } from "@/lib/uploadWithProgress"; // FIX-UPLOAD
 import { NewsIcon, ChatIcon, LockIcon, ThreadIcon, CheckIcon, DoubleCheckIcon, XIcon, ClockIcon, MapPinIcon } from "@/components/ui/ConnectIcons";
 import { EditIcon } from "@/components/ui/ConnectIconsExtra"; // FIX-ICONS
@@ -462,7 +463,18 @@ const MessageRow = memo(function MessageRow({
                          себя не допускает, браузер разорвал бы разметку. */
                       <div data-i18n-skip className="tz-chat-body text-neutral-700 dark:text-gray-300 mt-0.5 break-words whitespace-pre-wrap">
                         {/* Длинное сообщение показывается свёрнутым — см. MessageBody. */}
-                        <MessageBody text={msg.content} options={{ roleTags, emoji: groupEmoji }} />
+                        <MessageBody
+                          text={msg.content}
+                          options={{
+                            roleTags,
+                            emoji: groupEmoji,
+                            mentionUsers: new Map(
+                              channelMembers
+                                .filter((member) => member.username)
+                                .map((member) => [member.username!.toLowerCase(), member.id]),
+                            ),
+                          }}
+                        />
                         {isGrouped && (msg.edited || msg.editedAt) && (
                           <span className="ml-1.5 text-[10px] text-neutral-400" title={msg.editedAt ? `Изменено ${new Date(msg.editedAt).toLocaleString("ru-RU")}` : "Сообщение изменено"}>изм.</span>
                         )}
@@ -1061,9 +1073,36 @@ export default function MessageArea({
     return map;
   }, [groupEmojis]);
 
+  const mentionUserMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of channelMembers) {
+      if (member.username) map.set(member.username.toLowerCase(), member.id);
+    }
+    return map;
+  }, [channelMembers]);
+
+  const searchMentionMembers = useCallback(async (query: string) => {
+    if (!groupIdForRender) return [];
+    const members = await searchGroupMembers(groupIdForRender, query, 20);
+    const found = members.map((member) => ({
+      id: member.user.id,
+      name: member.user.name,
+      username: member.user.username ?? null,
+      avatar: member.user.avatar ?? null,
+      lastSeen: member.user.lastSeen ?? null,
+    }));
+    setChannelMembers((current) => {
+      const byId = new Map(current.map((member) => [member.id, member]));
+      for (const member of found) byId.set(member.id, member);
+      return [...byId.values()];
+    });
+    return found;
+  }, [groupIdForRender]);
+
   // @mention autocomplete for the composer (last 10 active members + @everyone)
   const composerMentions = useMentions({
     members: channelMembers,
+    searchMembers: searchMentionMembers,
     includeEveryone: true,
     onApply: (next, caretAfter) => {
       updateChannelDraft(next);
@@ -1095,21 +1134,6 @@ export default function MessageArea({
       });
     },
   });
-
-  // Resolve @username / @everyone in text to member IDs (never from the global user base)
-  const resolveMentionIds = (text: string): string[] => {
-    const ids = new Set<string>();
-    if (/@everyone\b/.test(text)) {
-      channelMembers.forEach((m) => { if (m.id !== currentUserId) ids.add(m.id); });
-      return [...ids];
-    }
-    const usernames = new Set(Array.from(text.matchAll(/@([A-Za-z0-9_а-яА-ЯёЁ]+)/g), (m) => m[1].toLowerCase()));
-    if (usernames.size === 0) return [];
-    channelMembers.forEach((m) => {
-      if (m.username && usernames.has(m.username.toLowerCase())) ids.add(m.id);
-    });
-    return [...ids];
-  };
 
   // Pinning is restricted to community admins/moderators (plus site admins)
   const canPin = rankOf(currentUserCommunityRole) >= RANK_MODERATOR || currentUserRole === "SITE_ADMIN";
@@ -1427,9 +1451,9 @@ export default function MessageArea({
         Promise.all([
           fetch(`/api/groups/${ch.groupId}`).then((r) => r.ok ? r.json() : null),
           fetch(`/api/channels/mute?groupId=${ch.groupId}`).then((r) => r.ok ? r.json() : null),
-          fetchAllGroupMembers(ch.groupId),
           fetch(`/api/groups/${ch.groupId}/emoji`).then((r) => r.ok ? r.json() : null),
-        ]).then(([g, muteData, allMembers, emojiData]) => {
+        ]).then(([g, muteData, emojiData]) => {
+          const allMembers: FetchedGroupMember[] = Array.isArray(g?.members) ? g.members : [];
           setGroupEmojis(emojiData?.emojis ?? []);
           if (allMembers.length > 0) {
             setChannelMembers(allMembers.map((m) => ({ id: m.user.id, name: m.user.name, username: m.user.username ?? null, avatar: m.user.avatar ?? null, lastSeen: m.user.lastSeen ?? null })));
@@ -1512,16 +1536,9 @@ export default function MessageArea({
         // Багфикс: раньше упоминание искалось простым includes — @user срабатывал
         // и на чужое упоминание @user123. Теперь после ника должна быть граница
         // слова — как на сервере при создании уведомлений.
-        let isMention = /@everyone\b/.test(msg.content);
+        let isMention = hasEveryoneMention(msg.content);
         if (!isMention && uname) {
-          const lower = msg.content.toLowerCase();
-          const token = `@${uname.toLowerCase()}`;
-          let idx = lower.indexOf(token);
-          while (idx !== -1) {
-            const after = lower.charAt(idx + token.length);
-            if (!after || !/[0-9a-z_а-яё-]/.test(after)) { isMention = true; break; }
-            idx = lower.indexOf(token, idx + 1);
-          }
+          isMention = parseMentions(msg.content).some((token) => token.normalized === uname.toLowerCase());
         }
         if (isMention) playMentionNotification();
         else playMsgNotification();
@@ -1567,21 +1584,27 @@ export default function MessageArea({
     });
 
     socket.on("reaction-added", ({ messageId, emoji, userId: uid, userName }: { messageId: string; emoji: string; userId: string; userName: string }) => {
-      setMessages((prev) => prev.map((m) => {
+      const apply = (prev: Message[]) => prev.map((m) => {
         if (m.id !== messageId) return m;
         const reactions = [...(m.reactions || [])];
         if (!reactions.find((r) => r.userId === uid && r.emoji === emoji)) {
           reactions.push({ id: `${uid}-${emoji}`, emoji, userId: uid, user: { id: uid, name: userName } });
         }
         return { ...m, reactions };
-      }));
+      });
+      setMessages(apply);
+      setThreadMessages(apply);
+      setActiveThread((prev) => prev ? apply([prev])[0] : prev);
     });
 
     socket.on("reaction-removed", ({ messageId, emoji, userId: uid }: { messageId: string; emoji: string; userId: string }) => {
-      setMessages((prev) => prev.map((m) => {
+      const apply = (prev: Message[]) => prev.map((m) => {
         if (m.id !== messageId) return m;
         return { ...m, reactions: (m.reactions || []).filter((r) => !(r.userId === uid && r.emoji === emoji)) };
-      }));
+      });
+      setMessages(apply);
+      setThreadMessages(apply);
+      setActiveThread((prev) => prev ? apply([prev])[0] : prev);
     });
 
     socket.on("message-pinned", ({ messageId, pinned }: { messageId: string; pinned: boolean }) => {
@@ -2358,8 +2381,7 @@ export default function MessageArea({
     const attachments = pendingAttachments.length > 0 ? pendingAttachments : null;
     const body: Record<string, unknown> = { content, channelId, attachments };
     if (replyTo) body.replyToId = replyTo.id;
-    const mentionIds = resolveMentionIds(content);
-    if (mentionIds.length > 0) body.mentions = mentionIds;
+    // ID не передаются: сервер всегда вычисляет их заново из content.
 
     updateChannelDraft("");
     setPendingAttachments([]);
@@ -3401,6 +3423,9 @@ export default function MessageArea({
         {activeThread && (
           <ThreadPanel
             emoji={emojiMap}
+            mentionUsers={mentionUserMap}
+            members={channelMembers}
+            searchMembers={searchMentionMembers}
             rootMessage={activeThread}
             anchor={threadAnchor}
             replies={threadMessages}
