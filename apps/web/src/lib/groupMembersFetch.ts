@@ -46,3 +46,16 @@ export async function fetchAllGroupMembers(groupId: string): Promise<FetchedGrou
 
   return all;
 }
+
+/** Лёгкий серверный поиск для @autocomplete; никогда не выгружает всю группу. */
+export async function searchGroupMembers(
+  groupId: string,
+  query: string,
+  limit = 20,
+): Promise<FetchedGroupMember[]> {
+  const qs = new URLSearchParams({ q: query, take: String(Math.min(Math.max(limit, 1), 20)) });
+  const res = await fetch(`/api/groups/${groupId}/members?${qs.toString()}`);
+  if (!res.ok) return [];
+  const data: { members?: FetchedGroupMember[] } = await res.json();
+  return data.members ?? [];
+}

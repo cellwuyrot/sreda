@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 import { sanitizeText } from "@/lib/sanitize";
 import { checkBan } from "@/lib/banCheck";
 import { rateLimit } from "@/lib/rateLimit";
-import { emitToChannel, emitToUser } from "@/lib/socketEmit";
+import { emitToChannel } from "@/lib/socketEmit";
 import { isUserViewingChannel } from "@/lib/presence";
 import { createNotification, createNotificationsBulk } from "@/lib/createNotification";
 import { getActiveTimeout } from "@/lib/moderation";
@@ -16,6 +16,7 @@ import { checkCensor, recordCensorHits } from "@/lib/censorService";
 import { logGroupAction } from "@/lib/groupAudit";
 import { canActOn, rankOf, RANK_MODERATOR } from "@/lib/groupModeration";
 import { applyMemberOverrides } from "@/lib/memberProfileOverrides"; // FIX-SRVCHAT
+import { resolveGroupMentions } from "@/lib/serverMentions";
 
 const MESSAGE_SELECT = {
 	user: {
@@ -125,33 +126,9 @@ export async function GET(req: Request) {
 	const hasMore = messages.length > limit;
 	if (hasMore) messages.pop();
 
-	// Update lastRead for this user/channel
-	await prisma.channelMember.upsert({
-		where: { userId_channelId: { userId: session.user.id, channelId } },
-		update: { lastRead: new Date() },
-		create: { userId: session.user.id, channelId, lastRead: new Date() },
-	});
-
-	// Багфикс: при открытии канала сразу помечаем прочитанными
-	// связанные с ним уведомления и сообщаем всем вкладкам/устройствам
-	// пользователя, что канал прочитан — бейджи гаснут мгновенно.
-	await prisma.notification.updateMany({
-		where: {
-			userId: session.user.id,
-			read: false,
-			// Багфикс: contains по одному лишь префиксу ID мог пометить прочитанными
-			// уведомления другого канала, чей ID начинается с этого же префикса.
-			// По предмету (entityType/entityId) — точное совпадение; ветка по ссылке
-			// осталась для записей, созданных до появления предмета у уведомлений.
-			OR: [
-				{ entityType: "channel", entityId: channelId },
-				{ link: { contains: `channel=${channelId}&` } },
-				{ link: { endsWith: `channel=${channelId}` } },
-			],
-		},
-		data: { read: true },
-	});
-	emitToUser(session.user.id, "channel-read", { channelId });
+	/* GET только получает данные. Отметка прочтения живёт в /api/messages/read.
+	   Особенно важно для threadId: открытие одной ветки не должно гасить unread
+	   всего канала. */
 
 	const ordered = messages.reverse();
 	await attachGroupRoles(ordered);
@@ -175,7 +152,7 @@ export async function POST(req: NextRequest) {
 	const banned = await checkBan(session.user.id);
 	if (banned) return banned;
 
-	const { content, channelId, attachments, replyToId, mentions, threadId } = await req.json();
+	const { content, channelId, attachments, replyToId, threadId } = await req.json();
 	if ((!content || !content.trim()) && !attachments) {
 		return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 	}
@@ -315,6 +292,7 @@ export async function POST(req: NextRequest) {
 		);
 	}
 
+	const resolvedMentions = await resolveGroupMentions(sanitizedContent, channel.groupId);
 	const message = await prisma.message.create({
 		data: {
 			content: sanitizedContent,
@@ -323,7 +301,7 @@ export async function POST(req: NextRequest) {
 			attachments: attachments ? JSON.stringify(attachments) : null,
 			replyToId: replyToId || null,
 			threadId: threadId || null,
-			mentions: mentions ? JSON.stringify(mentions) : null,
+			mentions: resolvedMentions.ids.length ? JSON.stringify(resolvedMentions.ids) : null,
 		},
 		include: MESSAGE_SELECT,
 	});
@@ -352,21 +330,8 @@ export async function POST(req: NextRequest) {
 
 	// Resolve mention recipients server-side: only group members, never the global user base.
 	// @everyone notifies every member of the group.
-	const isEveryone = /@everyone\b/.test(sanitizedContent);
-	let mentionRecipients: string[] = [];
-	if (isEveryone) {
-		const allMembers = await prisma.groupMember.findMany({
-			where: { groupId: channel.groupId },
-			select: { userId: true },
-		});
-		mentionRecipients = allMembers.map((m) => m.userId);
-	} else if (mentions && Array.isArray(mentions) && mentions.length > 0) {
-		const validMembers = await prisma.groupMember.findMany({
-			where: { groupId: channel.groupId, userId: { in: mentions.filter((m: unknown) => typeof m === "string") } },
-			select: { userId: true },
-		});
-		mentionRecipients = validMembers.map((m) => m.userId);
-	}
+	const isEveryone = resolvedMentions.everyone;
+	const mentionRecipients = resolvedMentions.ids;
 
 	// FIX-TAGMENTION: упоминание тега сообщества («#тестер») уведомляет всех
 	// носителей этого тега. Решётка исторически означает ещё и переход в канал,
@@ -525,7 +490,10 @@ export async function PATCH(req: NextRequest) {
 		}
 	}
 
-	const existing = await prisma.message.findUnique({ where: { id: messageId } });
+	const existing = await prisma.message.findUnique({
+		where: { id: messageId },
+		include: { channel: { select: { groupId: true } } },
+	});
 	if (!existing) {
 		return NextResponse.json({ error: "Message not found" }, { status: 404 });
 	}
@@ -537,10 +505,14 @@ export async function PATCH(req: NextRequest) {
 	}
 
 	const sanitizedContent = sanitizeText(content);
+	const resolvedMentions = await resolveGroupMentions(sanitizedContent, existing.channel.groupId);
+	let previousMentionIds: string[] = [];
+	try { previousMentionIds = existing.mentions ? JSON.parse(existing.mentions) : []; } catch { previousMentionIds = []; }
 	const message = await prisma.message.update({
 		where: { id: messageId },
 		data: {
 			content: sanitizedContent,
+			mentions: resolvedMentions.ids.length ? JSON.stringify(resolvedMentions.ids) : null,
 			edited: true,
 			editedAt: new Date(),
 		},
@@ -549,6 +521,32 @@ export async function PATCH(req: NextRequest) {
 
 	await attachGroupRoles(message);
 	emitToChannel(existing.channelId, "message-edited", message);
+
+	/* Правка синхронизирует и mention-уведомления: удалённые из текста
+	   получатели теряют непрочитанный тост этого сообщения, новые — получают. */
+	const removed = previousMentionIds.filter((id) => !resolvedMentions.ids.includes(id));
+	if (removed.length > 0) {
+		await prisma.notification.deleteMany({
+			where: {
+				userId: { in: removed },
+				type: "mention",
+				read: false,
+				link: { contains: `message=${messageId}` },
+			},
+		});
+	}
+	const added = resolvedMentions.ids.filter((id) => id !== session.user.id && !previousMentionIds.includes(id));
+	for (const userId of added) {
+		createNotification({
+			userId,
+			type: "mention",
+			title: `${message.user?.name || "Пользователь"} упомянул вас`,
+			body: sanitizedContent.slice(0, 100),
+			link: `/connect?group=${existing.channel.groupId}&channel=${existing.channelId}&message=${message.id}`,
+			entityType: "channel",
+			entityId: existing.channelId,
+		}).catch(() => {});
+	}
 
 	return NextResponse.json(message);
 }

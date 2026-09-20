@@ -40,7 +40,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const skip = Number.isFinite(skipRaw) && skipRaw > 0 ? Math.floor(skipRaw) : 0;
   // Границы жёсткие: иначе take=100000 возвращал бы ту же тяжёлую выборку,
   // из-за которой участники и стали постраничными.
-  const take = Number.isFinite(takeRaw) && takeRaw > 0 ? Math.min(Math.floor(takeRaw), MAX_TAKE) : MEMBERS_PAGE_SIZE;
+  const requestedTake = Number.isFinite(takeRaw) && takeRaw > 0 ? Math.min(Math.floor(takeRaw), MAX_TAKE) : MEMBERS_PAGE_SIZE;
+  // Поисковый endpoint используется autocomplete: жёстко держим маленький ответ.
+  const take = q ? Math.min(requestedTake, 20) : requestedTake;
 
   // Поиск идёт по обоим публичным именам: в списке видно и имя, и ник.
   const where = {
@@ -49,8 +51,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ? {
           user: {
             OR: [
-              { name: { contains: q, mode: "insensitive" as const } },
-              { username: { contains: q, mode: "insensitive" as const } },
+              { name: { startsWith: q, mode: "insensitive" as const } },
+              { username: { startsWith: q, mode: "insensitive" as const } },
             ],
           },
         }
