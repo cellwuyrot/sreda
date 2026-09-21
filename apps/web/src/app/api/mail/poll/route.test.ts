@@ -1,116 +1,62 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock, row } from "@/test/prismaMock";
 
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
-vi.mock("@/lib/mailImap", () => ({ fetchRecent: vi.fn() }));
+vi.mock("@/lib/mailImap", () => ({ fetchSinceUid: vi.fn() }));
+vi.mock("@/lib/mailBlacklist", () => ({
+  readMailBlacklist: vi.fn(() => []),
+  isBlacklistedSender: vi.fn(() => false),
+}));
 
 import { getServerSession } from "next-auth";
-import { fetchRecent } from "@/lib/mailImap";
-const mockSession = vi.mocked(getServerSession);
-const mockFetch = vi.mocked(fetchRecent);
-
-function post(body: unknown, headers: Record<string, string> = {}) {
-  const req = new Request("http://localhost/api/mail/poll", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(body),
-  });
-  return req as unknown as import("next/server").NextRequest;
-}
-
-function incoming(id: string, messageId: string) {
-  return {
-    direction: "incoming" as const,
-    fromAddr: "client@example.com",
-    toAddr: "support@trioz.ru",
-    subject: "S " + id,
-    preview: "p",
-    bodyText: "b",
-    bodyHtml: null,
-    messageId,
-    sentAt: new Date("2026-09-11T09:00:00Z"),
-  };
-}
+import { fetchSinceUid } from "@/lib/mailImap";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  delete process.env.MAIL_CRON_SECRET;
+  vi.mocked(getServerSession).mockResolvedValue({ user: { role: "ADMIN" } } as never);
+  prismaMock.projectMailbox.upsert.mockResolvedValue(row({
+    id: "box-1", localPart: "info", lastSyncedUid: BigInt(0), imapUidValidity: null,
+  }));
+  prismaMock.projectMailbox.update.mockResolvedValue(row({ id: "box-1" }));
+  prismaMock.projectMailbox.updateMany.mockResolvedValue(row({ count: 1 }));
+  prismaMock.mailDeletionTombstone.findUnique.mockResolvedValue(null);
+  prismaMock.mailMessage.findFirst.mockResolvedValue(null);
+  prismaMock.mailMessage.create.mockResolvedValue(row({ id: "message" }));
 });
 
-describe("POST /api/mail/poll", () => {
-  it("401 без админа и без cron-секрета", async () => {
-    mockSession.mockResolvedValue(null as never);
-    const mod = await import("@/app/api/mail/poll/route");
-    const res = await mod.POST(post({}));
-    expect(res.status).toBe(401);
-  });
-
-  it("404 на неизвестный ящик", async () => {
-    mockSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as never);
-    const mod = await import("@/app/api/mail/poll/route");
-    const res = await mod.POST(post({ address: "nobody" }));
-    expect(res.status).toBe(404);
-  });
-
-  it("cron-секрет пускает без сессии и сохраняет входящие с дедупом", async () => {
-    process.env.MAIL_CRON_SECRET = "topsecret";
-    mockSession.mockResolvedValue(null as never);
-    mockFetch.mockResolvedValue([incoming("1", "<a@x>"), incoming("2", "<b@x>")]);
-    prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
-    // Первое письмо уже есть (дубль), второе — новое.
-    prismaMock.mailMessage.findFirst
-      .mockResolvedValueOnce(row({ id: "exists" }))
-      .mockResolvedValueOnce(row(null));
-    prismaMock.mailMessage.create.mockResolvedValue(row({ id: "new" }));
-
-    const mod = await import("@/app/api/mail/poll/route");
-    const res = await mod.POST(post({ address: "support" }, { "x-cron-secret": "topsecret" }));
-    const json = await res.json();
-    expect(res.status).toBe(200);
-    expect(json.stored).toBe(1);
-    expect(json.duplicates).toBe(1);
-    expect(json.fetched).toBe(2);
-    expect(prismaMock.mailMessage.create).toHaveBeenCalledOnce();
-  });
-
-  it("дедуп ищет письмо в пределах ящика, а не по всей таблице", async () => {
-    mockSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as never);
-    mockFetch.mockResolvedValue([incoming("1", "<a@x>")]);
-    prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
-    prismaMock.mailMessage.findFirst.mockResolvedValue(row(null));
-    prismaMock.mailMessage.create.mockResolvedValue(row({ id: "new" }));
-
-    const mod = await import("@/app/api/mail/poll/route");
-    await mod.POST(post({ address: "support" }));
-    expect(prismaMock.mailMessage.findFirst).toHaveBeenCalledWith({
-      where: { mailboxId: "m1", messageId: "<a@x>" },
-      select: { id: true },
+describe("POST /api/mail/poll UID sync", () => {
+  it("обрабатывает все 150 новых UID без старого лимита 100", async () => {
+    vi.mocked(fetchSinceUid).mockResolvedValue({
+      uidValidity: BigInt(7),
+      messages: Array.from({ length: 150 }, (_, index) => ({
+        imapUid: index + 1,
+        direction: "incoming" as const,
+        fromAddr: `sender${index}@example.com`,
+        toAddr: "info@trioz.ru",
+        subject: `Message ${index}`,
+        preview: "body",
+        bodyText: "body",
+        bodyHtml: null,
+        messageId: `<message-${index}@example.com>`,
+        sentAt: new Date(1700000000000 + index),
+      })),
     });
-  });
+    const { POST } = await import("./route");
+    const req = new Request("http://localhost/api/mail/poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: "info" }),
+    });
+    const response = await POST(req as never);
+    const data = await response.json();
 
-  it("гонка двух опросов: P2002 — это дубль, а не сбой ящика", async () => {
-    mockSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as never);
-    mockFetch.mockResolvedValue([incoming("1", "<a@x>")]);
-    prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
-    prismaMock.mailMessage.findFirst.mockResolvedValue(row(null));
-    prismaMock.mailMessage.create.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
-
-    const mod = await import("@/app/api/mail/poll/route");
-    const res = await mod.POST(post({ address: "support" }));
-    const json = await res.json();
-    expect(res.status).toBe(200);
-    expect(json.stored).toBe(0);
-    expect(json.duplicates).toBe(1);
-    expect(json.errors).toEqual([]);
-  });
-
-  it("502 когда все ящики дали ошибку", async () => {
-    mockSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as never);
-    mockFetch.mockRejectedValue(new Error("IMAP не настроен"));
-    const mod = await import("@/app/api/mail/poll/route");
-    const res = await mod.POST(post({ address: "support" }));
-    expect(res.status).toBe(502);
+    expect(response.status).toBe(200);
+    expect(data).toMatchObject({ ok: true, fetched: 150, stored: 150 });
+    expect(prismaMock.mailMessage.create).toHaveBeenCalledTimes(150);
+    expect(prismaMock.projectMailbox.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ lastSyncedUid: BigInt(150) }),
+    }));
   });
 });

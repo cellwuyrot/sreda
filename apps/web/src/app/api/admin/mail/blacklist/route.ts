@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import fs from "fs";
-import path from "path";
+import {
+  type BlacklistEntry,
+  readMailBlacklist,
+  writeMailBlacklist,
+} from "@/lib/mailBlacklist";
 
 /**
  * MAIL-BLACKLIST: чёрный список адресов / доменов.
@@ -15,32 +18,6 @@ import path from "path";
  * DELETE — удалить запись по ?id=...
  */
 
-type BlacklistEntry = {
-  id: string;
-  address: string; // email или домен (@example.com)
-  note: string;
-  addedAt: string;
-};
-
-function dataPath() {
-  return path.join(process.cwd(), "data", "mail-blacklist.json");
-}
-
-function readList(): BlacklistEntry[] {
-  try {
-    const raw = fs.readFileSync(dataPath(), "utf8");
-    return JSON.parse(raw) as BlacklistEntry[];
-  } catch {
-    return [];
-  }
-}
-
-function writeList(list: BlacklistEntry[]) {
-  const dir = path.dirname(dataPath());
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(dataPath(), JSON.stringify(list, null, 2), "utf8");
-}
-
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN")
@@ -51,7 +28,7 @@ async function requireAdmin() {
 export async function GET() {
   const guard = await requireAdmin();
   if (guard.error) return guard.error;
-  return NextResponse.json({ entries: readList() });
+  return NextResponse.json({ entries: readMailBlacklist() });
 }
 
 export async function POST(req: NextRequest) {
@@ -62,7 +39,7 @@ export async function POST(req: NextRequest) {
   const address = String(body?.address ?? "").trim().toLowerCase();
   if (!address) return NextResponse.json({ error: "Укажите адрес или домен" }, { status: 400 });
 
-  const list = readList();
+  const list = readMailBlacklist();
   if (list.some((e) => e.address === address))
     return NextResponse.json({ error: "Адрес уже в чёрном списке" }, { status: 409 });
 
@@ -73,7 +50,7 @@ export async function POST(req: NextRequest) {
     addedAt: new Date().toISOString(),
   };
   list.push(entry);
-  writeList(list);
+  writeMailBlacklist(list);
   return NextResponse.json(entry, { status: 201 });
 }
 
@@ -84,10 +61,10 @@ export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!id) return NextResponse.json({ error: "Не указан id" }, { status: 400 });
 
-  const list = readList();
+  const list = readMailBlacklist();
   const next = list.filter((e) => e.id !== id);
   if (next.length === list.length)
     return NextResponse.json({ error: "Запись не найдена" }, { status: 404 });
-  writeList(next);
+  writeMailBlacklist(next);
   return NextResponse.json({ ok: true });
 }
