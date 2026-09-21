@@ -25,7 +25,13 @@ import { promisify } from "node:util";
 import { getMainWindow } from "./mainWindow";
 /* FIX-FOREIGNVPN: поиск чужих включённых VPN-адаптеров. */
 import { detectForeignTunnels, foreignTunnelMessage } from "./foreignVpn";
-import { windowsLinkVerdict, windowsTunnelDown, windowsTunnelUp } from "./winTunnel";
+import {
+  windowsLinkVerdict,
+  windowsTunnelDown,
+  windowsTunnelExists,
+  windowsTunnelUp,
+} from "./winTunnel";
+import { cleanupAfterFailedStart, vpnNeedsCleanup } from "./vpnLifecycle";
 import { IPC } from "../shared/constants";
 import {
   elevatedInvocation,
@@ -91,8 +97,12 @@ export function vpnState(): VpnStatePayload {
   return current;
 }
 
-export function isVpnActive(): boolean {
-  return current.state === "on" || current.state === "connecting";
+export async function isVpnActive(): Promise<boolean> {
+  if (vpnNeedsCleanup(current.state, false)) return true;
+  /* Состояние renderer не является источником истины. После ошибки или
+     перезапуска служба/адаптер могли физически остаться в Windows. */
+  if (process.platform === "win32") return vpnNeedsCleanup(current.state, await windowsTunnelExists());
+  return false;
 }
 
 /* ───────────────────── Встроенный клиент ───────────────────── */
@@ -545,7 +555,7 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
 
   const embedded = embeddedClientPath(backend);
   try {
-    await tearDownQuietly();
+    await cleanupAfterFailedStart(tearDownQuietly);
     confPath = writeConfFile(config);
 
     if (serviceAvailable()) {
@@ -612,6 +622,10 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     startStatusPolling(backend, activeMode);
     return current;
   } catch (err) {
+    /* Ошибка могла произойти после создания службы/адаптера. Сначала полностью
+       снимаем частично поднятый tunnel тем же lifecycle, и только потом
+       очищаем память и возвращаем исходную ошибку пользователю. */
+    await tearDownQuietly();
     removeConfFile();
     activeExe = "";
     activeMode = null;
@@ -661,7 +675,10 @@ async function tearDown(): Promise<void> {
     return;
   }
 
-  if (activeMode === "system") {
+  if (
+    activeMode === "system" ||
+    (process.platform === "win32" && await windowsTunnelExists())
+  ) {
     /* FIX-WINCLIENT: служба снимается по имени туннеля, а не по файлу профиля.
        Прежняя проверка `existsSync(path)` молча выходила, если профиль уже
        был удалён, и туннель оставался поднятым до перезагрузки. */
@@ -682,7 +699,16 @@ async function tearDown(): Promise<void> {
 
 /** Выключить туннель по кнопке. */
 export async function vpnDown(): Promise<VpnStatePayload> {
-  if (current.state === "off" || current.state === "disconnecting") {
+  const physicallyActive = process.platform === "win32" && await windowsTunnelExists();
+  if (!vpnNeedsCleanup(current.state, physicallyActive)) {
+    stopStatusPolling();
+    removeConfFile();
+    activeExe = "";
+    activeMode = null;
+    emit({ state: "off", since: null, error: null, backend: null, embedded: true });
+    return current;
+  }
+  if (current.state === "disconnecting") {
     stopStatusPolling();
     return current;
   }
@@ -716,7 +742,8 @@ export async function vpnDown(): Promise<VpnStatePayload> {
  */
 export async function shutdownVpn(): Promise<void> {
   stopStatusPolling();
-  if (current.state === "off") {
+  const physicallyActive = process.platform === "win32" && await windowsTunnelExists();
+  if (!vpnNeedsCleanup(current.state, physicallyActive)) {
     removeConfFile();
     return;
   }
@@ -724,6 +751,34 @@ export async function shutdownVpn(): Promise<void> {
     await tearDown();
   } catch {
     /* при выходе показывать уже нечего — просто пытаемся не оставить туннель */
+  } finally {
+    removeConfFile();
+    activeExe = "";
+    activeMode = null;
+  }
+}
+
+/**
+ * Startup recovery: старая служба могла пережить crash/update, тогда память
+ * Electron говорит `off`, а Windows продолжает маршрутизировать через tunnel.
+ * Удаляются только две службы TrioZ и адаптер с точным именем `trioz`.
+ */
+export async function recoverOrphanedVpn(): Promise<boolean> {
+  if (process.platform !== "win32" || !(await windowsTunnelExists())) return false;
+  stopStatusPolling();
+  try {
+    await windowsTunnelDown("");
+    current = { state: "off", since: null, error: null, backend: null, embedded: true };
+    return true;
+  } catch (error) {
+    current = {
+      state: "error",
+      since: null,
+      error: error instanceof Error ? error.message : "Не удалось очистить старый туннель TrioZ",
+      backend: null,
+      embedded: true,
+    };
+    throw error;
   } finally {
     removeConfFile();
     activeExe = "";
