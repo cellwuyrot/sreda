@@ -9,6 +9,7 @@ import {
   previewFromText,
   syntheticMessageId,
 } from "@/lib/projectMail";
+import { isBlacklistedSender } from "@/lib/mailBlacklist";
 
 /**
  * PROJECT-MAIL: приём писем от почтового сервиса (github.com/acoulbot/smtp).
@@ -177,6 +178,19 @@ export async function POST(req: NextRequest) {
       sentAt: safeSentAt,
       bodyText,
     });
+  const suppressed = await prisma.mailDeletionTombstone.findUnique({
+    where: { mailboxId_messageKey: { mailboxId: mailbox.id, messageKey: dedupKey } },
+    select: { id: true },
+  });
+  if (suppressed) return NextResponse.json({ ok: true, suppressed: true });
+  if (direction === "incoming" && isBlacklistedSender(fromAddr)) {
+    await prisma.mailDeletionTombstone.upsert({
+      where: { mailboxId_messageKey: { mailboxId: mailbox.id, messageKey: dedupKey } },
+      update: { reason: "blacklist" },
+      create: { mailboxId: mailbox.id, messageKey: dedupKey, reason: "blacklist" },
+    });
+    return NextResponse.json({ ok: true, blocked: true });
+  }
   const dup = await prisma.mailMessage.findFirst({
     where: { mailboxId: mailbox.id, messageId: dedupKey },
     select: { id: true },
@@ -195,6 +209,7 @@ export async function POST(req: NextRequest) {
         bodyText,
         bodyHtml,
         messageId: dedupKey,
+        deliveryStatus: "sent",
         sentAt: safeSentAt,
       },
     });

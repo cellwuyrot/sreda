@@ -11,6 +11,7 @@ import { buildEmailHtml, applyVariables } from "@/lib/mailLayout";
 import { sanitizeEmailHtml, sanitizeSignatureHtml } from "@/lib/mailSanitize";
 import { logMailSend } from "@/lib/mailAudit";
 import { logAction } from "@/lib/audit";
+import { randomUUID } from "crypto";
 
 interface IncomingAttachment { name?: unknown; size?: unknown; mime?: unknown; content?: unknown; cid?: unknown; }
 
@@ -54,31 +55,76 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ address: s
   const decode = (raw: unknown) => Buffer.from(String(raw || ""), "base64");
   const mailAttachments = allAttachments.map((a) => ({ filename: String(a.name || "attachment"), content: decode(a.content), contentType: String(a.mime || "application/octet-stream"), ...(a.cid ? { cid: String(a.cid) } : {}) }));
   const fromName = String(body?.fromName || "").trim().slice(0, 120);
-  const result = await sendFromMailbox(def.localPart, {
-    fromName: fromName || undefined,
-    to: rc.to, cc: rc.cc, bcc: rc.bcc, subject, html: safeHtml, text: plainText,
-    attachments: mailAttachments, inReplyTo: body?.replyToMessageId ? String(body.replyToMessageId) : undefined,
-  });
-  if (!result.ok) return NextResponse.json({ error: result.error || "Отправка не удалась" }, { status: 502 });
-
   const mailbox = await prisma.projectMailbox.upsert({
     where: { localPart: def.localPart }, update: {}, create: { address: mailboxAddress(def.localPart), localPart: def.localPart, label: def.label, purpose: def.purpose, order: def.order },
   });
   const meta = allAttachments.map((a) => ({ name: String(a.name || ""), size: Number(a.size || 0), mime: String(a.mime || ""), inline: !!a.cid }));
-  const saved = await prisma.mailMessage.create({ data: {
-    mailboxId: mailbox.id, direction: "outgoing", fromAddr: mailboxAddress(def.localPart), fromName: fromName || null,
-    toAddr: rc.to.join(", "), ccAddr: rc.cc.length ? rc.cc.join(", ") : null, bccAddr: rc.bcc.length ? rc.bcc.join(", ") : null,
-    subject, preview: previewFromText(plainText || subject), bodyText: plainText, bodyHtml: safeHtml, messageId: result.messageId,
-    templateKey: body?.templateKey ? String(body.templateKey) : null, sentById: session.user.id || null,
-    sentByName: session.user.name || session.user.email || session.user.username || "admin",
-    inReplyToMid: body?.replyToMessageId ? String(body.replyToMessageId) : null, attachmentsMeta: JSON.stringify(meta), sentAt: new Date(),
-  }});
-  for (const a of allAttachments) {
-    await prisma.mailAttachment.create({ data: { messageId: saved.id, name: String(a.name || "attachment"), mime: String(a.mime || "application/octet-stream"), size: Number(a.size || 0), inline: !!a.cid, contentB64: String(a.content || "") } });
+  const pendingKey = `pending:${randomUUID()}`;
+  // Persist the attempt before SMTP. If this transaction fails, nothing is sent.
+  const saved = await prisma.$transaction(async (tx) => {
+    const message = await tx.mailMessage.create({ data: {
+      mailboxId: mailbox.id, direction: "outgoing", fromAddr: mailboxAddress(def.localPart), fromName: fromName || null,
+      toAddr: rc.to.join(", "), ccAddr: rc.cc.length ? rc.cc.join(", ") : null, bccAddr: rc.bcc.length ? rc.bcc.join(", ") : null,
+      subject, preview: previewFromText(plainText || subject), bodyText: plainText, bodyHtml: safeHtml, messageId: pendingKey,
+      templateKey: body?.templateKey ? String(body.templateKey) : null, sentById: session.user.id || null,
+      sentByName: session.user.name || session.user.email || session.user.username || "admin",
+      inReplyToMid: body?.replyToMessageId ? String(body.replyToMessageId) : null,
+      attachmentsMeta: JSON.stringify(meta), deliveryStatus: "pending", sentAt: new Date(),
+    }});
+    if (allAttachments.length) {
+      await tx.mailAttachment.createMany({ data: allAttachments.map((a) => ({
+        messageId: message.id, name: String(a.name || "attachment"),
+        mime: String(a.mime || "application/octet-stream"), size: Number(a.size || 0),
+        inline: !!a.cid, contentB64: String(a.content || ""),
+      })) });
+    }
+    return message;
+  });
+
+  let result;
+  try {
+    result = await sendFromMailbox(def.localPart, {
+      fromName: fromName || undefined,
+      to: rc.to, cc: rc.cc, bcc: rc.bcc, subject, html: safeHtml, text: plainText,
+      attachments: mailAttachments, inReplyTo: body?.replyToMessageId ? String(body.replyToMessageId) : undefined,
+    });
+  } catch (error) {
+    result = { ok: false, error: error instanceof Error ? error.message : "Отправка не удалась" };
+  }
+  if (!result.ok) {
+    await prisma.mailMessage.update({
+      where: { id: saved.id },
+      data: { deliveryStatus: "failed", deliveryError: result.error || "Отправка не удалась" },
+    }).catch(() => {});
+    return NextResponse.json({ error: result.error || "Отправка не удалась", id: saved.id }, { status: 502 });
+  }
+
+  let persisted = true;
+  try {
+    await prisma.mailMessage.update({
+      where: { id: saved.id },
+      data: {
+        deliveryStatus: "sent",
+        deliveryError: null,
+        messageId: result.messageId || pendingKey,
+        sentAt: new Date(),
+      },
+    });
+  } catch {
+    // SMTP already accepted the message. Returning an error would encourage a
+    // duplicate send; the persisted pending row keeps the attempt visible.
+    persisted = false;
   }
   await logMailSend({ userId: session.user.id, userName: session.user.name || session.user.email || session.user.username || "admin", fromAddress: mailboxAddress(def.localPart), fromName: fromName || undefined, to: rc.to, cc: rc.cc, bcc: rc.bcc, subject, attachmentCount: allAttachments.length, templateKey: body?.templateKey ? String(body.templateKey) : undefined, messageDbId: saved.id });
   await logAction({ userId: session.user.id, username: session.user.username || session.user.name || "admin", action: "create", target: "MailMessage", targetId: saved.id, details: `Отправлено письмо с ${mailboxAddress(def.localPart)} на ${rc.to.join(", ")}` });
   const authorId = session.user.id || "admin";
   try { await prisma.mailDraft.deleteMany({ where: { authorId, localPart: def.localPart } }); } catch {}
-  return NextResponse.json({ ok: true, id: saved.id, messageId: result.messageId });
+  return NextResponse.json({
+    ok: true,
+    accepted: true,
+    persisted,
+    id: saved.id,
+    messageId: result.messageId,
+    ...(persisted ? {} : { warning: "SMTP принял письмо, но статус в истории обновить не удалось" }),
+  });
 }

@@ -4,7 +4,8 @@ import { timingSafeEqual } from "crypto";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { PROJECT_MAILBOXES, mailboxAddress, isUniqueViolation } from "@/lib/projectMail";
-import { fetchRecent } from "@/lib/mailImap";
+import { fetchSinceUid } from "@/lib/mailImap";
+import { isBlacklistedSender, readMailBlacklist } from "@/lib/mailBlacklist";
 
 /**
  * PROJECT-MAIL: забрать входящие письма ящиков по IMAP и сложить в базу.
@@ -49,13 +50,13 @@ export async function POST(req: NextRequest) {
   let fetched = 0;
   let stored = 0;
   let duplicates = 0;
+  let blocked = 0;
+  let lastSyncAt: Date | null = null;
   const errors: Array<{ address: string; error: string }> = [];
+  const blacklist = readMailBlacklist();
 
   for (const def of targets) {
     try {
-      const messages = await fetchRecent(def.localPart);
-      fetched += messages.length;
-
       // Ящик мог ещё не посеяться — создаём лениво.
       const mailbox = await prisma.projectMailbox.upsert({
         where: { localPart: def.localPart },
@@ -68,8 +69,52 @@ export async function POST(req: NextRequest) {
           order: def.order,
         },
       });
+      const batch = await fetchSinceUid(
+        def.localPart,
+        mailbox.lastSyncedUid,
+        mailbox.imapUidValidity,
+      );
+      fetched += batch.messages.length;
+      const validityChanged = mailbox.imapUidValidity != null && batch.uidValidity != null
+        && BigInt(mailbox.imapUidValidity) !== batch.uidValidity;
+      if (validityChanged) {
+        await prisma.projectMailbox.update({
+          where: { id: mailbox.id },
+          data: { lastSyncedUid: null, imapUidValidity: batch.uidValidity },
+        });
+      }
+      const advanceCursor = (uid: number) => prisma.projectMailbox.updateMany({
+        where: {
+          id: mailbox.id,
+          OR: [{ lastSyncedUid: null }, { lastSyncedUid: { lt: BigInt(uid) } }],
+        },
+        data: { lastSyncedUid: BigInt(uid), imapUidValidity: batch.uidValidity },
+      });
 
-      for (const msg of messages) {
+      for (const msg of batch.messages) {
+        const suppressed = await prisma.mailDeletionTombstone.findUnique({
+          where: {
+            mailboxId_messageKey: { mailboxId: mailbox.id, messageKey: msg.messageId },
+          },
+          select: { id: true },
+        });
+        if (suppressed) {
+          duplicates += 1;
+          await advanceCursor(msg.imapUid);
+          continue;
+        }
+        if (isBlacklistedSender(msg.fromAddr, blacklist)) {
+          await prisma.mailDeletionTombstone.upsert({
+            where: {
+              mailboxId_messageKey: { mailboxId: mailbox.id, messageKey: msg.messageId },
+            },
+            update: { reason: "blacklist" },
+            create: { mailboxId: mailbox.id, messageKey: msg.messageId, reason: "blacklist" },
+          });
+          blocked += 1;
+          await advanceCursor(msg.imapUid);
+          continue;
+        }
         // Дедуп в пределах ящика: у каждого письма ключ есть всегда (настоящий
         // Message-ID либо синтетический), поэтому повторный опрос не плодит
         // копии — а одно письмо на два ящика домена попадает в оба.
@@ -79,6 +124,7 @@ export async function POST(req: NextRequest) {
         });
         if (dup) {
           duplicates += 1;
+          await advanceCursor(msg.imapUid);
           continue;
         }
         try {
@@ -93,6 +139,7 @@ export async function POST(req: NextRequest) {
               bodyText: msg.bodyText,
               bodyHtml: msg.bodyHtml,
               messageId: msg.messageId,
+              imapUid: BigInt(msg.imapUid),
               sentAt: msg.sentAt,
             },
           });
@@ -104,20 +151,35 @@ export async function POST(req: NextRequest) {
           if (isUniqueViolation(error)) duplicates += 1;
           else throw error;
         }
+        // Cursor only advances after this UID is safely stored/deduped/suppressed.
+        await advanceCursor(msg.imapUid);
       }
+      lastSyncAt = new Date();
+      await prisma.projectMailbox.update({
+        where: { id: mailbox.id },
+        data: {
+          lastSyncAt,
+          lastSyncError: null,
+          ...(batch.uidValidity != null ? { imapUidValidity: batch.uidValidity } : {}),
+        },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push({ address: mailboxAddress(def.localPart), error: message });
+      await prisma.projectMailbox.updateMany({
+        where: { localPart: def.localPart },
+        data: { lastSyncAt: new Date(), lastSyncError: message.slice(0, 2000) },
+      }).catch(() => {});
     }
   }
 
   // Если не удалось ни один ящик — это ошибка конфигурации, а не частичный успех.
   if (errors.length === targets.length) {
     return NextResponse.json(
-      { ok: false, fetched, stored, duplicates, errors },
+      { ok: false, fetched, stored, duplicates, blocked, lastSyncAt, errors },
       { status: 502 },
     );
   }
 
-  return NextResponse.json({ ok: true, fetched, stored, duplicates, errors });
+  return NextResponse.json({ ok: true, fetched, stored, duplicates, blocked, lastSyncAt, errors });
 }
