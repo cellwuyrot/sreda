@@ -14,7 +14,8 @@ import { invalidateCacheOnVersionChange, stopRecovery } from "./recovery"; // FI
 import { registerMediaCacheScheme, installMediaCache } from "./mediaCache"; // FIX-CLIENTMEDIA
 import { syncOverlay, destroyOverlay } from "./overlay"; // FIX-OVL
 import { startActivityWatcher, stopActivityWatcher, resendActivity } from "./activity"; // FIX-ACT
-import { shutdownVpn, isVpnActive } from "./vpn"; // VPN-ONECLICK
+import { shutdownVpn, isVpnActive, recoverOrphanedVpn } from "./vpn"; // VPN-ONECLICK
+import { cleanupVpnBeforeExit } from "./vpnLifecycle";
 import {
   registerProtocol,
   handleDeepLink,
@@ -101,6 +102,15 @@ function installApplicationMenu(): void {
 async function onReady(): Promise<void> {
   const config = getConfig();
 
+  /* VPN-RECOVERY: после crash/update память Electron начинается с `off`, но
+     служба Windows могла остаться RUNNING. До регистрации IPC и создания окна
+     приводим в порядок только tunnel TrioZ; сторонние VPN не затрагиваются. */
+  try {
+    await recoverOrphanedVpn();
+  } catch (err) {
+    console.warn("[vpn] не удалось очистить зависший TrioZ tunnel при запуске:", err);
+  }
+
   // FIX-BLANK: клиент обновился (electron-updater) → сборка веб-части почти
   // наверняка сменилась, а Next.js на каждую сборку выпускает новые имена
   // чанков. Сбрасываем HTTP-кеш до создания окна, иначе закешированный HTML
@@ -167,6 +177,9 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
+let vpnExitCheckStarted = false;
+let vpnExitCheckDone = false;
+
 app.on("before-quit", (event) => {
   setQuitting(true);
   stopRecovery(); // FIX-BLANK3
@@ -181,8 +194,21 @@ app.on("before-quit", (event) => {
      оставленный поднятым туннель замкнул бы на сервер всю машину, а окна, чтобы
      это отменить, уже не было бы. Откладываем выход на один проход: снимаем
      туннель и выходим повторно — второй before-quit уже ничего не ждёт. */
-  if (isVpnActive()) {
+  if (!vpnExitCheckDone) {
     event.preventDefault();
-    void shutdownVpn().finally(() => app.quit());
+    if (!vpnExitCheckStarted) {
+      vpnExitCheckStarted = true;
+      void (async () => {
+        try {
+          /* Проверка асинхронная и смотрит не только current.state, но и
+             реальные службы/адаптер. Поэтому state=error/off не пропускает
+             cleanup зависшего tunnel. */
+          await cleanupVpnBeforeExit(isVpnActive, shutdownVpn);
+        } finally {
+          vpnExitCheckDone = true;
+          app.quit();
+        }
+      })();
+    }
   }
 });

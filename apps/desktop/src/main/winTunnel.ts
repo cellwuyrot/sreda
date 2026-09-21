@@ -25,7 +25,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -43,6 +43,9 @@ const run = promisify(execFile);
 /** Сколько ждём, пока служба и адаптер появятся после установки. */
 const READY_TIMEOUT_MS = 20_000;
 const READY_POLL_MS = 700;
+const SHUTDOWN_TIMEOUT_MS = 15_000;
+const SHUTDOWN_FALLBACK_TIMEOUT_MS = 5_000;
+const SHUTDOWN_POLL_MS = 350;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -124,7 +127,7 @@ export async function tunnelServiceRunning(): Promise<boolean> {
 }
 
 /** Состояние адаптера туннеля: `Up`, другое слово или пусто (адаптера нет). */
-async function adapterStatus(): Promise<string> {
+export async function adapterStatus(): Promise<string> {
   try {
     const { stdout } = await run(
       "powershell.exe",
@@ -140,6 +143,168 @@ async function adapterStatus(): Promise<string> {
   } catch {
     return "";
   }
+}
+
+export type TunnelServiceState = "RUNNING" | "STOP_PENDING" | "STOPPED" | "OTHER" | "MISSING";
+export interface TunnelServiceSnapshot {
+  name: string;
+  state: TunnelServiceState;
+  pid: number | null;
+}
+
+/** Точное состояние только двух служб TrioZ; сторонние туннели не запрашиваются. */
+export async function tunnelServiceSnapshots(): Promise<TunnelServiceSnapshot[]> {
+  const snapshots: TunnelServiceSnapshot[] = [];
+  for (const name of serviceNames()) {
+    try {
+      const { stdout } = await run("sc.exe", ["queryex", name], { windowsHide: true, timeout: 10_000 });
+      const stateMatch = stdout.match(/STATE\s*:\s*\d+\s+([A-Z_]+)/i);
+      const rawState = stateMatch?.[1]?.toUpperCase() ?? "OTHER";
+      const state: TunnelServiceState =
+        rawState === "RUNNING" || rawState === "STOP_PENDING" || rawState === "STOPPED"
+          ? rawState
+          : "OTHER";
+      const pidMatch = stdout.match(/PID\s*:\s*(\d+)/i);
+      const pid = pidMatch && Number(pidMatch[1]) > 0 ? Number(pidMatch[1]) : null;
+      snapshots.push({ name, state, pid });
+    } catch {
+      snapshots.push({ name, state: "MISSING", pid: null });
+    }
+  }
+  return snapshots;
+}
+
+async function processExists(pid: number): Promise<boolean> {
+  try {
+    const { stdout } = await run(
+      "tasklist.exe",
+      ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
+      { windowsHide: true, timeout: 10_000 },
+    );
+    return new RegExp(`\"${pid}\"`).test(stdout) && !/No tasks are running/i.test(stdout);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * PID orphan-процесса после исчезновения service record. Фильтр не по имени
+ * amneziawg.exe, а по точному пути профиля TrioZ в command line.
+ */
+export async function tunnelProcessPids(): Promise<number[]> {
+  const conf = join(stableClientDir(process.env), TUNNEL_CONF_FILE);
+  try {
+    const { stdout } = await run(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$needle = ${psQuote(conf)}; Get-CimInstance Win32_Process | ` +
+          `Where-Object { $_.CommandLine -like "*$needle*" } | ` +
+          "Select-Object -ExpandProperty ProcessId",
+      ],
+      { windowsHide: true, timeout: 15_000 },
+    );
+    return stdout
+      .split(/\r?\n/)
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value) && value > 0);
+  } catch {
+    return [];
+  }
+}
+
+/** Реальный TrioZ tunnel, независимо от состояния Electron. */
+export async function windowsTunnelExists(): Promise<boolean> {
+  const services = await tunnelServiceSnapshots();
+  if (services.some((service) => service.state !== "MISSING")) return true;
+  if ((await tunnelProcessPids()).length > 0) return true;
+  return (await adapterStatus()) !== "";
+}
+
+export interface TunnelShutdownRuntime {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+  services(): Promise<TunnelServiceSnapshot[]>;
+  discoverPids(): Promise<number[]>;
+  processExists(pid: number): Promise<boolean>;
+  adapterStatus(): Promise<string>;
+  uninstall(exe: string): Promise<void>;
+  fallback(exe: string, pids: number[]): Promise<void>;
+  removeConfig(): void;
+}
+
+async function waitUntil(
+  runtime: TunnelShutdownRuntime,
+  deadline: number,
+  predicate: () => Promise<boolean>,
+): Promise<boolean> {
+  while (runtime.now() < deadline) {
+    if (await predicate()) return true;
+    await runtime.sleep(SHUTDOWN_POLL_MS);
+  }
+  return predicate();
+}
+
+function uninstallScript(exe: string): string {
+  return [
+    "$ErrorActionPreference = 'Continue'",
+    `$exe = ${psQuote(exe)}`,
+    `if (Test-Path -LiteralPath $exe) { & $exe /uninstalltunnelservice ${psQuote(TUNNEL_NAME)} 2>$null | Out-Null }`,
+    "exit 0",
+  ].join("\n");
+}
+
+/**
+ * Fallback запускается только после штатного uninstall и ожидания. PID берутся
+ * из `sc queryex` конкретных служб TrioZ; перед Stop-Process PowerShell ещё раз
+ * проверяет, что command line/executable относится к trioz.conf или нашему exe.
+ */
+function cleanupFallbackScript(exe: string, pids: number[]): string {
+  const lines = [
+    "$ErrorActionPreference = 'Continue'",
+    ...serviceNames().map((name) =>
+      `$s = Get-Service -Name ${psQuote(name)} -ErrorAction SilentlyContinue; ` +
+      `if ($s -and $s.Status -ne 'Stopped') { Stop-Service -Name ${psQuote(name)} -ErrorAction SilentlyContinue; ` +
+      `foreach ($i in 1..20) { Start-Sleep -Milliseconds 250; $s.Refresh(); if ($s.Status -eq 'Stopped') { break } } }; ` +
+      `if ($s -and $s.Status -eq 'Stopped') { sc.exe delete ${psQuote(name)} 2>$null | Out-Null }`,
+    ),
+  ];
+  for (const pid of pids) {
+    lines.push(
+      `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction SilentlyContinue; ` +
+      `if ($p -and (($p.CommandLine -like '*trioz.conf*') -or ($p.ExecutablePath -eq ${psQuote(exe)}))) ` +
+      `{ Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue }`,
+    );
+  }
+  lines.push(
+    `$a = Get-NetAdapter -Name ${psQuote(TUNNEL_NAME)} -ErrorAction SilentlyContinue; ` +
+      "if ($a) { pnputil /remove-device $a.PnPDeviceID 2>$null | Out-Null }",
+    "exit 0",
+  );
+  return lines.join("\n");
+}
+
+function defaultShutdownRuntime(): TunnelShutdownRuntime {
+  const targetDir = stableClientDir(process.env);
+  return {
+    now: () => Date.now(),
+    sleep,
+    services: tunnelServiceSnapshots,
+    discoverPids: tunnelProcessPids,
+    processExists,
+    adapterStatus,
+    uninstall: async (exe) => { await elevatedScript(uninstallScript(exe)); },
+    fallback: async (exe, pids) => { await elevatedScript(cleanupFallbackScript(exe, pids)); },
+    removeConfig: () => {
+      try {
+        unlinkSync(join(targetDir, TUNNEL_CONF_FILE));
+      } catch {
+        /* профиль уже удалён */
+      }
+    },
+  };
 }
 
 /**
@@ -248,12 +413,15 @@ function installScript(exePath: string, config: string, targetDir: string): stri
        не работало вообще никогда — только первое, на чистой машине. */
     "L 'stage: stop old tunnel'",
     `if (Test-Path -LiteralPath $exe) { & $exe /uninstalltunnelservice ${psQuote(TUNNEL_NAME)} *>> $log }`,
-    "Start-Sleep -Milliseconds 800",
-    ...serviceNames().map((name) => `sc.exe delete ${psQuote(name)} *>> $log`),
+    /* Повторная установка тоже не должна делать blind sc delete: ждём
+       остановки каждой конкретной TrioZ-службы, delete — только fallback для
+       уже STOPPED записи. Успешная install-ветка ниже не меняется. */
     ...serviceNames().map(
       (name) =>
-        `$null = (Get-Service -Name ${psQuote(name)} -ErrorAction SilentlyContinue | ` +
-        "Where-Object { $_.Status -ne 'Stopped' } | Stop-Service -Force -ErrorAction SilentlyContinue)",
+        `$s = Get-Service -Name ${psQuote(name)} -ErrorAction SilentlyContinue; ` +
+        `if ($s -and $s.Status -ne 'Stopped') { Stop-Service -Name ${psQuote(name)} -ErrorAction SilentlyContinue; ` +
+        `foreach ($i in 1..40) { Start-Sleep -Milliseconds 250; $s.Refresh(); if ($s.Status -eq 'Stopped') { break } } }; ` +
+        `if ($s -and $s.Status -eq 'Stopped') { sc.exe delete ${psQuote(name)} *>> $log }`,
     ),
     /* Адаптер-призрак от предыдущей попытки мешает создать новый. */
     `Get-NetAdapter -Name ${psQuote(TUNNEL_NAME)} -ErrorAction SilentlyContinue | ` +
@@ -355,20 +523,59 @@ export async function windowsTunnelUp(config: string, embeddedExe: string | null
  * не нужен — и хорошо, что не нужен: раньше выключение молча ничего не
  * делало, если файл уже был удалён, и туннель оставался поднятым.
  */
-export async function windowsTunnelDown(exePath: string): Promise<void> {
+export async function windowsTunnelDown(
+  exePath: string,
+  runtime: TunnelShutdownRuntime = defaultShutdownRuntime(),
+): Promise<void> {
   const targetDir = stableClientDir(process.env);
   const exe = exePath && existsSync(exePath) ? exePath : join(targetDir, "amneziawg.exe");
-  const script = [
-    "$ErrorActionPreference = 'Continue'",
-    `$exe = ${psQuote(exe)}`,
-    `if (Test-Path -LiteralPath $exe) { & $exe /uninstalltunnelservice ${psQuote(TUNNEL_NAME)} 2>$null | Out-Null }`,
-    "Start-Sleep -Milliseconds 500",
-    ...serviceNames().map((name) => `sc.exe delete ${psQuote(name)} 2>$null | Out-Null`),
-    /* Профиль с приватным ключом не должен оставаться на диске после выключения. */
-    `Remove-Item -LiteralPath ${psQuote(join(targetDir, TUNNEL_CONF_FILE))} -Force -ErrorAction SilentlyContinue`,
-    "exit 0",
-  ].join("\n");
-  await elevatedScript(script);
+  const pids = new Set<number>();
+  const services = async () => {
+    const snapshots = await runtime.services();
+    for (const service of snapshots) if (service.pid) pids.add(service.pid);
+    return snapshots;
+  };
+
+  await services();
+  for (const pid of await runtime.discoverPids()) pids.add(pid);
+  await runtime.uninstall(exe);
+  const deadline = runtime.now() + SHUTDOWN_TIMEOUT_MS;
+
+  const stopped = await waitUntil(runtime, deadline, async () =>
+    (await services()).every((service) => service.state === "STOPPED" || service.state === "MISSING"),
+  );
+  const absent = stopped && await waitUntil(runtime, deadline, async () =>
+    (await services()).every((service) => service.state === "MISSING"),
+  );
+  const processesGone = absent && await waitUntil(runtime, deadline, async () => {
+    for (const pid of pids) if (await runtime.processExists(pid)) return false;
+    return true;
+  });
+  const adapterGone = processesGone && await waitUntil(
+    runtime,
+    deadline,
+    async () => (await runtime.adapterStatus()) === "",
+  );
+
+  if (!stopped || !absent || !processesGone || !adapterGone) {
+    /* sc delete здесь не заменяет ожидание: это строго fallback после штатного
+       uninstall и polling. Он касается только двух служб, захваченных PID и
+       адаптера с точным именем `trioz`. */
+    await runtime.fallback(exe, [...pids]);
+    const fallbackDeadline = runtime.now() + SHUTDOWN_FALLBACK_TIMEOUT_MS;
+    const clean = await waitUntil(runtime, fallbackDeadline, async () => {
+      const currentServices = await services();
+      if (currentServices.some((service) => service.state !== "MISSING")) return false;
+      for (const pid of pids) if (await runtime.processExists(pid)) return false;
+      return (await runtime.adapterStatus()) === "";
+    });
+    if (!clean) {
+      throw new Error("Туннель TrioZ не завершился полностью за отведённое время");
+    }
+  }
+
+  /* Профиль с приватным ключом удаляем только после подтверждённого cleanup. */
+  runtime.removeConfig();
 }
 
 /**
