@@ -31,6 +31,13 @@ function post(address: string, body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
+  prismaMock.mailMessage.create.mockResolvedValue(row({ id: "msg1" }));
+  prismaMock.mailMessage.update.mockResolvedValue(row({ id: "msg1" }));
+  prismaMock.$transaction.mockImplementation(async (fn) => {
+    if (typeof fn === "function") return fn(prismaMock);
+    return fn;
+  });
 });
 
 describe("POST /api/admin/mail/[address]/send", () => {
@@ -68,13 +75,16 @@ describe("POST /api/admin/mail/[address]/send", () => {
       params: Promise.resolve({ address: "support" }),
     });
     expect(res.status).toBe(502);
+    expect(prismaMock.mailMessage.create).toHaveBeenCalledOnce();
+    expect(prismaMock.mailMessage.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "msg1" },
+      data: expect.objectContaining({ deliveryStatus: "failed" }),
+    }));
   });
 
   it("успех: отправляет и пишет outgoing в базу", async () => {
     mockSession.mockResolvedValue(admin as never);
     mockSend.mockResolvedValue({ ok: true, messageId: "<out@trioz.ru>" });
-    prismaMock.projectMailbox.upsert.mockResolvedValue(row({ id: "m1", localPart: "support" }));
-    prismaMock.mailMessage.create.mockResolvedValue(row({ id: "msg1" }));
     const mod = await import("@/app/api/admin/mail/[address]/send/route");
     const res = await mod.POST(post("support", { to: "noperight81@gmail.com", subject: "Привет", body: "Текст" }), {
       params: Promise.resolve({ address: "support" }),
@@ -85,5 +95,23 @@ describe("POST /api/admin/mail/[address]/send", () => {
     expect(createArg.data.direction).toBe("outgoing");
     expect(createArg.data.toAddr).toBe("noperight81@gmail.com");
     expect(createArg.data.fromAddr).toBe("support@trioz.ru");
+    expect(createArg.data.deliveryStatus).toBe("pending");
+    expect(prismaMock.mailMessage.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "msg1" },
+      data: expect.objectContaining({ deliveryStatus: "sent", messageId: "<out@trioz.ru>" }),
+    }));
+  });
+
+  it("не отвечает ошибкой после принятия SMTP, если финальный update не удался", async () => {
+    mockSession.mockResolvedValue(admin as never);
+    mockSend.mockResolvedValue({ ok: true, messageId: "<accepted@trioz.ru>" });
+    prismaMock.mailMessage.update.mockRejectedValueOnce(new Error("database unavailable"));
+    const mod = await import("@/app/api/admin/mail/[address]/send/route");
+    const res = await mod.POST(post("support", { to: "a@b.co", subject: "s", body: "t" }), {
+      params: Promise.resolve({ address: "support" }),
+    });
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data).toMatchObject({ ok: true, accepted: true, persisted: false, id: "msg1" });
   });
 });

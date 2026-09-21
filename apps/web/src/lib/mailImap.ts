@@ -13,7 +13,7 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { getImapConfig, getAccount, type MailCreds } from "./mailAccounts";
-import { MAIL_IMAP_FETCH_LIMIT, mailboxAddress } from "./projectMail";
+import { mailboxAddress } from "./projectMail";
 import { normalizeParsed, type NormalizedIncoming } from "./mailNormalize";
 
 /**
@@ -21,10 +21,17 @@ import { normalizeParsed, type NormalizedIncoming } from "./mailNormalize";
  * должна ронять опрос остальных — поэтому бросаем осмысленное исключение,
  * а решение «продолжать ли» принимает вызывающая сторона (poll-роут).
  */
-export async function fetchRecent(
+export type ImapIncoming = NormalizedIncoming & { imapUid: number };
+export type ImapSyncBatch = {
+  messages: ImapIncoming[];
+  uidValidity: bigint | null;
+};
+
+export async function fetchSinceUid(
   localPart: string,
-  limit = MAIL_IMAP_FETCH_LIMIT,
-): Promise<NormalizedIncoming[]> {
+  lastSyncedUid: bigint | number | null = null,
+  previousUidValidity: bigint | number | null = null,
+): Promise<ImapSyncBatch> {
   const config = getImapConfig();
   if (!config) {
     throw new Error("IMAP не настроен: задайте MAIL_IMAP_HOST");
@@ -43,19 +50,28 @@ export async function fetchRecent(
     logger: false,
   });
 
-  const out: NormalizedIncoming[] = [];
+  const out: ImapIncoming[] = [];
+  let uidValidity: bigint | null = null;
   await client.connect();
   try {
     const lock = await client.getMailboxLock("INBOX");
     try {
       const status = client.mailbox;
       const total = status && typeof status !== "boolean" ? status.exists : 0;
+      uidValidity = status && typeof status !== "boolean" && status.uidValidity != null
+        ? BigInt(status.uidValidity)
+        : null;
+      const validityChanged = previousUidValidity != null && uidValidity != null
+        && BigInt(previousUidValidity) !== uidValidity;
+      const fromUid = validityChanged ? BigInt(1) : BigInt(lastSyncedUid || 0) + BigInt(1);
       if (total > 0) {
-        const from = Math.max(1, total - limit + 1);
-        for await (const msg of client.fetch(`${from}:*`, { source: true })) {
+        for await (const msg of client.fetch(`${fromUid}:*`, { uid: true, source: true }, { uid: true })) {
           if (!msg.source) continue;
           const parsed = await simpleParser(msg.source);
-          out.push(normalizeParsed(parsed, mailboxAddress(localPart)));
+          out.push({
+            ...normalizeParsed(parsed, mailboxAddress(localPart)),
+            imapUid: Number(msg.uid),
+          });
         }
       }
     } finally {
@@ -65,6 +81,12 @@ export async function fetchRecent(
     await client.logout();
   }
 
-  // Новые — сверху, как в листинге.
-  return out.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
+  // Cursor продвигается по UID, поэтому обработка должна идти строго по возрастанию.
+  return { messages: out.sort((a, b) => a.imapUid - b.imapUid), uidValidity };
+}
+
+/** Backward-compatible helper for callers outside poll; no 100-message cap. */
+export async function fetchRecent(localPart: string): Promise<NormalizedIncoming[]> {
+  const batch = await fetchSinceUid(localPart);
+  return batch.messages.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
 }

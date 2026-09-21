@@ -45,6 +45,12 @@ describe("listingParams — направление", () => {
   it("активные письма не помечаются как архив", () => {
     expect(params({ tab: "incoming" }).get("archived")).toBeNull();
   });
+
+  it("корзина использует отдельный серверный фильтр", () => {
+    const p = params({ tab: "trash" });
+    expect(p.get("trashed")).toBe("1");
+    expect(p.get("archived")).toBeNull();
+  });
 });
 
 describe("listingParams — поиск", () => {

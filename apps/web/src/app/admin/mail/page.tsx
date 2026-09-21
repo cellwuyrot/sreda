@@ -30,7 +30,7 @@ import { listingParams } from "@/lib/mailListing";
 // ─── types ───────────────────────────────────────────────────────────────────
 
 type Direction = "incoming" | "outgoing";
-type MainTab = Direction | "archive";
+type MainTab = Direction | "archive" | "trash";
 type SideTab = "mail" | "blacklist" | "folders";
 
 interface Mailbox {
@@ -39,6 +39,8 @@ interface Mailbox {
   label: string;
   purpose: string;
   active: boolean;
+  lastSyncAt?: string | null;
+  lastSyncError?: string | null;
 }
 
 interface MailRow {
@@ -49,17 +51,28 @@ interface MailRow {
   subject: string;
   preview: string;
   archived: boolean;
+  trashedAt?: string | null;
+  readAt?: string | null;
+  deliveryStatus?: "pending" | "sent" | "failed";
+  deliveryError?: string | null;
   sentAt: string;
 }
 
 interface MailDetail {
   id: string;
+  direction: Direction;
   fromAddr: string;
   fromName?: string;
   toAddr: string;
   ccAddr?: string;
   subject: string;
   bodyHtml?: string;
+  bodyText?: string;
+  messageId?: string;
+  archived?: boolean;
+  trashedAt?: string | null;
+  deliveryStatus?: string;
+  deliveryError?: string | null;
   sentAt: string;
   attachments?: { id: string; name: string; mime: string; size: number; url: string }[];
 }
@@ -113,7 +126,16 @@ const FOLDER_ICONS = ["📁", "⭐", "📌", "🔔", "📨", "📤", "💼", "�
 // ─── sub-components ───────────────────────────────────────────────────────────
 
 /** Полное просмотр письма — инлайн-панель под строкой */
-function MailDetailPanel({ messageId, onClose }: { messageId: string; onClose: () => void }) {
+function MailDetailPanel({
+  messageId, onClose, onReply, onArchive, onTrash, onRead,
+}: {
+  messageId: string;
+  onClose: () => void;
+  onReply: (mode: "reply" | "replyAll" | "forward", detail: MailDetail) => void;
+  onArchive: (id: string, archived: boolean) => void;
+  onTrash: (id: string) => void;
+  onRead: (id: string) => void;
+}) {
   const [detail, setDetail] = useState<MailDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,10 +145,10 @@ function MailDetailPanel({ messageId, onClose }: { messageId: string; onClose: (
     setError(null);
     fetch(`/api/admin/mail/message/${messageId}/view`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((data) => setDetail(data.message))
+      .then((data) => { setDetail(data.message); onRead(messageId); })
       .catch(() => setError("Не удалось загрузить письмо"))
       .finally(() => setLoading(false));
-  }, [messageId]);
+  }, [messageId, onRead]);
 
   return (
     <div className="mt-2 rounded-xl border border-violet-200 bg-violet-50/30 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
@@ -146,6 +168,13 @@ function MailDetailPanel({ messageId, onClose }: { messageId: string; onClose: (
 
       {detail && (
         <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => onReply("reply", detail)} className="rounded-lg border px-2.5 py-1 text-xs">Ответить</button>
+            <button onClick={() => onReply("replyAll", detail)} className="rounded-lg border px-2.5 py-1 text-xs">Ответить всем</button>
+            <button onClick={() => onReply("forward", detail)} className="rounded-lg border px-2.5 py-1 text-xs">Переслать</button>
+            {!detail.trashedAt && <button onClick={() => onArchive(detail.id, !detail.archived)} className="rounded-lg border px-2.5 py-1 text-xs">{detail.archived ? "Вернуть из архива" : "Архивировать"}</button>}
+            {!detail.trashedAt && <button onClick={() => onTrash(detail.id)} className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600">Удалить</button>}
+          </div>
           {/* Шапка письма */}
           <div className="grid gap-1 rounded-lg bg-white/60 px-3 py-2 text-xs dark:bg-white/5">
             <div className="flex gap-2">
@@ -184,7 +213,7 @@ function MailDetailPanel({ messageId, onClose }: { messageId: string; onClose: (
                 title="Тело письма"
               />
             ) : (
-              <p className="px-4 py-6 text-sm text-neutral-400">Тело письма недоступно</p>
+              <pre className="whitespace-pre-wrap px-4 py-6 text-sm text-neutral-700 dark:text-gray-200">{detail.bodyText || "Тело письма недоступно"}</pre>
             )}
           </div>
 
@@ -520,6 +549,8 @@ export default function AdminMailPage() {
   const [note, setNote] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
+  const [composeReply, setComposeReply] = useState<{ messageId?: string; subject?: string; quotedHtml?: string; to?: string[]; cc?: string[] } | undefined>();
+  const [composeKey, setComposeKey] = useState(0);
   const [templates, setTemplates] = useState<Array<{ key: string; name: string; subject: string; format: string; body: string }>>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -628,9 +659,11 @@ export default function AdminMailPage() {
         ? data.errors.map((e: { error?: string }) => e?.error).filter(Boolean).join("; ")
         : "";
       if (!res.ok) {
+        setMailboxes((items) => items.map((box) => box.localPart === selected ? { ...box, lastSyncAt: new Date().toISOString(), lastSyncError: details || "Ошибка синхронизации" } : box));
         setNote(details ? `Не удалось проверить почту: ${details}` : "Не удалось проверить входящие письма");
         return;
       }
+      setMailboxes((items) => items.map((box) => box.localPart === selected ? { ...box, lastSyncAt: data?.lastSyncAt || new Date().toISOString(), lastSyncError: details || null } : box));
       if (details) {
         setNote(`Почта проверена с ошибкой: ${details}`);
       } else if (Number(data?.stored || 0) > 0) {
@@ -640,7 +673,7 @@ export default function AdminMailPage() {
       }
       await load("silent");
     } catch {
-      setNote("Не удалось проверить входящие письма");
+      setNote("Ошибка синхронизации");
     } finally {
       setSyncing(false);
     }
@@ -672,6 +705,8 @@ export default function AdminMailPage() {
   // Сбрасываем поиск и развёрнутое письмо при смене ящика / вкладки
   useEffect(() => { setSearch(""); setQuery(""); setExpandedId(null); }, [selected, tab]);
 
+  const activeBox = mailboxes.find((m) => m.localPart === selected) ?? null;
+
   const archive = useCallback(
     async (id: string, archived: boolean) => {
       if (!selected) return;
@@ -694,6 +729,54 @@ export default function AdminMailPage() {
     [selected, expandedId, load],
   );
 
+  const action = useCallback(async (id: string, mailAction: "trash" | "restore") => {
+    if (!selected) return;
+    const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: mailAction }),
+    }).catch(() => null);
+    if (!res?.ok) setNote("Не удалось обновить письмо");
+    await load("replace");
+  }, [selected, load]);
+
+  const permanentlyDelete = useCallback(async (id: string) => {
+    if (!selected || !window.confirm("Удалить письмо навсегда? Это действие нельзя отменить.")) return;
+    const res = await fetch(`/api/admin/mail/${encodeURIComponent(selected)}?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).catch(() => null);
+    if (!res?.ok) setNote("Не удалось удалить письмо");
+    await load("replace");
+  }, [selected, load]);
+
+  const markReadLocally = useCallback((id: string) => {
+    setRows((current) => current.map((row) => row.id === id ? { ...row, readAt: row.readAt || new Date().toISOString() } : row));
+  }, []);
+
+  const openComposer = useCallback((mode?: "reply" | "replyAll" | "forward", detail?: MailDetail) => {
+    if (!mode || !detail) {
+      setComposeReply(undefined);
+    } else {
+      const split = (value?: string) => (value || "").split(",").map((part) => part.trim()).filter(Boolean);
+      const quotedHtml = detail.bodyHtml || `<pre>${(detail.bodyText || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`;
+      if (mode === "forward") {
+        setComposeReply({ subject: /^fwd:/i.test(detail.subject) ? detail.subject : `Fwd: ${detail.subject}`, quotedHtml });
+      } else {
+        const sender = detail.fromAddr ? [detail.fromAddr] : [];
+        const all = mode === "replyAll" ? [...split(detail.toAddr), ...split(detail.ccAddr)] : [];
+        const current = activeBox?.address.toLowerCase();
+        setComposeReply({
+          messageId: detail.messageId,
+          subject: /^re:/i.test(detail.subject) ? detail.subject : `Re: ${detail.subject}`,
+          quotedHtml,
+          to: sender,
+          cc: all.filter((address, index, values) => address.toLowerCase() !== current && !sender.some((s) => s.toLowerCase() === address.toLowerCase()) && values.indexOf(address) === index),
+        });
+      }
+    }
+    setComposeKey((value) => value + 1);
+    setShowCompose(true);
+  }, [activeBox?.address]);
+
   if (status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-50 dark:bg-neutral-950">
@@ -703,12 +786,11 @@ export default function AdminMailPage() {
   }
   if (session?.user?.role !== "ADMIN") return null;
 
-  const activeBox = mailboxes.find((m) => m.localPart === selected) ?? null;
-
   const MAIN_TABS: { id: MainTab; label: string }[] = [
     { id: "incoming", label: "Входящие" },
     { id: "outgoing", label: "Исходящие" },
     { id: "archive", label: "Архив" },
+    { id: "trash", label: "Корзина" },
   ];
 
   const SIDE_TABS: { id: SideTab; label: string; icon: React.ReactNode }[] = [
@@ -798,6 +880,10 @@ export default function AdminMailPage() {
                     <div>
                       <p className="text-sm font-semibold text-neutral-900 dark:text-white">{activeBox.address}</p>
                       <p className="text-xs text-neutral-500 dark:text-gray-400">{activeBox.label}</p>
+                      <p className="mt-1 text-[11px] text-neutral-400">
+                        Последняя проверка: {activeBox.lastSyncAt ? formatDate(activeBox.lastSyncAt) : "ещё не выполнялась"}
+                        {activeBox.lastSyncError ? " · Ошибка синхронизации" : ""}
+                      </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
@@ -808,7 +894,7 @@ export default function AdminMailPage() {
                         {syncing ? "Проверяем…" : "Проверить почту"}
                       </button>
                       <button
-                        onClick={() => setShowCompose((v) => !v)}
+                        onClick={() => showCompose ? setShowCompose(false) : openComposer()}
                         className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500"
                       >
                         <Icon path={<><path d="M12 5v14" /><path d="M5 12h14" /></>} />
@@ -823,7 +909,7 @@ export default function AdminMailPage() {
                       {MAIN_TABS.map((t) => (
                         <button
                           key={t.id}
-                          onClick={() => { setTab(t.id); if (t.id !== "archive") setArchiveDir(""); }}
+                          onClick={() => { setTab(t.id); if (t.id !== "archive" && t.id !== "trash") setArchiveDir(""); }}
                           className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                             tab === t.id
                               ? "bg-white text-violet-600 shadow-sm dark:bg-neutral-800 dark:text-cyan-400"
@@ -837,7 +923,7 @@ export default function AdminMailPage() {
 
                     {/* Направление внутри архива: раньше архив валил входящие и
                         исходящие в одну кучу, и раздельной истории там не было. */}
-                    {tab === "archive" && (
+                    {(tab === "archive" || tab === "trash") && (
                       <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-white/5">
                         {ARCHIVE_DIRS.map((d) => (
                           <button
@@ -892,11 +978,16 @@ export default function AdminMailPage() {
                   {showCompose && (
                     <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
                       <MailComposer
-                        key={selected ?? "compose"}
+                        key={`${selected ?? "compose"}:${composeKey}`}
                         mailboxes={mailboxes}
                         templates={templates}
                         defaultMailbox={selected ?? undefined}
-                        onSent={() => { setShowCompose(false); setArchiveDir(""); setTab("outgoing"); }}
+                        replyTo={composeReply}
+                        onSent={() => {
+                          setShowCompose(false); setComposeReply(undefined);
+                          setArchiveDir(""); setTab("outgoing");
+                          window.setTimeout(() => { void load("replace"); }, 0);
+                        }}
                       />
                       <div className="mt-2 flex justify-end">
                         <button onClick={() => setShowCompose(false)} className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:text-neutral-800 dark:text-gray-400 dark:hover:text-white">Отмена</button>
@@ -918,12 +1009,12 @@ export default function AdminMailPage() {
 
                     {!loadingRows && rows.length === 0 && (
                       <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400 dark:border-white/10 dark:text-gray-500">
-                        {query ? "Ничего не найдено" : tab === "archive" ? "В архиве пусто" : "Писем пока нет"}
+                        {query ? "Ничего не найдено" : tab === "archive" ? "В архиве пусто" : tab === "trash" ? "Корзина пуста" : "Писем пока нет"}
                       </p>
                     )}
 
                     {rows.map((m) => (
-                      <div key={m.id} className="rounded-xl border border-neutral-200 dark:border-white/10 overflow-hidden">
+                      <div key={m.id} className={`rounded-xl border border-neutral-200 dark:border-white/10 overflow-hidden ${m.direction === "incoming" && !m.readAt ? "bg-violet-50/40 dark:bg-cyan-500/5" : ""}`}>
                         {/* Строка письма — клик разворачивает/сворачивает */}
                         <button
                           type="button"
@@ -947,6 +1038,12 @@ export default function AdminMailPage() {
                                 </span>
                               </div>
                               <p className="mt-1 truncate text-sm font-medium text-neutral-900 dark:text-white">{m.subject || "(без темы)"}</p>
+                              <div className="mt-1 flex gap-2 text-[10px]">
+                                {m.direction === "incoming" && <span className={!m.readAt ? "font-semibold text-violet-600 dark:text-cyan-400" : "text-neutral-400"}>{m.readAt ? "Прочитано" : "Непрочитано"}</span>}
+                                {m.direction === "outgoing" && <span className={m.deliveryStatus === "failed" ? "text-red-600" : m.deliveryStatus === "pending" ? "text-amber-600" : "text-emerald-600"}>
+                                  {m.deliveryStatus === "failed" ? "Ошибка отправки" : m.deliveryStatus === "pending" ? "Отправляется / статус уточняется" : "Отправлено"}
+                                </span>}
+                              </div>
                               <p className="truncate text-xs text-neutral-500 dark:text-gray-400">
                                 {m.direction === "incoming" ? `от ${m.fromAddr}` : `кому ${m.toAddr}`}
                               </p>
@@ -963,13 +1060,21 @@ export default function AdminMailPage() {
                                 <Icon path={<><path d="M12 3v12" /><path d="m7 12 5 5 5-5" /><path d="M5 21h14" /></>} />
                                 Скачать
                               </a>
-                              <button
+                              {tab !== "trash" && <button
                                 onClick={() => archive(m.id, !m.archived)}
                                 className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-amber-400 hover:text-amber-600 dark:border-white/10 dark:text-gray-300 dark:hover:border-amber-500/50 dark:hover:text-amber-400"
                               >
                                 <Icon path={<><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" /><path d="M10 12h4" /></>} />
                                 {m.archived ? "Вернуть" : "Архив"}
-                              </button>
+                              </button>}
+                              {tab !== "trash" ? (
+                                <button onClick={() => action(m.id, "trash")} className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600">Удалить</button>
+                              ) : (
+                                <>
+                                  <button onClick={() => action(m.id, "restore")} className="rounded-lg border px-2.5 py-1 text-xs">Восстановить</button>
+                                  <button onClick={() => permanentlyDelete(m.id)} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-700">Удалить навсегда</button>
+                                </>
+                              )}
                             </div>
                           </div>
                         </button>
@@ -980,6 +1085,10 @@ export default function AdminMailPage() {
                             <MailDetailPanel
                               messageId={m.id}
                               onClose={() => setExpandedId(null)}
+                              onReply={openComposer}
+                              onArchive={archive}
+                              onTrash={(id) => { void action(id, "trash"); }}
+                              onRead={markReadLocally}
                             />
                           </div>
                         )}
