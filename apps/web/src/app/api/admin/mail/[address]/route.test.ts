@@ -46,6 +46,13 @@ async function callPatch(address: string, body: unknown) {
   return { status: res.status, body: await res.json() };
 }
 
+async function callDelete(address: string, id: string) {
+  const mod = await import("@/app/api/admin/mail/[address]/route");
+  const req = new Request(`http://localhost/api/admin/mail/${address}?id=${id}`, { method: "DELETE" });
+  const res = await mod.DELETE(req as never, { params: Promise.resolve({ address }) });
+  return { status: res.status, body: await res.json() };
+}
+
 /** Ящик посеян, писем нет — минимум для проверки формы запроса. */
 function seeded() {
   prismaMock.projectMailbox.findUnique.mockResolvedValue(row({ id: "m-info", localPart: "info" }));
@@ -61,6 +68,7 @@ type FindManyArg = {
   where: {
     mailboxId: string;
     archived: boolean;
+    trashedAt?: { not: null } | null;
     direction?: string;
     AND?: Array<{ OR?: Array<Record<string, Contains>> } & Record<string, Contains | unknown>>;
   };
@@ -75,6 +83,10 @@ function findManyArg(): FindManyArg {
 beforeEach(() => {
   mockSession.mockReset();
   prismaMock.mailMessage.findMany.mockClear();
+  prismaMock.$transaction.mockImplementation(async (fn) => {
+    if (typeof fn === "function") return fn(prismaMock);
+    return fn;
+  });
 });
 
 describe("GET /api/admin/mail/[address]", () => {
@@ -129,14 +141,21 @@ describe("GET /api/admin/mail/[address]", () => {
     expect(findManyArg().where.direction).toBe("outgoing");
   });
 
+  it("?trashed=1 показывает только корзину", async () => {
+    asAdmin();
+    seeded();
+    await callGet("info", "?trashed=1");
+    expect(findManyArg().where.trashedAt).toEqual({ not: null });
+  });
+
   it("поиск уходит в базу по теме, адресам и предпросмотру", async () => {
     asAdmin();
     seeded();
     await callGet("info", "?direction=incoming&q=%D0%BE%D0%BF%D0%BB%D0%B0%D1%82%D0%B0");
     const and = findManyArg().where.AND;
     const or = and?.[0]?.OR ?? [];
-    expect(or).toHaveLength(4);
-    expect(or.map((c) => Object.keys(c)[0])).toEqual(["subject", "fromAddr", "toAddr", "preview"]);
+    expect(or).toHaveLength(5);
+    expect(or.map((c) => Object.keys(c)[0])).toEqual(["subject", "fromAddr", "toAddr", "preview", "bodyText"]);
     expect(or[0].subject).toEqual({ contains: "оплата", mode: "insensitive" });
   });
 
@@ -172,6 +191,24 @@ describe("GET /api/admin/mail/[address]", () => {
     expect(res.body.messages).toEqual([]);
     expect(res.body.total).toBe(0);
     expect(res.body.hasMore).toBe(false);
+  });
+});
+
+describe("DELETE /api/admin/mail/[address]", () => {
+  it("создаёт tombstone до физического удаления, чтобы IMAP не вернул письмо", async () => {
+    asAdmin();
+    prismaMock.projectMailbox.findUnique.mockResolvedValue(row({ id: "m-info", localPart: "info" }));
+    prismaMock.mailMessage.findFirst.mockResolvedValue(row({
+      id: "msg-1", mailboxId: "m-info", messageId: "<external@example.com>", trashedAt: new Date(),
+    }));
+    prismaMock.mailDeletionTombstone.upsert.mockResolvedValue(row({ id: "tombstone-1" }));
+    prismaMock.mailMessage.delete.mockResolvedValue(row({ id: "msg-1" }));
+    const response = await callDelete("info", "msg-1");
+    expect(response.status).toBe(200);
+    expect(prismaMock.mailDeletionTombstone.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { mailboxId_messageKey: { mailboxId: "m-info", messageKey: "<external@example.com>" } },
+    }));
+    expect(prismaMock.mailMessage.delete).toHaveBeenCalledWith({ where: { id: "msg-1" } });
   });
 });
 

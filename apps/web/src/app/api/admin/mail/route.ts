@@ -32,6 +32,8 @@ export async function GET() {
     label: b.label,
     purpose: b.purpose,
     active: b.active,
+    lastSyncAt: b.lastSyncAt,
+    lastSyncError: b.lastSyncError,
   }));
 
   // Если ящика из канонического списка ещё нет в базе — покажем его как пустой.
@@ -42,6 +44,8 @@ export async function GET() {
     label: m.label,
     purpose: m.purpose,
     active: true,
+    lastSyncAt: null,
+    lastSyncError: null,
   }));
 
   return NextResponse.json({ mailboxes: [...fromDb, ...missing] });

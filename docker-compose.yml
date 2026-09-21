@@ -120,6 +120,9 @@ services:
       # вне public/, содержимое отдаётся только после проверки входа.
       - uploads_private:/app/apps/web/storage/uploads
       - desktop_data:/app/apps/web/public/desktop
+      # Пользовательские папки и blacklist почты хранятся в JSON; том не даёт
+      # им исчезнуть при recreate/redeploy контейнера.
+      - mail_data:/app/apps/web/data
       # Immutable Next.js assets are copied here before server.ts starts. This
       # volume is intentionally never pruned by the app or compose deployment.
       - next_static_data:/app/next-static
@@ -184,6 +187,7 @@ volumes:
   uploads_data:
   uploads_private:
   desktop_data:
+  mail_data:
   # Never delete this volume during normal deploys: it contains assets still
   # referenced by already-open Electron pages and older installed clients.
   next_static_data:

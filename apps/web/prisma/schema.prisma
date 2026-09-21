@@ -2521,6 +2521,11 @@ model ProjectMailbox {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   messages  MailMessage[]
+  deletionTombstones MailDeletionTombstone[]
+  lastSyncedUid BigInt?
+  imapUidValidity BigInt?
+  lastSyncAt DateTime?
+  lastSyncError String? @db.Text
 
   @@index([order])
 }
@@ -2550,13 +2555,33 @@ model MailMessage {
   // Уникальность — в пределах ящика: одно и то же письмо, адресованное двум
   // ящикам домена, должно лежать в истории каждого из них.
   messageId String?
+  imapUid   BigInt?
   archived  Boolean        @default(false)
+  trashedAt DateTime?
+  readAt    DateTime?
+  deliveryStatus String    @default("sent") // pending | sent | failed
+  deliveryError String?    @db.Text
+  deliveredAt DateTime?
   sentAt    DateTime       @default(now())
   createdAt DateTime       @default(now())
 
   @@unique([mailboxId, messageId])
   @@index([mailboxId, archived, sentAt])
   @@index([mailboxId, direction, archived, sentAt])
+  @@index([mailboxId, trashedAt, sentAt])
+  @@index([mailboxId, direction, readAt])
+}
+
+model MailDeletionTombstone {
+  id         String         @id @default(cuid())
+  mailboxId  String
+  mailbox    ProjectMailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  messageKey String
+  reason     String         @default("deleted")
+  createdAt  DateTime       @default(now())
+
+  @@unique([mailboxId, messageKey])
+  @@index([mailboxId, createdAt])
 }
 
 model MailAttachment {

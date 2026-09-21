@@ -12,7 +12,7 @@
 export type MailListDirection = "incoming" | "outgoing";
 
 /** Вкладка списка: направление либо архив. */
-export type MailListTab = MailListDirection | "archive";
+export type MailListTab = MailListDirection | "archive" | "trash";
 
 /** Фильтр папки — сохранённый набор условий (см. /api/admin/mail/folders). */
 export interface MailListFolderFilter {
@@ -43,7 +43,9 @@ export interface MailListQuery {
 export function listingParams(args: MailListQuery): string {
   const p = new URLSearchParams();
 
-  if (args.tab === "archive") {
+  if (args.tab === "trash") {
+    p.set("trashed", "1");
+  } else if (args.tab === "archive") {
     p.set("archived", "1");
     if (args.archiveDir) p.set("direction", args.archiveDir);
   } else {
@@ -56,7 +58,7 @@ export function listingParams(args: MailListQuery): string {
   const f = args.folder;
   if (f) {
     const folderDirection = f.direction === "incoming" || f.direction === "outgoing" ? f.direction : "";
-    if (folderDirection && args.tab === "archive" && !args.archiveDir) p.set("direction", folderDirection);
+    if (folderDirection && (args.tab === "archive" || args.tab === "trash") && !args.archiveDir) p.set("direction", folderDirection);
     if (f.fromContains) p.set("from", f.fromContains);
     if (f.toContains) p.set("to", f.toContains);
     if (f.subjectContains) p.set("subject", f.subjectContains);

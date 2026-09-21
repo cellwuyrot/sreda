@@ -41,12 +41,13 @@ export function MailComposer({ mailboxes, templates, replyTo, defaultMailbox, on
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finalized = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const imgInput = useRef<HTMLInputElement>(null);
   const currentAddress = mailboxes.find((m) => m.localPart === mailbox)?.address || "";
 
   useEffect(() => {
-    if (!mailbox) return;
+    if (!mailbox || finalized.current) return;
     fetch(`/api/admin/mail/${encodeURIComponent(mailbox)}/signature`).then((r) => r.json()).then((d) => {
       if (d?.signature) { setSignatureHtml(d.signature.html || ""); setUseSignature(d.signature.enabled !== false); } else setSignatureHtml("");
     }).catch(() => {});
@@ -64,7 +65,7 @@ export function MailComposer({ mailboxes, templates, replyTo, defaultMailbox, on
   }, [mailbox]);
 
   useEffect(() => {
-    if (!mailbox) return;
+    if (!mailbox || finalized.current) return;
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
       fetch(`/api/admin/mail/${encodeURIComponent(mailbox)}/draft`, { method: "PUT", headers: { "Content-Type": "application/json" },
@@ -114,11 +115,26 @@ export function MailComposer({ mailboxes, templates, replyTo, defaultMailbox, on
     try {
       const res = await fetch(`/api/admin/mail/${encodeURIComponent(mailbox)}/send`, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fromName, to, cc, bcc, subject, format, body, attachments, inlineImages, templateKey: templateKey || undefined, variables, replyToMessageId: replyTo?.messageId }) });
-      const d = await res.json();
-      if (!res.ok) { setError(d?.error || "Ошибка отправки"); setSending(false); setConfirming(false); return; }
-      setNotice("Письмо отправлено"); setConfirming(false);
-      setTo([]); setCc([]); setBcc([]); setSubject(""); setBody(""); setAttachments([]); setInlineImages([]); setTemplateKey("");
+      const d = await res.json().catch(() => null);
+      if (!res.ok || !d?.ok || !d?.accepted) {
+        setError(d?.error || "Сервер не подтвердил отправку");
+        setSending(false); setConfirming(false); return;
+      }
+      finalized.current = true;
+      if (draftTimer.current) {
+        clearTimeout(draftTimer.current);
+        draftTimer.current = null;
+      }
+      // SMTP already accepted the message. Finalize the draft before closing;
+      // never clear fields first, otherwise autosave can recreate an empty draft.
+      const draftResponse = await fetch(`/api/admin/mail/${encodeURIComponent(mailbox)}/draft`, { method: "DELETE" }).catch(() => null);
+      if (draftResponse && !draftResponse.ok) {
+        setNotice("Письмо отправлено; черновик не удалось удалить");
+      }
+      setConfirming(false);
+      onSent?.(d.id);
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Ошибка сети"); }
+    finally { setSending(false); }
   };
 
   const totalSize = [...attachments, ...inlineImages].reduce((s, a) => s + a.size, 0);
