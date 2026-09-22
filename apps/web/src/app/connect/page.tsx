@@ -301,10 +301,12 @@ function ConnectPageInner() {
 
   /* ── Deep-linking from notifications ── */
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [highlightThreadId, setHighlightThreadId] = useState<string | null>(null);
+  const [highlightPostId, setHighlightPostId] = useState<string | null>(null);
   const [highlightTaskId, setHighlightTaskId] = useState<string | null>(null);
   const [highlightDmMessageId, setHighlightDmMessageId] = useState<string | null>(null);
   // Holds the target we still need to open once the group's channels have loaded.
-  const deepLinkRef = useRef<{ group?: string; channel?: string; message?: string; task?: string } | null>(null);
+  const deepLinkRef = useRef<{ group?: string; channel?: string; message?: string; thread?: string; task?: string; post?: string } | null>(null);
 
   const isBanned = session?.user?.banned && (!session.user.bannedUntil || new Date(session.user.bannedUntil) > new Date());
 
@@ -541,17 +543,11 @@ function ConnectPageInner() {
         });
       });
       // Канал прочитан (на этом или другом устройстве) — мгновенно гасим бейджи.
-      sock.on("channel-read", (payload: { channelId: string }) => {
-        setUnreadCounts((prev) => {
-          const next = { ...prev };
-          delete next[payload.channelId];
-          return next;
-        });
-        setMentionChannels((prev) => {
-          const next = { ...prev };
-          delete next[payload.channelId];
-          return next;
-        });
+      sock.on("channel-read", () => {
+        // Сервер — источник истины. Особенно для Thread нельзя вслепую удалить
+        // весь канал: в нём могут оставаться другие непрочитанные ветки.
+        fetchUnread();
+        getDesktopApi()?.refreshBadge?.();
       });
 
     });
@@ -581,13 +577,15 @@ function ConnectPageInner() {
     const channel = params.get("channel");
     const message = params.get("message");
     const task = params.get("task");
+    const thread = params.get("thread");
+    const post = params.get("post");
     const section = params.get("section");
     const dm = params.get("dm");
     /* CHAT: ?section=business&conv=… — переход из карточки проекта в кабинете.
        Разговор адресуется по id, а не по собеседнику: у делового чата вторая
        сторона у всех заявок одна и та же — «Администрация». */
     const conv = params.get("conv");
-    if (!group && !channel && !message && !task && !section && !dm && !conv) return;
+    if (!group && !channel && !message && !thread && !task && !post && !section && !dm && !conv) return;
 
     if (section === "business") {
       setActiveSection("business");
@@ -603,7 +601,9 @@ function ConnectPageInner() {
         group,
         channel: channel ?? undefined,
         message: message ?? undefined,
+        thread: thread ?? undefined,
         task: task ?? undefined,
+        post: post ?? undefined,
       };
     }
     window.history.replaceState(null, "", "/connect");
@@ -622,6 +622,8 @@ function ConnectPageInner() {
       const channel = params.get("channel");
       const message = params.get("message");
       const task = params.get("task");
+      const thread = params.get("thread");
+      const post = params.get("post");
       const section = params.get("section");
       const dm = params.get("dm");
       if (section === "business") {
@@ -643,7 +645,9 @@ function ConnectPageInner() {
           group,
           channel: channel ?? undefined,
           message: message ?? undefined,
+          thread: thread ?? undefined,
           task: task ?? undefined,
+          post: post ?? undefined,
         };
       } else if (section === "communities") {
         setActiveSection("communities");
@@ -662,7 +666,9 @@ function ConnectPageInner() {
       setSelectedChannel(dl.channel);
       setMobileView("chat");
       if (dl.message) setHighlightMessageId(dl.message);
+      if (dl.thread) setHighlightThreadId(dl.thread);
       if (dl.task) setHighlightTaskId(dl.task);
+      if (dl.post) setHighlightPostId(dl.post);
     }
     deepLinkRef.current = null;
   }, [groupDetail]);
@@ -759,20 +765,7 @@ function ConnectPageInner() {
     if (channel.type === "VOICE") {
       voice.joinVoice(channel.id, channel.name);
     } else {
-      // Мгновенно гасим бейдж непрочитанного для открываемого канала,
-      // не дожидаясь поллинга /api/channels/unread
-      setUnreadCounts((prev) => {
-        const next = { ...prev };
-        delete next[channel.id];
-        return next;
-      });
-      setMentionChannels((prev) => {
-        const next = { ...prev };
-        delete next[channel.id];
-        return next;
-      });
-      // NEW: сразу просим десктоп-оболочку пересчитать цифру на значке
-      getDesktopApi()?.refreshBadge?.();
+      // Бейдж снимается только после подтверждённого POST /api/messages/read.
       setSelectedChannel(channel.id);
       setMobileView("chat");
       // Человек открыл переписку — показ экрана уходит в плашку, чат виден.
@@ -1064,7 +1057,13 @@ function ConnectPageInner() {
                           isBanned={!!isBanned}
                           onBack={() => setShowChannelsDrawer(true)}
                           highlightMessageId={highlightMessageId}
-                          onHighlightConsumed={() => setHighlightMessageId(null)}
+                          highlightThreadId={highlightThreadId}
+                          highlightPostId={highlightPostId}
+                          onHighlightConsumed={() => {
+                            setHighlightMessageId(null);
+                            setHighlightThreadId(null);
+                            setHighlightPostId(null);
+                          }}
                           onOpenDm={handleMessageFriend}
                         />
                       </>
@@ -1314,7 +1313,13 @@ function ConnectPageInner() {
                   isBanned={!!isBanned}
                   onNewMessage={fetchUnread}
                   highlightMessageId={highlightMessageId}
-                  onHighlightConsumed={() => setHighlightMessageId(null)}
+                  highlightThreadId={highlightThreadId}
+                  highlightPostId={highlightPostId}
+                  onHighlightConsumed={() => {
+                    setHighlightMessageId(null);
+                    setHighlightThreadId(null);
+                    setHighlightPostId(null);
+                  }}
                   onOpenDm={handleMessageFriend}
                 />
                 )
@@ -1558,4 +1563,3 @@ function ConnectPageInner() {
     </MotionConfig>
   );
 }
-

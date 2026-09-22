@@ -179,34 +179,74 @@ export async function createNotificationsBulk(params: {
   });
   const pushByUser = new Map(users.map((user) => [user.id, user.notifyPush !== false]));
 
-  const created = await prisma.notification.createManyAndReturn({
-    data: userIds.map((userId) => ({
-      userId,
-      type: params.type,
-      title: params.title,
-      body: params.body,
-      link: params.link,
-      actorId: params.actorId && params.actorId !== userId ? params.actorId : null,
-      entityType: params.entityType ?? null,
-      entityId: params.entityId ?? null,
-    })),
-  });
+  // Пакетная рассылка использует ту же группировку по subject, что одиночная,
+  // но без N последовательных выборок: существующие непрочитанные получаем
+  // одним запросом, обновляем их, а отсутствующие вставляем одной пачкой.
+  const existing = params.entityType && params.entityId
+    ? await prisma.notification.findMany({
+        where: {
+          userId: { in: userIds },
+          type: params.type,
+          entityType: params.entityType,
+          entityId: params.entityId,
+          read: false,
+        },
+        select: { id: true, userId: true },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const existingByUser = new Map<string, { id: string; userId: string }>();
+  for (const item of existing ?? []) {
+    if (!existingByUser.has(item.userId)) existingByUser.set(item.userId, item);
+  }
+
+  const updated = await Promise.all([...existingByUser.values()].map((item) =>
+    prisma.notification.update({
+      where: { id: item.id },
+      data: {
+        title: params.title,
+        body: params.body,
+        link: params.link,
+        actorId: params.actorId && params.actorId !== item.userId ? params.actorId : null,
+        count: { increment: 1 },
+        createdAt: new Date(),
+      },
+    }),
+  ));
+  const missing = userIds.filter((userId) => !existingByUser.has(userId));
+  const created = missing.length > 0
+    ? await prisma.notification.createManyAndReturn({
+        data: missing.map((userId) => ({
+          userId,
+          type: params.type,
+          title: params.title,
+          body: params.body,
+          link: params.link,
+          actorId: params.actorId && params.actorId !== userId ? params.actorId : null,
+          entityType: params.entityType ?? null,
+          entityId: params.entityId ?? null,
+        })),
+      })
+    : [];
 
   const io = getIO();
   if (io) {
+    for (const notification of updated) {
+      io.to(`dm-${notification.userId}`).emit(SOCKET_EVENTS.NEW_NOTIFICATION, {
+        ...notification,
+        pushEnabled: pushByUser.get(notification.userId) !== false,
+        isNew: false,
+      });
+    }
     for (const notification of created) {
       io.to(`dm-${notification.userId}`).emit(SOCKET_EVENTS.NEW_NOTIFICATION, {
         ...notification,
         pushEnabled: pushByUser.get(notification.userId) !== false,
-        // Пачка всегда вставляет новые строки — счётчик у каждого получателя
-        // растёт (в отличие от сгруппированного обновления).
         isNew: true,
       });
     }
   }
 
-  /* PUSH: одной отправкой на всех, кому она разрешена. Список получателей
-     фильтрует сама отправка, но заведомо выключивших не тащим и сюда. */
   const pushTargets = userIds.filter((userId) => pushByUser.get(userId) !== false);
   if (pushTargets.length > 0) {
     queuePush(pushTargets, {
@@ -216,8 +256,7 @@ export async function createNotificationsBulk(params: {
       tag: params.entityId ? `${params.entityType ?? "n"}:${params.entityId}` : params.type,
     });
   }
-
-  return created.length;
+  return userIds.length;
 }
 
 /**

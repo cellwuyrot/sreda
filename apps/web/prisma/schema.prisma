@@ -1313,7 +1313,9 @@ model MessageRead {
   messageId String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  readAt    DateTime @default(now())
+  readAt          DateTime @default(now())
+  /// false: собственный read state сохраняется, но receipt другим не показывается.
+  receiptVisible Boolean  @default(true)
 
   @@unique([userId, messageId])
   @@index([messageId])

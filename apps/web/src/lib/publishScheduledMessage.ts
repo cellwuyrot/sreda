@@ -7,6 +7,22 @@ import { resolveGroupMentions } from "@/lib/serverMentions";
 import { createNotification, createNotificationsBulk } from "@/lib/createNotification";
 import { messageLengthError } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
+import { isUserViewingChannel } from "@/lib/presence";
+
+export function filterScheduledMentionRecipients(params: {
+  candidates: string[];
+  channelMutes: Array<{ userId: string; muted: boolean }>;
+  mutedGroupUserIds: string[];
+  viewingUserIds: string[];
+}): string[] {
+  const mutedChannels = new Set(params.channelMutes.filter((row) => row.muted).map((row) => row.userId));
+  const explicitUnmute = new Set(params.channelMutes.filter((row) => !row.muted).map((row) => row.userId));
+  const mutedGroups = new Set(params.mutedGroupUserIds);
+  const active = new Set(params.viewingUserIds);
+  return params.candidates.filter((id) =>
+    !active.has(id) && !mutedChannels.has(id) && (!mutedGroups.has(id) || explicitUnmute.has(id)),
+  );
+}
 
 /**
  * Публикация наступившего scheduled message. В момент фактической отправки
@@ -74,8 +90,25 @@ export async function publishScheduledMessage(
   await prisma.scheduledMessage.update({ where: { id: scheduled.id }, data: { sent: true } });
   emit(scheduled.channelId, message);
 
-  const recipients = mentions.ids.filter((id) => id !== scheduled.userId);
-  if (recipients.length > 0) {
+  const candidateRecipients = mentions.ids.filter((id) => id !== scheduled.userId);
+  if (candidateRecipients.length > 0) {
+    const [channelMutes, groupMutes, viewing] = await Promise.all([
+      prisma.channelMute.findMany({
+        where: { channelId: scheduled.channelId, userId: { in: candidateRecipients } },
+        select: { userId: true, muted: true },
+      }),
+      prisma.groupMember.findMany({
+        where: { groupId: channel.groupId, userId: { in: candidateRecipients }, muted: true },
+        select: { userId: true },
+      }),
+      Promise.all(candidateRecipients.map(async (id) => ({ id, active: await isUserViewingChannel(id, scheduled.channelId) }))),
+    ]);
+    const recipients = filterScheduledMentionRecipients({
+      candidates: candidateRecipients,
+      channelMutes,
+      mutedGroupUserIds: groupMutes.map((row) => row.userId),
+      viewingUserIds: viewing.filter((row) => row.active).map((row) => row.id),
+    });
     const notification = {
       type: "mention" as const,
       body: content.slice(0, 100),
