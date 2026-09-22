@@ -336,6 +336,19 @@ export default function TasksPanel({ channelId, channelName, currentUserId, canM
     [selectedTaskId, tasks],
   );
 
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    void fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entityType: "task", entityId: selectedTaskId }),
+    }).then((res) => res.ok ? res.json() : null).then((data) => {
+      if (typeof data?.unreadCount === "number") {
+        window.dispatchEvent(new CustomEvent("tz-notifications-read", { detail: { unreadCount: data.unreadCount } }));
+      }
+    }).catch(() => {});
+  }, [selectedTaskId]);
+
   const closingTask = useMemo(
     () => tasks.find((task) => task.id === closingTaskId) || null,
     [closingTaskId, tasks],

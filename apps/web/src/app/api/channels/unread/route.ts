@@ -29,7 +29,16 @@ export async function GET() {
   const baseWhere = {
     deleted: false,
     userId: { not: session.user.id },
-    OR: perChannelWindow,
+    AND: [
+      { OR: perChannelWindow },
+      // Вариант A: replies входят в unread канала, но только пока для них нет
+      // адресного MessageRead текущего пользователя. Верхний уровень по-прежнему
+      // закрывается ChannelMember.lastRead.
+      { OR: [
+        { threadId: null },
+        { threadId: { not: null }, reads: { none: { userId: session.user.id } } },
+      ] },
+    ],
   };
 
   /* FIX-NEWS-UNREAD: до этого счётчик везде считал любые строки Message канала.

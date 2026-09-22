@@ -1,0 +1,1 @@
+ALTER TABLE "MessageRead" ADD COLUMN "receiptVisible" BOOLEAN NOT NULL DEFAULT true;

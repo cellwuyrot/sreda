@@ -99,6 +99,8 @@ export default function NewsFeed({
   onCanPostChange,
   onEditPost,
   refreshToken = 0,
+  highlightPostId = null,
+  onHighlightConsumed,
 }: {
   channelId: string;
   /**
@@ -114,6 +116,9 @@ export default function NewsFeed({
   onEditPost?: (post: NewsPost) => void;
   /** Смена значения перечитывает ленту — так редактор сообщает о публикации. */
   refreshToken?: number;
+  /** Deep-link из уведомления. */
+  highlightPostId?: string | null;
+  onHighlightConsumed?: () => void;
 }) {
   const [posts, setPosts] = useState<NewsPost[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -148,6 +153,18 @@ export default function NewsFeed({
      сайту, и присваивать её себе значило бы ломать десктопную навигацию. */
   const isMobileViewport = useMobile();
   const closeOpenPost = useCallback(() => setOpenPost(null), []);
+  const openNewsPost = useCallback((post: NewsPost) => {
+    setOpenPost(post);
+    void fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entityType: "news_post", entityId: post.id }),
+    }).then((res) => res.ok ? res.json() : null).then((data) => {
+      if (typeof data?.unreadCount === "number") {
+        window.dispatchEvent(new CustomEvent("tz-notifications-read", { detail: { unreadCount: data.unreadCount } }));
+      }
+    }).catch(() => {});
+  }, []);
   useHistoryLayer(isMobileViewport && !!openPost, closeOpenPost, "news-post");
 
   const fetchPage = useCallback(
@@ -191,6 +208,15 @@ export default function NewsFeed({
       alive = false;
     };
   }, [fetchPage, refreshToken]);
+
+  useEffect(() => {
+    if (!highlightPostId || status !== "ready") return;
+    const post = posts.find((item) => item.id === highlightPostId);
+    if (post) {
+      openNewsPost(post);
+      onHighlightConsumed?.();
+    }
+  }, [highlightPostId, status, posts, openNewsPost, onHighlightConsumed]);
 
   /* FIX-NEWS-READ: до этого лента не звала /api/messages/read никогда, и lastRead в
      новостном канале не двигался вообще: бейдж загорался один раз и висел до
@@ -412,7 +438,7 @@ export default function NewsFeed({
                       <span className="h-px flex-1 bg-violet-300 dark:bg-cyan-500/40" />
                     </div>
                   )}
-                  <NewsPostCard post={post} onOpen={setOpenPost} />
+                  <NewsPostCard post={post} onOpen={openNewsPost} />
                 </Fragment>
               ))}
             </div>
