@@ -95,10 +95,12 @@ export async function POST(req: Request) {
   if (safeAssignee && safeAssignee !== session.user.id) {
     createNotification({
       userId: safeAssignee,
-      type: "system",
+      type: "task_assigned",
       title: "Новая задача",
       body: `${session.user.name} назначил вам задачу: ${safeTitle}`,
       link: `/connect?group=${task.channel.groupId}&channel=${channelId}&task=${task.id}`,
+      entityType: "task",
+      entityId: task.id,
     }).catch(() => {});
   }
 
@@ -153,10 +155,12 @@ export async function PATCH(req: Request) {
   if (assigneeId && assigneeId !== session.user.id && assigneeId !== task.assigneeId) {
     createNotification({
       userId: assigneeId,
-      type: "system",
+      type: "task_assigned",
       title: "Задача назначена",
       body: `${session.user.name} назначил вам задачу: ${updated.title}`,
       link: `/connect?group=${updated.channel.groupId}&channel=${updated.channelId}&task=${updated.id}`,
+      entityType: "task",
+      entityId: updated.id,
     }).catch(() => {});
   }
 

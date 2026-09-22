@@ -17,17 +17,10 @@ export function useUnreadBadges(selectedChannel: string | null) {
   const selectedChannelRef = useRef<string | null>(null);
   const fetchUnread = useCallback(() => {
     fetch("/api/channels/unread").then((r) => r.json()).then((data) => {
-      const openId = document.hidden ? null : selectedChannelRef.current;
-      if (data.unread) {
-        const nextUnread = { ...data.unread };
-        if (openId) delete nextUnread[openId];
-        setUnreadCounts(nextUnread);
-      }
-      if (data.mentions) {
-        const nextMentions = { ...data.mentions };
-        if (openId) delete nextMentions[openId];
-        setMentionChannels(nextMentions);
-      }
+      // Сервер остаётся источником истины. Открытый канал может содержать
+      // непрочитанные replies других Thread, поэтому локально не вычитаем его.
+      if (data.unread) setUnreadCounts({ ...data.unread });
+      if (data.mentions) setMentionChannels({ ...data.mentions });
       if (data.channels) setUnreadChannelInfo(data.channels); // FIX-NTF2
     }).catch(() => {});
   }, []);

@@ -106,6 +106,14 @@ function NavRail({
             {icon}
           </button>
         ))}
+        <a
+          href="/about#download"
+          className="cn-nav-btn mt-2 bg-gradient-to-br from-violet-500/15 to-cyan-500/15 hover:scale-105"
+          title="Скачать приложение"
+          aria-label="Скачать приложение"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </a>
       </div>
 
       {/* ── Bottom: user panel ── */}

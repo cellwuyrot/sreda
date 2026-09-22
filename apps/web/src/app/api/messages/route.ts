@@ -35,7 +35,7 @@ const MESSAGE_SELECT = {
 		},
 	},
 	reads: {
-		select: { userId: true },
+		select: { userId: true, receiptVisible: true },
 	},
 	_count: {
 		select: { threadReplies: true },
@@ -131,6 +131,11 @@ export async function GET(req: Request) {
 	   всего канала. */
 
 	const ordered = messages.reverse();
+	// Невидимый receipt нужен владельцу как собственный read state, но не
+	// раскрывается другим участникам.
+	for (const message of ordered) {
+		message.reads = message.reads.filter((read) => read.userId === session.user.id || read.receiptVisible);
+	}
 	await attachGroupRoles(ordered);
 	/* FIX-SRVCHAT: имя, аватар и фон — с учётом профиля этого сообщества. */
 	await applyMemberOverrides(ordered, channel.groupId);
@@ -365,8 +370,13 @@ export async function POST(req: NextRequest) {
 
 	if (notifyTitles.size > 0) {
 		const senderName = message.user?.name || "Пользователь";
-		const notificationLink = `/connect?group=${channel.groupId}&channel=${channelId}&message=${message.id}`;
+		const notificationLink = threadId
+			? `/connect?group=${channel.groupId}&channel=${channelId}&thread=${threadId}&message=${threadId}`
+			: `/connect?group=${channel.groupId}&channel=${channelId}&message=${message.id}`;
 		const notificationBody = sanitizedContent.slice(0, 100);
+		const notificationEntity = threadId
+			? { entityType: "thread", entityId: threadId }
+			: { entityType: "channel", entityId: channelId };
 
 		if (isEveryone) {
 			// @everyone: настройки заглушки и вставка уведомлений пакетом —
@@ -413,10 +423,7 @@ export async function POST(req: NextRequest) {
 					title: `${senderName} упомянул всех`,
 					body: notificationBody,
 					link: notificationLink,
-					// Предмет — канал: несколько упоминаний подряд группируются в
-					// одно уведомление, и открытие канала гасит их разом.
-					entityType: "channel",
-					entityId: channelId,
+					...notificationEntity,
 				}).catch(() => {});
 			}
 		} else {
@@ -444,10 +451,7 @@ export async function POST(req: NextRequest) {
 								title: viaTag ? `${senderName} упомянул тег ${viaTag}` : `${senderName} упомянул вас`,
 								body: notificationBody,
 								link: notificationLink,
-								// Предмет — канал: повторные упоминания одного человека
-								// в этом канале схлопываются в одно уведомление.
-								entityType: "channel",
-								entityId: channelId,
+								...notificationEntity,
 							}).catch(() => {});
 						}
 					}

@@ -235,6 +235,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       title: `Вам назначена задача #${task.number}`,
       body: task.title,
       link: `/connect?group=${auth.task!.channel.groupId}&channel=${auth.task!.channelId}&task=${id}`,
+      entityType: "task",
+      entityId: id,
     }).catch(() => null);
   }
 

@@ -125,6 +125,9 @@ interface MessageAreaProps {
   onBack?: () => void;
   onNewMessage?: () => void;
   highlightMessageId?: string | null;
+  /** Deep-link: открыть конкретную ветку после загрузки её родительского сообщения. */
+  highlightThreadId?: string | null;
+  highlightPostId?: string | null;
   onHighlightConsumed?: () => void;
   onOpenDm?: (userId: string) => void;
 }
@@ -636,7 +639,7 @@ const MessageRow = memo(function MessageRow({
 });
 
 export default function MessageArea({
-  channelId, channelName, channelIcon, channelType = "TEXT", postAccess = "ALL", serviceId = null, currentUserId, currentUserName = "", currentUserRole, currentUserCommunityRole = "MEMBER", isBanned, onBack, onNewMessage, highlightMessageId, onHighlightConsumed, onOpenDm,
+  channelId, channelName, channelIcon, channelType = "TEXT", postAccess = "ALL", serviceId = null, currentUserId, currentUserName = "", currentUserRole, currentUserCommunityRole = "MEMBER", isBanned, onBack, onNewMessage, highlightMessageId, highlightThreadId, highlightPostId, onHighlightConsumed, onOpenDm,
 }: MessageAreaProps) {
   /* Роль аккаунта и подписка — из сессии: currentUserRole в пропсах это роль в
      сообществе, к тарифу она отношения не имеет. */
@@ -1775,14 +1778,12 @@ export default function MessageArea({
     lastMsgIdRef.current = lastId;
     const unread = messages.filter(m => m.user.id !== currentUserId && !(m.reads || []).some(r => r.userId === currentUserId));
     if (unread.length === 0) return;
-    /* Отметку можно не отправлять: тогда автор не увидит галочку «прочитано».
-       Обратная сторона честная и заметная — сервер не запоминает прочитанное,
-       и граница непрочитанного считается заново при каждом входе. */
-    if (!chatPrefsRef.current.sendReadReceipts) return;
+    // Собственный read state сохраняется всегда. sendReadReceipts управляет
+    // только публичной галочкой у автора, а не собственным unread.
     fetch("/api/messages/read", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messageIds: unread.map(m => m.id), channelId }),
+      body: JSON.stringify({ messageIds: unread.map(m => m.id), channelId, sendReceipt: chatPrefsRef.current.sendReadReceipts }),
     }).then(() => {
       // NEW: сразу гасим цифру на значке приложения (десктоп), не ждём поллинга
       getDesktopApi()?.refreshBadge?.();
@@ -1822,12 +1823,35 @@ export default function MessageArea({
       const replies = Array.isArray(data.messages) ? data.messages : [];
       threadReplyIdsRef.current = new Set(replies.map((reply: Message) => reply.id));
       setThreadMessages(replies);
+
+      // Адресное прочтение ветки: API создаёт MessageRead для всех ответов этой
+      // ветки, не двигая общий ChannelMember.lastRead.
+      const readRes = await fetch("/api/messages/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channelId,
+          threadId: msg.id,
+          messageIds: replies.map((reply: Message) => reply.id),
+          sendReceipt: chatPrefsRef.current.sendReadReceipts,
+        }),
+      });
+      if (!readRes.ok) throw new Error("Ветка открыта, но отметка прочтения не сохранилась");
+      getDesktopApi()?.refreshBadge?.();
     } catch (error) {
       setThreadError(error instanceof Error ? error.message : "Не удалось загрузить ветку");
     } finally {
       setThreadLoading(false);
     }
   }, [channelId]);
+
+  useEffect(() => {
+    if (!highlightThreadId) return;
+    const parent = messages.find((message) => message.id === highlightThreadId);
+    if (!parent) return;
+    void openThread(parent);
+    onHighlightConsumed?.();
+  }, [highlightThreadId, messages, openThread, onHighlightConsumed]);
 
   const sendThreadReply = async () => {
     if (!threadInput.trim() || !activeThread || threadSending) return;
@@ -2936,6 +2960,8 @@ export default function MessageArea({
             onCanPostChange={setNewsCanPost}
             onEditPost={setNewsEditPost}
             refreshToken={newsRefresh}
+            highlightPostId={highlightPostId}
+            onHighlightConsumed={onHighlightConsumed}
           />
 
           {/* Кнопка поверх ленты, а не в шапке: экран открытого поста лента
