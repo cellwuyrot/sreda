@@ -250,6 +250,8 @@ export async function POST(req: NextRequest) {
       title: `Вам назначена задача #${task.number}`,
       body: `${senderName}: ${normalizedTitle}`,
       link: `/connect?group=${ctx.channel.groupId}&channel=${channelId}&task=${task.id}`,
+      entityType: "task",
+      entityId: task.id,
     }).catch(() => null);
   }
 
