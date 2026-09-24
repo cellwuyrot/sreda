@@ -156,6 +156,7 @@ model User {
   paymentLinksReserved   PaymentLink[]               @relation("PaymentLinkReserved") // PAYLINK
   paymentLinksUsed       PaymentLink[]               @relation("PaymentLinkUsed") // PAYLINK
   paymentLinksConfirmed  PaymentLink[]               @relation("PaymentLinkConfirmed") // PAYLINK
+  cloudPaymentOrders      CloudPaymentOrder[]          // CLOUDPAYMENTS
   /// PROFILE-WALL: личная страница — свои записи, комментарии, просмотры и подписки.
   wallPosts              WallPost[]                  @relation("WallAuthor") // PROFILE-WALL
   wallComments           WallComment[]               @relation("WallCommentAuthor") // PROFILE-WALL
@@ -2450,6 +2451,49 @@ model EmailDomainWhitelist {
 /// Ссылка банка не сообщает сайту о зачислении, поэтому жизненный путь хранится
 /// здесь: FREE → RESERVED (выдана человеку) → AWAITING (он нажал «Я оплатил») → USED
 /// (оплата подтверждена, подписка выдана). Повторно ссылка не выдаётся никогда.
+
+model CloudPaymentOrder {
+  id                   String    @id @default(cuid())
+  userId               String
+  kind                 String    @db.VarChar(16) // PREMIUM | VPN
+  plan                 String    @db.VarChar(16) // month
+  amount               Int
+  currency             String    @db.VarChar(8)
+  invoiceId            String    @unique @db.VarChar(80)
+  cloudOrderId         String?   @db.VarChar(160)
+  cloudTransactionId   String?   @db.VarChar(64)
+  cloudSubscriptionId  String?   @db.VarChar(160)
+  paymentUrl           String?   @db.VarChar(1000)
+  status               String    @default("PENDING") @db.VarChar(16) // PENDING | PAID | FAILED
+  failureReason        String?   @db.Text
+  localSubscriptionId  String?   @db.VarChar(80)
+  paidAt               DateTime?
+  lastCheckedAt        DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions CloudPaymentTransaction[]
+
+  @@index([userId, status])
+  @@index([kind, status])
+  @@index([cloudSubscriptionId])
+  @@index([cloudTransactionId])
+}
+
+model CloudPaymentTransaction {
+  id            String           @id @default(cuid())
+  orderId       String
+  transactionId String           @unique @db.VarChar(64)
+  amount        Int
+  currency      String           @db.VarChar(8)
+  createdAt     DateTime         @default(now())
+
+  order CloudPaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}
+
 model PaymentLink {
   id                   String    @id @default(cuid())
 
