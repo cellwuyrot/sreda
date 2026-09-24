@@ -5,8 +5,8 @@ import {
   markCloudPaymentFailed,
   readCloudPaymentConfig,
   updateCloudPaymentRecurrentStatus,
-  verifyCloudPaymentHmac,
 } from "@/lib/cloudPayments";
+import { verifyCloudPaymentHmac } from "@/lib/cloudPaymentsCore";
 
 export async function rawCloudWebhook(req: Request) {
   const raw = await req.text();
