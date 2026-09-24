@@ -29,6 +29,7 @@ export const PREMIUM_PAYMENT_KEYS = [
   "pay_sbp_comment",
   "pay_acquiring_enabled",
   "pay_acquiring_provider",
+  "pay_cloudpayments_public_id",
   "pay_acquiring_link",
   "pay_acquiring_merchant",
   "pay_acquiring_secret",
@@ -54,6 +55,7 @@ export const VPN_PAYMENT_KEYS = [
   "vpnpay_sbp_comment",
   "vpnpay_acquiring_enabled",
   "vpnpay_acquiring_provider",
+  "vpnpay_cloudpayments_public_id",
   "vpnpay_acquiring_link",
   "vpnpay_acquiring_merchant",
   "vpnpay_acquiring_secret",
@@ -128,6 +130,7 @@ export const PAYMENT_DEFAULTS: Record<PaymentKey, string> = {
   pay_sbp_comment: "",
   pay_acquiring_enabled: "0",
   pay_acquiring_provider: "",
+  pay_cloudpayments_public_id: "",
   pay_acquiring_link: "",
   pay_acquiring_merchant: "",
   pay_acquiring_secret: "",
@@ -143,6 +146,7 @@ export const PAYMENT_DEFAULTS: Record<PaymentKey, string> = {
   vpnpay_sbp_comment: "",
   vpnpay_acquiring_enabled: "0",
   vpnpay_acquiring_provider: "",
+  vpnpay_cloudpayments_public_id: "",
   vpnpay_acquiring_link: "",
   vpnpay_acquiring_merchant: "",
   vpnpay_acquiring_secret: "",
@@ -235,7 +239,15 @@ export async function readPublicPaymentMethods(): Promise<PublicPaymentMethods> 
     });
   }
 
-  if (config.pay_acquiring_enabled === "1" && (config.pay_acquiring_link || config.pay_acquiring_provider)) {
+  const cloudPaymentsEnabled =
+    config.pay_acquiring_provider.trim().toLowerCase() === "cloudpayments" &&
+    !!config.pay_cloudpayments_public_id;
+
+  if (
+    config.pay_acquiring_enabled === "1" &&
+    !cloudPaymentsEnabled &&
+    (config.pay_acquiring_link || config.pay_acquiring_provider)
+  ) {
     methods.push({
       id: "acquiring",
       label: "Интернет-эквайринг",
@@ -372,8 +384,13 @@ export async function readVpnPaymentMethods(): Promise<PublicPaymentMethods> {
     });
   }
 
+  const vpnCloudPaymentsEnabled =
+    config.vpnpay_acquiring_provider.trim().toLowerCase() === "cloudpayments" &&
+    !!config.vpnpay_cloudpayments_public_id;
+
   if (
     config.vpnpay_acquiring_enabled === "1" &&
+    !vpnCloudPaymentsEnabled &&
     (config.vpnpay_acquiring_link || config.vpnpay_acquiring_provider)
   ) {
     methods.push({
