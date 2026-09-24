@@ -34,6 +34,7 @@ interface PaymentSettings {
   pay_sbp_comment: string;
   pay_acquiring_enabled: string;
   pay_acquiring_provider: string;
+  pay_cloudpayments_public_id: string;
   pay_acquiring_link: string;
   pay_acquiring_merchant: string;
   pay_acquiring_secret: string;
@@ -51,6 +52,7 @@ interface PaymentSettings {
   vpnpay_sbp_comment: string;
   vpnpay_acquiring_enabled: string;
   vpnpay_acquiring_provider: string;
+  vpnpay_cloudpayments_public_id: string;
   vpnpay_acquiring_link: string;
   vpnpay_acquiring_merchant: string;
   vpnpay_acquiring_secret: string;
@@ -97,7 +99,8 @@ const EMPTY: PaymentSettings = {
   pay_sbp_recipient: "",
   pay_sbp_comment: "",
   pay_acquiring_enabled: "0",
-  pay_acquiring_provider: "",
+  pay_acquiring_provider: "CloudPayments",
+  pay_cloudpayments_public_id: "",
   pay_acquiring_link: "",
   pay_acquiring_merchant: "",
   pay_acquiring_secret: "",
@@ -112,7 +115,8 @@ const EMPTY: PaymentSettings = {
   vpnpay_sbp_recipient: "",
   vpnpay_sbp_comment: "",
   vpnpay_acquiring_enabled: "0",
-  vpnpay_acquiring_provider: "",
+  vpnpay_acquiring_provider: "CloudPayments",
+  vpnpay_cloudpayments_public_id: "",
   vpnpay_acquiring_link: "",
   vpnpay_acquiring_merchant: "",
   vpnpay_acquiring_secret: "",
@@ -178,6 +182,7 @@ export default function AdminPaymentsPage() {
   const [secretSet, setSecretSet] = useState(false);
   const [vpnSecretSet, setVpnSecretSet] = useState(false);
   const [bizSecretSet, setBizSecretSet] = useState(false);
+  const [webhookBusy, setWebhookBusy] = useState<"PREMIUM" | "VPN" | null>(null);
   /* FIX-PAY-SAVE: до этого обрабатывался только res.ok, а 4xx/5xx уходили в
      пустоту: кнопка гасла, ошибки не было, реквизиты не сохранялись. Текст
      ошибки приходит из API и показывается как есть. */
@@ -286,6 +291,30 @@ export default function AdminPaymentsPage() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const configureCloudPayments = async (kind: "PREMIUM" | "VPN") => {
+    setWebhookBusy(kind);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/payments/cloudpayments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind }),
+      });
+      const payload = (await res.json().catch(() => null)) as { error?: string; updated?: string[] } | null;
+      if (!res.ok) {
+        setError(payload?.error || `CloudPayments не настроил уведомления (HTTP ${res.status}).`);
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Не удалось настроить уведомления CloudPayments.");
+    } finally {
+      setWebhookBusy(null);
     }
   };
 
@@ -508,43 +537,50 @@ export default function AdminPaymentsPage() {
 
                 <div className={cardClass + " space-y-4"}>
                   <div className="flex items-center justify-between">
-                    <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Интернет-эквайринг</h2>
+                    <div>
+                      <h2 className="text-base font-semibold text-neutral-900 dark:text-white">CloudPayments — интернет-эквайринг</h2>
+                      <p className="text-xs text-neutral-500 mt-1">Отдельный терминал для подписки «Ускоренный интернет».</p>
+                    </div>
                     <Toggle
                       on={vpnAcqOn}
-                      onClick={() => update({ vpnpay_acquiring_enabled: vpnAcqOn ? "0" : "1" })}
+                      onClick={() => update({ vpnpay_acquiring_enabled: vpnAcqOn ? "0" : "1", vpnpay_acquiring_provider: "CloudPayments" })}
                       label={vpnAcqOn ? "Включён" : "Выключен"}
                     />
                   </div>
                   <div className={vpnAcqOn ? "space-y-4" : "space-y-4 opacity-50 pointer-events-none"}>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className={labelClass}>Провайдер</label>
-                        <input value={settings.vpnpay_acquiring_provider} onChange={(e) => update({ vpnpay_acquiring_provider: e.target.value })} placeholder="ЮKassa, Тинькофф…" className={inputClass} />
-                      </div>
-                      <div>
-                        <label className={labelClass}>Идентификатор магазина</label>
-                        <input value={settings.vpnpay_acquiring_merchant} onChange={(e) => update({ vpnpay_acquiring_merchant: e.target.value })} placeholder="shopId / terminalKey" className={inputClass} />
-                      </div>
-                    </div>
                     <div>
-                      <label className={labelClass}>Платёжная ссылка</label>
-                      <input value={settings.vpnpay_acquiring_link} onChange={(e) => update({ vpnpay_acquiring_link: e.target.value })} placeholder="https://…" className={inputClass} />
+                      <label className={labelClass}>Public ID CloudPayments</label>
+                      <input value={settings.vpnpay_cloudpayments_public_id} onChange={(e) => update({ vpnpay_cloudpayments_public_id: e.target.value.trim() })} placeholder="pk_..." className={inputClass} autoComplete="off" />
                     </div>
                     <div>
                       <label className={labelClass}>
-                        Секретный ключ {vpnSecretSet && <span className="text-emerald-500 text-xs font-normal">· сохранён</span>}{" "}
-                        <InfoTooltip text="Хранится зашифрованным. Ключ второй подписки отделён от ключа Premium." />
+                        API Secret / пароль API {vpnSecretSet && <span className="text-emerald-500 text-xs font-normal">· сохранён</span>}{" "}
+                        <InfoTooltip text="Секрет CloudPayments хранится зашифрованным на сервере и не возвращается в браузер в исходном виде." />
                       </label>
-                      <input type="password" value={settings.vpnpay_acquiring_secret} onChange={(e) => update({ vpnpay_acquiring_secret: e.target.value })} placeholder={vpnSecretSet ? "•••••• (оставьте пустым, чтобы не менять)" : "Секретный ключ провайдера"} className={inputClass} />
+                      <input type="password" value={settings.vpnpay_acquiring_secret} onChange={(e) => update({ vpnpay_acquiring_secret: e.target.value })} placeholder={vpnSecretSet ? "•••••• (оставьте пустым, чтобы не менять)" : "API Secret"} className={inputClass} autoComplete="new-password" />
                       {vpnSecretSet && (
                         <button type="button" onClick={() => save({ vpnpay_acquiring_secret_clear: true })} className="mt-2 text-xs text-red-500 hover:text-red-400">
                           Удалить сохранённый ключ
                         </button>
                       )}
                     </div>
+                    <div className="rounded-xl bg-violet-500/5 border border-violet-500/15 p-3 text-xs text-neutral-600 dark:text-neutral-300">
+                      <div>Webhooks:</div>
+                      <div className="font-mono break-all">Check: /api/webhooks/cloudpayments/check</div>
+                      <div className="font-mono break-all">Pay: /api/webhooks/cloudpayments/pay</div>
+                      <div className="font-mono break-all">Fail: /api/webhooks/cloudpayments/fail</div>
+                      <div className="font-mono break-all">Recurrent: /api/webhooks/cloudpayments/recurrent</div>
+                      <div>Платёж проверяется по серверному уведомлению и дополнительно сверяется по InvoiceId после возврата. Check включается/проверяется в личном кабинете CloudPayments.</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => void save()} disabled={saving || webhookBusy === "VPN"}>Сохранить реквизиты</Button>
+                      <Button size="sm" variant="secondary" onClick={() => void configureCloudPayments("VPN")} disabled={webhookBusy === "VPN" || !settings.vpnpay_cloudpayments_public_id || !vpnSecretSet}>
+                        {webhookBusy === "VPN" ? "Настраиваем уведомления…" : "Настроить уведомления"}
+                      </Button>
+                    </div>
                     <div>
                       <label className={labelClass}>Комментарий / инструкция</label>
-                      <textarea value={settings.vpnpay_acquiring_comment} onChange={(e) => update({ vpnpay_acquiring_comment: e.target.value })} rows={2} placeholder="Например: после оплаты пришлите чек администратору." className={inputClass + " resize-none"} />
+                      <textarea value={settings.vpnpay_acquiring_comment} onChange={(e) => update({ vpnpay_acquiring_comment: e.target.value })} rows={2} placeholder="Например: ежемесячная подписка через CloudPayments." className={inputClass + " resize-none"} />
                     </div>
                   </div>
                 </div>
@@ -598,39 +634,46 @@ export default function AdminPaymentsPage() {
               {/* Эквайринг */}
               <div className={cardClass + " space-y-4"}>
                 <div className="flex items-center justify-between">
-                  <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Интернет-эквайринг</h2>
-                  <Toggle on={acqOn} onClick={() => update({ pay_acquiring_enabled: acqOn ? "0" : "1" })} label={acqOn ? "Включён" : "Выключен"} />
+                  <div>
+                    <h2 className="text-base font-semibold text-neutral-900 dark:text-white">CloudPayments — интернет-эквайринг</h2>
+                    <p className="text-xs text-neutral-500 mt-1">Онлайн-оплата Premium с возвратом на страницу настроек и серверной проверкой.</p>
+                  </div>
+                  <Toggle on={acqOn} onClick={() => update({ pay_acquiring_enabled: acqOn ? "0" : "1", pay_acquiring_provider: "CloudPayments" })} label={acqOn ? "Включён" : "Выключен"} />
                 </div>
                 <div className={acqOn ? "space-y-4" : "space-y-4 opacity-50 pointer-events-none"}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={labelClass}>Провайдер</label>
-                      <input value={settings.pay_acquiring_provider} onChange={(e) => update({ pay_acquiring_provider: e.target.value })} placeholder="ЮKassa, Тинькофф…" className={inputClass} />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Идентификатор магазина</label>
-                      <input value={settings.pay_acquiring_merchant} onChange={(e) => update({ pay_acquiring_merchant: e.target.value })} placeholder="shopId / terminalKey" className={inputClass} />
-                    </div>
-                  </div>
                   <div>
-                    <label className={labelClass}>Платёжная ссылка</label>
-                    <input value={settings.pay_acquiring_link} onChange={(e) => update({ pay_acquiring_link: e.target.value })} placeholder="https://…" className={inputClass} />
+                    <label className={labelClass}>Public ID CloudPayments</label>
+                    <input value={settings.pay_cloudpayments_public_id} onChange={(e) => update({ pay_cloudpayments_public_id: e.target.value.trim() })} placeholder="pk_..." className={inputClass} autoComplete="off" />
                   </div>
                   <div>
                     <label className={labelClass}>
-                      Секретный ключ {secretSet && <span className="text-emerald-500 text-xs font-normal">· сохранён</span>}{" "}
-                      <InfoTooltip text="Ключ хранится в зашифрованном виде, целиком его больше нигде не увидеть — ни здесь, ни в базе." />
+                      API Secret / пароль API {secretSet && <span className="text-emerald-500 text-xs font-normal">· сохранён</span>}{" "}
+                      <InfoTooltip text="Секрет CloudPayments хранится зашифрованным на сервере и не возвращается в браузер в исходном виде." />
                     </label>
-                    <input type="password" value={settings.pay_acquiring_secret} onChange={(e) => update({ pay_acquiring_secret: e.target.value })} placeholder={secretSet ? "•••••• (оставьте пустым, чтобы не менять)" : "Секретный ключ провайдера"} className={inputClass} />
+                    <input type="password" value={settings.pay_acquiring_secret} onChange={(e) => update({ pay_acquiring_secret: e.target.value })} placeholder={secretSet ? "•••••• (оставьте пустым, чтобы не менять)" : "API Secret"} className={inputClass} autoComplete="new-password" />
                     {secretSet && (
                       <button type="button" onClick={() => save({ pay_acquiring_secret_clear: true })} className="mt-2 text-xs text-red-500 hover:text-red-400">
                         Удалить сохранённый ключ
                       </button>
                     )}
                   </div>
+                  <div className="rounded-xl bg-violet-500/5 border border-violet-500/15 p-3 text-xs text-neutral-600 dark:text-neutral-300">
+                    <div>Webhooks:</div>
+                    <div className="font-mono break-all">Check: /api/webhooks/cloudpayments/check</div>
+                    <div className="font-mono break-all">Pay: /api/webhooks/cloudpayments/pay</div>
+                    <div className="font-mono break-all">Fail: /api/webhooks/cloudpayments/fail</div>
+                    <div className="font-mono break-all">Recurrent: /api/webhooks/cloudpayments/recurrent</div>
+                    <div>После возврата на сайт оплата дополнительно сверяется по InvoiceId и только потом активирует Premium. Check включается/проверяется в личном кабинете CloudPayments.</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => void save()} disabled={saving || webhookBusy === "PREMIUM"}>Сохранить реквизиты</Button>
+                    <Button size="sm" variant="secondary" onClick={() => void configureCloudPayments("PREMIUM")} disabled={webhookBusy === "PREMIUM" || !settings.pay_cloudpayments_public_id || !secretSet}>
+                      {webhookBusy === "PREMIUM" ? "Настраиваем уведомления…" : "Настроить уведомления"}
+                    </Button>
+                  </div>
                   <div>
                     <label className={labelClass}>Комментарий / инструкция</label>
-                    <textarea value={settings.pay_acquiring_comment} onChange={(e) => update({ pay_acquiring_comment: e.target.value })} rows={2} placeholder="Например: после оплаты пришлите чек администратору." className={inputClass + " resize-none"} />
+                    <textarea value={settings.pay_acquiring_comment} onChange={(e) => update({ pay_acquiring_comment: e.target.value })} rows={2} placeholder="Например: ежемесячная подписка через CloudPayments." className={inputClass + " resize-none"} />
                   </div>
                 </div>
               </div>
