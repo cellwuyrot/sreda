@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { memo, useState, useRef, useEffect, useCallback } from "react";
 
 interface VoicePlayerProps {
   url: string;
@@ -10,7 +10,17 @@ interface VoicePlayerProps {
   e2eeDecrypt?: (encrypted: ArrayBuffer, iv: string) => Promise<ArrayBuffer>;
 }
 
-export default function VoicePlayer({ url, duration: initialDuration, isOwn, e2eeIv, e2eeDecrypt }: VoicePlayerProps) {
+/**
+ * Голосовое сообщение.
+ *
+ * ВАЖНО: Audio больше не создаётся при монтировании компонента. В длинной
+ * ленте сообщения виртуализируются, поэтому при прокрутке десятки VoicePlayer
+ * могут быстро монтироваться/размонтироваться. Раньше каждый из них сразу
+ * создавал HTMLAudioElement с preload=metadata, что запускало загрузку медиа
+ * даже без нажатия Play и создавало лишнюю нагрузку на сеть/декодер/GC.
+ * Теперь загрузка и расшифровка начинаются только по явному Play.
+ */
+function VoicePlayer({ url, duration: initialDuration, isOwn, e2eeIv, e2eeDecrypt }: VoicePlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -19,7 +29,36 @@ export default function VoicePlayer({ url, duration: initialDuration, isOwn, e2e
   const [decrypting, setDecrypting] = useState(false);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const disposeAudio = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    const audio = audioRef.current;
+    audioRef.current = null;
+    if (audio) {
+      audio.onloadedmetadata = null;
+      audio.ontimeupdate = null;
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return disposeAudio;
+  }, [url, e2eeIv, initialDuration, disposeAudio]);
 
   const changeVolume = useCallback((v: number) => {
     setVolume(v);
@@ -33,7 +72,10 @@ export default function VoicePlayer({ url, duration: initialDuration, isOwn, e2e
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio) {
+      setMuted((prev) => !prev);
+      return;
+    }
     if (muted || volume === 0) {
       const restore = volume === 0 ? 1 : volume;
       audio.muted = false;
@@ -46,73 +88,102 @@ export default function VoicePlayer({ url, duration: initialDuration, isOwn, e2e
     }
   }, [muted, volume]);
 
-  useEffect(() => {
-    let audio: HTMLAudioElement;
-    let cancelled = false;
+  const setupAudio = useCallback(
+    (audio: HTMLAudioElement) => {
+      audio.preload = "metadata";
+      audio.volume = volume;
+      audio.muted = muted;
+      audioRef.current = audio;
 
-    if (e2eeIv && e2eeDecrypt) {
-      setDecrypting(true);
-      fetch(url)
-        .then(r => r.arrayBuffer())
-        .then(buf => e2eeDecrypt(buf, e2eeIv))
-        .then(decrypted => {
-          if (cancelled) return;
-          const blob = new Blob([decrypted], { type: "audio/webm" });
-          audio = new Audio(URL.createObjectURL(blob));
-          setupAudio(audio);
-          setDecrypting(false);
-        })
-        .catch(() => { if (!cancelled) { setError(true); setDecrypting(false); } });
-      return () => { cancelled = true; };
-    }
-
-    audio = new Audio(url);
-    setupAudio(audio);
-    return () => { audio?.pause(); if (audio) audio.src = ""; };
-
-    function setupAudio(a: HTMLAudioElement) {
-      a.preload = "metadata";
-      audioRef.current = a;
-
-      a.onloadedmetadata = () => {
-        if (a.duration && isFinite(a.duration)) {
-          setDuration(Math.round(a.duration));
+      audio.onloadedmetadata = () => {
+        if (audio.duration && isFinite(audio.duration)) {
+          setDuration(Math.round(audio.duration));
         }
       };
 
-      a.ontimeupdate = () => {
-        if (a.duration && isFinite(a.duration)) {
-          setProgress(a.currentTime / a.duration);
-          setCurrentTime(a.currentTime);
+      audio.ontimeupdate = () => {
+        if (audio.duration && isFinite(audio.duration)) {
+          setProgress(audio.currentTime / audio.duration);
+          setCurrentTime(audio.currentTime);
         }
       };
 
-      a.onended = () => {
+      audio.onended = () => {
         setPlaying(false);
         setProgress(0);
         setCurrentTime(0);
       };
 
-      a.onerror = () => {
+      audio.onerror = () => {
         setError(true);
         setPlaying(false);
       };
-    }
-  }, [url, e2eeIv, e2eeDecrypt]);
+    },
+    [muted, volume],
+  );
 
-  const toggle = useCallback(() => {
-    const audio = audioRef.current;
+  const ensureAudio = useCallback(async (): Promise<HTMLAudioElement | null> => {
+    if (audioRef.current) return audioRef.current;
+
+    setError(false);
+
+    if (e2eeIv && e2eeDecrypt) {
+      setDecrypting(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Voice download failed: ${response.status}`);
+        const encrypted = await response.arrayBuffer();
+        const decrypted = await e2eeDecrypt(encrypted, e2eeIv);
+        if (controller.signal.aborted) return null;
+
+        const blob = new Blob([decrypted], { type: "audio/webm" });
+        const objectUrl = URL.createObjectURL(blob);
+        objectUrlRef.current = objectUrl;
+
+        const audio = new Audio(objectUrl);
+        setupAudio(audio);
+        setDecrypting(false);
+        abortRef.current = null;
+        return audio;
+      } catch {
+        if (!controller.signal.aborted) {
+          setError(true);
+          setDecrypting(false);
+        }
+        return null;
+      }
+    }
+
+    const audio = new Audio(url);
+    setupAudio(audio);
+    return audio;
+  }, [url, e2eeIv, e2eeDecrypt, setupAudio]);
+
+  const toggle = useCallback(async () => {
+    if (decrypting) return;
+
+    const existing = audioRef.current;
+    if (existing && !existing.paused) {
+      existing.pause();
+      setPlaying(false);
+      return;
+    }
+
+    const audio = await ensureAudio();
     if (!audio) return;
 
-    if (audio.paused) {
+    try {
       setError(false);
-      audio.play().catch(() => setError(true));
+      await audio.play();
       setPlaying(true);
-    } else {
-      audio.pause();
+    } catch {
       setPlaying(false);
+      setError(true);
     }
-  }, []);
+  }, [decrypting, ensureAudio]);
 
   const seek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const audio = audioRef.current;
@@ -215,3 +286,5 @@ export default function VoicePlayer({ url, duration: initialDuration, isOwn, e2e
     </div>
   );
 }
+
+export default memo(VoicePlayer);
