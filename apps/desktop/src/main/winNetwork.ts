@@ -11,7 +11,7 @@ async function ps(script: string): Promise<string> {
   return stdout.trim();
 }
 
-/** /0 route alone is insufficient: insist on hardware, Up, a matching IPv4 and gateway. */
+/** /0 route alone is insufficient: require an Up non-VPN uplink, IPv4 and gateway. */
 export async function physicalRoute(): Promise<PhysicalRoute | null> {
   const script = `
 $ErrorActionPreference = 'Stop'
@@ -20,7 +20,8 @@ $routes = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -Polic
   Sort-Object { $_.RouteMetric + (Get-NetIPInterface -AddressFamily IPv4 -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty InterfaceMetric) }
 foreach ($r in $routes) {
   $a = Get-NetAdapter -InterfaceIndex $r.InterfaceIndex -ErrorAction SilentlyContinue
-  if (-not $a -or $a.Status -ne 'Up' -or -not $a.HardwareInterface -or $a.Name -eq 'trioz') { continue }
+  if (-not $a -or $a.Status -ne 'Up' -or $a.Name -eq 'trioz' -or
+      $a.InterfaceDescription -match '(?i)AmneziaWG|WireGuard|Wintun|TAP[- ]|Loopback|Hyper-V|VirtualBox') { continue }
   $ip = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $r.InterfaceIndex -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike '169.254.*' -and $_.AddressState -eq 'Preferred' } | Select-Object -First 1
   if (-not $ip) { continue }
@@ -42,10 +43,14 @@ foreach ($r in $routes) {
 }
 
 export async function gatewayReady(r: PhysicalRoute): Promise<boolean> {
+  const latest = await physicalRoute();
+  return !!latest && latest.interfaceIndex === r.interfaceIndex && latest.gateway === r.gateway &&
+    latest.localAddress === r.localAddress;
+}
+
+/** Gateway ICMP is diagnostic only: many hotspots block ping while forwarding internet. */
+export async function gatewayPing(r: PhysicalRoute): Promise<boolean> {
   try {
-    // Check the exact route again; do not accidentally probe an old gateway through the tunnel.
-    const latest = await physicalRoute();
-    if (!latest || latest.interfaceIndex !== r.interfaceIndex || latest.gateway !== r.gateway) return false;
     const { stdout } = await run('ping.exe', ['-n', '1', '-w', '800', r.gateway], { windowsHide: true, timeout: 3000 });
     return /TTL[=\s]/i.test(stdout);
   } catch { return false; }
@@ -89,6 +94,20 @@ New-NetRoute -AddressFamily IPv4 -DestinationPrefix ${quote(next.ip + '/32')} -I
     const result = await ps(`Get-NetRoute -AddressFamily IPv4 -DestinationPrefix ${quote(next.ip + '/32')} -InterfaceIndex ${next.interfaceIndex} -NextHop ${quote(next.gateway)} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty NextHop`);
     if (result !== next.gateway) throw new Error('Endpoint /32 route verification failed (Get-NetRoute)');
   }
+}
+
+/** Read all exact /32 routes for an endpoint; never infer from the default tunnel route. */
+export async function endpointRoutes(ip: string): Promise<EndpointRoute[]> {
+  if (isIP(ip) !== 4) return [];
+  try {
+    const text = await ps(`@(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix ${quote(ip + '/32')} -ErrorAction SilentlyContinue | Select-Object InterfaceIndex,NextHop) | ConvertTo-Json -Compress`);
+    const rows: unknown = JSON.parse(text);
+    const list = Array.isArray(rows) ? rows : [rows];
+    return list.filter((row): row is { InterfaceIndex: number; NextHop: string } =>
+      typeof row === 'object' && row !== null && Number.isInteger((row as { InterfaceIndex: number }).InterfaceIndex) &&
+      isIP((row as { NextHop: string }).NextHop) === 4).map((row) =>
+      ({ ip, interfaceIndex: row.InterfaceIndex, gateway: row.NextHop }));
+  } catch { return []; }
 }
 
 /** Independently check that the host route still points to the physical uplink. */
