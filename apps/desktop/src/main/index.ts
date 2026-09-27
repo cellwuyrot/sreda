@@ -14,7 +14,7 @@ import { invalidateCacheOnVersionChange, stopRecovery } from "./recovery"; // FI
 import { registerMediaCacheScheme, installMediaCache } from "./mediaCache"; // FIX-CLIENTMEDIA
 import { syncOverlay, destroyOverlay } from "./overlay"; // FIX-OVL
 import { startActivityWatcher, stopActivityWatcher, resendActivity } from "./activity"; // FIX-ACT
-import { shutdownVpn, isVpnActive, recoverOrphanedVpn } from "./vpn"; // VPN-ONECLICK
+import { shutdownVpn, isVpnActive, recoverOrphanedVpn, startVpnNetworkMonitor } from "./vpn"; // VPN-ONECLICK
 import { cleanupVpnBeforeExit } from "./vpnLifecycle";
 import {
   registerProtocol,
@@ -129,6 +129,7 @@ async function onReady(): Promise<void> {
 
   installApplicationMenu();
 
+  startVpnNetworkMonitor();
   registerIpc();
   registerWasapiIpc(); // WASAPI-SS
   setupScreenShare();
