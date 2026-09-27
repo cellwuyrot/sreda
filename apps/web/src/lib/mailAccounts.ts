@@ -106,9 +106,9 @@ export function getImapConfig(env: Env = process.env): ImapConfig | null {
 }
 
 /**
- * SMTP-подключение для отправки с ящиков. Отдельный от relay кодов входа:
- * коды шлёт сервис noreply, а клиентская переписка идёт от имени
- * конкретного ящика и требует его логин/пароль. По умолчанию берём
+ * SMTP-подключение для отправки с ящиков. Коды подтверждения теперь тоже
+ * проходят через этот mailbox-путь с адреса noreply@trioz.ru, как и ручная
+ * отправка из админки. По умолчанию берём
  * MAIL_SMTP_HOST, но если отдельного нет — откатываемся на SMTP_HOST проекта.
  */
 export function getSmtpConfig(env: Env = process.env): SmtpConfig | null {

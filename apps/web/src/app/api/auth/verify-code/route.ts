@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
         code,
         type,
         used: false,
+        sendStatus: "sent",
         expiresAt: { gte: new Date() },
       },
       orderBy: { createdAt: "desc" },
