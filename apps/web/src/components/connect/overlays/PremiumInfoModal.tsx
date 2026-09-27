@@ -423,6 +423,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      кнопкой. В браузере туннеля нет — значит и не активно. */
   const tunnelOn = tunnel?.state === "on";
   const tunnelConnecting = tunnel?.state === "connecting";
+  const tunnelReconnecting = tunnelConnecting && tunnel?.error === "VPN: переподключение...";
   const tunnelDisconnecting = tunnel?.state === "disconnecting";
   const active = canTunnel && tunnelOn;
   const nodeIncomplete = !!state?.peer && (!state.peer.tunnel.serverPublicKey || !state.peer.tunnel.endpoint);
@@ -457,7 +458,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const powerLabel = active
     ? "Выключить защищённое соединение"
     : tunnelConnecting
-    ? "Подключаем…"
+    ? (tunnelReconnecting ? "Переподключение…" : "Подключаем…")
     : tunnelDisconnecting
     ? "Выключаем…"
     : "Включить защищённое соединение";
@@ -465,7 +466,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   /* Почему нажать нельзя — говорим вслух: неактивный круг без объяснения
      неотличим от поломки. */
   const powerHint = tunnelConnecting
-    ? "Подключаем…"
+    ? (tunnelReconnecting ? "Переподключение…" : "Подключаем…")
     : tunnelDisconnecting
     ? "Выключаем…"
     : busy
@@ -568,7 +569,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
                 {active
                   ? "Соединение активно"
                   : tunnelConnecting
-                  ? "Подключаем…"
+                  ? (tunnelReconnecting ? "Переподключение…" : "Подключаем…")
                   : tunnelDisconnecting
                   ? "Выключаем…"
                   : "Готово к включению"}

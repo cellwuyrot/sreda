@@ -113,7 +113,7 @@ function installLogTail(): string {
   }
 }
 
-/** Жива ли служба туннеля (любое из двух имён). */
+/** Жива ли служба туннеля (только имя AmneziaWG-службы TrioZ). */
 export async function tunnelServiceRunning(): Promise<boolean> {
   for (const name of serviceNames()) {
     try {
@@ -152,7 +152,7 @@ export interface TunnelServiceSnapshot {
   pid: number | null;
 }
 
-/** Точное состояние только двух служб TrioZ; сторонние туннели не запрашиваются. */
+/** Точное состояние только AmneziaWG-службы TrioZ; сторонние туннели не запрашиваются. */
 export async function tunnelServiceSnapshots(): Promise<TunnelServiceSnapshot[]> {
   const snapshots: TunnelServiceSnapshot[] = [];
   for (const name of serviceNames()) {
@@ -559,7 +559,7 @@ export async function windowsTunnelDown(
 
   if (!stopped || !absent || !processesGone || !adapterGone) {
     /* sc delete здесь не заменяет ожидание: это строго fallback после штатного
-       uninstall и polling. Он касается только двух служб, захваченных PID и
+       uninstall и polling. Он касается только службы TrioZ, захваченных PID и
        адаптера с точным именем `trioz`. */
     await runtime.fallback(exe, [...pids]);
     const fallbackDeadline = runtime.now() + SHUTDOWN_FALLBACK_TIMEOUT_MS;
