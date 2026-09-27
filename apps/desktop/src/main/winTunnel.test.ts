@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  endpointHostFromConfig,
+  isIpv4Host,
   windowsTunnelDown,
   type TunnelServiceSnapshot,
   type TunnelShutdownRuntime,
@@ -25,6 +27,7 @@ function runtime(input: {
   uninstall: ReturnType<typeof vi.fn>;
   fallback: ReturnType<typeof vi.fn>;
   removeConfig: ReturnType<typeof vi.fn>;
+  removeAdapter: ReturnType<typeof vi.fn>;
   sleeps: number[];
 } {
   let now = 0;
@@ -39,6 +42,7 @@ function runtime(input: {
     serviceIndex = 0;
   });
   const removeConfig = vi.fn();
+  const removeAdapter = vi.fn(async () => {});
   return {
     now: () => now,
     sleep: async (ms) => { sleeps.push(ms); now += ms; },
@@ -49,6 +53,7 @@ function runtime(input: {
     discoverPids: async () => input.discoveredPids ?? [],
     processExists: async () => input.processes?.[Math.min(processIndex++, (input.processes?.length ?? 1) - 1)] ?? false,
     adapterStatus: async () => input.adapters?.[Math.min(adapterIndex++, (input.adapters?.length ?? 1) - 1)] ?? "",
+    removeAdapter,
     uninstall,
     fallback,
     removeConfig,
@@ -132,6 +137,7 @@ describe("windowsTunnelDown lifecycle", () => {
     rt.fallback = vi.fn(async () => { fallbackDone = true; });
     rt.adapterStatus = async () => fallbackDone ? "" : "Up";
     await windowsTunnelDown("", rt);
+    expect(rt.removeAdapter).toHaveBeenCalledOnce();
     expect(rt.fallback).toHaveBeenCalledOnce();
     expect(rt.removeConfig).toHaveBeenCalledOnce();
   });
@@ -145,6 +151,20 @@ describe("windowsTunnelDown lifecycle", () => {
     });
     await expect(windowsTunnelDown("", rt)).rejects.toThrow(/не завершился полностью/);
     expect(rt.removeConfig).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("Windows network handoff helpers", () => {
+  it("извлекает IPv4 endpoint из профиля", () => {
+    expect(endpointHostFromConfig("[Peer]\nEndpoint = 203.0.113.10:51820\n")).toBe("203.0.113.10");
+    expect(isIpv4Host("203.0.113.10")).toBe(true);
+  });
+
+  it("извлекает hostname endpoint и отличает IPv6", () => {
+    expect(endpointHostFromConfig("Endpoint = vpn.example.com:51820")).toBe("vpn.example.com");
+    expect(endpointHostFromConfig("Endpoint = [2001:db8::1]:51820")).toBe("2001:db8::1");
+    expect(isIpv4Host("2001:db8::1")).toBe(false);
   });
 });
 
