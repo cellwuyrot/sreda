@@ -1,9 +1,15 @@
 import nodemailer from "nodemailer";
 import { randomInt } from "crypto";
+import prisma from "./prisma";
+import { sendFromMailbox } from "./mailSmtp";
+import { mailboxAddress } from "./projectMail";
+import { buildVerificationMail, type VerificationMailType } from "./verificationMail";
 
 /**
- * Почта TrioZ уходит через собственный почтовый сервис
- * (`github.com/acoulbot/smtp`), а не прямым SMTP-подключением.
+ * Обычные системные уведомления TrioZ могут уходить через собственный
+ * почтовый сервис. Коды подтверждения аккаунта — отдельный внутренний
+ * mailbox-поток через noreply@trioz.ru, тот же, что используется ручной
+ * отправкой из админки.
  *
  * Сервис делает то, чего у прямого подключения нет и не будет: держит список
  * relay-провайдеров с приоритетами и переключается на следующий, если первый
@@ -15,12 +21,11 @@ import { randomInt } from "crypto";
  *
  *   SMTP_SERVICE_URL   адрес сервиса, например https://smtp.trioz.ru
  *   SMTP_SERVICE_KEY   ключ сайта из админки сервиса (Сайты → API ключ), sm_…
- *   SMTP_FROM          необязательно: адрес отправителя
+ *   SMTP_FROM          необязательно: адрес отправителя для обычных системных писем
  *
- * `SMTP_FROM` можно не задавать — сервис сам сообщает адрес своего сайта
- * (`sender_email`), и он всегда согласован с доменом ключа. Задавать его
- * стоит, только если нужен другой ящик того же домена: ключ сайта отправляет
- * письма исключительно от своего домена, чужой отправитель — 403.
+ * `SMTP_FROM` относится только к обычным системным письмам через relay.
+ * Коды подтверждения всегда идут через noreply@trioz.ru и не зависят от
+ * SMTP_SERVICE_*.
  *
  * Ключ обязан оставаться на сервере. Попав в браузер, он позволит любому
  * посетителю рассылать письма от имени домена.
@@ -269,73 +274,11 @@ export function generateCode(): string {
   return randomInt(100000, 1000000).toString();
 }
 
-type EmailType = "register" | "login" | "reset";
-
-const SUBJECTS: Record<EmailType, string> = {
-  register: "Kod podtverzhdeniya registracii - TrioZ",
-  login: "Kod dlya vhoda - TrioZ",
-  reset: "Sbros parolya - TrioZ",
-};
-
-const TITLES: Record<EmailType, string> = {
-  register: "Подтверждение регистрации",
-  login: "Вход в аккаунт",
-  reset: "Сброс пароля",
-};
-
-const DESCRIPTIONS: Record<EmailType, string> = {
-  register: "Используйте этот код для завершения регистрации:",
-  login: "Используйте этот код для входа в аккаунт:",
-  reset: "Используйте этот код для сброса пароля:",
-};
-
-function buildHtml(code: string, type: EmailType): string {
-  return `<!DOCTYPE html>
-<html lang="ru">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#0f0f17;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f17;padding:40px 0">
-<tr><td align="center">
-<table width="480" cellpadding="0" cellspacing="0" style="background:#1a1a2e;border-radius:16px;border:1px solid rgba(139,92,246,0.2);overflow:hidden">
-
-  <!-- Header -->
-  <tr><td style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);padding:32px 40px;text-align:center">
-    <div style="display:inline-block;width:56px;height:56px;background:rgba(255,255,255,0.2);border-radius:14px;line-height:56px;color:#fff;font-weight:800;font-size:22px;letter-spacing:1px;margin-bottom:12px">TZ</div>
-    <h1 style="margin:8px 0 0;color:#fff;font-size:20px;font-weight:700">${TITLES[type]}</h1>
-  </td></tr>
-
-  <!-- Body -->
-  <tr><td style="padding:32px 40px">
-    <p style="color:#a5a5c0;font-size:15px;line-height:1.6;margin:0 0 24px;text-align:center">${DESCRIPTIONS[type]}</p>
-    <div style="background:#252542;border:2px solid #8b5cf6;border-radius:12px;padding:24px;text-align:center;margin:0 0 24px">
-      <span style="font-size:36px;font-weight:800;letter-spacing:10px;color:#c4b5fd">${code}</span>
-    </div>
-    <p style="color:#6b6b8a;font-size:13px;line-height:1.5;text-align:center;margin:0">
-      Kod dejstvitelen 10 minut.<br>
-      Esli vy ne zaprashivali etot kod, proignoriruyte eto pismo.
-    </p>
-  </td></tr>
-
-  <!-- Footer -->
-  <tr><td style="padding:20px 40px;border-top:1px solid rgba(255,255,255,0.05);text-align:center">
-    <span style="color:#4a4a6a;font-size:12px">TrioZ Ecosystem</span>
-  </td></tr>
-
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
-}
-
-function buildText(code: string, type: EmailType): string {
-  return `${TITLES[type]}\n\n${DESCRIPTIONS[type]}\n\n${code}\n\nKod dejstvitelen 10 minut.\nEsli vy ne zaprashivali etot kod, proignoriruyte eto pismo.\n\n-- TrioZ Ecosystem`;
-}
+type EmailType = VerificationMailType;
 
 /**
- * Адрес отправителя. Приоритет у явного `SMTP_FROM`; без него берётся адрес
- * сайта из сервиса — он заведомо согласован с доменом ключа, а значит не
- * упрётся в защиту от подмены отправителя.
+ * Адрес отправителя для собственного почтового сервиса.
+ * Приоритет: явный SMTP_FROM → адрес, разрешённый ключом сервиса → SMTP_USER → noreply TrioZ.
  */
 function fromAddress(info: SiteInfo | null): string {
   return process.env.SMTP_FROM || info?.senderEmail || process.env.SMTP_USER || "noreply@trioz.ru";
@@ -403,9 +346,8 @@ async function sendViaSmtp(
 /**
  * Отправить готовое письмо — не код подтверждения, а обычное уведомление.
  *
- * Путь тот же, что у кодов: сервис, если он задан, иначе прямой SMTP. Никакой
- * отдельной настройки для уведомлений нет и быть не должно — почта у проекта
- * одна, и если работают коды входа, работают и письма по обращениям.
+ * Путь для обычных системных уведомлений: сервис, если он задан, иначе прямой
+ * SMTP. Коды подтверждения идут отдельно через mailbox noreply@trioz.ru.
  *
  * О теме письма: у кодов подтверждения темы записаны латиницей
  * («Kod dlya vhoda - TrioZ»), и это не случайность — так обходили порчу
@@ -433,13 +375,107 @@ export async function sendEmail(mail: OutgoingEmail): Promise<boolean> {
 export async function sendVerificationEmail(
   email: string,
   code: string,
-  type: EmailType
+  type: EmailType,
+  verificationCodeId?: string,
 ): Promise<boolean> {
-  const subject = SUBJECTS[type];
-  const html = buildHtml(code, type);
-  const text = buildText(code, type);
+  const content = buildVerificationMail(code, type);
+  const localPart = "noreply";
+  const from = mailboxAddress(localPart);
 
-  return useService
-    ? sendViaService(email, subject, html, text)
-    : sendViaSmtp(email, subject, html, text);
+  if (!verificationCodeId) {
+    console.error("[email] для verification-письма не передан verificationCodeId");
+    return false;
+  }
+
+  const mailbox = await prisma.projectMailbox.upsert({
+    where: { localPart },
+    update: {},
+    create: {
+      address: from,
+      localPart,
+      label: "Подтверждения",
+      purpose: "Коды регистрации, входа и восстановления аккаунта",
+      order: 9,
+    },
+  });
+
+  const pendingKey = `pending:verification:${verificationCodeId}`;
+
+  const message = await prisma.$transaction(async (tx) => {
+    await tx.verificationCode.update({
+      where: { id: verificationCodeId },
+      data: { sendStatus: "pending", sendError: null },
+    });
+    return tx.mailMessage.create({
+      data: {
+        mailboxId: mailbox.id,
+        direction: "outgoing",
+        fromAddr: from,
+        fromName: "TrioZ",
+        toAddr: email,
+        subject: content.subject,
+        preview: content.text.slice(0, 160),
+        bodyText: content.text,
+        bodyHtml: content.html,
+        messageId: pendingKey,
+        verificationCodeId,
+        deliveryStatus: "pending",
+        sentAt: new Date(),
+      },
+    });
+  });
+
+  let result;
+  try {
+    // ВАЖНО: используем тот же путь, что и ручная отправка из админки:
+    // sendFromMailbox -> MAIL_ACCOUNTS / MAIL_ACCOUNT_PASSWORD -> SMTP.
+    result = await sendFromMailbox(localPart, {
+      fromName: "TrioZ",
+      to: [email],
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+    });
+  } catch (error) {
+    result = { ok: false, messageId: null, error: error instanceof Error ? error.message : String(error) };
+  }
+
+  if (!result.ok) {
+    const error = result.error || "Отправка кода не удалась";
+    await prisma.$transaction(async (tx) => {
+      await tx.mailMessage.update({
+        where: { id: message.id },
+        data: { deliveryStatus: "failed", deliveryError: error },
+      });
+      await tx.verificationCode.update({
+        where: { id: verificationCodeId },
+        data: { sendStatus: "failed", sendError: error.slice(0, 2000) },
+      });
+    }).catch(() => {});
+    console.error("[email] verification mail failed:", error);
+    return false;
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.mailMessage.update({
+        where: { id: message.id },
+        data: {
+          deliveryStatus: "sent",
+          deliveryError: null,
+          messageId: result.messageId || pendingKey,
+          sentAt: new Date(),
+        },
+      });
+      await tx.verificationCode.update({
+        where: { id: verificationCodeId },
+        data: { sendStatus: "sent", sendError: null },
+      });
+    });
+  } catch (error) {
+    // SMTP уже принял письмо — не считаем доставку неуспешной и не провоцируем повторную отправку.
+    console.error("[email] verification mail accepted but history update failed:", error);
+  }
+
+  return true;
 }
