@@ -1,12 +1,9 @@
-/**
- * TrioZ VPN lifecycle. Windows uses only the bundled/system AmneziaWG client and
- * AmneziaWGTunnel$trioz. A physical uplink monitor rebuilds the owned endpoint
- * host route after gateway/interface/IP changes, then validates the new handshake.
- * Linux/macOS retain their existing AmneziaWG helper path.
- */
+/** TrioZ AmneziaWG lifecycle. The Windows start path stays delegated to the
+ * existing AmneziaWG client; physical network handoff is handled separately. */
 
 import { app } from "electron";
 import { execFile } from "node:child_process";
+import { isIP } from "node:net";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -19,11 +16,10 @@ import {
   windowsTunnelDown,
   windowsTunnelExists,
   windowsTunnelUp,
-  tunnelServiceRunning, adapterStatus,
 } from "./winTunnel";
-import { NetworkHandoff, type EndpointRoute, type PhysicalRoute } from "./networkHandoff";
-import { physicalRoute, gatewayReady, resolveEndpoint, changeEndpointRoute, endpointRouteValid, recentAwgHandshake } from "./winNetwork";
 import { cleanupAfterFailedStart, vpnNeedsCleanup } from "./vpnLifecycle";
+import { NetworkHandoff, type PhysicalRoute, type EndpointRoute } from "./networkHandoff";
+import { physicalRoute, gatewayReady, gatewayPing, endpointRoutes, resolveEndpoint, changeEndpointRoute, recentAwgHandshake } from "./winNetwork";
 import { IPC } from "../shared/constants";
 import {
   elevatedInvocation,
@@ -31,6 +27,7 @@ import {
   HANDSHAKE_FRESH_SECONDS,
   parseLatestHandshake,
   TUNNEL_CONF_FILE,
+  TUNNEL_NAME,
   tunnelBackendCandidates,
   tunnelDownArgs,
   tunnelUpArgs,
@@ -75,70 +72,83 @@ let statusTimer: ReturnType<typeof setInterval> | null = null;
 let networkTimer: ReturnType<typeof setInterval> | null = null;
 let vpnWanted = false;
 let savedConfig = "";
+let endpointIp = "";
 let ownedRoute: EndpointRoute | null = null;
-let handshakeSince = 0;
 
-/** Endpoint route metadata is not a secret; keep it so crash cleanup removes only our /32. */
-function ownedRoutePath(): string { return join(vpnDir(), "endpoint-route.json"); }
-function rememberRoute(route: EndpointRoute | null): void {
-  ownedRoute = route;
+/** Only routes created by TrioZ are persisted and removed; never delete a stranger's /32. */
+function routeRecordPath(): string { return join(vpnDir(), "endpoint-route.json"); }
+function readOwnedRoute(): EndpointRoute | null {
+  if (ownedRoute) return ownedRoute;
   try {
-    if (route) writeFileSync(ownedRoutePath(), JSON.stringify(route), { mode: 0o600 });
-    else rmSync(ownedRoutePath(), { force: true });
-  } catch (err) { throw new Error(`Не удалось сохранить состояние endpoint route: ${String(err)}`); }
+    const row = JSON.parse(readFileSync(routeRecordPath(), "utf8")) as EndpointRoute;
+    if (netIsIPv4(row.ip) && netIsIPv4(row.gateway) && Number.isInteger(row.interfaceIndex) && row.interfaceIndex > 0) return row;
+  } catch { /* no record */ }
+  return null;
 }
-function restoreRoute(): EndpointRoute | null {
-  try {
-    const value = JSON.parse(readFileSync(ownedRoutePath(), "utf8")) as EndpointRoute;
-    return Number.isInteger(value.interfaceIndex) && value.interfaceIndex > 0 &&
-      /^(?:\d{1,3}\.){3}\d{1,3}$/.test(value.ip) ? value : null;
-  } catch { return null; }
+function netIsIPv4(value: string): boolean {
+  return typeof value === "string" && isIP(value) === 4;
 }
-async function clearEndpointRoute(): Promise<void> {
-  const previous = ownedRoute || restoreRoute();
-  if (!previous) return;
-  await changeEndpointRoute(previous, null);
-  rememberRoute(null);
-  console.info("[VPN] ENDPOINT_ROUTE_REMOVED", previous.ip, previous.interfaceIndex);
+async function removeOwnedRoute(): Promise<void> {
+  const route = readOwnedRoute();
+  if (!route) return;
+  await changeEndpointRoute(route, null);
+  ownedRoute = null;
+  rmSync(routeRecordPath(), { force: true });
+  console.info("[VPN] ENDPOINT_ROUTE_REMOVED", route);
 }
-function endpointFromConfig(config: string): string {
-  const endpoint = parseWgConfig(config).peers.find((peer) => peer.endpoint)?.endpoint;
-  if (!endpoint) throw new Error("Endpoint отсутствует в профиле AmneziaWG");
-  return endpoint;
+async function tryRemoveOwnedRoute(): Promise<void> {
+  try { await removeOwnedRoute(); }
+  catch (err) { console.warn("[VPN] ENDPOINT_ROUTE_REMOVED failed (nonfatal):", err); }
 }
-async function installEndpointRoute(config: string, physical: PhysicalRoute): Promise<void> {
-  const latest = await physicalRoute();
-  if (!latest || latest.interfaceIndex !== physical.interfaceIndex || latest.gateway !== physical.gateway ||
-      latest.localAddress !== physical.localAddress) throw new Error("Физический маршрут изменился перед запуском");
-  const ip = await resolveEndpoint(endpointFromConfig(config), latest);
+function configEndpoint(config: string): string | null {
+  return parseWgConfig(config).peers.find((p) => p.endpoint)?.endpoint ?? null;
+}
+/** Let AmneziaWG install its own exclusion route first; create ours only if none exists. */
+async function reconcileEndpointRoute(config: string, route: PhysicalRoute, resolvedIp = ""): Promise<void> {
+  const endpoint = configEndpoint(config);
+  if (!endpoint) return;
+  let ip = resolvedIp;
+  if (!ip) {
+    try { ip = await resolveEndpoint(endpoint, route); }
+    catch (err) { console.warn("[VPN] VPN_ENDPOINT resolve unavailable; AmneziaWG retains control:", err); return; }
+  }
+  endpointIp = ip;
   console.info("[VPN] VPN_ENDPOINT", ip);
-  await clearEndpointRoute();
-  const route = { ip, gateway: latest.gateway, interfaceIndex: latest.interfaceIndex };
-  await changeEndpointRoute(null, route); // revalidates /0 and verifies /32 immediately before start
-  rememberRoute(route);
-  console.info("[VPN] ENDPOINT_ROUTE_CREATED", route);
+  const existing = await endpointRoutes(ip);
+  if (existing.some((r) => r.interfaceIndex === route.interfaceIndex && r.gateway === route.gateway)) {
+    console.info("[VPN] Endpoint route provided by AmneziaWG; no change");
+    return;
+  }
+  if (existing.length) {
+    // A route not recorded as ours may belong to another application. Do not delete it.
+    console.warn("[VPN] Conflicting endpoint /32; refusing to edit unowned route", existing);
+    return;
+  }
+  try {
+    const latest = await physicalRoute();
+    if (!latest || !await gatewayReady(route)) return;
+    const candidate = { ip, interfaceIndex: latest.interfaceIndex, gateway: latest.gateway };
+    await changeEndpointRoute(null, candidate);
+    ownedRoute = candidate;
+    mkdirSync(vpnDir(), { recursive: true, mode: 0o700 });
+    writeFileSync(routeRecordPath(), JSON.stringify(candidate), { mode: 0o600 });
+    console.info("[VPN] ENDPOINT_ROUTE_CREATED", candidate);
+  } catch (err) {
+    console.warn("[VPN] Endpoint route fallback failed; leaving AmneziaWG in charge:", err);
+  }
 }
-async function verifiedWindowsLink(): Promise<boolean> {
-  if (!(await tunnelServiceRunning()) || !/^Up$/i.test(await adapterStatus())) return false;
-  if (!ownedRoute) return false;
-  const physical = await physicalRoute();
-  if (!physical || physical.interfaceIndex !== ownedRoute.interfaceIndex || physical.gateway !== ownedRoute.gateway ||
-      !(await endpointRouteValid(ownedRoute))) return false;
-  const tool = (await findExecutable("awg.exe")) || activeExe || embeddedClientPath("amneziawg");
-  console.info("[VPN] HANDSHAKE_CHECK", tool ? "AmneziaWG log/awg" : "tool unavailable");
-  return !!tool && await recentAwgHandshake(tool, handshakeSince) && await windowsLinkVerdict() === "fresh";
-}
-async function waitForVerifiedLink(cancelled: () => boolean): Promise<boolean> {
-  const deadline = Date.now() + 22_000;
+async function waitForWindowsLink(cancelled: () => boolean): Promise<boolean> {
+  const deadline = Date.now() + 25_000;
   while (!cancelled() && Date.now() < deadline) {
-    if (await verifiedWindowsLink()) return true;
+    if (await windowsServiceHandshake() === "fresh") return true;
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   return false;
 }
 const handoff = new NetworkHandoff({
-  physical: physicalRoute, ready: gatewayReady,
-  active: () => vpnWanted && !!savedConfig && process.platform === "win32",
+  physical: physicalRoute,
+  ready: gatewayReady,
+  active: () => process.platform === "win32" && vpnWanted && !!savedConfig,
   status: (message, failed) => {
     if (!vpnWanted) return;
     stopStatusPolling();
@@ -149,34 +159,52 @@ const handoff = new NetworkHandoff({
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   recover: async (_route, cancelled) => {
     if (cancelled()) return false;
-    // A fresh handshake means the tunnel recovered naturally; still rebuild stale /32.
-    if (await verifiedWindowsLink()) {
-      await clearEndpointRoute();
-      const physical = await physicalRoute();
-      if (!physical || !(await gatewayReady(physical))) throw new Error("Новый шлюз пока недоступен");
-      await installEndpointRoute(savedConfig, physical);
-      if (await verifiedWindowsLink()) {
-        emit({ state: "on", since: new Date().toISOString(), error: null, backend: "amneziawg", embedded: false });
-        startStatusPolling("amneziawg", "system");
-        return true;
-      }
-    }
+    // The original start path was functional; do not pre-install a competing /32.
+    const oldBase = handoff.getBaseline();
+    const oldEndpointRoute = oldBase && endpointIp
+      ? (await endpointRoutes(endpointIp)).find((r) => r.interfaceIndex === oldBase.interfaceIndex && r.gateway === oldBase.gateway)
+      : null;
     console.info("[VPN] AMNEZIAWG_STOP");
-    await windowsTunnelDown(activeExe);
-    await clearEndpointRoute();
+    await windowsTunnelDown(activeExe); // waits STOPPED, PID exit, and TrioZ adapter removal
+    await tryRemoveOwnedRoute();
     const fresh = await physicalRoute();
-    if (!fresh || !(await gatewayReady(fresh))) throw new Error("Новый физический шлюз недоступен");
-    if (cancelled()) return false;
-    await installEndpointRoute(savedConfig, fresh);
+    if (!fresh || !await gatewayReady(fresh)) throw new Error("Физический gateway ещё не готов");
+    console.info("[VPN] NEW_INTERFACE", fresh.interfaceAlias, fresh.interfaceIndex,
+      "NEW_GATEWAY", fresh.gateway, "gateway ICMP:", await gatewayPing(fresh));
+    // The client's own old exclusion may survive a service crash. Remove only
+    // the exact /32 we observed on TrioZ's previous uplink, after service exit.
+    if (oldEndpointRoute && (oldEndpointRoute.interfaceIndex !== fresh.interfaceIndex ||
+        oldEndpointRoute.gateway !== fresh.gateway) &&
+        (await endpointRoutes(oldEndpointRoute.ip)).some((r) =>
+          r.interfaceIndex === oldEndpointRoute.interfaceIndex && r.gateway === oldEndpointRoute.gateway)) {
+      await changeEndpointRoute(oldEndpointRoute, null);
+      console.info("[VPN] ENDPOINT_ROUTE_REMOVED", oldEndpointRoute);
+    }
+    let freshEndpointIp = "";
+    const endpoint = configEndpoint(savedConfig);
+    if (endpoint) {
+      try { freshEndpointIp = await resolveEndpoint(endpoint, fresh); }
+      catch (err) { console.warn("[VPN] DNS физического интерфейса недоступен:", err); }
+    }
+    if (endpointIp) console.info("[VPN] OLD_ENDPOINT_ROUTE", await endpointRoutes(endpointIp));
+    if (freshEndpointIp) console.info("[VPN] VPN_ENDPOINT", freshEndpointIp,
+      "route before start:", await endpointRoutes(freshEndpointIp));
     if (cancelled()) return false;
     console.info("[VPN] AMNEZIAWG_START");
-    handshakeSince = Date.now();
-    const embedded = embeddedClientPath("amneziawg");
-    activeExe = await windowsTunnelUp(savedConfig, embedded);
+    activeExe = await windowsTunnelUp(savedConfig, embeddedClientPath("amneziawg"));
     activeMode = "system";
-    const good = await waitForVerifiedLink(cancelled);
+    // Give the existing AmneziaWG route/handshake path priority. A custom /32
+    // is a fallback after a failed health probe, never a prerequisite for startup.
+    let healthy = await waitForWindowsLink(cancelled);
+    if (!healthy && !cancelled()) {
+      await reconcileEndpointRoute(savedConfig, fresh, freshEndpointIp);
+      healthy = await waitForWindowsLink(cancelled);
+    }
     if (cancelled()) return false;
-    if (!good) throw new Error("AmneziaWG: handshake не подтверждён после восстановления");
+    if (!healthy) throw new Error("Нет входящего трафика VPN-узла после запуска AmneziaWG");
+    const tool = activeExe || embeddedClientPath("amneziawg");
+    console.info("[VPN] HANDSHAKE_CHECK", tool ? await recentAwgHandshake(tool) : "unavailable",
+      "(diagnostic; /dumplog format is not a gate)");
     emit({ state: "on", since: new Date().toISOString(), error: null, backend: "amneziawg", embedded: false });
     startStatusPolling("amneziawg", "system");
     return true;
@@ -184,13 +212,14 @@ const handoff = new NetworkHandoff({
 });
 export function startVpnNetworkMonitor(): void {
   if (process.platform !== "win32" || networkTimer) return;
-  networkTimer = setInterval(() => { void handoff.scan().catch((err) => console.warn("[VPN] NETWORK_CHANGED scan failed", err)); }, 3000);
+  networkTimer = setInterval(() => {
+    void handoff.scan().catch((err) => console.warn("[VPN] NETWORK_CHANGED scan failed:", err));
+  }, 3000);
 }
 export function stopVpnNetworkMonitor(): void {
   if (networkTimer) clearInterval(networkTimer);
   networkTimer = null;
 }
-
 
 /** Каталог для временного профиля: приватный ключ не должен лежать в общих temp. */
 function vpnDir(): string {
@@ -360,9 +389,53 @@ async function embeddedHandshake(): Promise<"fresh" | "silent" | "unknown"> {
   }
 }
 
-/** Windows: service, adapter, physical endpoint route and actual AWG handshake. */
+/** Windows status: AmneziaWGTunnel$trioz, its adapter, and incoming bytes. */
 async function windowsServiceHandshake(): Promise<"fresh" | "silent" | "unknown"> {
-  return await verifiedWindowsLink() ? "fresh" : "silent";
+  try {
+    /* Только собственная AmneziaWG-служба TrioZ. */
+    const names = [`AmneziaWGTunnel$${TUNNEL_NAME}`];
+    let running = false;
+    for (const name of names) {
+      try {
+        const { stdout } = await run("sc.exe", ["query", name], {
+          windowsHide: true,
+          timeout: 10_000,
+        });
+        if (/RUNNING/i.test(stdout)) {
+          running = true;
+          break;
+        }
+      } catch {
+        /* Службы с таким именем нет — пробуем следующее. */
+      }
+    }
+    if (!running) return "silent";
+  } catch {
+    return "silent";
+  }
+  /* Служба жива. Дополнительно убеждаемся, что адаптер в состоянии Up:
+     так ловится случай «служба есть, а сетевого устройства нет». */
+  try {
+    const { stdout } = await run(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `(Get-NetAdapter -Name '${TUNNEL_NAME}' -ErrorAction SilentlyContinue).Status`,
+      ],
+      { windowsHide: true, timeout: 15_000 },
+    );
+    /* FIX-WINLINK: живая служба и адаптер Up ещё не значат связь с узлом.
+       Спрашиваем счётчик входящих байт: в туннеле они приходят только от
+       узла, поэтому ноль — это честное «связи нет», а не «всё хорошо». */
+    if (/Up/i.test(stdout)) return await windowsLinkVerdict();
+    if (stdout.trim() === "") return "unknown";
+    return "silent";
+  } catch {
+    /* Не смогли проверить адаптер: не показываем ложный connected. */
+    return "unknown";
+  }
 }
 
 /** Состояние связи у системного клиента (запасной путь разработчика). */
@@ -399,7 +472,9 @@ function readServiceFile(name: string): string | null {
  * через разовое повышение прав, чтобы не остаться вообще без VPN.
  */
 function serviceAvailable(): boolean {
-  /* Windows использует AmneziaWG service lifecycle; старый helper отключён. */
+  /* Windows теперь использует официальный wireguard.exe /installtunnelservice.
+     Старый служебный компонент TrioZ с vpnHelper/wireguard-go больше не нужен
+     для WireGuardNT и намеренно отключён. */
   return false;
 }
 
@@ -598,30 +673,22 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     return current;
   }
 
-  // A manual connect supersedes a failed automatic recovery, never runs in parallel.
   vpnWanted = false;
   await handoff.cancel();
   savedConfig = config;
+  endpointIp = "";
+  // Capture the uplink concurrently. A slow PowerShell probe must never delay
+  // the previously working AmneziaWG /installtunnelservice call.
+  const initialPhysicalPromise: Promise<PhysicalRoute | null> = process.platform === "win32"
+    ? physicalRoute() : Promise.resolve(null);
   vpnWanted = true;
-  let initialPhysical: PhysicalRoute | null = null;
-  if (process.platform === "win32") {
-    initialPhysical = await physicalRoute();
-    if (!initialPhysical || !(await gatewayReady(initialPhysical))) {
-      vpnWanted = false;
-      emit({ state: "error", since: null, error: "Нет доступного физического шлюза для VPN", backend, embedded: false });
-      return current;
-    }
-  }
   emit({ state: "connecting", since: null, error: null, backend, embedded: true });
 
   const embedded = embeddedClientPath(backend);
   try {
     await cleanupAfterFailedStart(tearDownQuietly);
+    if (process.platform === "win32") await tryRemoveOwnedRoute();
     confPath = writeConfFile(config);
-    if (initialPhysical) {
-      await clearEndpointRoute();
-      await installEndpointRoute(config, initialPhysical);
-    }
 
     if (serviceAvailable()) {
       /* Обычный путь в установленном приложении. Права администратора спрошены
@@ -636,8 +703,8 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     } else if (embedded) {
       activeExe = embedded;
       if (process.platform === "win32") {
-        /* Только AmneziaWG /installtunnelservice для trioz; физический
-           endpoint /32 уже закреплён за реальным интерфейсом выше. */
+        /* Рабочий AmneziaWG /installtunnelservice сам создаёт и настраивает
+           службу, адаптер, endpoint exclusion и full-tunnel маршруты. */
         /* FIX-WINCLIENT: раньше здесь была одна строка «попросить клиента
            поставить службу» — и всё. У автора проекта это работало только
            потому, что клиент AmneziaWG уже был установлен в системе руками.
@@ -649,7 +716,6 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
            профиль в общий каталог машины, снимает прежнюю службу и адаптер,
            ставит новую и ждёт подтверждения, что она действительно живёт. */
         activeMode = "system";
-        handshakeSince = Date.now();
         activeExe = await windowsTunnelUp(config, embedded);
       } else {
         /* Linux/macOS по-прежнему используют встроенный wireguard-go helper. */
@@ -661,11 +727,19 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
          в установленном приложении сюда не попадают. */
       const fallback = await resolveSystemExe();
       if (!fallback) {
-        throw new Error("Встроенный клиент отсутствует в этой сборке. Пересоберите приложение с шагом vendor:client.");
+        emit({
+          state: "error",
+          since: null,
+          error: "Встроенный клиент отсутствует в этой сборке. Пересоберите приложение с шагом vendor:client.",
+          backend: null,
+          embedded: false,
+        });
+        vpnWanted = false;
+        removeConfFile();
+        return current;
       }
       activeExe = fallback;
       activeMode = "system";
-      handshakeSince = Date.now();
       await runElevated(fallback, tunnelUpArgs(process.platform, confPath));
     }
 
@@ -676,7 +750,20 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
       backend,
       embedded: activeMode !== "system",
     });
-    if (initialPhysical) handoff.setBaseline(initialPhysical);
+    void initialPhysicalPromise.then((initialPhysical) => {
+      if (!vpnWanted || savedConfig !== config || process.platform !== "win32") return;
+      if (initialPhysical) {
+        handoff.setBaseline(initialPhysical);
+        const initialEndpoint = configEndpoint(config);
+        if (initialEndpoint) void resolveEndpoint(initialEndpoint, initialPhysical)
+          .then((ip) => { if (vpnWanted && savedConfig === config) endpointIp = ip; })
+          .catch((err) => console.info("[VPN] Initial endpoint DNS unavailable:", err));
+      } else {
+        void physicalRoute().then((latest) => {
+          if (latest && vpnWanted && savedConfig === config) handoff.setBaseline(latest);
+        });
+      }
+    });
     startStatusPolling(backend, activeMode);
     return current;
   } catch (err) {
@@ -685,7 +772,6 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
        очищаем память и возвращаем исходную ошибку пользователю. */
     vpnWanted = false;
     await tearDownQuietly();
-    try { await clearEndpointRoute(); } catch (routeError) { console.warn("[VPN] ENDPOINT_ROUTE_REMOVED failed", routeError); }
     removeConfFile();
     activeExe = "";
     activeMode = null;
@@ -713,7 +799,7 @@ async function resolveSystemExe(): Promise<string> {
 async function tearDownQuietly(): Promise<void> {
   try {
     await tearDown();
-    if (process.platform === "win32") await clearEndpointRoute();
+    if (process.platform === "win32") await tryRemoveOwnedRoute();
   } catch {
     /* нечего снимать — это не ошибка */
   }
@@ -765,7 +851,7 @@ export async function vpnDown(): Promise<VpnStatePayload> {
   const physicallyActive = process.platform === "win32" && await windowsTunnelExists();
   if (!vpnNeedsCleanup(current.state, physicallyActive)) {
     stopStatusPolling();
-    if (process.platform === "win32") await clearEndpointRoute();
+    if (process.platform === "win32") await tryRemoveOwnedRoute();
     removeConfFile();
     activeExe = "";
     activeMode = null;
@@ -781,7 +867,7 @@ export async function vpnDown(): Promise<VpnStatePayload> {
   stopStatusPolling();
   try {
     await tearDown();
-    if (process.platform === "win32") await clearEndpointRoute();
+    if (process.platform === "win32") await tryRemoveOwnedRoute();
     removeConfFile();
     activeExe = "";
     activeMode = null;
@@ -790,8 +876,8 @@ export async function vpnDown(): Promise<VpnStatePayload> {
     /* Не удалось снять — честно показываем ошибку, но туннель мог и сняться:
        оставляем прежнее «поднят», чтобы кнопка позволила повторить. */
     emit({
-      state: "error",
-      since: null,
+      state: "on",
+      since: current.since,
       error: err instanceof Error ? err.message : "Не удалось выключить туннель",
       backend,
       embedded: activeMode !== "system",
@@ -812,15 +898,14 @@ export async function shutdownVpn(): Promise<void> {
   stopStatusPolling();
   const physicallyActive = process.platform === "win32" && await windowsTunnelExists();
   if (!vpnNeedsCleanup(current.state, physicallyActive)) {
-    if (process.platform === "win32") await clearEndpointRoute();
+    if (process.platform === "win32") await tryRemoveOwnedRoute();
     removeConfFile();
     return;
   }
   try {
     await tearDown();
-    if (process.platform === "win32") await clearEndpointRoute();
-  } catch (err) {
-    console.warn("[VPN] cleanup при выходе не завершён:", err);
+  } catch {
+    /* при выходе показывать уже нечего — просто пытаемся не оставить туннель */
   } finally {
     removeConfFile();
     activeExe = "";
@@ -829,20 +914,16 @@ export async function shutdownVpn(): Promise<void> {
 }
 
 /**
- * Startup recovery: старая служба могла пережить crash/update, тогда память
- * Electron говорит `off`, а Windows продолжает маршрутизировать через tunnel.
- * Удаляется только AmneziaWGTunnel$trioz и адаптер с точным именем `trioz`.
+ * Startup recovery after crash/update: only AmneziaWGTunnel$trioz and
+ * the exact TrioZ adapter are touched. Other VPN services are not removed.
  */
 export async function recoverOrphanedVpn(): Promise<boolean> {
   if (process.platform !== "win32") return false;
-  if (!(await windowsTunnelExists())) {
-    await clearEndpointRoute();
-    return false;
-  }
+  if (!(await windowsTunnelExists())) { await tryRemoveOwnedRoute(); return false; }
   stopStatusPolling();
   try {
     await windowsTunnelDown("");
-    await clearEndpointRoute();
+    await tryRemoveOwnedRoute();
     current = { state: "off", since: null, error: null, backend: null, embedded: true };
     return true;
   } catch (error) {
