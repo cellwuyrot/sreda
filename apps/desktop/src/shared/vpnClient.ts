@@ -70,17 +70,14 @@ export function systemClientCandidates(env: Record<string, string | undefined> =
     `${pf}\\Amnezia\\AmneziaWG\\amneziawg.exe`,
     `${pf}\\AmneziaVPN\\amneziawg.exe`,
     `${pf86}\\AmneziaWG\\amneziawg.exe`,
-    `${pf}\\WireGuard\\wireguard.exe`,
-    `${pf86}\\WireGuard\\wireguard.exe`,
   ];
 }
 
 /**
- * Имена службы туннеля. Форк с маскировкой регистрирует одно имя, обычный
- * WireGuard — другое. Привязка к одному давала ложное «туннель не поднят».
+ * Единственное имя службы TrioZ: только AmneziaWG, без fallback WireGuard.
  */
 export function serviceNames(tunnel: string = TUNNEL_NAME): string[] {
-  return [`AmneziaWGTunnel$${tunnel}`, `WireGuardTunnel$${tunnel}`];
+  return [`AmneziaWGTunnel$${tunnel}`];
 }
 
 /**
