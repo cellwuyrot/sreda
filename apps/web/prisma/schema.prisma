@@ -171,15 +171,19 @@ model User {
 }
 
 model VerificationCode {
-  id        String   @id @default(cuid())
-  email     String
-  code      String
-  type      String   @default("register")
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          String       @id @default(cuid())
+  email       String
+  code        String
+  type        String       @default("register")
+  expiresAt   DateTime
+  used        Boolean      @default(false)
+  sendStatus  String       @default("pending") // pending | sent | failed
+  sendError   String?      @db.Text
+  createdAt   DateTime     @default(now())
+  mailMessage MailMessage?
 
   @@index([email, code])
+  @@index([email, sendStatus, createdAt])
 }
 
 model Group {
@@ -2608,6 +2612,8 @@ model MailMessage {
   deliveryStatus String    @default("sent") // pending | sent | failed
   deliveryError String?    @db.Text
   deliveredAt DateTime?
+  verificationCodeId String? @unique
+  verificationCode VerificationCode? @relation(fields: [verificationCodeId], references: [id], onDelete: SetNull)
   sentAt    DateTime       @default(now())
   createdAt DateTime       @default(now())
 

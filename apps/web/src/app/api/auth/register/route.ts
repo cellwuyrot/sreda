@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
           code: verificationCode,
           type: "register",
           used: true,
+          sendStatus: "sent",
           expiresAt: { gte: new Date() },
         },
         orderBy: { createdAt: "desc" },

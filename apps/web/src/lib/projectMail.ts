@@ -30,7 +30,7 @@ export interface MailboxDef {
 export const MAIL_DOMAIN = "trioz.ru";
 
 /**
- * Девять рабочих ящиков домена. Порядок = порядок показа в интерфейсе.
+ * Рабочие ящики домена. Порядок = порядок показа в интерфейсе.
  * Тексты назначения — дословно из утверждённого брифа.
  */
 export const PROJECT_MAILBOXES: readonly MailboxDef[] = [
@@ -43,6 +43,7 @@ export const PROJECT_MAILBOXES: readonly MailboxDef[] = [
   { localPart: "hr", label: "HR отдел", purpose: "Подбор и работа с персоналом", order: 6 },
   { localPart: "media", label: "PR отдел", purpose: "Пресса, публикации, медиа", order: 7 },
   { localPart: "security", label: "Безопасность", purpose: "Сообщения об уязвимостях", order: 8 },
+  { localPart: "noreply", label: "Подтверждения", purpose: "Коды регистрации, входа и восстановления аккаунта", order: 9 },
 ] as const;
 
 /** Полный адрес ящика: info → info@trioz.ru. */

@@ -51,26 +51,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const ENDPOINT_ROUTE_MARKER = "endpoint-route.json";
-const NETWORK_READY_TIMEOUT_MS = 10_000;
-const NETWORK_READY_POLL_MS = 350;
-
-export function endpointHostFromConfig(config: string): string | null {
-  const match = config.match(/^\s*Endpoint\s*=\s*(.+?)\s*$/im);
-  if (!match?.[1]) return null;
-  const endpoint = match[1].trim();
-  const bracketed = endpoint.match(/^\[([0-9a-f:]+)\](?::\d{1,5})?$/i);
-  if (bracketed) return bracketed[1];
-  const colon = endpoint.lastIndexOf(":");
-  if (colon > 0 && /^\d{1,5}$/.test(endpoint.slice(colon + 1))) return endpoint.slice(0, colon);
-  return endpoint;
-}
-
-export function isIpv4Host(host: string): boolean {
-  const parts = host.split(".");
-  return parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
-}
-
 /** Кавычки для одинарной строки PowerShell: внутри кавычка удваивается. */
 function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -250,7 +230,6 @@ export interface TunnelShutdownRuntime {
   discoverPids(): Promise<number[]>;
   processExists(pid: number): Promise<boolean>;
   adapterStatus(): Promise<string>;
-  removeAdapter(): Promise<void>;
   uninstall(exe: string): Promise<void>;
   fallback(exe: string, pids: number[]): Promise<void>;
   removeConfig(): void;
@@ -268,32 +247,11 @@ async function waitUntil(
   return predicate();
 }
 
-function endpointRouteCleanupLines(markerPath: string): string[] {
-  return [
-    `$marker = ${psQuote(markerPath)}`,
-    `if (Test-Path -LiteralPath $marker) {`,
-    `  try { $m = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json; if ($m.ip -and $m.interfaceIndex) { Remove-NetRoute -DestinationPrefix ($m.ip + '/32') -InterfaceIndex ([int]$m.interfaceIndex) -NextHop $m.gateway -PolicyStore ActiveStore -Confirm:$false -ErrorAction SilentlyContinue } } catch {}`,
-    `  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue`,
-    `}`,
-  ];
-}
-
 function uninstallScript(exe: string): string {
-  const markerPath = join(stableClientDir(process.env), ENDPOINT_ROUTE_MARKER);
   return [
     "$ErrorActionPreference = 'Continue'",
     `$exe = ${psQuote(exe)}`,
     `if (Test-Path -LiteralPath $exe) { & $exe /uninstalltunnelservice ${psQuote(TUNNEL_NAME)} 2>$null | Out-Null }`,
-    ...endpointRouteCleanupLines(markerPath),
-    `Get-NetAdapter -Name ${psQuote(TUNNEL_NAME)} -ErrorAction SilentlyContinue | ForEach-Object { pnputil /remove-device $_.PnPDeviceID 2>$null | Out-Null }`,
-    "exit 0",
-  ].join("\n");
-}
-
-function removeAdapterScript(): string {
-  return [
-    "$ErrorActionPreference = 'Continue'",
-    `Get-NetAdapter -Name ${psQuote(TUNNEL_NAME)} -ErrorAction SilentlyContinue | ForEach-Object { pnputil /remove-device $_.PnPDeviceID 2>$null | Out-Null }`,
     "exit 0",
   ].join("\n");
 }
@@ -337,7 +295,6 @@ function defaultShutdownRuntime(): TunnelShutdownRuntime {
     discoverPids: tunnelProcessPids,
     processExists,
     adapterStatus,
-    removeAdapter: async () => { await elevatedScript(removeAdapterScript()); },
     uninstall: async (exe) => { await elevatedScript(uninstallScript(exe)); },
     fallback: async (exe, pids) => { await elevatedScript(cleanupFallbackScript(exe, pids)); },
     removeConfig: () => {
@@ -469,26 +426,9 @@ function installScript(exePath: string, config: string, targetDir: string): stri
     /* Адаптер-призрак от предыдущей попытки мешает создать новый. */
     `Get-NetAdapter -Name ${psQuote(TUNNEL_NAME)} -ErrorAction SilentlyContinue | ` +
       "ForEach-Object { pnputil /remove-device $_.PnPDeviceID *>> $log }",
-    ...endpointRouteCleanupLines(join(targetDir, ENDPOINT_ROUTE_MARKER)),
-    "L 'stage: wait physical network'",
-    "$physical = $null",
-    `foreach ($i in 1..${Math.ceil(NETWORK_READY_TIMEOUT_MS / NETWORK_READY_POLL_MS)}) { $physical = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -ne '0.0.0.0' -and $_.InterfaceAlias -ne 'trioz' } | Sort-Object RouteMetric | Select-Object -First 1; if ($physical) { break }; Start-Sleep -Milliseconds ${NETWORK_READY_POLL_MS} }`,
-    "if (-not $physical) { L 'no physical default route'; exit 5 }",
-    `L "physical route: $($physical.NextHop)/$($physical.InterfaceIndex)"`,
+    "Start-Sleep -Milliseconds 800",
+    "L 'stage: copy client'",
   ];
-  const endpointHost = endpointHostFromConfig(config);
-  if (endpointHost && (isIpv4Host(endpointHost) || !endpointHost.includes(":"))) {
-    lines.push(
-      "L 'stage: protect endpoint route'",
-      `$endpointHost = ${psQuote(endpointHost)}`,
-      "$endpointIp = $null",
-      "try { if ($endpointHost -match '^\\d{1,3}(?:\\.\\d{1,3}){3}$') { $endpointIp = $endpointHost } else { $endpointIp = (Resolve-DnsName -Name $endpointHost -Type A -ErrorAction Stop | Where-Object { $_.IPAddress } | Select-Object -First 1 -ExpandProperty IPAddress) } } catch { L \"endpoint resolve failed: $($_.Exception.Message)\" }",
-      "if ($endpointIp -and $physical) { $existing = Get-NetRoute -DestinationPrefix ($endpointIp + '/32') -ErrorAction SilentlyContinue; if ($existing -and $existing.InterfaceAlias -eq 'trioz') { Remove-NetRoute -InputObject $existing -Confirm:$false -ErrorAction SilentlyContinue; $existing = $null }; if (-not $existing) { try { New-NetRoute -DestinationPrefix ($endpointIp + '/32') -InterfaceIndex ([int]$physical.InterfaceIndex) -NextHop $physical.NextHop -PolicyStore ActiveStore -RouteMetric 1 -ErrorAction Stop | Out-Null; @{ ip=$endpointIp; interfaceIndex=[int]$physical.InterfaceIndex; gateway=$physical.NextHop } | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psQuote(join(targetDir, ENDPOINT_ROUTE_MARKER))} -Encoding UTF8; L \"endpoint route: $endpointIp via $($physical.NextHop)\" } catch { L \"endpoint route failed: $($_.Exception.Message)\" } } } else { L 'endpoint route not installed; tunnel service will manage endpoint routing' }",
-    );
-  } else {
-    lines.push("L 'endpoint is IPv6 or unavailable; relying on tunnel service endpoint routing'");
-  }
-  lines.push("Start-Sleep -Milliseconds 800", "L 'stage: copy client'");
 
   for (const file of files) {
     lines.push(
@@ -611,18 +551,11 @@ export async function windowsTunnelDown(
     for (const pid of pids) if (await runtime.processExists(pid)) return false;
     return true;
   });
-  let adapterGone = processesGone && (await runtime.adapterStatus()) === "";
-  if (processesGone && !adapterGone) {
-    /* Обычный uninstall должен удалить адаптер сам. Если Windows оставил его
-       после завершения службы, убираем только точный `trioz`-device вместо
-       того, чтобы держать пользователя без интернета ещё 15 секунд. */
-    await runtime.removeAdapter();
-    adapterGone = await waitUntil(
-      runtime,
-      runtime.now() + SHUTDOWN_FALLBACK_TIMEOUT_MS,
-      async () => (await runtime.adapterStatus()) === "",
-    );
-  }
+  const adapterGone = processesGone && await waitUntil(
+    runtime,
+    deadline,
+    async () => (await runtime.adapterStatus()) === "",
+  );
 
   if (!stopped || !absent || !processesGone || !adapterGone) {
     /* sc delete здесь не заменяет ожидание: это строго fallback после штатного
