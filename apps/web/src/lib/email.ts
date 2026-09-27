@@ -276,6 +276,14 @@ export function generateCode(): string {
 
 type EmailType = VerificationMailType;
 
+/**
+ * Адрес отправителя для собственного почтового сервиса.
+ * Приоритет: явный SMTP_FROM → адрес, разрешённый ключом сервиса → SMTP_USER → noreply TrioZ.
+ */
+function fromAddress(info: SiteInfo | null): string {
+  return process.env.SMTP_FROM || info?.senderEmail || process.env.SMTP_USER || "noreply@trioz.ru";
+}
+
 async function sendViaService(
   email: string,
   subject: string,
