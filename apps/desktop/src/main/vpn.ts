@@ -1,19 +1,8 @@
 /**
- * VPN-WINDOWS-OFFICIAL: менеджер туннеля.
- *
- * Windows больше не использует самописный бэкенд `wireguard-go + Wintun + netsh`.
- * Вместо него в ресурсы сборки кладётся официальный `wireguard.exe` из проекта
- * wireguard-windows, а включение вызывает:
- *
- *   wireguard.exe /installtunnelservice <путь к trioz.conf>
- *
- * Официальный клиент сам создаёт службу `WireGuardTunnel$trioz`, WireGuardNT-
- * адаптер, назначает адреса/DNS, сохраняет маршрут до endpoint и применяет
- * full-tunnel (`0.0.0.0/1`, `128.0.0.0/1`) тем способом, которым это делает
- * WireGuard for Windows.
- *
- * Linux/macOS пока остаются на прежнем встроенном helper (`wireguard-go` через
- * UAPI), потому что wireguard-windows относится только к Windows.
+ * TrioZ VPN lifecycle. Windows uses only the bundled/system AmneziaWG client and
+ * AmneziaWGTunnel$trioz. A physical uplink monitor rebuilds the owned endpoint
+ * host route after gateway/interface/IP changes, then validates the new handshake.
+ * Linux/macOS retain their existing AmneziaWG helper path.
  */
 
 import { app } from "electron";
@@ -30,7 +19,10 @@ import {
   windowsTunnelDown,
   windowsTunnelExists,
   windowsTunnelUp,
+  tunnelServiceRunning, adapterStatus,
 } from "./winTunnel";
+import { NetworkHandoff, type EndpointRoute, type PhysicalRoute } from "./networkHandoff";
+import { physicalRoute, gatewayReady, resolveEndpoint, changeEndpointRoute, endpointRouteValid, recentAwgHandshake } from "./winNetwork";
 import { cleanupAfterFailedStart, vpnNeedsCleanup } from "./vpnLifecycle";
 import { IPC } from "../shared/constants";
 import {
@@ -39,7 +31,6 @@ import {
   HANDSHAKE_FRESH_SECONDS,
   parseLatestHandshake,
   TUNNEL_CONF_FILE,
-  TUNNEL_NAME,
   tunnelBackendCandidates,
   tunnelDownArgs,
   tunnelUpArgs,
@@ -81,6 +72,125 @@ let activeMode: "embedded" | "system" | "service" | null = null;
 /** Путь к использованному бинарнику (встроенному или системному). */
 let activeExe = "";
 let statusTimer: ReturnType<typeof setInterval> | null = null;
+let networkTimer: ReturnType<typeof setInterval> | null = null;
+let vpnWanted = false;
+let savedConfig = "";
+let ownedRoute: EndpointRoute | null = null;
+let handshakeSince = 0;
+
+/** Endpoint route metadata is not a secret; keep it so crash cleanup removes only our /32. */
+function ownedRoutePath(): string { return join(vpnDir(), "endpoint-route.json"); }
+function rememberRoute(route: EndpointRoute | null): void {
+  ownedRoute = route;
+  try {
+    if (route) writeFileSync(ownedRoutePath(), JSON.stringify(route), { mode: 0o600 });
+    else rmSync(ownedRoutePath(), { force: true });
+  } catch (err) { throw new Error(`Не удалось сохранить состояние endpoint route: ${String(err)}`); }
+}
+function restoreRoute(): EndpointRoute | null {
+  try {
+    const value = JSON.parse(readFileSync(ownedRoutePath(), "utf8")) as EndpointRoute;
+    return Number.isInteger(value.interfaceIndex) && value.interfaceIndex > 0 &&
+      /^(?:\d{1,3}\.){3}\d{1,3}$/.test(value.ip) ? value : null;
+  } catch { return null; }
+}
+async function clearEndpointRoute(): Promise<void> {
+  const previous = ownedRoute || restoreRoute();
+  if (!previous) return;
+  await changeEndpointRoute(previous, null);
+  rememberRoute(null);
+  console.info("[VPN] ENDPOINT_ROUTE_REMOVED", previous.ip, previous.interfaceIndex);
+}
+function endpointFromConfig(config: string): string {
+  const endpoint = parseWgConfig(config).peers.find((peer) => peer.endpoint)?.endpoint;
+  if (!endpoint) throw new Error("Endpoint отсутствует в профиле AmneziaWG");
+  return endpoint;
+}
+async function installEndpointRoute(config: string, physical: PhysicalRoute): Promise<void> {
+  const latest = await physicalRoute();
+  if (!latest || latest.interfaceIndex !== physical.interfaceIndex || latest.gateway !== physical.gateway ||
+      latest.localAddress !== physical.localAddress) throw new Error("Физический маршрут изменился перед запуском");
+  const ip = await resolveEndpoint(endpointFromConfig(config), latest);
+  console.info("[VPN] VPN_ENDPOINT", ip);
+  await clearEndpointRoute();
+  const route = { ip, gateway: latest.gateway, interfaceIndex: latest.interfaceIndex };
+  await changeEndpointRoute(null, route); // revalidates /0 and verifies /32 immediately before start
+  rememberRoute(route);
+  console.info("[VPN] ENDPOINT_ROUTE_CREATED", route);
+}
+async function verifiedWindowsLink(): Promise<boolean> {
+  if (!(await tunnelServiceRunning()) || !/^Up$/i.test(await adapterStatus())) return false;
+  if (!ownedRoute) return false;
+  const physical = await physicalRoute();
+  if (!physical || physical.interfaceIndex !== ownedRoute.interfaceIndex || physical.gateway !== ownedRoute.gateway ||
+      !(await endpointRouteValid(ownedRoute))) return false;
+  const tool = (await findExecutable("awg.exe")) || activeExe || embeddedClientPath("amneziawg");
+  console.info("[VPN] HANDSHAKE_CHECK", tool ? "AmneziaWG log/awg" : "tool unavailable");
+  return !!tool && await recentAwgHandshake(tool, handshakeSince) && await windowsLinkVerdict() === "fresh";
+}
+async function waitForVerifiedLink(cancelled: () => boolean): Promise<boolean> {
+  const deadline = Date.now() + 22_000;
+  while (!cancelled() && Date.now() < deadline) {
+    if (await verifiedWindowsLink()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return false;
+}
+const handoff = new NetworkHandoff({
+  physical: physicalRoute, ready: gatewayReady,
+  active: () => vpnWanted && !!savedConfig && process.platform === "win32",
+  status: (message, failed) => {
+    if (!vpnWanted) return;
+    stopStatusPolling();
+    emit({ state: failed ? "error" : "connecting", since: failed ? null : current.since,
+      error: failed ? message : "VPN: переподключение...", backend: "amneziawg", embedded: false });
+  },
+  log: (message) => console.info("[VPN]", message),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  recover: async (_route, cancelled) => {
+    if (cancelled()) return false;
+    // A fresh handshake means the tunnel recovered naturally; still rebuild stale /32.
+    if (await verifiedWindowsLink()) {
+      await clearEndpointRoute();
+      const physical = await physicalRoute();
+      if (!physical || !(await gatewayReady(physical))) throw new Error("Новый шлюз пока недоступен");
+      await installEndpointRoute(savedConfig, physical);
+      if (await verifiedWindowsLink()) {
+        emit({ state: "on", since: new Date().toISOString(), error: null, backend: "amneziawg", embedded: false });
+        startStatusPolling("amneziawg", "system");
+        return true;
+      }
+    }
+    console.info("[VPN] AMNEZIAWG_STOP");
+    await windowsTunnelDown(activeExe);
+    await clearEndpointRoute();
+    const fresh = await physicalRoute();
+    if (!fresh || !(await gatewayReady(fresh))) throw new Error("Новый физический шлюз недоступен");
+    if (cancelled()) return false;
+    await installEndpointRoute(savedConfig, fresh);
+    if (cancelled()) return false;
+    console.info("[VPN] AMNEZIAWG_START");
+    handshakeSince = Date.now();
+    const embedded = embeddedClientPath("amneziawg");
+    activeExe = await windowsTunnelUp(savedConfig, embedded);
+    activeMode = "system";
+    const good = await waitForVerifiedLink(cancelled);
+    if (cancelled()) return false;
+    if (!good) throw new Error("AmneziaWG: handshake не подтверждён после восстановления");
+    emit({ state: "on", since: new Date().toISOString(), error: null, backend: "amneziawg", embedded: false });
+    startStatusPolling("amneziawg", "system");
+    return true;
+  },
+});
+export function startVpnNetworkMonitor(): void {
+  if (process.platform !== "win32" || networkTimer) return;
+  networkTimer = setInterval(() => { void handoff.scan().catch((err) => console.warn("[VPN] NETWORK_CHANGED scan failed", err)); }, 3000);
+}
+export function stopVpnNetworkMonitor(): void {
+  if (networkTimer) clearInterval(networkTimer);
+  networkTimer = null;
+}
+
 
 /** Каталог для временного профиля: приватный ключ не должен лежать в общих temp. */
 function vpnDir(): string {
@@ -180,12 +290,9 @@ function describeElevationError(err: unknown): Error {
 function knownDirs(): string[] {
   if (process.platform === "win32") {
     const pf = process.env["ProgramFiles"] || "C:\\Program Files";
-    const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
     return [
-      join(pf, "WireGuard"),
       join(pf, "AmneziaWG"),
       join(pf, "Amnezia", "AmneziaWG"),
-      join(pf86, "WireGuard"),
     ];
   }
   return ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/sbin", "/usr/sbin", "/run/current-system/sw/bin"];
@@ -253,67 +360,9 @@ async function embeddedHandshake(): Promise<"fresh" | "silent" | "unknown"> {
   }
 }
 
-/**
- * WINDOWS-STATUS: состояние туннеля у официального WireGuard for Windows.
- *
- * Почему не `wg show`: на Windows канал управления туннеля принадлежит
- * службе и закрыт обычному пользователю, а самого `wg.exe` в сборке нет.
- * Раньше это давало ЛОЖНУЮ ошибку «туннель поднят, но связи нет»: вызов
- * `wg` просто не удавался, и проверка считала это отсутствием рукопожатия.
- *
- * Поэтому смотрим на то, что доступно без прав: жива ли служба
- * `WireGuardTunnel$trioz` и поднят ли её адаптер. Служба сама останавливается,
- * если профиль неверный или адаптер не создался.
- */
+/** Windows: service, adapter, physical endpoint route and actual AWG handshake. */
 async function windowsServiceHandshake(): Promise<"fresh" | "silent" | "unknown"> {
-  try {
-    /* FIX-AWG-ONLY: имя службы зависит от клиента: форк AmneziaWG регистрирует
-       AmneziaWGTunnel$<имя>. Проверяем оба имени, а не одно: привязка к одному
-       имени давала бы ложное «туннель не поднят» на работающем туннеле — тот самый
-       сорт ошибки, из-за которой приложение раньше ругалось на исправный узел. */
-    const names = [`AmneziaWGTunnel$${TUNNEL_NAME}`, `WireGuardTunnel$${TUNNEL_NAME}`];
-    let running = false;
-    for (const name of names) {
-      try {
-        const { stdout } = await run("sc.exe", ["query", name], {
-          windowsHide: true,
-          timeout: 10_000,
-        });
-        if (/RUNNING/i.test(stdout)) {
-          running = true;
-          break;
-        }
-      } catch {
-        /* Службы с таким именем нет — пробуем следующее. */
-      }
-    }
-    if (!running) return "silent";
-  } catch {
-    return "silent";
-  }
-  /* Служба жива. Дополнительно убеждаемся, что адаптер в состоянии Up:
-     так ловится случай «служба есть, а сетевого устройства нет». */
-  try {
-    const { stdout } = await run(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `(Get-NetAdapter -Name '${TUNNEL_NAME}' -ErrorAction SilentlyContinue).Status`,
-      ],
-      { windowsHide: true, timeout: 15_000 },
-    );
-    /* FIX-WINLINK: живая служба и адаптер Up ещё не значат связь с узлом.
-       Спрашиваем счётчик входящих байт: в туннеле они приходят только от
-       узла, поэтому ноль — это честное «связи нет», а не «всё хорошо». */
-    if (/Up/i.test(stdout)) return await windowsLinkVerdict();
-    if (stdout.trim() === "") return "unknown";
-    return "silent";
-  } catch {
-    /* Не смогли спросить адаптер, но служба работает — считаем туннель живым. */
-    return "fresh";
-  }
+  return await verifiedWindowsLink() ? "fresh" : "silent";
 }
 
 /** Состояние связи у системного клиента (запасной путь разработчика). */
@@ -350,9 +399,7 @@ function readServiceFile(name: string): string | null {
  * через разовое повышение прав, чтобы не остаться вообще без VPN.
  */
 function serviceAvailable(): boolean {
-  /* Windows теперь использует официальный wireguard.exe /installtunnelservice.
-     Старый служебный компонент TrioZ с vpnHelper/wireguard-go больше не нужен
-     для WireGuardNT и намеренно отключён. */
+  /* Windows использует AmneziaWG service lifecycle; старый helper отключён. */
   return false;
 }
 
@@ -551,12 +598,30 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     return current;
   }
 
+  // A manual connect supersedes a failed automatic recovery, never runs in parallel.
+  vpnWanted = false;
+  await handoff.cancel();
+  savedConfig = config;
+  vpnWanted = true;
+  let initialPhysical: PhysicalRoute | null = null;
+  if (process.platform === "win32") {
+    initialPhysical = await physicalRoute();
+    if (!initialPhysical || !(await gatewayReady(initialPhysical))) {
+      vpnWanted = false;
+      emit({ state: "error", since: null, error: "Нет доступного физического шлюза для VPN", backend, embedded: false });
+      return current;
+    }
+  }
   emit({ state: "connecting", since: null, error: null, backend, embedded: true });
 
   const embedded = embeddedClientPath(backend);
   try {
     await cleanupAfterFailedStart(tearDownQuietly);
     confPath = writeConfFile(config);
+    if (initialPhysical) {
+      await clearEndpointRoute();
+      await installEndpointRoute(config, initialPhysical);
+    }
 
     if (serviceAvailable()) {
       /* Обычный путь в установленном приложении. Права администратора спрошены
@@ -571,10 +636,8 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
     } else if (embedded) {
       activeExe = embedded;
       if (process.platform === "win32") {
-        /* На Windows больше не поднимаем wireguard-go + Wintun своим кодом.
-           Используем официальный wireguard-windows: /installtunnelservice сам
-           создаёт службу WireGuardTunnel$trioz, WireGuardNT-адаптер, адреса,
-           DNS, endpoint-exclude и full-tunnel маршруты. */
+        /* Только AmneziaWG /installtunnelservice для trioz; физический
+           endpoint /32 уже закреплён за реальным интерфейсом выше. */
         /* FIX-WINCLIENT: раньше здесь была одна строка «попросить клиента
            поставить службу» — и всё. У автора проекта это работало только
            потому, что клиент AmneziaWG уже был установлен в системе руками.
@@ -586,6 +649,7 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
            профиль в общий каталог машины, снимает прежнюю службу и адаптер,
            ставит новую и ждёт подтверждения, что она действительно живёт. */
         activeMode = "system";
+        handshakeSince = Date.now();
         activeExe = await windowsTunnelUp(config, embedded);
       } else {
         /* Linux/macOS по-прежнему используют встроенный wireguard-go helper. */
@@ -597,18 +661,11 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
          в установленном приложении сюда не попадают. */
       const fallback = await resolveSystemExe();
       if (!fallback) {
-        emit({
-          state: "error",
-          since: null,
-          error: "Встроенный клиент отсутствует в этой сборке. Пересоберите приложение с шагом vendor:client.",
-          backend: null,
-          embedded: false,
-        });
-        removeConfFile();
-        return current;
+        throw new Error("Встроенный клиент отсутствует в этой сборке. Пересоберите приложение с шагом vendor:client.");
       }
       activeExe = fallback;
       activeMode = "system";
+      handshakeSince = Date.now();
       await runElevated(fallback, tunnelUpArgs(process.platform, confPath));
     }
 
@@ -619,13 +676,16 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
       backend,
       embedded: activeMode !== "system",
     });
+    if (initialPhysical) handoff.setBaseline(initialPhysical);
     startStatusPolling(backend, activeMode);
     return current;
   } catch (err) {
     /* Ошибка могла произойти после создания службы/адаптера. Сначала полностью
        снимаем частично поднятый tunnel тем же lifecycle, и только потом
        очищаем память и возвращаем исходную ошибку пользователю. */
+    vpnWanted = false;
     await tearDownQuietly();
+    try { await clearEndpointRoute(); } catch (routeError) { console.warn("[VPN] ENDPOINT_ROUTE_REMOVED failed", routeError); }
     removeConfFile();
     activeExe = "";
     activeMode = null;
@@ -653,6 +713,7 @@ async function resolveSystemExe(): Promise<string> {
 async function tearDownQuietly(): Promise<void> {
   try {
     await tearDown();
+    if (process.platform === "win32") await clearEndpointRoute();
   } catch {
     /* нечего снимать — это не ошибка */
   }
@@ -699,9 +760,12 @@ async function tearDown(): Promise<void> {
 
 /** Выключить туннель по кнопке. */
 export async function vpnDown(): Promise<VpnStatePayload> {
+  vpnWanted = false;
+  await handoff.cancel();
   const physicallyActive = process.platform === "win32" && await windowsTunnelExists();
   if (!vpnNeedsCleanup(current.state, physicallyActive)) {
     stopStatusPolling();
+    if (process.platform === "win32") await clearEndpointRoute();
     removeConfFile();
     activeExe = "";
     activeMode = null;
@@ -717,6 +781,7 @@ export async function vpnDown(): Promise<VpnStatePayload> {
   stopStatusPolling();
   try {
     await tearDown();
+    if (process.platform === "win32") await clearEndpointRoute();
     removeConfFile();
     activeExe = "";
     activeMode = null;
@@ -725,8 +790,8 @@ export async function vpnDown(): Promise<VpnStatePayload> {
     /* Не удалось снять — честно показываем ошибку, но туннель мог и сняться:
        оставляем прежнее «поднят», чтобы кнопка позволила повторить. */
     emit({
-      state: "on",
-      since: current.since,
+      state: "error",
+      since: null,
       error: err instanceof Error ? err.message : "Не удалось выключить туннель",
       backend,
       embedded: activeMode !== "system",
@@ -741,16 +806,21 @@ export async function vpnDown(): Promise<VpnStatePayload> {
  * машину замкнутой на сервер без единого окна, чтобы это отменить.
  */
 export async function shutdownVpn(): Promise<void> {
+  vpnWanted = false;
+  stopVpnNetworkMonitor();
+  await handoff.cancel();
   stopStatusPolling();
   const physicallyActive = process.platform === "win32" && await windowsTunnelExists();
   if (!vpnNeedsCleanup(current.state, physicallyActive)) {
+    if (process.platform === "win32") await clearEndpointRoute();
     removeConfFile();
     return;
   }
   try {
     await tearDown();
-  } catch {
-    /* при выходе показывать уже нечего — просто пытаемся не оставить туннель */
+    if (process.platform === "win32") await clearEndpointRoute();
+  } catch (err) {
+    console.warn("[VPN] cleanup при выходе не завершён:", err);
   } finally {
     removeConfFile();
     activeExe = "";
@@ -761,13 +831,18 @@ export async function shutdownVpn(): Promise<void> {
 /**
  * Startup recovery: старая служба могла пережить crash/update, тогда память
  * Electron говорит `off`, а Windows продолжает маршрутизировать через tunnel.
- * Удаляются только две службы TrioZ и адаптер с точным именем `trioz`.
+ * Удаляется только AmneziaWGTunnel$trioz и адаптер с точным именем `trioz`.
  */
 export async function recoverOrphanedVpn(): Promise<boolean> {
-  if (process.platform !== "win32" || !(await windowsTunnelExists())) return false;
+  if (process.platform !== "win32") return false;
+  if (!(await windowsTunnelExists())) {
+    await clearEndpointRoute();
+    return false;
+  }
   stopStatusPolling();
   try {
     await windowsTunnelDown("");
+    await clearEndpointRoute();
     current = { state: "off", since: null, error: null, backend: null, embedded: true };
     return true;
   } catch (error) {
