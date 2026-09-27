@@ -1,16 +1,17 @@
-# Отчёт по Windows AmneziaWG handoff
+# Исправление регрессии VPN и network handoff
 
-## Изменённые исходники
-- `apps/desktop/src/main/networkHandoff.ts` — baseline физического интерфейса, debounce, ожидание шлюза 30 секунд, три попытки с задержками 2/4 секунды, отмена по VPN OFF.
-- `apps/desktop/src/main/winNetwork.ts` — текущий default route на физическом hardware-интерфейсе, InterfaceIndex/Alias, IPv4, NextHop, DNS, проверка gateway, DNS A через физический сервер, принадлежность endpoint /32, точная проверка маршрута, свежий handshake AWG (`/dumplog` или `awg show`).
-- `apps/desktop/src/main/vpn.ts` — сохранение маршрута при старте, stop/wait PID/adapter → удаление старого route → новый uplink → новый route → запуск AWG → service/adapter/route/handshake/RX, состояние connecting/error до подтверждения, cleanup при off/crash/quit и диагностические логи.
-- `apps/desktop/src/main/index.ts` — запуск фонового наблюдения после startup cleanup.
-- `apps/desktop/src/main/winTunnel.ts` и `apps/desktop/src/shared/vpnClient.ts` — TrioZ AmneziaWG-only service lookup; существующий stop/wait/fallback без затрагивания других адаптеров.
-- `apps/web/src/components/connect/overlays/PremiumInfoModal.tsx` — «Переподключение…» при handoff, без зелёного connected до проверок.
-- `scripts/test-vpn-handoff.mjs`, `scripts/test-vpn-win-network.mjs`, `scripts/test-vpn-tunnel-lifecycle.mjs` — 27 новых моделируемых тестов, плюс 15 существующих desktop-recovery тестов.
+## Почему вариант №1 мог полностью заблокировать VPN
+Исходный `vpnUp()` ставил службу через `windowsTunnelUp()` и давал **самому AmneziaWG** настроить endpoint route. Вариант №1 ДО этой операции требовал распознать Windows физический интерфейс, получить ответ ICMP от gateway, разрешить DNS и создать свой `/32` с UAC. Любой отказ останавливал подключение или создавал конкурирующий маршрут. Затем статус требовал запись `/dumplog` строго определённого формата И входящие байты И наличие нашего маршрута — даже если штатная служба и туннель работали. Какая именно проверка отказала на машине пользователя, без её журнала неизвестно.
 
-## Что ещё требуется на Windows
-См. `WINDOWS-VPN-HANDOFF-TEST.md` для A–D. Без реального ноутбука нельзя подтвердить доступ к интернету через VPN или единственный Tunnel PID после смены сети. Запрос UAC при каждой привилегированной операции остаётся унаследованным свойством приложения: **автоматический unattended reconnect не доказан и может требовать подтверждения UAC**. Для полного acceptance потребуется заранее установленный доверенный привилегированный компонент с ограниченным интерфейсом команд; отключать UAC не следует. IPv6 endpoint и отдельная прикладная проба узла не реализованы; обработка IPv6 fail-closed.
+## Что изменено в этом варианте
+- Обычное включение вернулось к исходному `windowsTunnelUp(config, embedded)`: нет обязательного gateway ping, DNS, `New-NetRoute` и проверки нашего /32 перед стартом. Монитор сети сохраняет физический маршрут только для последующего handoff.
+- Статус исходного подключения снова следует рабочему пути: служба `AmneziaWGTunnel$trioz`, адаптер Up, входящие байты. AWG `/dumplog` при recovery — диагностика, **не блокирующий критерий**, поскольку права/формат его журнала ещё не проверены на целевой Windows.
+- При смене сети выполняется сериализованный stop и ожидание службы/PID/адаптера, затем берётся новый физический route и через исходный `windowsTunnelUp` запускается AmneziaWG. Client-managed endpoint /32 проверяется и не перезаписывается. Старый /32 удаляется только если его точные endpoint IP, gateway и index были зафиксированы до остановки на прежнем TrioZ uplink и он остался после остановки. Собственный /32 создаётся лишь как резерв после отсутствия связи и отсутствия других маршрутов к endpoint.
+- Блокирующий ICMP gateway убран: hotspot может маршрутизировать интернет, но не отвечать на ping. Внешние VPN и не принадлежащие TrioZ host routes не удаляются.
+- Исторический `endpoint-route.json` от варианта №1 удаляется best effort по записанным точным параметрам.
 
-## Выполненные проверки
-`npm run build:shared`; `npm run typecheck -w apps/desktop` — OK. `node --test scripts/test-vpn-handoff.mjs scripts/test-vpn-win-network.mjs scripts/test-vpn-tunnel-lifecycle.mjs scripts/test-desktop-recovery.mjs` — 42/42 OK. Веб typecheck в полном объёме заблокирован отсутствующим сгенерированным Prisma Client (`npm ci --ignore-scripts`), ошибок в отредактированном UI-файле проверка не показала. Windows ручной тест — **не выполнен**.
+## Изменённые файлы
+`apps/desktop/src/main/vpn.ts`, `apps/desktop/src/main/winNetwork.ts`, `apps/desktop/src/main/networkHandoff.ts`, `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/winTunnel.ts`, `apps/desktop/src/shared/vpnClient.ts`, `apps/web/src/components/connect/overlays/PremiumInfoModal.tsx`; тесты в `scripts/test-vpn-*.mjs`.
+
+## Результат проверок и ограничения
+`npm run build:shared`, desktop TypeScript typecheck, моделируемые тесты — прошли. Реальные Windows Wi-Fi ↔ hotspot, UAC и формат AmneziaWG `/dumplog` здесь не тестировались. Приложение и раньше запускало stop/install через UAC; следовательно, **без подтверждения UAC или заранее установленного доверенного привилегированного компонента автоматическое восстановление без участия пользователя не гарантировано**. Отдельный прикладной probe адреса VPN-узла не задан профилем, поэтому используется входящий трафик клиента; это не полная проверка доступности произвольного сайта. IPv6 endpoint не получает дополнительный `/128` и остаётся на маршрутизации клиента.

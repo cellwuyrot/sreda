@@ -1,29 +1,18 @@
-# Проверка network handoff AmneziaWG на Windows
+# Проверка исправления на Windows (ещё не выполнена)
 
-Код в архиве проверен на Linux только TypeScript-компилятором и моделируемыми тестами. Ниже — **не выполненный** план проверки на настоящем ноутбуке Windows; до прохождения A–D нельзя считать исправление принятым.
+1. На Wi-Fi A включить VPN: убедиться, что сайт открывается и внешний IP соответствует VPN. Если нет, сохранить сообщение ошибки, `%ProgramData%\TrioZ\vpn\install.log` и вывод read-only команд ниже до повторных попыток.
+2. Не выключая VPN, переключиться на hotspot телефона. Подождать 30–90 секунд и подтвердить UAC, если запрос появится. Проверить «Переподключение…» → «Соединение активно», доступ сайта и новый внешний IP через VPN.
+3. Вернуться на Wi-Fi A без ручного «Выкл/Вкл»; повторить проверки. В Task Manager/sc queryex должен быть не более одного TrioZ tunnel PID.
+4. Выключить VPN: адаптер `trioz` и созданный приложением /32 должны исчезнуть. Сменить сеть при VPN OFF: служба не должна запускаться. Проверить также паузу без gateway и crash/restart.
 
-## A. Подключение
-1. Подключить ноутбук к Wi-Fi A и включить VPN в TrioZ; открыть сайт.
-2. Проверить `Get-Service 'AmneziaWGTunnel$trioz'`, `Get-NetAdapter -Name trioz`, `amneziawg.exe /dumplog` (строка `Received handshake response` для trioz), внешний IP.
-3. Зафиксировать IP endpoint, `Get-NetRoute -DestinationPrefix '<endpoint IPv4>/32'`, `Get-NetRoute -DestinationPrefix '0.0.0.0/0'`, InterfaceIndex и NextHop.
+Read-only диагностика (PowerShell):
+```powershell
+Get-Service 'AmneziaWGTunnel$trioz' -ErrorAction SilentlyContinue
+Get-NetAdapter -Name 'trioz' -ErrorAction SilentlyContinue
+Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' | Format-Table InterfaceIndex,InterfaceAlias,NextHop,RouteMetric
+Get-NetRoute -AddressFamily IPv4 | Where-Object DestinationPrefix -Like '*/32' | Format-Table DestinationPrefix,InterfaceIndex,NextHop
+```
 
-## B. Wi-Fi → телефон
-1. Не отключая VPN, выключить Wi-Fi A и подключиться к мобильной точке доступа.
-2. Проверить «Переподключение…»; дать не менее 30 секунд на появление маршрута и до трёх попыток (UAC может потребовать подтверждения). Нажимать «Выкл/Вкл» нельзя.
-3. Убедиться, что старый /32 удалён, а новый `/32` ведёт через **новый** gateway и InterfaceIndex; в логе есть `NETWORK_CHANGED`, `ENDPOINT_ROUTE_REMOVED`, `ENDPOINT_ROUTE_CREATED`, `AMNEZIAWG_STOP`, `AMNEZIAWG_START`, `HANDSHAKE_CHECK`, `RECOVERY_SUCCESS`.
-4. Открыть сайт, проверить свежий handshake и внешний VPN-IP. Если UAC мешает автоматике, зафиксировать это как невыполненный acceptance criterion.
+Не публикуйте `trioz.conf`: в нём приватный ключ. Эти команды ничего не меняют в системе. Если после предыдущего варианта остался `endpoint-route.json` или маршрут через старый gateway и новая версия не смогла очистить его из-за отказа UAC, пришлите точный вывод и лог: нельзя удалять все `/32` или чужие VPN-маршруты вслепую.
 
-## C. Телефон → Wi-Fi
-Повторить B в обратную сторону: gateway/index и endpoint /32 должны снова измениться, без ручного выключения VPN.
-
-## D. Дубли и выключение
-1. Во время B/C проверить Task Manager / `sc queryex 'AmneziaWGTunnel$trioz'`: не более одного TrioZ tunnel PID. Другие VPN не должны меняться.
-2. Выключить VPN и убедиться, что `Get-NetAdapter -Name trioz` ничего не возвращает, а owned /32 отсутствует.
-3. Менять сеть при выключенном VPN: TrioZ не должен запускать службу или создавать адаптер.
-4. Проверить случаи отсутствия шлюза, недоступного DNS endpoint, отсутствующего handshake, повторного запуска приложения после crash.
-
-## Ограничения текущего изменения
-- Приложение запускает повышенные PowerShell-команды и `windowsTunnelUp/Down` через UAC. Без заранее установленного доверенного привилегированного компонента полностью беззвучный reconnect не гарантирован: во время B/C пользователь может получить запрос UAC. Не отключайте защиту UAC для обхода.
-- IPv6 endpoint отклоняется явно: маршрут `/128` не реализован.
-- Строка handshake из `/dumplog` должна быть проверена на целевой версии AmneziaWG. Если служба не предоставляет журнал процессу приложения, `state=on` не выставляется; счётчик байтов адаптера сам по себе не считается handshake.
-- Доступ к VPN-узлу проверяется косвенно подтверждённым handshake и входящим трафиком адаптера; отдельный адрес узла для прикладной пробы профиль не задаёт. Для строгой проверки доступности добавьте согласованный адрес и протокол пробы.
+**Статус:** тесты A–D на настоящем Windows-ноутбуке не проведены; до них acceptance criteria не подтверждены.
