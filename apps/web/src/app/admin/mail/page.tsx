@@ -31,7 +31,7 @@ import { listingParams } from "@/lib/mailListing";
 
 type Direction = "incoming" | "outgoing";
 type MainTab = Direction | "archive" | "trash";
-type SideTab = "mail" | "blacklist" | "folders";
+type SideTab = "mail" | "blacklist" | "folders" | "verification";
 
 interface Mailbox {
   localPart: string;
@@ -527,6 +527,154 @@ function FoldersPanel({ onFolderSelect }: { onFolderSelect: (f: MailFolder | nul
   );
 }
 
+
+/** Коды подтверждения, отправленные внутренним noreply@trioz.ru */
+function VerificationCodesPanel() {
+  type CodeType = "register" | "login" | "reset";
+  interface VerificationRow {
+    id: string;
+    email: string;
+    code: string;
+    type: CodeType;
+    expiresAt: string;
+    used: boolean;
+    sendStatus: "pending" | "sent" | "failed";
+    sendError?: string | null;
+    createdAt: string;
+    mailMessage?: {
+      id: string;
+      deliveryStatus?: string | null;
+      deliveryError?: string | null;
+      messageId?: string | null;
+      sentAt?: string | null;
+    } | null;
+  }
+
+  const [type, setType] = useState<"all" | CodeType>("register");
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<VerificationRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (type !== "all") params.set("type", type);
+      if (query.trim()) params.set("q", query.trim());
+      const res = await fetch(`/api/admin/mail/verification-codes?${params.toString()}`, { cache: "no-store" });
+      const data = res.ok ? await res.json() : null;
+      if (!res.ok) throw new Error(data?.error || "Не удалось загрузить коды");
+      setRows(data?.codes ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось загрузить коды");
+    } finally {
+      setLoading(false);
+    }
+  }, [type, query]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 150);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const typeLabel: Record<CodeType, string> = {
+    register: "Регистрация",
+    login: "Вход",
+    reset: "Сброс пароля",
+  };
+
+  const statusLabel = (row: VerificationRow) => {
+    if (row.sendStatus === "failed") return { text: "Не отправлено", cls: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300" };
+    if (row.used) return { text: "Использован", cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" };
+    if (row.sendStatus === "pending") return { text: "Отправляется", cls: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" };
+    if (new Date(row.expiresAt).getTime() < Date.now()) return { text: "Истёк", cls: "bg-neutral-100 text-neutral-500 dark:bg-white/5 dark:text-gray-400" };
+    return { text: "Отправлен", cls: "bg-violet-50 text-violet-700 dark:bg-cyan-500/10 dark:text-cyan-300" };
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-neutral-900 dark:text-white">noreply@trioz.ru</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
+              Единый внутренний ящик для кодов регистрации, входа и восстановления. Доставка проходит тем же SMTP-потоком, что и ручная отправка из почты.
+            </p>
+          </div>
+          <button
+            onClick={() => void load()}
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+          >
+            Обновить
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {([
+          ["register", "Регистрация"],
+          ["login", "Вход"],
+          ["reset", "Сброс пароля"],
+          ["all", "Все"],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => setType(value)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+              type === value
+                ? "bg-violet-600 text-white dark:bg-cyan-600"
+                : "bg-neutral-100 text-neutral-600 hover:text-neutral-900 dark:bg-white/5 dark:text-gray-400 dark:hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Поиск по email"
+          className="min-w-[180px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-violet-400 dark:border-white/10 dark:bg-neutral-950/50 dark:text-white dark:focus:border-cyan-400"
+        />
+      </div>
+
+      {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">{error}</p>}
+      {loading ? (
+        <p className="text-sm text-neutral-400">Загрузка кодов…</p>
+      ) : rows.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400 dark:border-white/10">Кодов пока нет</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((row) => {
+            const status = statusLabel(row);
+            return (
+              <div key={row.id} className="rounded-xl border border-neutral-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-neutral-950/20">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-base font-bold tracking-[0.2em] text-neutral-900 dark:text-white">{row.code}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.cls}`}>{status.text}</span>
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-500 dark:bg-white/5 dark:text-gray-400">{typeLabel[row.type]}</span>
+                </div>
+                <div className="mt-2 grid gap-1 text-xs text-neutral-500 dark:text-gray-400 sm:grid-cols-2">
+                  <div><span className="text-neutral-400">Получатель:</span> <span className="text-neutral-700 dark:text-gray-200">{row.email}</span></div>
+                  <div><span className="text-neutral-400">Создан:</span> {formatDate(row.createdAt)}</div>
+                  <div><span className="text-neutral-400">Истекает:</span> {formatDate(row.expiresAt)}</div>
+                  <div><span className="text-neutral-400">Письмо:</span> {row.mailMessage?.deliveryStatus || row.sendStatus}</div>
+                </div>
+                {(row.sendError || row.mailMessage?.deliveryError) && (
+                  <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">
+                    {row.sendError || row.mailMessage?.deliveryError}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export default function AdminMailPage() {
@@ -797,6 +945,7 @@ export default function AdminMailPage() {
     { id: "mail", label: "Почта", icon: <Icon path={<><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></>} /> },
     { id: "blacklist", label: "ЧС", icon: <Icon path={<><circle cx="12" cy="12" r="10" /><path d="m4.9 4.9 14.2 14.2" /></>} /> },
     { id: "folders", label: "Папки", icon: <Icon path={<><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></>} /> },
+    { id: "verification", label: "Коды", icon: <Icon path={<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 8h10" /><path d="M7 12h6" /><path d="M7 16h4" /></>} /> },
   ];
 
   const ARCHIVE_DIRS: { id: Direction | ""; label: string }[] = [
@@ -815,7 +964,7 @@ export default function AdminMailPage() {
           </Link>
           <h1 className="mt-2 text-lg font-semibold text-neutral-900 dark:text-white">Email и обработка данных</h1>
           <p className="mt-1 text-sm text-neutral-500 dark:text-gray-400">
-            Почтовые ящики домена: входящие и исходящие письма, чёрный список, настройка папок.
+            Почтовые ящики домена, коды подтверждения noreply@trioz.ru, входящие и исходящие письма, чёрный список и папки.
           </p>
         </div>
 
@@ -853,7 +1002,12 @@ export default function AdminMailPage() {
                       : "border-neutral-200 bg-white hover:border-violet-300 dark:border-white/10 dark:bg-neutral-900 dark:hover:border-cyan-500/30"
                   }`}
                 >
-                  <p className="text-sm font-semibold text-neutral-900 dark:text-white">{box.address}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-white">{box.address}</p>
+                    {box.localPart === "noreply" && (
+                      <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700 dark:bg-cyan-500/10 dark:text-cyan-300">Система</span>
+                    )}
+                  </div>
                   <p className="truncate text-xs text-neutral-500 dark:text-gray-400">{box.purpose}</p>
                 </button>
               );
@@ -870,6 +1024,9 @@ export default function AdminMailPage() {
             {sideTab === "folders" && (
               <FoldersPanel onFolderSelect={(f) => { setActiveFolder(f); if (f) setSideTab("mail"); }} />
             )}
+
+            {/* ══ Коды подтверждения ══ */}
+            {sideTab === "verification" && <VerificationCodesPanel />}
 
             {/* ══ Почта ══ */}
             {sideTab === "mail" && (

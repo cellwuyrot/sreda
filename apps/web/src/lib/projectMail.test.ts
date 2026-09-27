@@ -17,7 +17,7 @@ import {
 
 describe("PROJECT_MAILBOXES — целостность списка", () => {
   it("содержит ровно 9 ящиков из брифа", () => {
-    expect(PROJECT_MAILBOXES).toHaveLength(9);
+    expect(PROJECT_MAILBOXES).toHaveLength(10);
   });
 
   it("все localPart уникальны", () => {
@@ -26,12 +26,12 @@ describe("PROJECT_MAILBOXES — целостность списка", () => {
   });
 
   it("содержит именно ожидаемые адреса", () => {
-    const expected = ["info", "sales", "support", "legal", "docs", "partners", "hr", "media", "security"];
+    const expected = ["info", "sales", "support", "legal", "docs", "partners", "hr", "media", "security", "noreply"];
     expect(PROJECT_MAILBOXES.map((m) => m.localPart)).toEqual(expected);
   });
 
   it("order идёт подряд 0..8", () => {
-    expect(PROJECT_MAILBOXES.map((m) => m.order)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(PROJECT_MAILBOXES.map((m) => m.order)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it("все полные адреса на домене trioz.ru", () => {

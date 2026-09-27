@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
     const recentCode = await prisma.verificationCode.findFirst({
       where: {
         email: targetEmail,
+        sendStatus: { in: ["pending", "sent"] },
         createdAt: { gte: new Date(Date.now() - 60 * 1000) },
       },
       orderBy: { createdAt: "desc" },
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
       data: { email: targetEmail, code, type, expiresAt },
     });
 
-    const sent = await sendVerificationEmail(targetEmail, code, type);
+    const sent = await sendVerificationEmail(targetEmail, code, type, created.id);
 
     if (!sent) {
       /* FIX-SMTP: неотправленный код не должен занимать минутный интервал.
@@ -104,9 +105,8 @@ export async function POST(req: NextRequest) {
          отправкой» смотрит именно на неё — поэтому после сбоя почты человек
          получал сначала «не удалось отправить», а следом ещё и запрет
          повторить, не получив ни одного письма. */
-      await prisma.verificationCode.delete({ where: { id: created.id } }).catch(() => {});
       return NextResponse.json(
-        { error: "Не удалось отправить письмо. Проверьте настройки SMTP." },
+        { error: "Не удалось отправить письмо. Проверьте настройки почты noreply@trioz.ru." },
         { status: 500 }
       );
     }

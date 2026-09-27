@@ -285,7 +285,7 @@ export async function PATCH(req: NextRequest) {
        только он в /api/auth/verify-code выставляет emailVerified. */
     try {
       const code = generateCode();
-      await prisma.verificationCode.create({
+      const verification = await prisma.verificationCode.create({
         data: {
           email: emailChangedTo,
           code,
@@ -293,7 +293,7 @@ export async function PATCH(req: NextRequest) {
           expiresAt: new Date(Date.now() + 15 * 60 * 1000),
         },
       });
-      await sendVerificationEmail(emailChangedTo, code, "login");
+      await sendVerificationEmail(emailChangedTo, code, "login", verification.id);
     } catch (err) {
       console.error("[profile] не удалось отправить код на новый адрес:", err);
     }
