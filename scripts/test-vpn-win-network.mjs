@@ -70,3 +70,15 @@ test('stale or absent handshake never turns into VPN on', async () => {
   assert.equal(await t.api.recentAwgHandshake('amneziawg.exe'), false);
   t.answer(''); assert.equal(await t.api.recentAwgHandshake('amneziawg.exe'), false);
 });
+test('gateway is ready even if hotspot blocks ICMP', async () => {
+  const t = setup(); t.answer(JSON.stringify(physical));
+  assert.equal(await t.api.gatewayReady(physical), true);
+  assert.equal(t.calls.some((x) => x.file === 'ping.exe'), false);
+});
+test('endpoint route inspection reads AmneziaWG-owned /32 without creating another', async () => {
+  const t = setup(); t.answer(JSON.stringify({ InterfaceIndex: 17, NextHop: '192.168.42.129' }));
+  const routes = await t.api.endpointRoutes('203.0.113.11');
+  assert.equal(routes.length, 1); assert.equal(routes[0].interfaceIndex, 17);
+  assert.equal(t.calls.length, 1);
+  assert.doesNotMatch(encodedScript(t.calls[0]), /New-NetRoute/);
+});
