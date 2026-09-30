@@ -11,6 +11,7 @@ import { createNotification } from "@/lib/createNotification";
 import { messageLengthError } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
 import { businessAudience, isStaffRole, staffIds } from "@/lib/businessChat";
+import { rateLimit } from "@/lib/rateLimit";
 
 /**
  * Кто может открыть эту переписку.
@@ -77,6 +78,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const limited = await rateLimit(req, "dm-messages", { limit: 30, windowMs: 60 * 1000 });
+  if (limited) return limited;
+
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -130,6 +134,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { content, attachments, replyToId } = await req.json();
+  const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
   if (attachments != null && (!Array.isArray(attachments) || attachments.length > 10 || attachments.some((item: unknown) => {
     if (!item || typeof item !== "object") return true;
     const url = (item as { url?: unknown }).url;
@@ -151,7 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const reply = await prisma.directMessage.findUnique({ where: { id: replyToId }, select: { conversationId: true } });
     if (!reply || reply.conversationId !== id) return NextResponse.json({ error: "Некорректное сообщение для ответа" }, { status: 400 });
   }
-  if ((!content || !content.trim()) && !attachments) {
+  if ((!content || !content.trim()) && !hasAttachments) {
     return NextResponse.json({ error: "Message content required" }, { status: 400 });
   }
   /* Предел общий с клиентом (lib/messageLimits). Шифротекст длиннее исходного
@@ -172,7 +177,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const isE2EE = content && content.startsWith("e2ee:");
   const sanitized = isE2EE ? content : (content ? sanitizeText(content) : "");
-  if (!sanitized && !attachments) {
+  if (!sanitized && !hasAttachments) {
     return NextResponse.json({ error: "Message cannot be empty" }, { status: 400 });
   }
 
@@ -180,7 +185,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     content: sanitized,
     conversationId: id,
     userId,
-    attachments: attachments ? JSON.stringify(attachments) : null,
+    attachments: hasAttachments ? JSON.stringify(attachments) : null,
     replyToId: replyToId || null,
   };
   const include = {
@@ -299,18 +304,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (autoText && peerId !== userId) {
       const last = peerSetting?.lastAutoReplyAt?.getTime() ?? 0;
       if (Date.now() - last > 60 * 60 * 1000) {
-        await prisma.dmUserSetting.update({
-          where: { ownerId_targetId: { ownerId: peerId, targetId: userId } },
+        const claimed = await prisma.dmUserSetting.updateMany({
+          where: {
+            ownerId: peerId,
+            targetId: userId,
+            OR: [
+              { lastAutoReplyAt: null },
+              { lastAutoReplyAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } },
+            ],
+          },
           data: { lastAutoReplyAt: new Date() },
         });
-        const auto = await prisma.directMessage.create({
-          data: { content: `🤖 Автоответ: ${autoText}`, conversationId: id, userId: peerId },
-          include,
-        });
-        await prisma.directConversation.update({ where: { id }, data: { lastMessageAt: new Date() } });
-        const autoPayload = { ...auto, conversationId: id, pushEnabled: false };
-        emitToUser(userId, SOCKET_EVENTS.DM_MESSAGE, autoPayload);
-        emitToUser(peerId, SOCKET_EVENTS.DM_MESSAGE, autoPayload);
+        if (claimed.count === 1) {
+          const auto = await prisma.directMessage.create({
+            data: { content: `🤖 Автоответ: ${autoText}`, conversationId: id, userId: peerId },
+            include,
+          });
+          await prisma.directConversation.update({ where: { id }, data: { lastMessageAt: new Date() } });
+          const autoPayload = { ...auto, conversationId: id, pushEnabled: false };
+          emitToUser(userId, SOCKET_EVENTS.DM_MESSAGE, autoPayload);
+          emitToUser(peerId, SOCKET_EVENTS.DM_MESSAGE, autoPayload);
+        }
       }
     }
   } catch { /* автоответ необязателен */ }
@@ -332,8 +346,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const banned = await checkBan(session.user.id);
+  if (banned) return banned;
 
   const { id } = await params;
+  const access = await openConversation(id, session.user);
+  if (!access.conversation) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!access.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (access.conversation.kind === "BUSINESS" && access.conversation.locked && !isStaffRole(session.user.role)) {
+    return NextResponse.json({ error: "Администрация закрыла отправку сообщений по этому обращению", locked: true }, { status: 403 });
+  }
   const { messageId, content } = await req.json();
   if (!messageId || !content?.trim()) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
@@ -382,8 +404,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const banned = await checkBan(session.user.id);
+  if (banned) return banned;
 
   const { id } = await params;
+  const access = await openConversation(id, session.user);
+  if (!access.conversation) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!access.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (access.conversation.kind === "BUSINESS" && access.conversation.locked && !isStaffRole(session.user.role)) {
+    return NextResponse.json({ error: "Администрация закрыла отправку сообщений по этому обращению", locked: true }, { status: 403 });
+  }
   const { searchParams } = new URL(req.url);
   const messageId = searchParams.get("messageId");
   if (!messageId) return NextResponse.json({ error: "messageId required" }, { status: 400 });
@@ -395,7 +425,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   await prisma.directMessage.update({
     where: { id: messageId },
-    data: { deleted: true, content: "" },
+    data: { deleted: true, content: "", attachments: null, replyToId: null },
   });
 
   const conversation = await prisma.directConversation.findUnique({ where: { id } });
