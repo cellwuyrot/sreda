@@ -87,9 +87,13 @@ export default function CalendarPanel({ channelId, channelName }: CalendarPanelP
   const openEdit = (ev: CalEvent) => { setEditing(ev); setShowForm(true); };
 
   const onDelete = async (ev: CalEvent) => {
-    if (!(await confirmDialog({ message: "Удалить событие «" + ev.title + "»?", confirmText: "Удалить", danger: true }))) return;
+    if (!(await confirmDialog({ message: "Удалить событие «" + ev.title + "»?", confirmText: "Удалить", danger: true }))) return false;
     const res = await fetch("/api/calendar/" + ev.id, { method: "DELETE" });
-    if (res.ok) setEvents((prev) => prev.filter((x) => x.id !== ev.id));
+    if (res.ok) {
+      setEvents((prev) => prev.filter((x) => x.id !== ev.id));
+      return true;
+    }
+    return false;
   };
 
   // FIX-CAL-REMIND: подписка/отписка на напоминание о событии (уведомление
@@ -211,7 +215,11 @@ export default function CalendarPanel({ channelId, channelName }: CalendarPanelP
           channelId={channelId}
           editing={editing}
           defaultDay={selectedDay}
+          canManage={editing ? canEdit || editing.author.id === currentUserId : canEdit}
           onClose={() => setShowForm(false)}
+          onDelete={async (ev) => {
+            if (await onDelete(ev)) setShowForm(false);
+          }}
           onSaved={(ev, isNew) => {
             setEvents((prev) => isNew ? [...prev, ev] : prev.map((x) => x.id === ev.id ? ev : x));
             setShowForm(false);
@@ -222,11 +230,13 @@ export default function CalendarPanel({ channelId, channelName }: CalendarPanelP
   );
 }
 
-function EventForm({ channelId, editing, defaultDay, onClose, onSaved }: {
+function EventForm({ channelId, editing, defaultDay, canManage, onClose, onDelete, onSaved }: {
   channelId: string;
   editing: CalEvent | null;
   defaultDay: Date | null;
+  canManage: boolean;
   onClose: () => void;
+  onDelete: (event: CalEvent) => Promise<void>;
   onSaved: (ev: CalEvent, isNew: boolean) => void;
 }) {
   const base = editing ? new Date(editing.start) : (defaultDay || new Date());
@@ -241,6 +251,7 @@ function EventForm({ channelId, editing, defaultDay, onClose, onSaved }: {
   const [error, setError] = useState("");
 
   const submit = async () => {
+    if (!canManage) return;
     if (!title.trim()) { setError("Введите название"); return; }
     setSaving(true);
     setError("");
@@ -265,29 +276,36 @@ function EventForm({ channelId, editing, defaultDay, onClose, onSaved }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div className="w-full max-w-md rounded-xl bg-[var(--bg-secondary,#1a1d27)] p-5 m-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold mb-4">{editing ? "Изменить событие" : "Новое событие"}</h3>
+        <h3 className="text-lg font-semibold mb-4">
+          {editing ? (canManage ? "Изменить событие" : "Событие") : "Новое событие"}
+        </h3>
         <div className="space-y-3">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название события" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none focus:border-[var(--accent,#3b82f6)]" autoFocus />
+          <input disabled={!canManage} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название события" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none focus:border-[var(--accent,#3b82f6)] disabled:opacity-80" autoFocus={canManage} />
           <div className="flex gap-2">
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="flex-1 px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none" />
-            {!allDay && <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none" />}
+            <input disabled={!canManage} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="flex-1 px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />
+            {!allDay && <input disabled={!canManage} type="time" value={time} onChange={(e) => setTime(e.target.value)} className="px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />}
           </div>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} /> Весь день
+            <input disabled={!canManage} type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} /> Весь день
           </label>
-          <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Место (необязательно)" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none" />
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Описание (необязательно)" rows={3} className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none resize-none" />
+          <input disabled={!canManage} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Место (необязательно)" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />
+          <textarea disabled={!canManage} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Описание (необязательно)" rows={3} className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none resize-none disabled:opacity-80" />
           <div className="flex items-center gap-2">
             <span className="text-sm text-[var(--text-muted,#9aa0ab)]">Цвет:</span>
             {COLORS.map((c) => (
-              <button key={c} onClick={() => setColor(c)} className={"w-6 h-6 rounded-full " + (color === c ? "ring-2 ring-offset-2 ring-offset-[var(--bg-secondary,#1a1d27)] ring-white" : "")} style={ { backgroundColor: c } } />
+              <button disabled={!canManage} key={c} onClick={() => setColor(c)} className={"w-6 h-6 rounded-full disabled:cursor-default " + (color === c ? "ring-2 ring-offset-2 ring-offset-[var(--bg-secondary,#1a1d27)] ring-white" : "")} style={ { backgroundColor: c } } />
             ))}
           </div>
           {error && <div className="text-sm text-red-400">{error}</div>}
         </div>
-        <div className="flex justify-end gap-2 mt-5">
+        <div className="flex items-center gap-2 mt-5">
+          {editing && canManage && (
+            <button onClick={() => void onDelete(editing)} className="mr-auto px-4 py-2 text-sm rounded-lg text-red-300 hover:bg-red-500/15">
+              Удалить
+            </button>
+          )}
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg hover:bg-[var(--bg-primary,#0f1117)]">Отмена</button>
-          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-[var(--accent,#3b82f6)] text-white disabled:opacity-50">{saving ? "Сохранение…" : "Сохранить"}</button>
+          {canManage && <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-[var(--accent,#3b82f6)] text-white disabled:opacity-50">{saving ? "Сохранение…" : "Сохранить"}</button>}
         </div>
       </div>
     </div>
