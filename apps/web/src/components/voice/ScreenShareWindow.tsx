@@ -209,6 +209,9 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
   // Компактный плеер в пределах окна приложения; перетаскивается мышью за
   // шапку. Никакого системного PiP всего приложения (FIX-SS-PIP).
   const [miniPos, setMiniPos] = useState<{ x: number; y: number } | null>(null);
+  // Плашка вне голосового канала тоже может перекрыть composer. Храним её
+  // пользовательскую позицию отдельно от mini-окна.
+  const [bannerPos, setBannerPos] = useState<{ x: number; y: number } | null>(null);
   /* SCREEN-PRIVATE-LIVE: панель управления зрителями. Открывается правым
      щелчком по своему показу или шестерёнкой в шапке; координаты нужны, чтобы
      окошко появилось у курсора. */
@@ -217,6 +220,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
      есть ранние return, а хуки после них запрещены (react-hooks/rules-of-hooks). */
   const [cameraBusy, setCameraBusy] = useState(false);
   const miniDragRef = useRef<{ dx: number; dy: number; w: number; h: number } | null>(null);
+  const bannerDragRef = useRef<{ dx: number; dy: number; w: number; h: number } | null>(null);
 
   const onMiniDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest("button")) return;
@@ -234,6 +238,29 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
     };
     const onUp = () => {
       miniDragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, []);
+
+  const onBannerDragStart = useCallback((e: React.PointerEvent<HTMLSpanElement>) => {
+    const card = e.currentTarget.closest("[data-screen-share-banner]");
+    if (!(card instanceof HTMLElement)) return;
+    e.preventDefault();
+    const rect = card.getBoundingClientRect();
+    bannerDragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top, w: rect.width, h: rect.height };
+    const onMove = (ev: PointerEvent) => {
+      const drag = bannerDragRef.current;
+      if (!drag) return;
+      setBannerPos({
+        x: Math.min(Math.max(ev.clientX - drag.dx, 8), Math.max(8, window.innerWidth - drag.w - 8)),
+        y: Math.min(Math.max(ev.clientY - drag.dy, 8), Math.max(8, window.innerHeight - drag.h - 8)),
+      });
+    };
+    const onUp = () => {
+      bannerDragRef.current = null;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -441,16 +468,27 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
       : isViewer ? `${active.userName} продолжает показ` : "Экран по-прежнему транслируется участникам";
     return createPortal(
       <motion.div
+        data-screen-share-banner
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         /* Плашка ставится внутрь области контента, а не в угол окна: в левом
            нижнем углу приложения живут строка голосового канала и кнопка
            приглашения — плашка садилась прямо на них. */
         className="fixed z-[77] h-12 max-w-[340px] rounded-xl border border-white/10 bg-neutral-900/95 shadow-2xl px-3 flex items-center gap-3 text-left text-white"
-        style={areaRect
-          ? { left: areaRect.left + 16, top: areaRect.top + areaRect.height - 64 }
-          : { left: 20, bottom: 20 }}
+        style={bannerPos
+          ? { left: bannerPos.x, top: bannerPos.y }
+          : areaRect
+            ? { left: areaRect.left + 16, top: areaRect.top + areaRect.height - 64 }
+            : { left: 20, bottom: 20 }}
       >
+        <span
+          onPointerDown={onBannerDragStart}
+          title="Перетащите, чтобы переместить"
+          aria-label="Переместить уведомление о трансляции"
+          className="shrink-0 h-8 w-3 cursor-move touch-none select-none text-white/35 hover:text-white/70 inline-flex items-center justify-center"
+        >
+          ⋮
+        </span>
         <button
           type="button"
           onClick={() => { setViewerDismissed(false); setMode("mini"); }}

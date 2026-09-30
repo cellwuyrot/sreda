@@ -158,7 +158,8 @@ export async function POST(req: NextRequest) {
 	if (banned) return banned;
 
 	const { content, channelId, attachments, replyToId, threadId } = await req.json();
-	if ((!content || !content.trim()) && !attachments) {
+	const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+	if ((!content || !content.trim()) && !hasAttachments) {
 		return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 	}
 
@@ -256,7 +257,7 @@ export async function POST(req: NextRequest) {
 	}
 
 	const sanitizedContent = content ? sanitizeText(content) : "";
-	if (!sanitizedContent && !attachments) {
+	if (!sanitizedContent && !hasAttachments) {
 		return NextResponse.json({ error: "Message content cannot be empty" }, { status: 400 });
 	}
 	if (replyToId) {
@@ -303,7 +304,7 @@ export async function POST(req: NextRequest) {
 			content: sanitizedContent,
 			channelId,
 			userId: session.user.id,
-			attachments: attachments ? JSON.stringify(attachments) : null,
+			attachments: hasAttachments ? JSON.stringify(attachments) : null,
 			replyToId: replyToId || null,
 			threadId: threadId || null,
 			mentions: resolvedMentions.ids.length ? JSON.stringify(resolvedMentions.ids) : null,
@@ -504,6 +505,10 @@ export async function PATCH(req: NextRequest) {
 	if (existing.userId !== session.user.id) {
 		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
+	const permission = await getChannelPermissions(session.user.id, existing.channelId);
+	if (!permission?.canPost) {
+		return NextResponse.json({ error: permission?.denialReason ?? "Forbidden" }, { status: 403 });
+	}
 	if (existing.deleted) {
 		return NextResponse.json({ error: "Cannot edit deleted message" }, { status: 400 });
 	}
@@ -560,6 +565,8 @@ export async function DELETE(req: NextRequest) {
 	if (!session?.user) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
+	const banned = await checkBan(session.user.id);
+	if (banned) return banned;
 
 	const { searchParams } = new URL(req.url);
 	const messageId = searchParams.get("messageId");
@@ -594,6 +601,12 @@ export async function DELETE(req: NextRequest) {
 		select: { role: true },
 	}))?.role;
 	const isSiteAdmin = siteRole === "ADMIN";
+	if (!isSiteAdmin) {
+		const permission = await getChannelPermissions(session.user.id, existing.channelId);
+		if (!permission?.canView) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+	}
 
 	let asModerator = false;
 	const groupId = existing.channel?.groupId ?? null;
@@ -610,8 +623,16 @@ export async function DELETE(req: NextRequest) {
 		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
-	// Hard delete — permanently remove from DB, no trace left
-	await prisma.message.delete({ where: { id: messageId } });
+	// Hard delete and keep the denormalized thread counter consistent.
+	await prisma.$transaction(async (tx) => {
+		await tx.message.delete({ where: { id: messageId } });
+		if (existing.threadId) {
+			await tx.message.updateMany({
+				where: { id: existing.threadId, threadCount: { gt: 0 } },
+				data: { threadCount: { decrement: 1 } },
+			});
+		}
+	});
 
 	/* Чужое сообщение удаляется только со следом в журнале. Иначе «удалить и
 	   забанить» стало бы способом бесследно подчистить историю — а журнал

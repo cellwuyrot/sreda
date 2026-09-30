@@ -10,7 +10,7 @@ const EDIT_ROLES = ["OWNER", "ADMIN", "MODERATOR"];
 async function loadAndAuthorize(eventId: string, userId: string, userRole?: string) {
   const event = await prisma.calendarEvent.findUnique({
     where: { id: eventId },
-    select: { id: true, authorId: true, channel: { select: { groupId: true } } },
+    select: { id: true, authorId: true, start: true, end: true, channel: { select: { groupId: true } } },
   });
   if (!event) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   const membership = await prisma.groupMember.findUnique({
@@ -47,6 +47,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   else if (end) {
     const d = new Date(end);
     if (!isNaN(d.getTime())) data.end = d;
+  }
+
+  const effectiveStart = data.start instanceof Date ? data.start : auth.event!.start;
+  const effectiveEnd = data.end === null
+    ? null
+    : data.end instanceof Date
+      ? data.end
+      : auth.event!.end;
+  if (effectiveEnd && effectiveEnd < effectiveStart) {
+    return NextResponse.json({ error: "End before start" }, { status: 400 });
   }
 
   const event = await prisma.calendarEvent.update({

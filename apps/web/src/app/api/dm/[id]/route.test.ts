@@ -208,3 +208,53 @@ describe("POST /api/dm/[id] — закрытая отправка в делов�
     expect((await post({ content: "привет" })).status).toBe(200);
   });
 });
+
+describe("POST /api/dm/[id] — валидация пустых сообщений", () => {
+  it("не принимает пустой текст с attachments=[]", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "client-1", role: "USER" } } as never);
+    prismaMock.directConversation.findUnique.mockResolvedValue(conversation("PERSONAL"));
+    prismaMock.dmUserSetting.findUnique.mockResolvedValue(null);
+
+    const { status } = await post({ content: "", attachments: [] });
+
+    expect(status).toBe(400);
+    expect(prismaMock.directMessage.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH/DELETE /api/dm/[id] — актуальный доступ", () => {
+  it("не позволяет постороннему автору изменить сообщение в недоступном разговоре", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "former-user", role: "USER" } } as never);
+    prismaMock.directConversation.findUnique.mockResolvedValue(conversation("PERSONAL"));
+    const { PATCH } = await import("@/app/api/dm/[id]/route");
+    const req = new Request(URL_BASE, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId: "m1", content: "изменено" }),
+    }) as unknown as import("next/server").NextRequest;
+
+    const res = await PATCH(req, makeParams());
+
+    expect(res.status).toBe(403);
+    expect(prismaMock.directMessage.update).not.toHaveBeenCalled();
+  });
+
+  it("при удалении очищает текст, вложения и replyToId", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "client-1", role: "USER" } } as never);
+    prismaMock.directConversation.findUnique.mockResolvedValue(conversation("PERSONAL"));
+    prismaMock.directMessage.findUnique.mockResolvedValue(row({
+      id: "m1", userId: "client-1", conversationId: "conv-1",
+    }));
+    prismaMock.directMessage.update.mockResolvedValue(row({ id: "m1" }));
+    const { DELETE } = await import("@/app/api/dm/[id]/route");
+    const req = new Request(`${URL_BASE}?messageId=m1`, { method: "DELETE" }) as unknown as import("next/server").NextRequest;
+
+    const res = await DELETE(req, makeParams());
+
+    expect(res.status).toBe(200);
+    expect(prismaMock.directMessage.update).toHaveBeenCalledWith({
+      where: { id: "m1" },
+      data: { deleted: true, content: "", attachments: null, replyToId: null },
+    });
+  });
+});
