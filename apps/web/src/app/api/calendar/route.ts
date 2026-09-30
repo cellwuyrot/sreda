@@ -5,6 +5,7 @@ import { rateLimit } from "@/lib/rateLimit";
 import { checkBan } from "@/lib/banCheck";
 import { sanitizeText } from "@/lib/sanitize";
 import prisma from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 // FIX-A2: ADMIN был пропущен в списке ролей с правом редактирования.
 const EDIT_ROLES = ["OWNER", "ADMIN", "MODERATOR"];
@@ -28,15 +29,34 @@ export async function GET(req: NextRequest) {
   });
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const where: { channelId: string; start?: { gte?: Date; lte?: Date } } = { channelId };
-  if (from || to) {
-    where.start = {};
-    if (from) where.start.gte = new Date(from);
-    if (to) where.start.lte = new Date(to);
+  const fromDate = from ? new Date(from) : null;
+  const toDate = to ? new Date(to) : null;
+  if ((fromDate && isNaN(fromDate.getTime())) || (toDate && isNaN(toDate.getTime()))) {
+    return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+  }
+  if (fromDate && toDate && fromDate > toDate) {
+    return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+  }
+
+  /* Возвращаем события, ПЕРЕСЕКАЮЩИЕ окно, а не только начавшиеся внутри
+     него. Иначе многодневное событие исчезало в следующем месяце. */
+  const where: Prisma.CalendarEventWhereInput = { channelId };
+  if (fromDate || toDate) {
+    const and: Prisma.CalendarEventWhereInput[] = [];
+    if (toDate) and.push({ start: { lte: toDate } });
+    if (fromDate) {
+      and.push({
+        OR: [
+          { end: { gte: fromDate } },
+          { end: null, start: { gte: fromDate } },
+        ],
+      });
+    }
+    where.AND = and;
   }
 
   const events = await prisma.calendarEvent.findMany({
-    where: where as never,
+    where,
     select: {
       id: true, title: true, description: true, location: true, color: true,
       allDay: true, start: true, end: true,

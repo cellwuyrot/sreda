@@ -1702,7 +1702,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         const rawTrack = raw?.getAudioTracks()[0];
         if (rawTrack && localStreamRef.current && localStreamRef.current !== raw) {
           rawTrack.enabled = !isMutedRef.current;
-          const deadTracks = new Set(localStreamRef.current.getAudioTracks());
+          const deadTracks = new Set<MediaStreamTrack>(localStreamRef.current.getAudioTracks());
           peersRef.current.forEach(pc => {
             pc.getSenders().forEach(sender => {
               if (sender.track && deadTracks.has(sender.track)) {
@@ -2832,11 +2832,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         const userName = session.user.name || "Пользователь";
         setConnectionStage("channel");
         socket.emit("join-voice", { channelId: chId, userId: session.user.id, userName });
-        // FIX-R7: re-announce a still-live screen share after a reconnect,
-        // otherwise other members never learn about it.
-        if (isReconnect && screenStreamRef.current?.getVideoTracks().some(t => t.readyState === "live")) {
-          socket.emit("screen-share-started", { channelId: chId, quality: screenShareQualityRef.current });
-        }
         // FIX-CAM: после реконнекта заново анонсируем живую камеру.
         if (isReconnect && cameraStreamRef.current?.getVideoTracks().some(t => t.readyState === "live")) {
           socket.emit("camera-started", { channelId: chId, streamId: cameraStreamRef.current.id });
@@ -2850,6 +2845,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         setIsConnected(true);
         setVoiceStatus("connected");
         setConnectionStage(userCount > 1 ? "media" : "connected");
+        /* Повторно объявляем показ только ПОСЛЕ подтверждённого входа в voice
+           room. Раньше announce отправлялся сразу после асинхронного
+           join-voice: сервер мог его отбросить, а при удачной гонке приватный
+           показ становился публичным, потому что allow-list не передавался. */
+        if (lastConnectWasReconnect && screenStreamRef.current?.getVideoTracks().some(t => t.readyState === "live")) {
+          const allow = screenAllowRef.current;
+          socket.emit("screen-share-started", {
+            channelId: chId,
+            quality: screenShareQualityRef.current,
+            allowUserIds: allow ? Array.from(allow) : null,
+          });
+        }
         // FIX-GR2: звук — только при первом входе, не при восстановлении связи.
         if (!lastConnectWasReconnect) playSound(connectionSfxRef);
 
