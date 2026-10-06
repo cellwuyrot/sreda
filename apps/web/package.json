@@ -36,6 +36,7 @@
     "nodemailer": "^7.0.13",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
+    "qrcode.react": "^4.2.0",
     "react": "^18",
     "react-dom": "^18",
     "react-leaflet": "^5.0.0",

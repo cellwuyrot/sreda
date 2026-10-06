@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatures";
+import {
+  PREMIUM_KEY_FEATURES,
+  PREMIUM_MAIN_ADVANTAGE,
+} from "@/lib/premiumFeatures";
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { deviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
@@ -11,6 +14,11 @@ import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; 
 import { isAndroidShell } from "@/lib/shell"; // VPN-ANDROID
 import { daysLeftLabel } from "@/lib/connectionUsage";
 import { useLinkMetrics } from "@/lib/useLinkMetrics"; // FIX-LINKSTATS
+import {
+  buildAmneziaVpnProfile,
+  type AmneziaVpnProfile,
+} from "@/lib/amneziaVpnProfile";
+import { QRCodeSVG } from "qrcode.react";
 
 /* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
    Для обычных аккаунтов — витрина подписки.
@@ -90,7 +98,11 @@ interface VpnState {
    настройкой в панели. Какие именно подсети входят в каждый вариант, задаёт
    администратор; здесь только смысл. */
 const ROUTING_OPTIONS: { value: VpnRouting; title: string; note: string }[] = [
-  { value: "ALL", title: "Весь трафик компьютера", note: "Через сервер идёт всё. Внешний адрес меняется." },
+  {
+    value: "ALL",
+    title: "Весь трафик компьютера",
+    note: "Через сервер идёт всё. Внешний адрес меняется.",
+  },
   {
     value: "SERVICES",
     title: "Только приложение TZ",
@@ -117,7 +129,9 @@ function RoutingChoice({
 }) {
   return (
     <div className="mt-5">
-      <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Что идёт через сервер</p>
+      <p className="text-xs font-medium text-neutral-700 dark:text-white/80">
+        Что идёт через сервер
+      </p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {ROUTING_OPTIONS.map((option) => (
           <button
@@ -132,7 +146,9 @@ function RoutingChoice({
                 : "border-neutral-200 hover:bg-neutral-50 dark:border-white/10 dark:hover:bg-white/5"
             }`}
           >
-            <span className="block text-sm font-medium text-neutral-900 dark:text-white">{option.title}</span>
+            <span className="block text-sm font-medium text-neutral-900 dark:text-white">
+              {option.title}
+            </span>
             <span className="mt-0.5 block text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
               {option.note}
             </span>
@@ -150,15 +166,20 @@ function RoutingChoice({
         >
           {value === "SERVICES" ? (
             <>
-              <span className="font-semibold">Туннелирование только для приложения.</span> Интернет-трафик
-              компьютера не перенаправляется: браузер, банк-клиент, игры и рабочая сеть
-              работают напрямую, через сервер идёт только TZ.
+              <span className="font-semibold">
+                Туннелирование только для приложения.
+              </span>{" "}
+              Интернет-трафик компьютера не перенаправляется: браузер,
+              банк-клиент, игры и рабочая сеть работают напрямую, через сервер
+              идёт только TZ.
             </>
           ) : (
             <>
-              <span className="font-semibold">Весь трафик компьютера пойдёт через сервер.</span> Это касается
-              всех программ, а не только TZ. Если нужно защитить только общение в TZ —
-              выберите «Только приложение TZ».
+              <span className="font-semibold">
+                Весь трафик компьютера пойдёт через сервер.
+              </span>{" "}
+              Это касается всех программ, а не только TZ. Если нужно защитить
+              только общение в TZ — выберите «Только приложение TZ».
             </>
           )}
         </div>
@@ -187,7 +208,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<VpnState | null>(null);
   /* Успешный снимок не выбрасывается при временном сбое: статус отдельно
      объясняет, можно ли считать показанные цифры актуальными. */
-  const [refreshState, setRefreshState] = useState<"loading" | "fresh" | "stale" | "unavailable">("loading");
+  const [refreshState, setRefreshState] = useState<
+    "loading" | "fresh" | "stale" | "unavailable"
+  >("loading");
   const hasStateRef = useRef(false);
   const refreshInFlightRef = useRef<Promise<VpnState | null> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -208,6 +231,10 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      включать нечем, и панель отправляет человека в приложение. */
   const [canTunnel, setCanTunnel] = useState(false);
   const [tunnel, setTunnel] = useState<DesktopVpnState | null>(null);
+  const [amneziaProfile, setAmneziaProfile] = useState<
+    (AmneziaVpnProfile & { signature: string }) | null
+  >(null);
+  const [showAmneziaQr, setShowAmneziaQr] = useState(false);
 
   useEffect(() => {
     /* VPN-ANDROID: определяем оболочку один раз — window нет на сервере. */
@@ -247,42 +274,50 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
    * профиль — ни в localStorage, ни на сервер. Возвращает профиль или null
    * (ошибка либо узел ещё не сообщил параметры); текст ошибки уже выставлен.
    */
-  const enroll = useCallback(async (mode: VpnRouting): Promise<string | null> => {
-    /* FIX-KEYSTICK: тот же ключ устройства, что и у выключателя в панели. Иначе
+  const enroll = useCallback(
+    async (
+      mode: VpnRouting,
+    ): Promise<{ config: string; peer: VpnPeerState } | null> => {
+      /* FIX-KEYSTICK: тот же ключ устройства, что и у выключателя в панели. Иначе
        два места выдавали разные ключи и вытесняли друг друга на узле. */
-    const pair = deviceKeyPair();
-    const res = await fetch("/api/vpn/me", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ publicKey: pair.publicKey, routing: mode }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      setError(data?.error || "Не удалось выдать доступ");
-      return null;
-    }
-    const peer = data.peer as VpnPeerState;
-    setState((prev) => ({
-      ...(prev ?? {}),
-      serviceEnabled: prev?.serviceEnabled ?? true,
-      entitled: prev?.entitled ?? true,
-      nodeReady: prev?.nodeReady ?? true,
-      peer,
-    }));
-    setError("");
-    if (peer.tunnel.serverPublicKey && peer.tunnel.endpoint) {
-      return buildWireGuardConfig({
-        privateKey: pair.privateKey,
-        address: peer.address,
-        dns: peer.tunnel.dns,
-        serverPublicKey: peer.tunnel.serverPublicKey,
-        endpoint: peer.tunnel.endpoint,
-        allowedIps: peer.tunnel.allowedIps,
-        extra: peer.tunnel.extra ?? null,
+      const pair = deviceKeyPair();
+      const res = await fetch("/api/vpn/me", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicKey: pair.publicKey, routing: mode }),
       });
-    }
-    return null;
-  }, []);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error || "Не удалось выдать доступ");
+        return null;
+      }
+      const peer = data.peer as VpnPeerState;
+      setState((prev) => ({
+        ...(prev ?? {}),
+        serviceEnabled: prev?.serviceEnabled ?? true,
+        entitled: prev?.entitled ?? true,
+        nodeReady: prev?.nodeReady ?? true,
+        peer: { ...peer, nodeId: prev?.peer?.nodeId },
+      }));
+      setError("");
+      if (peer.tunnel.serverPublicKey && peer.tunnel.endpoint) {
+        return {
+          config: buildWireGuardConfig({
+            privateKey: pair.privateKey,
+            address: peer.address,
+            dns: peer.tunnel.dns,
+            serverPublicKey: peer.tunnel.serverPublicKey,
+            endpoint: peer.tunnel.endpoint,
+            allowedIps: peer.tunnel.allowedIps,
+            extra: peer.tunnel.extra ?? null,
+          }),
+          peer,
+        };
+      }
+      return null;
+    },
+    [],
+  );
 
   /* VPN-ONECLICK: включить соединение. Собираем свежий профиль и тут же
      передаём его оболочке — она поднимает туннель. Файл никуда не сохраняется:
@@ -293,9 +328,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       if (!bridge) return;
       setBusy(true);
       try {
-        const config = await enroll(mode);
-        if (!config) return;
-        const st = await bridge.up(config);
+        const enrolled = await enroll(mode);
+        if (!enrolled) return;
+        const st = await bridge.up(enrolled.config);
         setTunnel(st);
       } catch {
         setError("Не удалось поднять туннель в приложении");
@@ -326,30 +361,31 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
        Это важно и для повторного запуска эффекта в React StrictMode. */
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
     const pending = (async (): Promise<VpnState | null> => {
-    try {
-      const res = await fetch("/api/vpn/me", { cache: "no-store" });
-      const data = res.ok ? await res.json().catch(() => null) : null;
-      if (!data || typeof data !== "object") throw new Error("Некорректный ответ состояния");
-      const next: VpnState = {
-        serviceEnabled: data.serviceEnabled === true,
-        entitled: data.entitled === true,
-        nodeReady: data.nodeReady === true,
-        peer: data.peer ?? null,
-        plan: data.plan ?? null,
-        servers: Array.isArray(data.servers) ? data.servers : [],
-      };
-      setState(next);
-      hasStateRef.current = true;
-      setRefreshState("fresh");
-      return next;
-    } catch {
-      /* Показываем последний ответ только как снимок: после ошибки он помечается
+      try {
+        const res = await fetch("/api/vpn/me", { cache: "no-store" });
+        const data = res.ok ? await res.json().catch(() => null) : null;
+        if (!data || typeof data !== "object")
+          throw new Error("Некорректный ответ состояния");
+        const next: VpnState = {
+          serviceEnabled: data.serviceEnabled === true,
+          entitled: data.entitled === true,
+          nodeReady: data.nodeReady === true,
+          peer: data.peer ?? null,
+          plan: data.plan ?? null,
+          servers: Array.isArray(data.servers) ? data.servers : [],
+        };
+        setState(next);
+        hasStateRef.current = true;
+        setRefreshState("fresh");
+        return next;
+      } catch {
+        /* Показываем последний ответ только как снимок: после ошибки он помечается
          устаревшим, но не очищается, чтобы состояние соединения не дёргалось. */
-      setRefreshState(hasStateRef.current ? "stale" : "unavailable");
-      return null;
-    } finally {
-      refreshInFlightRef.current = null;
-    }
+        setRefreshState(hasStateRef.current ? "stale" : "unavailable");
+        return null;
+      } finally {
+        refreshInFlightRef.current = null;
+      }
     })();
     refreshInFlightRef.current = pending;
     return pending;
@@ -359,6 +395,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      сейчас поднят, сразу перекладываем его на новый узел свежим профилем: иначе
      прежний профиль на устройстве молча перестал бы работать. */
   const switchServer = async (nodeId: string) => {
+    setAmneziaProfile(null);
+    setShowAmneziaQr(false);
     setBusy(true);
     try {
       const res = await fetch("/api/vpn/me", {
@@ -366,7 +404,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nodeId }),
       });
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
       if (!res.ok) {
         setError(data?.error || "Не удалось сменить сервер");
         return;
@@ -395,7 +435,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     void refresh().then((next) => {
       if (cancelled || !next) return;
       /* Прежний выбор режима подставляется, если пир уже есть. */
-      if (next.peer) setRouting(next.peer.routing === "SERVICES" ? "SERVICES" : "ALL");
+      if (next.peer)
+        setRouting(next.peer.routing === "SERVICES" ? "SERVICES" : "ALL");
     });
     return () => {
       cancelled = true;
@@ -408,7 +449,10 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };
-    const interval = window.setInterval(refreshWhenVisible, VPN_STATE_REFRESH_MS);
+    const interval = window.setInterval(
+      refreshWhenVisible,
+      VPN_STATE_REFRESH_MS,
+    );
     document.addEventListener("visibilitychange", refreshWhenVisible);
     window.addEventListener("focus", refreshWhenVisible);
     return () => {
@@ -423,12 +467,15 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      кнопкой. В браузере туннеля нет — значит и не активно. */
   const tunnelOn = tunnel?.state === "on";
   const tunnelConnecting = tunnel?.state === "connecting";
-  const tunnelReconnecting = tunnelConnecting && tunnel?.error === "VPN: переподключение...";
+  const tunnelReconnecting =
+    tunnelConnecting && tunnel?.error === "VPN: переподключение...";
   const tunnelDisconnecting = tunnel?.state === "disconnecting";
   const active = canTunnel && tunnelOn;
-  const nodeIncomplete = !!state?.peer && (!state.peer.tunnel.serverPublicKey || !state.peer.tunnel.endpoint);
+  const nodeIncomplete =
+    !!state?.peer &&
+    (!state.peer.tunnel.serverPublicKey || !state.peer.tunnel.endpoint);
   /* Ошибку туннеля показываем рядом с сетевыми ошибками — источник для человека один. */
-  const shownError = error || (canTunnel ? tunnel?.error ?? "" : "");
+  const shownError = error || (canTunnel ? (tunnel?.error ?? "") : "");
   /* Всё для включения на месте: право есть, сервис включён, узел готов. */
   const ready = !!state?.entitled && !!state.serviceEnabled && state.nodeReady;
 
@@ -453,44 +500,124 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   /* Кнопку глушим только тогда, когда нажатие точно ничего не даст: нет оболочки
      (в браузере туннеля нет), идёт переходное состояние, либо узел неполон. */
   const powerReady =
-    canTunnel && ready && !busy && !tunnelConnecting && !tunnelDisconnecting && (active || !nodeIncomplete);
+    canTunnel &&
+    ready &&
+    !busy &&
+    !tunnelConnecting &&
+    !tunnelDisconnecting &&
+    (active || !nodeIncomplete);
 
   const powerLabel = active
     ? "Выключить защищённое соединение"
     : tunnelConnecting
-    ? (tunnelReconnecting ? "Переподключение…" : "Подключаем…")
-    : tunnelDisconnecting
-    ? "Выключаем…"
-    : "Включить защищённое соединение";
+      ? tunnelReconnecting
+        ? "Переподключение…"
+        : "Подключаем…"
+      : tunnelDisconnecting
+        ? "Выключаем…"
+        : "Включить защищённое соединение";
 
   /* Почему нажать нельзя — говорим вслух: неактивный круг без объяснения
      неотличим от поломки. */
   const powerHint = tunnelConnecting
-    ? (tunnelReconnecting ? "Переподключение…" : "Подключаем…")
+    ? tunnelReconnecting
+      ? "Переподключение…"
+      : "Подключаем…"
     : tunnelDisconnecting
-    ? "Выключаем…"
-    : busy
-    ? "Выполняем…"
-    : !canTunnel
-    ? "Включение доступно в приложении TZ.Connect"
-    : !ready
-    ? "Подготавливаем доступ…"
-    : "Сервер не готов принять подключение";
+      ? "Выключаем…"
+      : busy
+        ? "Выполняем…"
+        : !canTunnel
+          ? "Включение доступно в приложении TZ.Connect"
+          : !ready
+            ? "Подготавливаем доступ…"
+            : "Сервер не готов принять подключение";
 
   const plan = state?.plan ?? null;
   const servers = Array.isArray(state?.servers) ? state.servers : [];
+  const profileSignature = state?.peer
+    ? [
+        state.peer.nodeId ?? "",
+        state.peer.routing,
+        state.peer.address,
+        state.peer.tunnel.endpoint ?? "",
+        state.peer.tunnel.allowedIps,
+      ].join("|")
+    : "";
+  const currentAmneziaProfile =
+    amneziaProfile?.signature === profileSignature ? amneziaProfile : null;
+
+  const prepareAmneziaProfile = useCallback(async () => {
+    setBusy(true);
+    setShowAmneziaQr(false);
+    try {
+      /* Для существующего пира сохраняем ЕГО текущий routing. POST остаётся тем
+         же upsert по userId и тем же deviceKeyPair: второй VpnPeer/ключ/IP не
+         создаются. Если пира ещё нет, используется выбор панели. */
+      const mode = state?.peer?.routing ?? routing;
+      const enrolled = await enroll(mode);
+      if (!enrolled) return;
+      const profile = await buildAmneziaVpnProfile(enrolled.config);
+      const peer = enrolled.peer;
+      setAmneziaProfile({
+        ...profile,
+        signature: [
+          state?.peer?.nodeId ?? "",
+          peer.routing,
+          peer.address,
+          peer.tunnel.endpoint ?? "",
+          peer.tunnel.allowedIps,
+        ].join("|"),
+      });
+      setError("");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Не удалось создать профиль AmneziaVPN",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [enroll, routing, state?.peer]);
+
+  const downloadText = useCallback(
+    (content: string, fileName: string, type: string) => {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    },
+    [],
+  );
 
   return (
     <div className="relative p-6 text-neutral-900 dark:text-white">
-      <div className={`pointer-events-none absolute inset-0 opacity-70 ${active ? "bg-[radial-gradient(circle_at_50%_0%,rgba(34,197,94,.20),transparent_58%)]" : "bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,.14),transparent_58%)]"}`} />
+      <div
+        className={`pointer-events-none absolute inset-0 opacity-70 ${active ? "bg-[radial-gradient(circle_at_50%_0%,rgba(34,197,94,.20),transparent_58%)]" : "bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,.14),transparent_58%)]"}`}
+      />
       <div className="relative">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-neutral-400 dark:text-white/40">TZ Premium · Надёжное соединение</p>
-            <h3 className="mt-1 text-xl font-semibold">Защищённое соединение</h3>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">Одно соединение для Premium и «Ускоренного интернета»</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-neutral-400 dark:text-white/40">
+              TZ Premium · Надёжное соединение
+            </p>
+            <h3 className="mt-1 text-xl font-semibold">
+              Защищённое соединение
+            </h3>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">
+              Одно соединение для Premium и «Ускоренного интернета»
+            </p>
           </div>
-          <button onClick={onClose} className="rounded-xl p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-white/[0.07] dark:hover:text-white" aria-label="Закрыть"><XIcon size={15} style={{ color: "inherit" }} /></button>
+          <button
+            onClick={onClose}
+            className="rounded-xl p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-white/[0.07] dark:hover:text-white"
+            aria-label="Закрыть"
+          >
+            <XIcon size={15} style={{ color: "inherit" }} />
+          </button>
         </div>
 
         <div className="mt-7 flex flex-col items-center">
@@ -507,28 +634,46 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             aria-label={powerLabel}
             title={powerReady ? powerLabel : powerHint}
             className={`relative grid h-28 w-28 place-items-center rounded-full border outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-cyan-400/60 ${
-              powerReady ? "cursor-pointer hover:scale-[1.03] active:scale-95" : "cursor-not-allowed opacity-70"
-            } ${active
-              ? "border-emerald-400/50 bg-emerald-500 text-white shadow-[0_0_45px_rgba(34,197,94,.34)]"
-              : tunnelConnecting
-              ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-600 dark:text-cyan-300"
-              : "border-neutral-300 bg-neutral-100 text-neutral-500 shadow-inner dark:border-white/10 dark:bg-white/[0.06] dark:text-white/50"}`}
+              powerReady
+                ? "cursor-pointer hover:scale-[1.03] active:scale-95"
+                : "cursor-not-allowed opacity-70"
+            } ${
+              active
+                ? "border-emerald-400/50 bg-emerald-500 text-white shadow-[0_0_45px_rgba(34,197,94,.34)]"
+                : tunnelConnecting
+                  ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-600 dark:text-cyan-300"
+                  : "border-neutral-300 bg-neutral-100 text-neutral-500 shadow-inner dark:border-white/10 dark:bg-white/[0.06] dark:text-white/50"
+            }`}
           >
-            <span className={`absolute inset-2 rounded-full border ${active ? "border-white/20" : "border-neutral-200 dark:border-white/[0.06]"}`} />
+            <span
+              className={`absolute inset-2 rounded-full border ${active ? "border-white/20" : "border-neutral-200 dark:border-white/[0.06]"}`}
+            />
             {(tunnelConnecting || tunnelDisconnecting) && (
               <span className="absolute inset-0 animate-ping rounded-full border border-cyan-400/50" />
             )}
-            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <svg
+              width="38"
+              height="38"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
               <path d="M12 2v10" />
               <path d="M6.35 5.35a8 8 0 1 0 11.3 0" />
             </svg>
           </button>
 
           {state === null && refreshState === "loading" && (
-            <strong className="mt-4 text-sm text-neutral-500 dark:text-white/50">Проверяем состояние…</strong>
+            <strong className="mt-4 text-sm text-neutral-500 dark:text-white/50">
+              Проверяем состояние…
+            </strong>
           )}
           {refreshState === "unavailable" && (
-            <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Состояние недоступно</strong>
+            <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
+              Состояние недоступно
+            </strong>
           )}
           {state && refreshState === "stale" && (
             <strong className="mt-4 text-center text-sm text-amber-700 dark:text-amber-300">
@@ -538,50 +683,65 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
 
           {state && !state.entitled && (
             <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Нужна подписка</strong>
+              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
+                Нужна подписка
+              </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Подходит любая из двух: «Ускоренный интернет» или Premium. Доступ выдаётся сам, как только подписка активна.
+                Подходит любая из двух: «Ускоренный интернет» или Premium.
+                Доступ выдаётся сам, как только подписка активна.
               </span>
             </>
           )}
 
           {state?.entitled && !state.serviceEnabled && (
             <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Сервис отключён</strong>
+              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
+                Сервис отключён
+              </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Сервис выключен администратором. Подключение недоступно, пока его не включат.
+                Сервис выключен администратором. Подключение недоступно, пока
+                его не включат.
               </span>
             </>
           )}
 
           {state?.entitled && state.serviceEnabled && !state.nodeReady && (
             <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">Узлы ещё не готовы</strong>
+              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
+                Узлы ещё не готовы
+              </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Ни один сервер не вышел на связь. Включение станет доступно, как только узел появится.
+                Ни один сервер не вышел на связь. Включение станет доступно, как
+                только узел появится.
               </span>
             </>
           )}
 
           {ready && canTunnel && (
             <>
-              <strong className={`mt-4 text-sm ${active ? "text-emerald-600 dark:text-emerald-400" : tunnelConnecting ? "text-cyan-600 dark:text-cyan-300" : "text-neutral-600 dark:text-white/65"}`}>
+              <strong
+                className={`mt-4 text-sm ${active ? "text-emerald-600 dark:text-emerald-400" : tunnelConnecting ? "text-cyan-600 dark:text-cyan-300" : "text-neutral-600 dark:text-white/65"}`}
+              >
                 {active
                   ? "Соединение активно"
                   : tunnelConnecting
-                  ? (tunnelReconnecting ? "Переподключение…" : "Подключаем…")
-                  : tunnelDisconnecting
-                  ? "Выключаем…"
-                  : "Готово к включению"}
+                    ? tunnelReconnecting
+                      ? "Переподключение…"
+                      : "Подключаем…"
+                    : tunnelDisconnecting
+                      ? "Выключаем…"
+                      : "Готово к включению"}
               </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
                 {active
                   ? `${tunnelSinceLabel(tunnel?.since ?? null)} · режим: ${
-                      ROUTING_OPTIONS.find((o) => o.value === state?.peer?.routing)?.title.toLowerCase() ?? "весь трафик"
+                      ROUTING_OPTIONS.find(
+                        (o) => o.value === state?.peer?.routing,
+                      )?.title.toLowerCase() ?? "весь трафик"
                     }`
                   : tunnelConnecting
-                  ? "Устанавливаем туннель — это занимает несколько секунд"
-                  : "Выберите, что пойдёт через туннель, и нажмите «Включить»"}
+                    ? "Устанавливаем туннель — это занимает несколько секунд"
+                    : "Выберите, что пойдёт через туннель, и нажмите «Включить»"}
               </span>
             </>
           )}
@@ -589,25 +749,30 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           {ready && !canTunnel && (
             <>
               <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
-                {androidShell ? "WireGuard на Android" : "Включение — в приложении"}
+                {androidShell
+                  ? "WireGuard на Android"
+                  : "Включение — в приложении"}
               </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
                 {androidShell
                   ? "Скачайте профиль и откройте его приложением WireGuard — соединение поднимается там."
                   : desktopShell
-                  ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
-                  : "Соединение поднимается в приложении TZ Connect для компьютера — в браузере системный туннель включить нельзя."}
+                    ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
+                    : "Соединение поднимается в приложении TZ Connect для компьютера — в браузере системный туннель включить нельзя."}
               </span>
             </>
           )}
         </div>
 
         {shownError && (
-          <p className="mt-4 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">{shownError}</p>
+          <p className="mt-4 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">
+            {shownError}
+          </p>
         )}
         {nodeIncomplete && (
           <p className="mt-4 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-            Сервер соединения готовится — включение станет доступно через минуту.
+            Сервер соединения готовится — включение станет доступно через
+            минуту.
           </p>
         )}
 
@@ -615,14 +780,20 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         {plan && (
           <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Тариф</span>
+              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">
+                Тариф
+              </span>
               <span className="text-[11px] text-neutral-400 dark:text-white/35">
                 {plan.until ? daysLeftLabel(plan.until) : "без срока"}
               </span>
             </div>
-            <strong className="mt-1 block text-sm">{plan.label || "Без подписки"}</strong>
+            <strong className="mt-1 block text-sm">
+              {plan.label || "Без подписки"}
+            </strong>
             {plan.note && (
-              <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">{plan.note}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
+                {plan.note}
+              </p>
             )}
             {plan.kind === "none" && (
               <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
@@ -632,8 +803,6 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-
-
         {/* ── FIX-LINKSTATS: состояние канала ──
             Задержка обновляется сама каждые пять секунд, скорость — только по кнопке:
             каждый замер скорости — это три мегабайта из того самого лимита, который
@@ -641,37 +810,51 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         {active && (
           <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">Канал</span>
+              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">
+                Канал
+              </span>
               <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                {state?.peer?.node?.name ? `узел ${state.peer.node.name}` : "через туннель"}
+                {state?.peer?.node?.name
+                  ? `узел ${state.peer.node.name}`
+                  : "через туннель"}
               </span>
             </div>
 
             <div className="mt-2 grid grid-cols-2 gap-3">
               <div>
-                <span className="text-[10px] text-neutral-400 dark:text-white/35">Задержка</span>
-                <strong className={`mt-0.5 block text-lg leading-tight ${
-                  link.lost
-                    ? "text-red-600 dark:text-red-400"
+                <span className="text-[10px] text-neutral-400 dark:text-white/35">
+                  Задержка
+                </span>
+                <strong
+                  className={`mt-0.5 block text-lg leading-tight ${
+                    link.lost
+                      ? "text-red-600 dark:text-red-400"
+                      : link.pingMs === null
+                        ? "text-neutral-400 dark:text-white/35"
+                        : link.pingMs < 80
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : link.pingMs < 200
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-red-600 dark:text-red-400"
+                  }`}
+                >
+                  {link.lost
+                    ? "нет связи"
                     : link.pingMs === null
-                    ? "text-neutral-400 dark:text-white/35"
-                    : link.pingMs < 80
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : link.pingMs < 200
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-red-600 dark:text-red-400"
-                }`}>
-                  {link.lost ? "нет связи" : link.pingMs === null ? "—" : `${link.pingMs} мс`}
+                      ? "—"
+                      : `${link.pingMs} мс`}
                 </strong>
               </div>
               <div>
-                <span className="text-[10px] text-neutral-400 dark:text-white/35">Скорость</span>
+                <span className="text-[10px] text-neutral-400 dark:text-white/35">
+                  Скорость
+                </span>
                 <strong className="mt-0.5 block text-lg leading-tight text-neutral-900 dark:text-white">
                   {link.speedBusy
                     ? "замеряем…"
                     : link.speedMbits === null
-                    ? "—"
-                    : `${link.speedMbits.toLocaleString("ru-RU")} Мбит/с`}
+                      ? "—"
+                      : `${link.speedMbits.toLocaleString("ru-RU")} Мбит/с`}
                 </strong>
               </div>
             </div>
@@ -682,7 +865,11 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               disabled={link.speedBusy}
               className="mt-3 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-600 transition hover:bg-white disabled:opacity-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/5"
             >
-              {link.speedBusy ? "Измеряем скорость…" : link.speedMbits === null ? "Замерить скорость" : "Замерить снова"}
+              {link.speedBusy
+                ? "Измеряем скорость…"
+                : link.speedMbits === null
+                  ? "Замерить скорость"
+                  : "Замерить снова"}
             </button>
             <p className="mt-1.5 text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
               {link.speedError
@@ -696,7 +883,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             приложения: в браузере переезд ничего бы не поднял. */}
         {canTunnel && state?.peer && servers.length > 0 && (
           <div className="mt-3">
-            <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Сервер</p>
+            <p className="text-xs font-medium text-neutral-700 dark:text-white/80">
+              Сервер
+            </p>
             <div className="mt-2 grid gap-2">
               {servers.map((server) => {
                 const unavailable = !!server.full && !server.current;
@@ -711,18 +900,26 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
                       server.current
                         ? "border-violet-500 bg-violet-500/[0.06] dark:border-cyan-400 dark:bg-cyan-400/[0.06]"
                         : unavailable
-                        ? "border-neutral-200 opacity-50 dark:border-white/10"
-                        : "border-neutral-200 hover:bg-neutral-50 dark:border-white/10 dark:hover:bg-white/5"
+                          ? "border-neutral-200 opacity-50 dark:border-white/10"
+                          : "border-neutral-200 hover:bg-neutral-50 dark:border-white/10 dark:hover:bg-white/5"
                     }`}
                   >
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className="text-sm font-medium text-neutral-900 dark:text-white">{server.name}</span>
+                      <span className="text-sm font-medium text-neutral-900 dark:text-white">
+                        {server.name}
+                      </span>
                       <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                        {server.current ? "текущий" : unavailable ? "нет мест" : "доступен"}
+                        {server.current
+                          ? "текущий"
+                          : unavailable
+                            ? "нет мест"
+                            : "доступен"}
                       </span>
                     </span>
                     {server.region && (
-                      <span className="mt-0.5 block text-[11px] text-neutral-500 dark:text-white/40">{server.region}</span>
+                      <span className="mt-0.5 block text-[11px] text-neutral-500 dark:text-white/40">
+                        {server.region}
+                      </span>
                     )}
                   </button>
                 );
@@ -739,22 +936,124 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             включает и выключает сам круг выше. Остался только выбор того, что пойдёт
             в туннель: он нужен ДО включения, потому что AllowedIPs живёт в самом
             профиле, и смена режима на живом туннеле ничего бы не изменила. */}
-        {ready && canTunnel && !active && !tunnelConnecting && !tunnelDisconnecting && (
-          <RoutingChoice value={routing} onChange={setRouting} disabled={busy} desktop={desktopShell} />
+        {ready &&
+          canTunnel &&
+          !active &&
+          !tunnelConnecting &&
+          !tunnelDisconnecting && (
+            <RoutingChoice
+              value={routing}
+              onChange={(next) => {
+                setRouting(next);
+                setAmneziaProfile(null);
+                setShowAmneziaQr(false);
+              }}
+              disabled={busy}
+              desktop={desktopShell}
+            />
+          )}
+
+        {/* Альтернативный клиент использует ровно тот же готовый профиль и peer.
+            Здесь нет лимитов, отдельного ключа или второй VPN-логики — меняется
+            только контейнер выдачи: vpn:// и QR. */}
+        {ready && (
+          <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
+            <p className="text-xs font-medium text-neutral-800 dark:text-white/80">
+              AmneziaVPN
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
+              Альтернативный импорт текущего соединения. После смены сервера или
+              режима создайте профиль заново.
+            </p>
+
+            {!currentAmneziaProfile ? (
+              <button
+                type="button"
+                disabled={busy || nodeIncomplete}
+                onClick={() => void prepareAmneziaProfile()}
+                className="mt-3 w-full rounded-xl border border-violet-500/30 bg-violet-500/[0.08] px-3 py-2.5 text-xs font-medium text-violet-700 transition hover:bg-violet-500/[0.12] disabled:opacity-50 dark:border-cyan-400/30 dark:bg-cyan-400/[0.08] dark:text-cyan-300"
+              >
+                {busy ? "Создаём профиль…" : "Скачать профиль для AmneziaVPN"}
+              </button>
+            ) : (
+              <>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadText(
+                        currentAmneziaProfile.uri,
+                        "tz-connect.vpn",
+                        "text/plain;charset=utf-8",
+                      )
+                    }
+                    className="rounded-xl bg-violet-600 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-violet-500 dark:bg-cyan-500 dark:text-[#06161a] dark:hover:bg-cyan-400"
+                  >
+                    Скачать профиль
+                  </button>
+                  <button
+                    type="button"
+                    aria-expanded={showAmneziaQr}
+                    onClick={() => setShowAmneziaQr((value) => !value)}
+                    className="rounded-xl border border-neutral-200 px-3 py-2.5 text-xs font-medium transition hover:bg-white dark:border-white/10 dark:hover:bg-white/5"
+                  >
+                    {showAmneziaQr ? "Скрыть QR-код" : "Показать QR-код"}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadText(
+                      currentAmneziaProfile.wireGuardConfig,
+                      "tz-connect.conf",
+                      "text/plain;charset=utf-8",
+                    )
+                  }
+                  className="mt-2 w-full text-[10px] text-neutral-400 underline-offset-2 hover:underline dark:text-white/35"
+                >
+                  Скачать .conf (fallback)
+                </button>
+                {showAmneziaQr && (
+                  <div className="mt-3 flex flex-col items-center rounded-xl bg-white p-4">
+                    <QRCodeSVG
+                      value={currentAmneziaProfile.uri}
+                      size={220}
+                      level="L"
+                      marginSize={1}
+                      title="Профиль AmneziaVPN"
+                    />
+                    <p className="mt-2 text-center text-[10px] text-neutral-500">
+                      Отсканируйте в AmneziaVPN
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-export default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }: { isPremium: boolean; onClose: () => void; onOpenSettings?: () => void }) {
+export default function PremiumInfoModal({
+  isPremium,
+  onClose,
+  onOpenSettings,
+}: {
+  isPremium: boolean;
+  onClose: () => void;
+  onOpenSettings?: () => void;
+}) {
   /* VPN-PLAN: раньше панель с тумблером открывалась только при isPremium,
      и подписчик «только VPN» видел витрину Premium — включить VPN было негде.
 
      Право на туннель считает сервер (Premium или подписка VPN, lib/vpn.ts)
      и возвращает его в поле entitled. Сессия о подписке VPN не знает ничего,
      поэтому спрашиваем сервер напрямую. При Premium запрос не нужен. */
-  const [vpnEntitled, setVpnEntitled] = useState<boolean | null>(isPremium ? true : null);
+  const [vpnEntitled, setVpnEntitled] = useState<boolean | null>(
+    isPremium ? true : null,
+  );
   const [accessCheckFailed, setAccessCheckFailed] = useState(false);
 
   useEffect(() => {
@@ -764,7 +1063,8 @@ export default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }:
       .then(async (r) => {
         if (!r.ok) throw new Error("Не удалось проверить доступ");
         const data: unknown = await r.json();
-        if (!data || typeof data !== "object") throw new Error("Некорректный ответ доступа");
+        if (!data || typeof data !== "object")
+          throw new Error("Некорректный ответ доступа");
         return data as { entitled?: unknown };
       })
       .then((data) => {
@@ -777,78 +1077,114 @@ export default function PremiumInfoModal({ isPremium, onClose, onOpenSettings }:
            окно VPN витриной покупки на основании отсутствующего ответа. */
         if (alive) setAccessCheckFailed(true);
       });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [isPremium]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      onClick={onClose}
+    >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="relative z-10 w-full max-w-md max-h-[88vh] overflow-y-auto rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="relative z-10 w-full max-w-md max-h-[88vh] overflow-y-auto rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {vpnEntitled === null ? (
           /* Короткая пауза вместо мигания витриной: показать подписчику
               «купите Premium» и тут же заменить на тумблер хуже, чем подождать мгновение. */
           <div className="grid h-56 place-items-center px-6 text-center text-sm text-neutral-400 dark:text-white/40">
-            {accessCheckFailed ? "Не удалось проверить доступ. Закройте окно и попробуйте снова." : "Проверяем доступ…"}
+            {accessCheckFailed
+              ? "Не удалось проверить доступ. Закройте окно и попробуйте снова."
+              : "Проверяем доступ…"}
           </div>
         ) : vpnEntitled ? (
           <VpnPanel onClose={onClose} />
         ) : (
-        <div className="p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-amber-500">TZ Premium</p>
-              <h3 className="mt-1 text-xl font-semibold text-neutral-900 dark:text-white">Больше возможностей</h3>
-            </div>
-            <button onClick={onClose} className="rounded-xl p-2 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-neutral-700 dark:hover:text-white" aria-label="Закрыть"><XIcon size={15} style={{ color: "inherit" }} /></button>
-          </div>
-
-          <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-            <span className="text-sm font-medium text-neutral-900 dark:text-white">Текущий тариф</span>
-            <span className="rounded-full bg-neutral-200 px-3 py-1 text-xs font-medium text-neutral-500 dark:bg-white/10 dark:text-gray-400">
-              Обычный аккаунт
-            </span>
-          </div>
-
-          {/* Основное преимущество подписки */}
-          <div className="mt-4 rounded-2xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-500">{PREMIUM_MAIN_ADVANTAGE.badge}</p>
-            <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-white">{PREMIUM_MAIN_ADVANTAGE.title}</p>
-            <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">{PREMIUM_MAIN_ADVANTAGE.description}</p>
-          </div>
-
-          {/* 5 ключевых возможностей, которые преобладают в витрине */}
-          <div className="mt-5">
-            <p className="text-xs font-medium text-neutral-900 dark:text-white">Ключевые возможности</p>
-            <ul className="mt-3 space-y-2.5">
-              {PREMIUM_KEY_FEATURES.map((f) => (
-                <li key={f.id} className="flex gap-3">
-                  {/* Контурная иконка вместо эмодзи — единый стиль набора. */}
-                  <span className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-500">
-                    <PremiumFeatureIcon id={f.id} size={18} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-neutral-900 dark:text-white">{f.title}</p>
-                    <p className="text-xs text-neutral-500 dark:text-gray-400">{f.description}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Подробности (сравнение тарифов) и подключение — в настройках профиля */}
-          <div className="mt-6 space-y-2">
-            {onOpenSettings && (
+          <div className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-amber-500">
+                  TZ Premium
+                </p>
+                <h3 className="mt-1 text-xl font-semibold text-neutral-900 dark:text-white">
+                  Больше возможностей
+                </h3>
+              </div>
               <button
-                onClick={onOpenSettings}
-                data-shell-hide="true"
-                className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-4 py-2.5 text-sm font-semibold text-[#4a3200] shadow-[0_0_18px_rgba(240,190,60,0.35)] transition hover:opacity-90"
+                onClick={onClose}
+                className="rounded-xl p-2 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-neutral-700 dark:hover:text-white"
+                aria-label="Закрыть"
               >
-                Подробнее и подключение
+                <XIcon size={15} style={{ color: "inherit" }} />
               </button>
-            )}
-            <p className="text-center text-[11px] text-neutral-400 dark:text-white/40">Сравнение тарифов и оплата — в настройках профиля → Premium.</p>
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <span className="text-sm font-medium text-neutral-900 dark:text-white">
+                Текущий тариф
+              </span>
+              <span className="rounded-full bg-neutral-200 px-3 py-1 text-xs font-medium text-neutral-500 dark:bg-white/10 dark:text-gray-400">
+                Обычный аккаунт
+              </span>
+            </div>
+
+            {/* Основное преимущество подписки */}
+            <div className="mt-4 rounded-2xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-500">
+                {PREMIUM_MAIN_ADVANTAGE.badge}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-white">
+                {PREMIUM_MAIN_ADVANTAGE.title}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">
+                {PREMIUM_MAIN_ADVANTAGE.description}
+              </p>
+            </div>
+
+            {/* 5 ключевых возможностей, которые преобладают в витрине */}
+            <div className="mt-5">
+              <p className="text-xs font-medium text-neutral-900 dark:text-white">
+                Ключевые возможности
+              </p>
+              <ul className="mt-3 space-y-2.5">
+                {PREMIUM_KEY_FEATURES.map((f) => (
+                  <li key={f.id} className="flex gap-3">
+                    {/* Контурная иконка вместо эмодзи — единый стиль набора. */}
+                    <span className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-500">
+                      <PremiumFeatureIcon id={f.id} size={18} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                        {f.title}
+                      </p>
+                      <p className="text-xs text-neutral-500 dark:text-gray-400">
+                        {f.description}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Подробности (сравнение тарифов) и подключение — в настройках профиля */}
+            <div className="mt-6 space-y-2">
+              {onOpenSettings && (
+                <button
+                  onClick={onOpenSettings}
+                  data-shell-hide="true"
+                  className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-4 py-2.5 text-sm font-semibold text-[#4a3200] shadow-[0_0_18px_rgba(240,190,60,0.35)] transition hover:opacity-90"
+                >
+                  Подробнее и подключение
+                </button>
+              )}
+              <p className="text-center text-[11px] text-neutral-400 dark:text-white/40">
+                Сравнение тарифов и оплата — в настройках профиля → Premium.
+              </p>
+            </div>
           </div>
-        </div>
         )}
       </div>
     </div>
