@@ -547,7 +547,11 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const currentAmneziaProfile =
     amneziaProfile?.signature === profileSignature ? amneziaProfile : null;
 
-  const prepareAmneziaProfile = useCallback(async () => {
+  /* Обработчик используется только одной кнопкой и не передаётся в
+     мемоизированные дочерние компоненты. Поэтому ручная memoization здесь не
+     нужна: React Compiler сам отслеживает чтение state и не сталкивается с
+     намеренно более узкой зависимостью state?.peer. */
+  const prepareAmneziaProfile = async () => {
     setBusy(true);
     setShowAmneziaQr(false);
     try {
@@ -579,7 +583,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     } finally {
       setBusy(false);
     }
-  }, [enroll, routing, state?.peer]);
+  };
 
   const downloadText = useCallback(
     (content: string, fileName: string, type: string) => {
