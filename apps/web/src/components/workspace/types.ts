@@ -300,7 +300,7 @@ export function nodeAccent(card: { color?: NodeColor }): string {
 export const RELATED_PROJECTS: { label: string; href: string }[] = [
   { label: "T.R.I.O.Z.", href: "/projects" },
   { label: "TZ.Connect", href: "/connect" },
-  { label: "Перо измерений", href: "/pero" },
+  { label: "Перо измерений", href: "https://int-veld.trioz.ru/" },
   { label: "Игры", href: "/games" },
   { label: "TZ.Library", href: "/library" },
 ];
