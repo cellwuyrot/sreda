@@ -1,0 +1,1 @@
+cmd_Release/obj.target/wasapi_capture.node := g++ -o Release/obj.target/wasapi_capture.node -shared -pthread -rdynamic -m64  -Wl,-soname=wasapi_capture.node -Wl,--start-group Release/obj.target/wasapi_capture/native/wasapi_capture_stub.o -Wl,--end-group 

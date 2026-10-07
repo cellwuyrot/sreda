@@ -412,7 +412,7 @@ const FALLBACK_WINDOWS: WindowData[] = [
     id: "2", windowKey: "pero", title: "Перо Измерений",
     subtitle: "Книги • Настольные игры • Офлайн",
     description: "Развлекательные товары для развития мышления",
-    href: "/pero", accentColor: "#8b5cf6", backgroundUrl: null,
+    href: "https://int-veld.trioz.ru/", accentColor: "#8b5cf6", backgroundUrl: null,
     backgroundType: "gradient", gradientFrom: "#1a002e", gradientTo: "#0a0a0f",
   },
   {

@@ -189,7 +189,7 @@ export default function Navbar() {
     { href: "/", label: "Главная" },
     { href: "/connect", label: "TZ.Connect" },
     { href: "/projects", label: "T.R.I.O.Z." },
-    { href: "/pero", label: "Перо измерений" },
+    { href: "https://int-veld.trioz.ru/", label: "Перо измерений" },
     { href: "/games", label: "Игры" },
     { href: "/library", label: "TZ.Library" },
   ];
