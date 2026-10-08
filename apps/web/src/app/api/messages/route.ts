@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sanitizeText } from "@/lib/sanitize";
+import { validReplyQuote } from "@/lib/replyQuote";
 import { checkBan } from "@/lib/banCheck";
 import { rateLimit } from "@/lib/rateLimit";
 import { emitToChannel } from "@/lib/socketEmit";
@@ -42,6 +44,8 @@ const MESSAGE_SELECT = {
 	},
 };
 
+type LoadedMessage = Prisma.MessageGetPayload<{ include: typeof MESSAGE_SELECT }>;
+
 // Подтянуть кастомные роли группы (с цветом) для авторов сообщений
 async function attachGroupRoles(messages: unknown) {
 	const list = Array.isArray(messages) ? messages : [messages];
@@ -76,7 +80,8 @@ export async function GET(req: Request) {
 	const { searchParams } = new URL(req.url);
 	const channelId = searchParams.get("channelId");
 	const cursor = searchParams.get("cursor");
-	const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
+	const requestedLimit = Number(searchParams.get("limit") || 50);
+	const limit = Number.isInteger(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 100)) : 50;
 
 	if (!channelId) {
 		return NextResponse.json({ error: "channelId required" }, { status: 400 });
@@ -113,17 +118,58 @@ export async function GET(req: Request) {
 	   аккаунт раньше видел последние 30 дней, и со стороны человека это
 	   выглядело не как ограничение тарифа, а как потеря переписки. */
 
-	const messages = await prisma.message.findMany({
+    const around = searchParams.get("around");
+    const after = searchParams.get("after");
+    let nextNewerCursor: string | null = null;
+    let olderHasMore = false;
+    let contextMessages: LoadedMessage[] | null = null;
+    if (around || after) {
+        const target = await prisma.message.findFirst({
+            where: { id: around || after!, channelId, threadId: threadId || null, deleted: false },
+            select: { id: true, createdAt: true },
+        });
+        if (!target) return NextResponse.json({ error: "Сообщение удалено или недоступно" }, { status: 404 });
+        const newer = await prisma.message.findMany({
+            where: { channelId, threadId: threadId || null, OR: [
+                { createdAt: { gt: target.createdAt } },
+                { createdAt: target.createdAt, id: { gt: target.id } },
+            ] },
+            include: MESSAGE_SELECT,
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: limit + 1,
+        });
+        if (newer.length > limit) {
+            newer.pop();
+            nextNewerCursor = newer[newer.length - 1]?.id ?? null;
+        }
+        if (after) {
+            await attachGroupRoles(newer);
+            await applyMemberOverrides(newer, channel.groupId);
+            for (const message of newer) message.reads = message.reads.filter(read => read.userId === session.user.id || read.receiptVisible);
+            return NextResponse.json({ messages: newer, nextNewerCursor });
+        }
+        const older = await prisma.message.findMany({
+            where: { channelId, threadId: threadId || null, OR: [
+                { createdAt: { lt: target.createdAt } },
+                { createdAt: target.createdAt, id: { lte: target.id } },
+            ] },
+            include: MESSAGE_SELECT,
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: limit + 1,
+        });
+        olderHasMore = older.length > limit;
+        // Keep the same descending representation as ordinary history below.
+        contextMessages = [...newer].reverse().concat(older);
+    }
+	const messages = contextMessages ?? await prisma.message.findMany({
 		where: threadId
 			? { channelId, threadId }
 			: { channelId, threadId: null },
 		include: MESSAGE_SELECT,
-		orderBy: { createdAt: "desc" },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
 		take: limit + 1,
 		...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
 	});
 
-	const hasMore = messages.length > limit;
+	const hasMore = around ? olderHasMore : messages.length > limit;
 	if (hasMore) messages.pop();
 
 	/* GET только получает данные. Отметка прочтения живёт в /api/messages/read.
@@ -142,6 +188,7 @@ export async function GET(req: Request) {
 	return NextResponse.json({
 		messages: ordered,
 		nextCursor: hasMore ? messages[0]?.id : null,
+        nextNewerCursor,
 	});
 }
 
@@ -157,7 +204,7 @@ export async function POST(req: NextRequest) {
 	const banned = await checkBan(session.user.id);
 	if (banned) return banned;
 
-	const { content, channelId, attachments, replyToId, threadId } = await req.json();
+	const { content, channelId, attachments, replyToId, replyQuote, threadId } = await req.json();
 	const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
 	if ((!content || !content.trim()) && !hasAttachments) {
 		return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -230,7 +277,7 @@ export async function POST(req: NextRequest) {
 	if (channel.slowmode > 0 && !isPrivileged) {
 		const lastMsg = await prisma.message.findFirst({
 			where: { channelId, userId: session.user.id },
-			orderBy: { createdAt: "desc" },
+			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
 			select: { createdAt: true },
 		});
 		if (lastMsg) {
@@ -261,9 +308,14 @@ export async function POST(req: NextRequest) {
 		return NextResponse.json({ error: "Message content cannot be empty" }, { status: 400 });
 	}
 	if (replyToId) {
-		const reply = await prisma.message.findUnique({ where: { id: replyToId }, select: { channelId: true } });
-		if (!reply || reply.channelId !== channelId) return NextResponse.json({ error: "Некорректное сообщение для ответа" }, { status: 400 });
-	}
+		const reply = await prisma.message.findUnique({ where: { id: replyToId }, select: { channelId: true, content: true, deleted: true } });
+		if (!reply || reply.deleted || reply.channelId !== channelId) return NextResponse.json({ error: "Некорректное сообщение для ответа" }, { status: 400 });
+        if (replyQuote != null && !validReplyQuote(replyQuote, reply.content)) {
+            return NextResponse.json({ error: "Цитата не соответствует исходному сообщению" }, { status: 400 });
+        }
+	} else if (replyQuote != null) {
+        return NextResponse.json({ error: "Для цитаты требуется исходное сообщение" }, { status: 400 });
+    }
 	if (threadId) {
 		const parent = await prisma.message.findUnique({ where: { id: threadId }, select: { channelId: true, threadId: true } });
 		if (!parent || parent.channelId !== channelId || parent.threadId) return NextResponse.json({ error: "Некорректная ветка обсуждения" }, { status: 400 });
@@ -306,6 +358,7 @@ export async function POST(req: NextRequest) {
 			userId: session.user.id,
 			attachments: hasAttachments ? JSON.stringify(attachments) : null,
 			replyToId: replyToId || null,
+            replyQuote: replyQuote ?? null,
 			threadId: threadId || null,
 			mentions: resolvedMentions.ids.length ? JSON.stringify(resolvedMentions.ids) : null,
 		},

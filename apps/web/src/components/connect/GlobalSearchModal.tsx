@@ -57,10 +57,19 @@ export default function GlobalSearchModal({ onClose }: { onClose: () => void }) 
   const [scope, setScope] = useState<Scope>("all");
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const moreAbortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
+    moreAbortRef.current?.abort();
+    setMoreLoading(false);
+    setNextCursor(null);
+    setError(null);
+    setResults([]);
     if (query.trim().length < 2) { setResults([]); setLoading(false); return; }
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -68,13 +77,38 @@ export default function GlobalSearchModal({ onClose }: { onClose: () => void }) 
       try {
         const response = await fetch(`/api/connect/search?q=${encodeURIComponent(query.trim())}&scope=${scope}`, { signal: controller.signal });
         const data = await response.json();
-        if (response.ok) setResults(data.results ?? []);
+        if (!response.ok) throw new Error("search");
+        if (!controller.signal.aborted) {
+          setResults(data.results ?? []);
+          setNextCursor(data.nextCursor ?? null);
+        }
       } catch (error) {
-        if ((error as Error).name !== "AbortError") setResults([]);
-      } finally { setLoading(false); }
+        if ((error as Error).name !== "AbortError") { setResults([]); setError("Не удалось выполнить поиск. Повторите запрос."); }
+      } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 250);
-    return () => { window.clearTimeout(timer); controller.abort(); };
+    return () => { window.clearTimeout(timer); controller.abort(); moreAbortRef.current?.abort(); };
   }, [query, scope]);
+
+  const loadMore = async () => {
+    if (!nextCursor || moreLoading) return;
+    const controller = new AbortController();
+    moreAbortRef.current = controller;
+    setMoreLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/connect/search?q=${encodeURIComponent(query.trim())}&scope=messages&cursor=${encodeURIComponent(nextCursor)}`, { signal: controller.signal });
+      if (!response.ok) throw new Error("search");
+      const data = await response.json();
+      if (controller.signal.aborted) return;
+      setResults(previous => {
+        const seen = new Set(previous.map(item => `${item.type}:${item.id}`));
+        return [...previous, ...(data.results ?? []).filter((item: Result) => !seen.has(`${item.type}:${item.id}`))];
+      });
+      setNextCursor(data.nextCursor ?? null);
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") setError("Не удалось загрузить результаты. Повторите попытку.");
+    } finally { if (!controller.signal.aborted) setMoreLoading(false); }
+  };
 
   return (
     <ModalBackdrop onClose={onClose} maxWidth="max-w-3xl">
@@ -90,6 +124,7 @@ export default function GlobalSearchModal({ onClose }: { onClose: () => void }) 
         {SCOPES.map((item) => <button key={item.id} onClick={() => setScope(item.id)} className={`whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${scope === item.id ? "border-violet-500 bg-violet-500 text-white dark:border-cyan-400 dark:bg-cyan-400 dark:text-neutral-950" : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-white/5"}`} role="tab" aria-selected={scope === item.id}>{item.label}</button>)}
       </div>
       <div className="min-h-56 max-h-[55vh] overflow-y-auto rounded-2xl border border-neutral-200 p-1 dark:border-white/10">
+        {error && <p role="alert" className="p-3 text-sm text-red-500">{error}</p>}
         {loading && <div className="p-8 text-center text-sm text-neutral-500">Поиск…</div>}
         {!loading && query.trim().length < 2 && <div className="p-8 text-center text-sm text-neutral-500">Введите не менее двух символов</div>}
         {!loading && query.trim().length >= 2 && results.length === 0 && <div className="p-8 text-center text-sm text-neutral-500">Ничего не найдено</div>}
@@ -108,6 +143,7 @@ export default function GlobalSearchModal({ onClose }: { onClose: () => void }) 
             {result.snippet && <p className="mt-1 line-clamp-2 text-xs text-neutral-600 dark:text-neutral-300"><Highlighted text={result.snippet} query={query} /></p>}
           </button>
         ))}
+        {nextCursor && !loading && <button type="button" onClick={loadMore} disabled={moreLoading} className="w-full p-3 text-sm text-violet-600 dark:text-cyan-400 disabled:opacity-50">{moreLoading ? "Загрузка…" : "Показать более старые сообщения"}</button>}
       </div>
     </ModalBackdrop>
   );

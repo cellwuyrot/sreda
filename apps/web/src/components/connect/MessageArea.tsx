@@ -36,6 +36,8 @@ import MessageBody from "./MessageBody";
 import { messageLengthError, countWords, messageLimits } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
 import { useMessageWindow } from "@/hooks/useMessageWindow";
+import { mergeHistory } from "@/lib/chatHistory";
+import { selectedReplyQuote, type ReplyDraft } from "@/lib/replyQuote";
 import ForwardModal from "./ForwardModal";
 // FIX-FWDBUF: пересылка через внутренний буфер.
 import ForwardPendingBar from "./ForwardPendingBar";
@@ -269,7 +271,7 @@ type MessageRowProps = {
   ignoredIds: Set<string>;
   revealedIgnored: Set<string>;
   displayName: (u: { id: string; name: string }) => string;
-  setReplyTo: (reply: { id: string; name: string; content: string } | null) => void;
+  setReplyTo: (reply: ReplyDraft | null) => void;
   onJumpToMessage: (id: string) => void;
   setEditContent: (value: string) => void;
   setRevealedIgnored: Dispatch<SetStateAction<Set<string>>>;
@@ -316,7 +318,10 @@ const MessageRow = memo(function MessageRow({
                   canEdit={msg.user.id === currentUserId}
                   canDelete={msg.user.id === currentUserId || isPrivilegedRole}
                   pinned={msg.pinned}
-                  onReply={() => setReplyTo({ id: msg.id, name: msg.user.name, content: msg.content.slice(0, 50) })}
+                  onReply={() => {
+                    const quote = selectedReplyQuote(document.getElementById(`msg-${msg.id}`));
+                    setReplyTo({ id: msg.id, name: msg.user.name, content: quote ?? msg.content, quote });
+                  }}
                   onThread={() => openThread(msg, document.getElementById(`msg-${msg.id}`))}
                   threadCount={msg._count?.threadReplies || msg.threadCount || 0}
                   onReact={(emoji) => toggleReaction(msg.id, emoji)}
@@ -375,10 +380,10 @@ const MessageRow = memo(function MessageRow({
                     type="button"
                     onClick={() => { if (msg.replyTo) onJumpToMessage(msg.replyTo.id); }}
                     title="Перейти к сообщению"
-                    className="inline-flex items-center gap-1.5 text-[12px] text-neutral-500 dark:text-gray-400 mb-1 border-l-2 border-violet-400 dark:border-cyan-400 pl-2 pr-2 py-0.5 rounded-r-md bg-violet-50/60 dark:bg-cyan-400/[0.06] max-w-fit text-left cursor-pointer hover:bg-violet-100 dark:hover:bg-cyan-400/[0.12] transition-colors"
+                    className="flex items-start gap-1.5 text-[12px] text-neutral-500 dark:text-gray-400 mb-1 border-l-2 border-violet-400 dark:border-cyan-400 pl-2 pr-2 py-0.5 rounded-r-md bg-violet-50/60 dark:bg-cyan-400/[0.06] max-w-fit text-left cursor-pointer hover:bg-violet-100 dark:hover:bg-cyan-400/[0.12] transition-colors"
                   >
                     <span className="font-semibold text-violet-600 dark:text-cyan-300">{msg.replyTo.user.name}:</span>
-                    <span className="truncate max-w-[240px]">{msg.replyTo.content}</span>
+                    <span className="whitespace-pre-wrap break-words min-w-0">{msg.replyQuote ?? msg.replyTo.content}</span>
                   </button>
                 )}
 
@@ -464,7 +469,7 @@ const MessageRow = memo(function MessageRow({
                       /* Не <p>: в тексте теперь бывают блоки — код и свёрнутое
                          длинное сообщение, — а абзац блочные элементы внутри
                          себя не допускает, браузер разорвал бы разметку. */
-                      <div data-i18n-skip className="tz-chat-body text-neutral-700 dark:text-gray-300 mt-0.5 break-words whitespace-pre-wrap">
+                      <div data-i18n-skip data-message-body className="tz-chat-body text-neutral-700 dark:text-gray-300 mt-0.5 break-words whitespace-pre-wrap">
                         {/* Длинное сообщение показывается свёрнутым — см. MessageBody. */}
                         <MessageBody
                           text={msg.content}
@@ -713,11 +718,17 @@ export default function MessageArea({
   useEffect(() => { currentUserIdRef.current = currentUserId; }, [currentUserId]);
   useEffect(() => { currentUserNameRef.current = currentUserName; }, [currentUserName]);
   useEffect(() => { onNewMessageRef.current = onNewMessage; }, [onNewMessage]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setRawMessages] = useState<Message[]>([]);
+  const captureHistoryRef = useRef<(() => void) | null>(null);
+  const setMessages = useCallback((update: SetStateAction<Message[]>) => {
+    captureHistoryRef.current?.();
+    setRawMessages(update);
+  }, []);
+  const messageIds = useMemo(() => messages.map(message => message.id), [messages]);
   const [newMessage, setNewMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
-  const [replyTo, setReplyTo] = useState<{ id: string; name: string; content: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   /* Тариф обрезал истор����: сервер присылает число дней, чтобы подпись в чате не
@@ -1243,7 +1254,7 @@ export default function MessageArea({
   const scrollFetchLock = useRef(false);
   const didInitialScrollRef = useRef(false);
   /** Расстояние до низа ленты перед подстановкой старых сообщений сверху. */
-  const prependAnchorRef = useRef<number | null>(null);
+  const historyRequestRef = useRef<{ channel: string; cursor: string; promise: Promise<void> } | null>(null);
   /* Оконный рендер: в DOM живёт полоса вокруг видимой области, остальное —
      распорки. Без него дерево росло вместе с историей, и каждая догруженная
      страница делала прокрутку тяжелее (см. hooks/useMessageWindow). */
@@ -1253,8 +1264,9 @@ export default function MessageArea({
   const {
     start: winStart, end: winEnd, padTop: winPadTop, padBottom: winPadBottom,
     hiddenAbove: winHiddenAbove, sync: syncWindow, reveal: revealWindow, revealTail: revealWindowTail,
-    reset: resetWindow,
-  } = useMessageWindow(messages.length, scrollContainerRef);
+    reset: resetWindow, capture: captureHistory,
+  } = useMessageWindow(messages.length, scrollContainerRef, messageIds);
+  useLayoutEffect(() => { captureHistoryRef.current = captureHistory; }, [captureHistory]);
   /** Кадр, в котором обработчик прокрутки уже запланирован. */
   const scrollRafRef = useRef(0);
   /**
@@ -1284,7 +1296,9 @@ export default function MessageArea({
    * Поэтому: сначала раскрываем хвост, потом доводим до низа по НАСТОЯЩЕЙ
    * высоте — сразу и ещё раз после отрисовки.
    */
+  const latestLoaderRef = useRef<(() => void) | null>(null);
   const scrollToEnd = useCallback(() => {
+    if (latestLoaderRef.current) { latestLoaderRef.current(); return; }
     const el = scrollContainerRef.current;
     if (!el) return;
     revealWindowTail();
@@ -1318,66 +1332,79 @@ export default function MessageArea({
      его при уходе, и опоздавший ответ до setMessages уже не доходит. */
   const fetchAbortRef = useRef<AbortController | null>(null);
 
-  const fetchMessages = useCallback(async (cursor?: string, signal?: AbortSignal) => {
-    const url = `/api/messages?channelId=${channelId}&limit=50${cursor ? `&cursor=${cursor}` : ""}`;
-    let res: Response;
-    try {
-      res = await fetch(url, { signal: signal ?? fetchAbortRef.current?.signal });
-    } catch (err) {
-      // Прерванный запрос — это не сбой: канал сменился, ответ больше не нужен.
-      if ((err as Error)?.name === "AbortError") return;
-      throw err;
+  const fetchMessages = useCallback((cursor?: string, signal?: AbortSignal): Promise<void> => {
+    const activeSignal = signal ?? fetchAbortRef.current?.signal;
+    if (cursor && historyRequestRef.current?.channel === channelId) {
+      const pending = historyRequestRef.current;
+      if (pending.cursor === cursor) return pending.promise;
+      return pending.promise;
     }
-    if (!res.ok) return;
-    const data = await res.json();
+    const task = (async () => {
+      const url = `/api/messages?channelId=${encodeURIComponent(channelId)}&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      try {
+        const res = await fetch(url, { signal: activeSignal });
+        if (!res.ok) throw new Error(`История сообщений: HTTP ${res.status}`);
+        const data = await res.json();
+        if (activeSignal?.aborted) return;
+        setMessages(prev => cursor ? mergeHistory(prev, data.messages) : data.messages);
+        setNextCursor(data.nextCursor);
+        setHasMore(!!data.nextCursor);
+      } catch (err) {
+        if ((err as Error)?.name !== "AbortError") {
+          setErrorToast("Не удалось загрузить историю сообщений. Повторите попытку.");
+        }
+      } finally {
+        if (!activeSignal?.aborted) setLoading(false);
+      }
+    })();
     if (cursor) {
-      /* Запоминаем расстояние до низа ленты. Пятьдесят старых сообщений
-         встанут СВЕРХУ, лента станет выше, а браузер сохраняет scrollTop — и
-         прочитанное уезжает вниз вместе с содержимым: со стороны это выглядит
-         как бросок то на середину, то к самому верху. Восстанавливаем позицию
-         по этому расстоянию сразу после отрисовки (эффект ниже). */
-      const el = scrollContainerRef.current;
-      if (el) prependAnchorRef.current = el.scrollHeight - el.scrollTop;
-      setMessages((prev) => [...data.messages, ...prev]);
-    } else {
-      setMessages(data.messages);
+      historyRequestRef.current = { channel: channelId, cursor, promise: task };
+      void task.finally(() => {
+        if (historyRequestRef.current?.promise === task) historyRequestRef.current = null;
+      });
     }
-    setNextCursor(data.nextCursor);
-    setHasMore(!!data.nextCursor);
-    setLoading(false);
-  }, [channelId]);
+    return task;
+  }, [channelId, setMessages]);
 
   useEffect(() => {
     const controller = new AbortController();
     fetchAbortRef.current = controller;
-    setMessages([]);
+    resetWindow();
+    historyRequestRef.current = null;
+    setRawMessages([]);
     setLoading(true);
     setNextCursor(null);
     didInitialScrollRef.current = false;
     isAtBottomRef.current = true;
-    resetWindow();
     fetchMessages(undefined, controller.signal);
-    return () => controller.abort();
+    return () => { controller.abort(); fetchAbortRef.current?.abort(); };
   }, [channelId, fetchMessages, resetWindow]);
 
   // Unified "jump to a message": used both by notification deep-links
   // (highlightMessageId prop) and by clicking a reply reference in chat.
   // It scrolls to the target once, briefly flashes it, and — if the message
-  // isn't in the loaded page yet — pulls older pages until it appears.
+  // is not loaded yet — requests a bounded segment directly around its ID.
   const [flashMessageId, setFlashMessageId] = useState<string | null>(null);
   const [jumpTargetId, setJumpTargetId] = useState<string | null>(null);
-  const jumpAttemptsRef = useRef(0);
+  const jumpRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
+  const newerCursorRef = useRef<string | null>(null);
+  const newerFetchLock = useRef(false);
+  const [hasNewer, setHasNewerState] = useState(false);
+  const hasNewerRef = useRef(false);
+  const setHasNewer = useCallback((value: boolean) => { hasNewerRef.current = value; setHasNewerState(value); }, []);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const jumpToMessage = useCallback((id: string) => {
-    jumpAttemptsRef.current = 0;
+    jumpRequestRef.current?.controller.abort();
+    jumpRequestRef.current = null;
     setJumpTargetId(id);
   }, []);
 
   // A notification deep-link arrives via prop — feed it into the same machinery.
   useEffect(() => {
     if (highlightMessageId) {
-      jumpAttemptsRef.current = 0;
+      jumpRequestRef.current?.controller.abort();
+      jumpRequestRef.current = null;
       setJumpTargetId(highlightMessageId);
     }
   }, [highlightMessageId]);
@@ -1388,11 +1415,12 @@ export default function MessageArea({
   // цель прокручивается ровно один раз, после чего немедленно освобождается —
   // мигание живёт своим таймером и не мешает ручной прокрутке.
   useEffect(() => {
-    if (!jumpTargetId) { jumpAttemptsRef.current = 0; return; }
+    if (!jumpTargetId) return;
     if (loading) return;
 
     const release = () => {
-      jumpAttemptsRef.current = 0;
+      jumpRequestRef.current?.controller.abort();
+      jumpRequestRef.current = null;
       setJumpTargetId(null);
       onHighlightConsumed?.();
     };
@@ -1411,21 +1439,85 @@ export default function MessageArea({
       // Мы намеренно уходим от низа к конкретному сообщению — снимаем
       // «автоследование за низом», иначе автопрокрутка вниз перебила бы переход.
       isAtBottomRef.current = false;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.scrollIntoView({ behavior: "auto", block: "center" });
+      captureHistory();
       setFlashMessageId(jumpTargetId);
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       flashTimerRef.current = setTimeout(() => setFlashMessageId(null), 2400);
       release();
       return;
     }
-    if (hasMore && nextCursor && jumpAttemptsRef.current < 8) {
-      jumpAttemptsRef.current += 1;
-      fetchMessages(nextCursor);
-    } else {
-      // Message not reachable (too old or deleted) — release the highlight.
-      release();
-    }
-  }, [jumpTargetId, messages, loading, hasMore, nextCursor, fetchMessages, onHighlightConsumed, winStart, winEnd, revealWindow]);
+    if (jumpRequestRef.current?.id === jumpTargetId) return;
+    const controller = new AbortController();
+    const id = jumpTargetId;
+    jumpRequestRef.current = { id, controller };
+    isAtBottomRef.current = false;
+    void fetch(`/api/messages?channelId=${encodeURIComponent(channelId)}&around=${encodeURIComponent(id)}&limit=50`, { signal: controller.signal })
+      .then(async res => {
+        if (!res.ok) throw new Error(res.status === 404 ? "Сообщение удалено или недоступно" : "Не удалось перейти к сообщению. Повторите попытку.");
+        const data = await res.json();
+        if (controller.signal.aborted || fetchAbortRef.current?.signal.aborted) return;
+        // Cancel old pagination before replacing the segment; stale pages must
+        // never be prepended to a different context.
+        fetchAbortRef.current?.abort();
+        fetchAbortRef.current = new AbortController();
+        historyRequestRef.current = null;
+        resetWindow();
+        didInitialScrollRef.current = true;
+        setRawMessages(data.messages);
+        setNextCursor(data.nextCursor);
+        setHasMore(!!data.nextCursor);
+        newerCursorRef.current = data.nextNewerCursor;
+        setHasNewer(!!data.nextNewerCursor);
+      })
+      .catch(err => {
+        if (controller.signal.aborted) return;
+        setErrorToast((err as Error).message);
+        release();
+      });
+  }, [jumpTargetId, messages, loading, channelId, onHighlightConsumed, winStart, winEnd, revealWindow, resetWindow, setHasNewer, captureHistory]);
+
+  useEffect(() => {
+    setHasNewer(false);
+    newerCursorRef.current = null;
+    newerFetchLock.current = false;
+    return () => { jumpRequestRef.current?.controller.abort(); };
+  }, [channelId, setHasNewer]);
+
+  const fetchNewer = useCallback(async () => {
+    if (!newerCursorRef.current || newerFetchLock.current) return;
+    newerFetchLock.current = true;
+    const cursor = newerCursorRef.current;
+    const signal = fetchAbortRef.current?.signal;
+    try {
+      const res = await fetch(`/api/messages?channelId=${encodeURIComponent(channelId)}&after=${encodeURIComponent(cursor)}&limit=50`, { signal });
+      if (!res.ok) throw new Error("history");
+      const data = await res.json();
+      if (signal?.aborted) return;
+      setMessages(prev => mergeHistory(prev, data.messages));
+      newerCursorRef.current = data.nextNewerCursor;
+      setHasNewer(!!data.nextNewerCursor);
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") setErrorToast("Не удалось загрузить следующие сообщения. Повторите попытку.");
+    } finally { newerFetchLock.current = false; }
+  }, [channelId, setHasNewer, setMessages]);
+
+  useLayoutEffect(() => {
+    latestLoaderRef.current = hasNewer ? () => {
+      jumpRequestRef.current?.controller.abort();
+      setJumpTargetId(null);
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
+      historyRequestRef.current = null;
+      resetWindow();
+      isAtBottomRef.current = true;
+      didInitialScrollRef.current = false;
+      setHasNewer(false);
+      newerCursorRef.current = null;
+      void fetchMessages(undefined, controller.signal);
+    } : null;
+  }, [hasNewer, fetchMessages, resetWindow, setHasNewer]);
 
   // Clear the flash timer on unmount so it never fires against a stale component.
   useEffect(() => () => { if (flashTimerRef.current) clearTimeout(flashTimerRef.current); }, []);
@@ -1497,12 +1589,17 @@ export default function MessageArea({
 
     socket.on("connect", () => {
       socket.emit("join-channel", { channelId });
-      if (hasConnectedRef.current) {
+      if (hasConnectedRef.current && !hasNewerRef.current) {
         // A reconnect after the socket dropped (e.g. while the server was
         // redeploying). Live events emitted during the outage never reached us,
         // so re-fetch the latest page to re-sync instead of silently missing
         // messages until a manual reload.
-        fetchMessages();
+        // Reconcile the tail without discarding the history being read.
+        const signal = fetchAbortRef.current?.signal;
+        void fetch(`/api/messages?channelId=${encodeURIComponent(channelId)}&limit=50`, { signal })
+          .then(res => res.ok ? res.json() : Promise.reject(new Error("reconnect")))
+          .then(data => { if (!signal?.aborted) setMessages(prev => mergeHistory(prev, data.messages)); })
+          .catch(() => {});
       }
       hasConnectedRef.current = true;
     });
@@ -1523,7 +1620,7 @@ export default function MessageArea({
         }
         return;
       }
-      setMessages((prev) => {
+      if (!hasNewerRef.current) setMessages((prev) => {
         if (prev.find((m) => m.id === msg.id)) return prev;
         // If this is our own message, replace optimistic placeholder
         if (msg.user.id === currentUserIdRef.current) {
@@ -1653,21 +1750,13 @@ export default function MessageArea({
     };
   }, [channelId, fetchMessages]);
 
-  /* Возврат позиции после подстановки старых сообщений сверху. Именно
-     useLayoutEffect: обычный эффект выполняется после отрисовки, и человек
-     успевает увидеть рывок. Считаем от низа — высота выросшей ленты нам заранее
-     не известна, а расстояние до низа не изменилось. */
-  useLayoutEffect(() => {
-    const el = scrollContainerRef.current;
-    const anchor = prependAnchorRef.current;
-    if (!el || anchor === null) return;
-    prependAnchorRef.current = null;
-    el.scrollTop = el.scrollHeight - anchor;
-  }, [messages]);
-
-  // Scroll to bottom on new messages if already at bottom
+  const autoScrollTailRef = useRef<string | null>(null);
+  // Follow only a newly appended tail, never reactions, reads or older pages.
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (messages.length === 0) { autoScrollTailRef.current = null; return; }
+    const tailId = messages[messages.length - 1].id;
+    const tailChanged = autoScrollTailRef.current !== tailId;
+    autoScrollTailRef.current = tailId;
     // First load for a channel: jump instantly to the newest message so the
     // chat opens already scrolled to the bottom (no visible smooth animation).
     if (!didInitialScrollRef.current) {
@@ -1719,10 +1808,10 @@ export default function MessageArea({
     }
     /* Следование за новыми сообщениями можно выключить: когда читаешь
        историю в живом канале, лента дёргает вниз при каждом чужом сообщении. */
-    if (isAtBottomRef.current && chatPrefsRef.current.autoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (tailChanged && isAtBottomRef.current && chatPrefsRef.current.autoScroll && !jumpTargetId) {
+      scrollToEnd();
     }
-  }, [messages, highlightMessageId, jumpTargetId, currentUserId]);
+  }, [messages, highlightMessageId, jumpTargetId, currentUserId, scrollToEnd]);
 
   /* Прокрутка идёт десятками событий в секунду, а лента — самый тяжёлый список
      в проекте. Считаем не чаще одного раза на кадр: замеры высоты (scrollHeight)
@@ -1739,11 +1828,13 @@ export default function MessageArea({
       const el = scrollContainerRef.current;
       if (!el) return;
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      isAtBottomRef.current = distFromBottom < 100;
-      setShowScrollBtn(distFromBottom > 300);
+      isAtBottomRef.current = !hasNewerRef.current && distFromBottom < 100;
+      setShowScrollBtn(hasNewerRef.current || distFromBottom > 300);
       /* Сначала окно: пока сверху есть загруженные, но не отрисованные строки,
          за новой страницей идти рано — иначе память копится зря. */
+      captureHistory();
       syncWindow();
+      if (distFromBottom < 600 && hasNewerRef.current && !jumpTargetId) void fetchNewer();
       if (el.scrollTop - winPadTop < 600 && winHiddenAbove === 0 && hasMore && nextCursor && !scrollFetchLock.current) {
         scrollFetchLock.current = true;
         fetchMessages(nextCursor).finally(() => { scrollFetchLock.current = false; });
@@ -2404,7 +2495,7 @@ export default function MessageArea({
     const content = newMessage;
     const attachments = pendingAttachments.length > 0 ? pendingAttachments : null;
     const body: Record<string, unknown> = { content, channelId, attachments };
-    if (replyTo) body.replyToId = replyTo.id;
+    if (replyTo) { body.replyToId = replyTo.id; if (replyTo.quote) body.replyQuote = replyTo.quote; }
     // ID не передаются: сервер всегда вычисляет их заново из content.
 
     updateChannelDraft("");
@@ -2423,6 +2514,7 @@ export default function MessageArea({
       pinned: false,
       attachments: attachments ? JSON.stringify(attachments) : null,
       user: { id: currentUserId, name: currentUserName, avatar: null, avatarGlowEnabled: false, avatarGlowColors: null, role: currentUserRole },
+      replyQuote: savedReply?.quote ?? null,
       replyTo: savedReply ? { id: savedReply.id, content: savedReply.content, user: { id: "", name: savedReply.name } } : undefined,
       reads: [],
     };
@@ -2450,7 +2542,9 @@ export default function MessageArea({
       } else {
         // Replace optimistic message with real one from server
         const real = await res.json();
-        setMessages(prev => prev.map(m => m.id === optimisticId ? { ...real } : m));
+        setMessages(prev => prev.some(m => m.id === optimisticId)
+          ? prev.map(m => m.id === optimisticId ? { ...real } : m)
+          : mergeHistory(prev, [real]));
         if (real.censorWarning) {
           setCensorNotice(true);
           window.setTimeout(() => setCensorNotice(false), 6000);
@@ -3022,7 +3116,11 @@ export default function MessageArea({
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
+          onWheel={event => { if (event.deltaY < 0) isAtBottomRef.current = false; }}
+          onTouchMove={() => { isAtBottomRef.current = false; }}
+          onKeyDown={event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) isAtBottomRef.current = false; }}
           className="flex-1 overflow-y-auto px-4 pb-4 pt-5"
+          style={{ overflowAnchor: "none" }}
           role="log"
           aria-label="Messages"
         >
@@ -3072,8 +3170,8 @@ export default function MessageArea({
                 && !msg.pinned
                 && !showDateDivider;
               return (
+                <div key={msg.id} data-message-id={msg.id} className="tz-community-message flow-root">
                 <MessageRow
-                  key={msg.id}
                   msg={msg}
                   prefs={chatPrefs}
                   firstUnread={isFirstUnread}
@@ -3111,11 +3209,13 @@ export default function MessageArea({
                   pinMessage={pinMessage}
                   groupId={groupIdForRender}
                 />
+                </div>
               );
             })}
             {winPadBottom > 0 && <div aria-hidden style={{ height: winPadBottom }} />}
             </>
           )}
+          {hasNewer && <button type="button" onClick={() => void fetchNewer()} className="block mx-auto py-2 text-sm text-violet-600 dark:text-cyan-400">Загрузить следующие сообщения</button>}
           <div ref={messagesEndRef} />
         </div>
 
@@ -3159,7 +3259,7 @@ export default function MessageArea({
         {replyTo && (
           <div className="px-4 py-2 border-t border-[var(--cn-border)] flex items-center gap-2 text-xs text-neutral-500 dark:text-gray-400 bg-[var(--cn-accent-dim)]">
             <div className="w-0.5 h-4 bg-violet-400 dark:bg-cyan-400 rounded-full" />
-            <span>Ответ для <strong className="text-neutral-700 dark:text-gray-300">{replyTo.name}</strong>: {replyTo.content}</span>
+            <span className="min-w-0 whitespace-pre-wrap break-words">Ответ для <strong className="text-neutral-700 dark:text-gray-300">{replyTo.name}</strong>: {replyTo.content}</span>
             <button onClick={() => setReplyTo(null)} className="ml-auto text-neutral-400 hover:text-neutral-600 dark:hover:text-white">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>

@@ -1,0 +1,1 @@
+ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "replyQuote" TEXT;

@@ -36,6 +36,8 @@ export async function GET(req: NextRequest) {
   const limited = await rateLimit(req, `connect-search:${session.user.id}`, { limit: 60, windowMs: 60_000 });
   if (limited) return limited;
 
+  let nextCursor: string | null = null;
+  const cursor = req.nextUrl.searchParams.get("cursor");
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
   const requested = req.nextUrl.searchParams.get("scope") ?? "all";
   const scope: Scope = SCOPES.includes(requested as Scope) ? (requested as Scope) : "all";
@@ -94,9 +96,14 @@ export async function GET(req: NextRequest) {
         content: { contains: q, mode: "insensitive" },
       },
       select: { id: true, content: true, channelId: true, user: { select: { name: true } }, createdAt: true },
-      take: 30,
-      orderBy: { createdAt: "desc" },
+      take: 31,
+      ...(cursor && scope === "messages" ? { cursor: { id: cursor }, skip: 1 } : {}),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
+    if (messages.length > 30) {
+      messages.pop();
+      nextCursor = messages[messages.length - 1]?.id ?? null;
+    }
     for (const message of messages) {
       const channel = channelById.get(message.channelId);
       if (!channel) continue;
@@ -142,5 +149,5 @@ export async function GET(req: NextRequest) {
     for (const event of events) { const channel = channelById.get(event.channelId); if (!channel) continue; results.push({ id: event.id, type: "calendar", title: event.title, subtitle: `${groupNames.get(channel.groupId) ?? "Сообщество"} · ${event.start.toLocaleDateString("ru-RU")}`, snippet: event.description?.slice(0, 180), groupId: channel.groupId, channelId: channel.id, url: `/connect?group=${channel.groupId}&channel=${channel.id}` }); }
   }
 
-  return NextResponse.json({ results: results.slice(0, scope === "all" ? 60 : 40) });
+  return NextResponse.json({ results: results.slice(0, scope === "all" ? 60 : 40), nextCursor });
 }

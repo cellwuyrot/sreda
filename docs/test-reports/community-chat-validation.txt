@@ -1,0 +1,57 @@
+Final validation: npm run lint = PASS; npm run build = PASS; targeted tests = 38/38 PASS; prisma generate/validate = PASS.
+
+baseline: passed=2058, failed=21
+Failed files:
+desktop/src/shared/vpnEmbedded.test.ts
+desktop/src/shared/vpnPlan.test.ts
+web/src/app/api/admin/vpn/subscriptions/route.test.ts
+web/src/app/api/dm/route.test.ts
+web/src/app/api/messages/upload/route.test.ts
+web/src/app/api/webhooks/cloudpayments/_utils.test.ts
+web/src/lib/createNotification.threadGrouping.test.ts
+
+full: passed=2087, failed=21
+Failed files:
+desktop/src/shared/vpnEmbedded.test.ts
+desktop/src/shared/vpnPlan.test.ts
+web/src/app/api/admin/vpn/subscriptions/route.test.ts
+web/src/app/api/dm/route.test.ts
+web/src/app/api/messages/upload/route.test.ts
+web/src/app/api/webhooks/cloudpayments/_utils.test.ts
+web/src/lib/createNotification.threadGrouping.test.ts
+
+New failed assertions vs baseline: 0
+
+
+Browser regression:
+30 upward scroll steps stable
+prepend {"before":{"id":"m939","offset":-199},"after":{"id":"m939","offset":-199},"okay":true}
+append while reading {"before":{"id":"m939","offset":-199},"after":{"id":"m939","offset":-199},"okay":true}
+height change above viewport {"before":{"id":"m939","offset":-199},"after":{"id":"m939","offset":-199},"okay":true}
+asynchronous resize without parent update {"before":{"id":"m939","offset":-199},"after":{"id":"m939","offset":-199},"okay":true}
+virtualization threshold {"before":{"id":"m4","offset":-99},"after":{"id":"m4","offset":-99},"okay":true}
+errors []
+
+Targeted test log:
+
+> trioz@0.1.0 test
+> vitest run --run src/lib/chatHistory.test.ts src/components/connect/replyQuote.test.ts src/app/api/messages/history.test.ts src/hooks/useMessageWindow.test.ts src/app/api/connect/search/pagination.test.ts src/components/connect/GlobalSearchModal.test.tsx src/lib/amneziaVpnProfile.test.ts
+
+
+ RUN  v3.2.7 /data/project/sreda-main/apps/web
+
+ ✓ |jsdom| src/components/connect/GlobalSearchModal.test.tsx (3 tests) 1121ms
+   ✓ global search pagination > loads older matches and deduplicates results  307ms
+   ✓ global search pagination > ignores a previous query response even if the transport resolves after abort  517ms
+ ✓ |jsdom| src/components/connect/replyQuote.test.ts (6 tests) 24ms
+ ✓ |jsdom| src/hooks/useMessageWindow.test.ts (6 tests) 3ms
+ ✓ |node| src/app/api/messages/history.test.ts (9 tests) 22ms
+ ✓ |node| src/lib/amneziaVpnProfile.test.ts (3 tests) 17ms
+ ✓ |node| src/app/api/connect/search/pagination.test.ts (3 tests) 13ms
+ ✓ |node| src/lib/chatHistory.test.ts (8 tests) 4ms
+
+ Test Files  7 passed (7)
+      Tests  38 passed (38)
+   Start at  11:47:21
+   Duration  4.01s (transform 218ms, setup 123ms, collect 502ms, tests 1.20s, environment 884ms, prepare 416ms)
+

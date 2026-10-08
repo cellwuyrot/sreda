@@ -64,6 +64,7 @@ export interface Message {
   mentions?: string | null;
   reactions?: Reaction[];
   replyTo?: ReplyTo | null;
+  replyQuote?: string | null;
   reads?: { userId: string }[];
   threadId?: string | null;
   threadCount?: number;
