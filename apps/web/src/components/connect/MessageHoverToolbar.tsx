@@ -285,7 +285,7 @@ export default function MessageHoverToolbar({
     >
       {feedback && <span className="tz-toolbar-feedback">{feedback}</span>}
       {onReply && (
-        <button type="button" onClick={onReply} title="Ответить" aria-label="Ответить">
+        <button type="button" onMouseDown={event => event.preventDefault()} onClick={onReply} title="Ответить" aria-label="Ответить">
           {I.reply}
         </button>
       )}
