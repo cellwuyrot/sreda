@@ -35,6 +35,7 @@
  */
 
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { captureMessageAnchor, restoreMessageAnchor, type ScrollAnchor } from "@/lib/chatHistory";
 
 /** Меньше этого числа сообщений окно не включается — экономить нечего. */
 const WINDOW_MIN = 200;
@@ -80,6 +81,8 @@ export interface MessageWindow {
   revealTail: () => void;
   /** Сброс при смене канала или беседы. */
   reset: () => void;
+  /** Capture the reading position before changing messages. */
+  capture: () => void;
 }
 
 /**
@@ -127,6 +130,7 @@ function hasLiveSelectionInside(el: HTMLElement): boolean {
 export function useMessageWindow(
   count: number,
   scrollRef: RefObject<HTMLElement | null>,
+  messageIds?: readonly string[],
 ): MessageWindow {
   const [state, setState] = useState<WindowState>({ size: INITIAL_SIZE, hideBelow: 0 });
   /* Средняя высота строки — состояние, а не ref: от неё зависят высоты распорок,
@@ -138,10 +142,26 @@ export function useMessageWindow(
   /** Расстояние до низа, записанное перед сдвигом верхнего края. */
   const anchorRef = useRef<number | null>(null);
 
+  const readingAnchorRef = useRef<ScrollAnchor | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const keyed = messageIds !== undefined;
+  const capture = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !keyed) return;
+    const anchor = captureMessageAnchor(el);
+    readingAnchorRef.current = anchor;
+    setPinnedId(anchor?.id ?? null);
+  }, [scrollRef, keyed]);
+
   const enabled = count > WINDOW_MIN;
 
-  const end = enabled ? Math.max(0, count - state.hideBelow) : count;
-  const start = enabled ? Math.max(0, end - state.size) : 0;
+  const baseEnd = enabled ? Math.max(0, count - state.hideBelow) : count;
+  const baseStart = enabled ? Math.max(0, baseEnd - state.size) : 0;
+  // Keep the reader's actual message mounted across prepend, append and the
+  // first activation of virtualization. Never pin by a shifting array index.
+  const pinnedIndex = pinnedId && messageIds ? messageIds.indexOf(pinnedId) : -1;
+  const start = pinnedIndex >= 0 ? Math.min(baseStart, Math.max(0, pinnedIndex - STEP)) : baseStart;
+  const end = pinnedIndex >= 0 ? Math.max(baseEnd, Math.min(count, pinnedIndex + STEP)) : baseEnd;
   const padTop = enabled ? Math.round(start * avgRow) : 0;
   const padBottom = enabled ? Math.round((count - end) * avgRow) : 0;
 
@@ -155,8 +175,9 @@ export function useMessageWindow(
     // FIX-DM-COPY: пока держат выделение, строки из дерева не убираем.
     if (hasLiveSelectionInside(el)) return;
 
-    const curEnd = Math.max(0, total - state.hideBelow);
-    const curStart = Math.max(0, curEnd - state.size);
+    capture();
+    const curEnd = end;
+    const curStart = start;
     const rendered = curEnd - curStart;
     if (rendered <= 0) return;
 
@@ -184,8 +205,8 @@ export function useMessageWindow(
     const renderedHeight = el.scrollHeight - curPadTop - curPadBottom;
     const distanceToBottom = el.scrollHeight - el.scrollTop - viewport;
 
-    let size = state.size;
-    let hideBelow = state.hideBelow;
+    let size = curEnd - curStart;
+    let hideBelow = total - curEnd;
 
     /* Высота одного шага. Убирать строки можно только тогда, когда весь
        убираемый кусок УЖЕ вне зоны запаса: иначе после сжатия край снова
@@ -214,12 +235,14 @@ export function useMessageWindow(
 
     /* Сдвиг верхнего края меняет положение всего, что ниже, — запоминаем
        расстояние до низа. Нижний край на положение не влияет, якорь не нужен. */
-    const topEdgeMoved = size !== state.size;
+    const topEdgeMoved = total - hideBelow - size !== curStart || avg !== avgRow;
     if (topEdgeMoved) anchorRef.current = el.scrollHeight - el.scrollTop;
     setState({ size, hideBelow });
-  }, [scrollRef, count, state, avgRow]);
+  }, [scrollRef, count, state, avgRow, capture, start, end]);
 
   const reveal = useCallback((index: number) => {
+    readingAnchorRef.current = null;
+    setPinnedId(null);
     const total = count;
     if (index < 0 || index >= total || total <= WINDOW_MIN) return;
     const curEnd = Math.max(0, total - state.hideBelow);
@@ -243,10 +266,14 @@ export function useMessageWindow(
      нужно ровно обратное — оказаться у низа по его новому, настоящему
      положению. Прокруткой займётся вызывающий, сразу после отрисовки. */
   const revealTail = useCallback(() => {
+    readingAnchorRef.current = null;
+    setPinnedId(null);
     setState((prev) => tailWindow(prev, count));
   }, [count]);
 
   const reset = useCallback(() => {
+    readingAnchorRef.current = null;
+    setPinnedId(null);
     anchorRef.current = null;
     setAvgRow(FALLBACK_ROW);
     setState({ size: INITIAL_SIZE, hideBelow: 0 });
@@ -259,8 +286,27 @@ export function useMessageWindow(
     const anchor = anchorRef.current;
     if (!el || anchor === null) return;
     anchorRef.current = null;
-    el.scrollTop = el.scrollHeight - anchor;
-  }, [state, scrollRef]);
+    if (!keyed) el.scrollTop = el.scrollHeight - anchor;
+  }, [state, avgRow, count, scrollRef, keyed]);
 
-  return { start, end, padTop, padBottom, hiddenAbove: start, sync, reveal, revealTail, reset };
+  // Restore before paint, including avgRow-only changes and new messages.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const anchor = readingAnchorRef.current;
+    if (keyed && el && anchor) restoreMessageAnchor(el, anchor);
+  });
+
+  // Images, expanded text and reactions may change height after React commits.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!keyed || !el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const anchor = readingAnchorRef.current;
+      if (anchor) restoreMessageAnchor(el, anchor);
+    });
+    el.querySelectorAll<HTMLElement>("[data-message-id]").forEach(row => observer.observe(row));
+    return () => observer.disconnect();
+  });
+
+  return { start, end, padTop, padBottom, hiddenAbove: start, sync, reveal, revealTail, reset, capture };
 }

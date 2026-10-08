@@ -410,6 +410,7 @@ model Message {
   pinnedBy      String?
   pinnedAt      DateTime?
   replyToId     String?
+  replyQuote    String?       @db.Text
   replyTo       Message?      @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies       Message[]     @relation("MessageReplies")
   threadId      String?
