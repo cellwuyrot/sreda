@@ -1535,3 +1535,6 @@ html[data-tz-still] *::after {
   background: #1a1d27;
   animation: tz-skeleton-pulse 1.6s ease-in-out infinite;
 }
+
+/* Community rows are already windowed: avoid a second estimated-height layout. */
+.tz-community-message .tz-msg-row { content-visibility: visible; }
