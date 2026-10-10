@@ -1,0 +1,24 @@
+Admin payments UI update validation
+
+npm run lint: PASS (exit 0)
+Targeted ESLint on the updated page and test: PASS (exit 0)
+npm run build: PASS (exit 0)
+AdminPaymentsPage regression tests: 4/4 PASS
+No payment API, webhook, database schema, VPN or community-chat code changed in this update.
+No new database migration for this UI change.
+Production deployment was not performed.
+
+
+> trioz@0.1.0 test
+> vitest run --run src/components/admin/AdminPaymentsPage.test.tsx
+
+
+ RUN  v3.2.7 /data/project/sreda-main/apps/web
+
+ ✓ |jsdom| src/components/admin/AdminPaymentsPage.test.tsx (4 tests) 593ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  00:50:10
+   Duration  3.23s (transform 358ms, setup 143ms, collect 948ms, tests 593ms, environment 797ms, prepare 170ms)
+
