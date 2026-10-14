@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { USERNAME_COOLDOWN_DAYS, formatCooldownLeft, usernameCooldownLeftMs, validateUsername } from "@/lib/username";
+import { identityPatch, HubError } from "@/lib/tzIdHub";
 import { hasPremium, premiumSource } from "@/lib/premium";
 import { premiumDaysLeft } from "@/lib/premiumExpiry";
 /* VPN-PLAN: вторая подписка — только тумблер VPN, без премиум-возможностей. */
@@ -25,7 +25,7 @@ export async function GET() {
     where: { id: session.user.id },
     select: {
       id: true, name: true, username: true, email: true,
-      avatar: true, role: true, emailVerified: true,
+      avatar: true, role: true, emailVerified: true, contactAddress: true,
       bio: true, socialLinks: true, customStatus: true, statusEmoji: true,
       isPremium: true, showOnline: true,
       vpnAccess: true, vpnAccessUntil: true, // VPN-PLAN
@@ -113,58 +113,11 @@ export async function PATCH(req: NextRequest) {
   const { name, username, email, currentPassword, newPassword, bio, socialLinks, showOnline } = body;
   const data: Record<string, unknown> = {};
 
-  // Name
-  if (name !== undefined) {
-    if (typeof name !== "string" || name.trim().length < 2 || name.trim().length > 50)
-      return NextResponse.json({ error: "Имя должно быть от 2 до 50 символов" }, { status: 400 });
-    data.name = name.trim();
-  }
-
-  // Username
-  if (username !== undefined) {
-    const validated = validateUsername(username);
-    if (!validated.ok) {
-      return NextResponse.json({ error: validated.error }, { status: 400 });
-    }
-    const value = validated.value;
-
-    /* Читаем себя один раз: нужны и тариф с ролью, и текущий ник с датой
-       последней смены. */
-    const me = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { username: true, usernameChangedAt: true, isPremium: true, role: true },
-    });
-
-    /* Ник не меняется — выходим молча. Раньше повторное сохранение того же
-       значения проходило через все проверки: человек жал «Сохранить» на форме,
-       где ник и так свой, и получал отказ про Premium или кулдаун. */
-    if (!me || me.username !== value) {
-      /* Ник без цифр — привилегия подписки. Проверяем ОБЩИМ правилом
-         (lib/premium): администратор получает премиум по роли, и раньше это
-         здесь не учитывалось — интерфейс показывал метку «Premium», а сервер
-         отвечал «доступно только Premium-пользователям». */
-      if (!/[0-9]/.test(value) && !hasPremium(me)) {
-        return NextResponse.json(
-          { error: "Юзернейм без цифр доступен только Premium-пользователям" },
-          { status: 403 },
-        );
-      }
-
-      const taken = await prisma.user.findUnique({ where: { username: value } });
-      if (taken && taken.id !== session.user.id)
-        return NextResponse.json({ error: "Юзернейм уже занят" }, { status: 409 });
-
-      // Кулдаун: ник меняется не чаще, чем раз в 14 дней.
-      const left = usernameCooldownLeftMs(me?.usernameChangedAt ?? null);
-      if (left > 0) {
-        return NextResponse.json(
-          { error: `Ник можно менять раз в ${USERNAME_COOLDOWN_DAYS} дней — ${formatCooldownLeft(left)}` },
-          { status: 429 },
-        );
-      }
-      data.usernameChangedAt = new Date();
-      data.username = value;
-    }
+  try {
+    Object.assign(data, await identityPatch(session.user.id, { name, username, contactAddress: body.contactAddress }));
+  } catch (error) {
+    if (error instanceof HubError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
   }
 
   /* EMAIL-CHANGE: смена почты.

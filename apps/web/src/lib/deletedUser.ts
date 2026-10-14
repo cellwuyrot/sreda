@@ -71,6 +71,7 @@ export async function anonymizeUser(userId: string): Promise<void> {
 				activityStatus: null,
 				activityEnabled: false,
 				city: null,
+				contactAddress: null,
 				isPremium: false,
 				banned: true,
 				banReason: "Аккаунт удалён владельцем",
@@ -85,6 +86,10 @@ export async function anonymizeUser(userId: string): Promise<void> {
 
 		/* Личное — удаляем. Это принадлежит только самому человеку и ни на чью
 		   работу в сообществах не влияет. */
+		await tx.tzIdProjectNotification.deleteMany({ where: { userId } });
+		await tx.tzIdProjectSubscription.deleteMany({ where: { userId } });
+		await tx.tzIdNotificationPreference.deleteMany({ where: { userId } });
+		await tx.tzIdQrLogin.deleteMany({ where: { approvedUserId: userId } });
 		await tx.userSession.deleteMany({ where: { userId } });
 		await tx.pushDevice.deleteMany({ where: { userId } });
 		await tx.friendship.deleteMany({
