@@ -176,6 +176,28 @@ try {
     path: `${dir}/settings-desktop.png`,
     fullPage: true,
   });
+  await page.goto("http://127.0.0.1:3300/tz-id");
+  await page.getByRole("heading", { name: "Профиль", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Адреса", exact: true }).click();
+  await page.locator("textarea").fill("Общий контакт из TrioZ");
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await page.getByText("Изменения сохранены", { exact: true }).waitFor();
+  assert.equal((await db.user.findUniqueOrThrow({ where: { id: user.id } })).contactAddress, "Общий контакт из TrioZ");
+  const hub = await page.evaluate(async () => (await fetch("/api/tz-id/hub")).json());
+  assert.equal(hub.profile.id, user.id);
+  assert.equal(hub.profile.contactAddress, "Общий контакт из TrioZ");
+  assert.equal(hub.twoFactor.enabled, false);
+  await page.screenshot({ path: `${dir}/hub-desktop.png`, fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: `${dir}/hub-mobile.png`, fullPage: true });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.getByRole("button", { name: "Сотрудничество", exact: true }).first().click();
+  await page.getByRole("button", { name: "Сотрудничество — заказать услугу TrioZ" }).click();
+  await page.getByRole("heading", { name: "Сотрудничество", exact: true }).last().waitFor();
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  console.log("PASS TrioZ hub edits shared contact, responsive layout and reuses CooperationButton");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("http://127.0.0.1:3300/settings?section=tzid");
   await page.getByRole("button", { name: "Безопасность", exact: true }).click();
   await page.getByRole("heading", { name: "Устройства и сеансы" }).waitFor();
   await page.screenshot({

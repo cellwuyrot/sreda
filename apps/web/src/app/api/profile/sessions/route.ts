@@ -42,7 +42,7 @@ export async function GET() {
   return NextResponse.json(
     sessions.map(({ token, ...s }) => ({
       ...s,
-      source: token.startsWith("oidc:") ? "TZ ID" : "TrioZ",
+      source: token.startsWith("oidc:") || token.startsWith("portal:") ? "TZ ID" : "TrioZ",
       ip: maskIp(s.ip),
       current: s.id === session.user.sessionId,
     })),
