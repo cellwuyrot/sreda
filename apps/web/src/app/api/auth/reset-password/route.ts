@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
+import { revokeSessions } from "@/lib/tzIdSessions";
 import { invalidateUserAuthCache } from "@/lib/auth";
 
 /**
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     /* Кеш проверки сессий — сразу, а не через полминуты TTL. */
+    await revokeSessions(user.id);
     invalidateUserAuthCache(user.id);
 
     return NextResponse.json({ ok: true, message: "Пароль успешно изменён" });

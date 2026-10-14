@@ -34,7 +34,7 @@ export interface ProfileMenuEntry {
  * общие.
  */
 const ENTRIES: ProfileMenuEntry[] = [
-  { href: "/settings", label: "Настройки профиля", hint: "Имя, аватар, приватность, оформление" },
+  { href: "/settings", label: "TZ ID и настройки", hint: "Аккаунт, безопасность, приложения, профиль" },
   { href: "/settings/notifications", label: "Уведомления", hint: "Центр уведомлений и что о чём сообщать" },
   { href: "/workspace", label: "Рабочая среда", hint: "Личный холст: заметки, файлы, доски" },
   { href: "/partner", label: "Личный кабинет", hint: "Проекты и переписка по вашим заказам", role: "CONSULTANT" },

@@ -83,3 +83,7 @@ apps/web/storage/uploads/*
 apps/web/public/desktop/*
 !apps/web/public/desktop/.gitkeep
 !apps/web/public/desktop/README.md
+
+# TZ ID private signing and storage keys
+apps/id/secrets/
+apps/id/.env

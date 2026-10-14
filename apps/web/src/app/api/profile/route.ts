@@ -12,6 +12,7 @@ import { checkBan } from "@/lib/banCheck";
 /* EMAIL-CHANGE: смена почты — шаг захвата аккаунта, поэтому она требует пароля,
    лимита и кода на новый адрес. */
 import { rateLimit } from "@/lib/rateLimit";
+import { revokeSessions } from "@/lib/tzIdSessions";
 import { invalidateUserAuthCache } from "@/lib/auth";
 import { generateCode, sendVerificationEmail } from "@/lib/email";
 import { logAction } from "@/lib/audit";
@@ -255,6 +256,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Текущий пароль неверный" }, { status: 400 });
 
     data.password = await bcrypt.hash(newPassword, 12);
+    data.passwordChangedAt = new Date();
   }
 
   if (Object.keys(data).length === 0) {
@@ -276,6 +278,10 @@ export async function PATCH(req: NextRequest) {
     select: { id: true, name: true, username: true, email: true, avatar: true, role: true },
   });
 
+  if (newPassword !== undefined) {
+    await revokeSessions(session.user.id);
+    invalidateUserAuthCache(session.user.id);
+  }
   if (emailChangedTo) {
     /* Сессия на JWT держит старую почту в кэше — без сброса она живёт до перелогина. */
     invalidateUserAuthCache(session.user.id);

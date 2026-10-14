@@ -2,6 +2,7 @@ import { createServer } from "http";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 import { getToken } from "next-auth/jwt";
+import { liveSession } from "./src/lib/tzIdSessions";
 import { IncomingMessage } from "http";
 import { SOCKET_PATH } from "@trioz/shared";
 import { connectRedis, redis } from "./src/lib/redis";
@@ -72,10 +73,11 @@ async function sessionTokenFrom(req: IncomingMessage) {
     }
     carrier.cookies = parsed;
   }
-  return getToken({
+  const token = await getToken({
     req: carrier as Parameters<typeof getToken>[0]["req"],
     secret: process.env.NEXTAUTH_SECRET,
   });
+  return token?.id && await liveSession(token.id as string, token.sid as string | null) ? token : null;
 }
 
 const dev = process.env.NODE_ENV !== "production";
@@ -1017,6 +1019,8 @@ app.prepare().then(() => {
       const activelyBanned = !!liveUser?.banned && (!liveUser.bannedUntil || liveUser.bannedUntil > new Date());
       if (activelyBanned) return next(new Error("Account session revoked"));
 
+      socket.data.tzSessionId = token.sid;
+      socket.data.tzUserId = token.id;
       authenticatedSockets.set(socket.id, {
         userId: token.id as string,
         userName: (token.name || token.username || "Unknown") as string,
