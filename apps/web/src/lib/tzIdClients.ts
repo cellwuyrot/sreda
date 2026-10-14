@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
 import prisma from "./prisma";
 import { encryptTzData } from "./tzIdCrypto";
+import { TZ_ID_API_SCOPES } from "./tzIdHub";
 export type ClientInput = {
   name: string;
   redirectUris: string[];
   publicClient?: boolean;
   offlineAccess?: boolean;
+  apiScopes?: string[];
 };
 export function validateClient(input: ClientInput) {
   if (
@@ -45,7 +47,13 @@ export function validateClient(input: ClientInput) {
       }),
     ),
   ];
+  const apiScopes = input.apiScopes ?? [];
+  if (!Array.isArray(apiScopes) || apiScopes.some(s => !(TZ_ID_API_SCOPES as readonly string[]).includes(s)))
+    throw new Error("Неизвестные права API");
+  if (input.publicClient && apiScopes.some(s => s.endsWith(":write")))
+    throw new Error("Запись данных проектов доступна только серверным клиентам");
   return {
+    apiScopes: [...new Set(apiScopes)],
     name: input.name.trim(),
     redirectUris,
     publicClient: input.publicClient === true,
@@ -70,7 +78,7 @@ export async function registerClient(input: ClientInput) {
       ? "none"
       : "client_secret_basic",
     ...(secret ? { client_secret: secret } : {}),
-    scope: `openid profile email${config.offlineAccess ? " offline_access" : ""}`,
+    scope: `openid profile email${config.offlineAccess ? " offline_access" : ""}${config.apiScopes.length ? " " + config.apiScopes.join(" ") : ""}`,
     id_token_signed_response_alg: "RS256",
   };
   await prisma.tzIdClient.create({

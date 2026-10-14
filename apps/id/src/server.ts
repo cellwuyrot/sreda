@@ -14,7 +14,13 @@ import {
 import { connectRedis, redis } from "../../web/src/lib/redis";
 import { clientIpFromHeaders } from "../../web/src/lib/clientIp";
 import { createProvider } from "./provider.mjs";
-import { page, styles, escape } from "./views.mjs";
+import { page, styles, portalStyles, escape } from "./views.mjs";
+import { makePortal, qrSvg, qrWidget } from "./portal";
+import { projectApi } from "./api";
+import { bodyOf, checkCsrf, cookie, setCookie, json } from "./http";
+import { startQr, qrStatus, consumeQr, qrSecret } from "../../web/src/lib/tzIdQr";
+import { HubError, TZ_ID_SCOPE_LABELS } from "../../web/src/lib/tzIdHub";
+import { isRateLimited } from "../../web/src/lib/rateLimit";
 
 void connectRedis();
 const issuer = process.env.TZ_ID_ISSUER || "https://id.trioz.ru";
@@ -57,12 +63,8 @@ const secure = issuer.startsWith("https:");
 function csrfCookie(uid: string) {
   return `${secure ? "__Secure-" : ""}tzid-csrf-${uid}`;
 }
-const scopeLabels: Record<string, string> = {
-  openid: "Постоянный идентификатор TZ ID",
-  profile: "Имя, username и аватар",
-  email: "Email и статус его подтверждения",
-  offline_access: "Продление доступа без повторного входа",
-};
+const scopeLabels = TZ_ID_SCOPE_LABELS;
+const portal = makePortal({ issuer, webOrigin, ipOf: () => info.getStore()?.ip || "unknown" });
 const callback = provider.callback();
 const server = createServer((req, res) => {
   const ip =
@@ -78,7 +80,7 @@ const server = createServer((req, res) => {
       const url = new URL(req.url || "/", issuer);
       if (url.pathname === "/style.css") {
         res.setHeader("Content-Type", "text/css; charset=utf-8");
-        res.end(styles);
+        res.end(styles + portalStyles);
         return;
       }
       if (url.pathname === "/health") {
@@ -86,17 +88,19 @@ const server = createServer((req, res) => {
         res.end('{"ok":true}');
         return;
       }
-      if (url.pathname === "/") {
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.end(
-          page(
-            "Один аккаунт. Ваши проекты.",
-            `<p>Профиль, безопасность и доступ к приложениям управляются в вашем аккаунте.</p><a class="button" href="${escape(webOrigin)}/settings?section=tzid">Управление TZ ID</a><p><a href="${escape(webOrigin)}/auth/signin">Создать аккаунт или восстановить доступ</a></p>`,
-          ),
-        );
+      if (url.pathname === "/logo.png") {
+        res.setHeader("Content-Type", "image/png");
+        res.end(readFileSync(new URL("../../web/public/logo.png", import.meta.url)));
         return;
       }
-      const match = /^\/interaction\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (url.pathname === "/portal.js") {
+        res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+        res.end(readFileSync(new URL("./portal-browser.js", import.meta.url)));
+        return;
+      }
+      if (await projectApi(req, res, provider, url.pathname)) return;
+      if (await portal(req, res, url)) return;
+      const match = /^\/interaction\/([A-Za-z0-9_-]+)(\/qr)?$/.exec(url.pathname);
       if (!match) {
         await callback(req, res);
         return;
@@ -119,6 +123,27 @@ const server = createServer((req, res) => {
       );
       const uid = details.uid;
       let error = "";
+      const qrCookie = `${secure ? "__Secure-" : ""}tzid-qr-${uid}`;
+      if (match[2]) {
+        try {
+          if (req.method !== "POST" || details.prompt.name !== "login") throw new HubError("Запрос недоступен", 400);
+          const input = await bodyOf(req);
+          checkCsrf(req, input.csrf, csrfCookie(uid), new URL(issuer).origin);
+          if (await isRateLimited("tz-id-interaction-qr", uid, { limit: 90, windowMs: 60_000 })) throw new HubError("Слишком много запросов", 429);
+          const browser = cookie(req, qrCookie);
+          if (input.action === "status") {
+            if (!/^[A-Za-z0-9_-]{43}$/.test(browser)) throw new HubError("QR-код истёк", 410);
+            json(res, await qrStatus(String(input.id || ""), uid, browser));
+          } else if (input.action === "start") {
+            if (await isRateLimited("tz-id-qr-create", info.getStore()?.ip, { limit: 10, windowMs: 60_000 })) throw new HubError("Слишком много QR-кодов", 429);
+            const proof = /^[A-Za-z0-9_-]{43}$/.test(browser) ? browser : qrSecret();
+            const qr = await startQr(uid, client.id, proof);
+            setCookie(res, qrCookie, proof, `/interaction/${uid}`, 120, secure);
+            json(res, { id: qr.id, verificationCode: qr.verificationCode, expiresAt: qr.expiresAt, svg: qrSvg(`${issuer}/qr#code=${qr.approval}`) });
+          } else throw new HubError("Неизвестное действие");
+        } catch (e) { json(res, { error: e instanceof HubError ? e.message : "Не удалось создать QR-код" }, e instanceof HubError ? e.status : 500); }
+        return;
+      }
       if (req.method === "POST") {
         if (req.headers.origin !== new URL(issuer).origin) {
           res.statusCode = 403;
@@ -135,7 +160,7 @@ const server = createServer((req, res) => {
           }
         }
         const body = new URLSearchParams(raw);
-        const cookie =
+        const csrfValue =
           (req.headers.cookie || "")
             .split(";")
             .map((p) => p.trim())
@@ -144,8 +169,8 @@ const server = createServer((req, res) => {
         const token = body.get("csrf") || "";
         if (
           token.length !== 64 ||
-          cookie.length !== token.length ||
-          !timingSafeEqual(Buffer.from(token), Buffer.from(cookie))
+          csrfValue.length !== token.length ||
+          !timingSafeEqual(Buffer.from(token), Buffer.from(csrfValue))
         ) {
           res.statusCode = 403;
           res.end("Запрос устарел. Обновите страницу.");
@@ -156,6 +181,14 @@ const server = createServer((req, res) => {
           "Set-Cookie",
           `${csrfCookie(uid)}=; Path=/interaction/${uid}; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`,
         );
+        if (body.get("action") === "qr-finish") {
+          if (details.prompt.name !== "login") throw new Error("Invalid QR prompt");
+          const browser = cookie(req, qrCookie);
+          const userId = await consumeQr(body.get("id") || "", uid, browser);
+          setCookie(res, qrCookie, "", `/interaction/${uid}`, 0, secure);
+          await provider.interactionFinished(req, res, { login: { accountId: userId, amr: ["qr"] } }, { mergeWithLastSubmission: false });
+          return;
+        }
         if (body.get("action") === "deny") {
           await provider.interactionFinished(
             req,
@@ -259,7 +292,7 @@ const server = createServer((req, res) => {
           details.prompt.name === "login"
             ? "Вход в TZ ID"
             : "Разрешение доступа",
-          content,
+          content + (details.prompt.name === "login" ? qrWidget(csrf, `/interaction/${uid}/qr`, `/interaction/${uid}`) : ""),
         ),
       );
     })().catch(() => {
@@ -278,6 +311,7 @@ const server = createServer((req, res) => {
   });
 });
 const cleanup = setInterval(() => {
+  void prisma.tzIdQrLogin.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => console.error("TZ ID QR cleanup failed"));
   void prisma.tzIdArtifact
     .deleteMany({ where: { expiresAt: { lt: new Date() } } })
     .catch(() => console.error("TZ ID cleanup failed"));

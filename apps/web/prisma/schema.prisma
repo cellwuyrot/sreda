@@ -8,6 +8,10 @@ datasource db {
 }
 
 model User {
+  contactAddress String? @db.VarChar(500)
+  tzProjectSubscriptions TzIdProjectSubscription[]
+  tzProjectNotifications TzIdProjectNotification[]
+  tzNotificationPreferences TzIdNotificationPreference[]
   city                   String?
   id                     String                      @id @default(cuid())
   email                  String                      @unique
@@ -2708,6 +2712,9 @@ model MailSendLog {
 
 /// TZ ID clients. Metadata (including a confidential client's secret) is encrypted.
 model TzIdClient {
+ subscriptions TzIdProjectSubscription[]
+ notifications TzIdProjectNotification[]
+ notificationPreferences TzIdNotificationPreference[]
  id String @id
  name String
  metadata String @db.Text
@@ -2742,4 +2749,68 @@ model TzIdAuthorization {
  revokedAt DateTime?
  @@index([userId])
  @@index([sessionId])
+}
+
+
+/// Foreign project data is namespaced by client and never changes TrioZ entitlements.
+model TzIdProjectSubscription {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId   String
+  client     TzIdClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  externalId String     @db.VarChar(100)
+  title      String     @db.VarChar(100)
+  status     String     @default("active") @db.VarChar(20)
+  expiresAt  DateTime?
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([clientId, userId, externalId])
+  @@index([userId, updatedAt])
+}
+
+model TzIdProjectNotification {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId   String
+  client     TzIdClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  externalId String     @db.VarChar(100)
+  title      String     @db.VarChar(150)
+  body       String     @db.VarChar(2000)
+  url        String?    @db.VarChar(2048)
+  readAt     DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@unique([clientId, userId, externalId])
+  @@index([userId, clientId, createdAt])
+}
+
+model TzIdNotificationPreference {
+  id       String     @id @default(cuid())
+  userId   String
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId String
+  client   TzIdClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  enabled  Boolean    @default(true)
+
+  @@unique([userId, clientId])
+}
+
+/// Only hashes of browser/approval secrets; QR approval does not itself create a login.
+model TzIdQrLogin {
+  id                String    @id @default(cuid())
+  approvalHash      String    @unique
+  browserHash       String
+  interactionUid    String
+  clientId          String?
+  verificationCode  String    @db.VarChar(6)
+  expiresAt         DateTime
+  approvedUserId    String?
+  approvedSessionId String?
+  consumedAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([interactionUid, expiresAt])
+  @@index([expiresAt])
 }
