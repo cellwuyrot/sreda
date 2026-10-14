@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { revokeSessions } from "@/lib/tzIdSessions";
 
 // FIX-SEC-EXPOSURE: не отдаём полный IP даже владельцу сессий — маскируем
 // последний октет (IPv4) / хвост (IPv6). Достаточно для распознавания «свой/чужой
@@ -18,37 +19,56 @@ function maskIp(ip: string | null): string | null {
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sessions = await prisma.userSession.findMany({
-    where: { userId: session.user.id, active: true },
-    select: { id: true, userAgent: true, ip: true, lastUsed: true, createdAt: true },
+    where: {
+      userId: session.user.id,
+      active: true,
+      expiresAt: { gt: new Date() },
+    },
+    select: {
+      id: true,
+      token: true,
+      userAgent: true,
+      ip: true,
+      lastUsed: true,
+      createdAt: true,
+    },
     orderBy: { lastUsed: "desc" },
   });
 
-  return NextResponse.json(sessions.map((s) => ({ ...s, ip: maskIp(s.ip) })));
+  return NextResponse.json(
+    sessions.map(({ token, ...s }) => ({
+      ...s,
+      source: token.startsWith("oidc:") ? "TZ ID" : "TrioZ",
+      ip: maskIp(s.ip),
+      current: s.id === session.user.sessionId,
+    })),
+  );
 }
 
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const sessionId = searchParams.get("sessionId");
 
   if (sessionId) {
     // Terminate specific session
-    const target = await prisma.userSession.findUnique({ where: { id: sessionId } });
+    const target = await prisma.userSession.findUnique({
+      where: { id: sessionId },
+    });
     if (!target || target.userId !== session.user.id) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    await prisma.userSession.update({ where: { id: sessionId }, data: { active: false } });
+    await revokeSessions(session.user.id, sessionId);
   } else {
     // Terminate all other sessions (keep current)
-    await prisma.userSession.updateMany({
-      where: { userId: session.user.id, active: true },
-      data: { active: false },
-    });
+    await revokeSessions(session.user.id, undefined, session.user.sessionId);
   }
 
   return NextResponse.json({ ok: true });

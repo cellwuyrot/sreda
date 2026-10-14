@@ -1,0 +1,24 @@
+{
+  "name": "@trioz/id",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "tsx --tsconfig ../web/tsconfig.json src/server.ts",
+    "keys": "node scripts/generate-keys.mjs",
+    "client": "tsx --tsconfig ../web/tsconfig.json scripts/client.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/adapter.test.mjs",
+    "test:integration": "tsx --tsconfig ../web/tsconfig.json test/integration.ts",
+    "test:web:integration": "tsx --tsconfig ../web/tsconfig.json test/web-integration.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "oidc-provider": "9.12.2",
+    "dotenv": "^17.4.2",
+    "tsx": "^4.20.0"
+  }
+}
