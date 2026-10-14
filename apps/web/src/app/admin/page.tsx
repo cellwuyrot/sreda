@@ -75,6 +75,7 @@ const GROUPS: NavGroup[] = [
     id: "system",
     label: "Сервисы и система",
     items: [
+      { title: "TZ ID", description: "Приложения и разрешения OAuth / OIDC", href: "/admin/tz-id", icon: <Icon path={<path d="M12 3l7 4v5c0 4-3 7-7 9-4-2-7-5-7-9V7l7-4z" />} /> },
       { title: "ИИ-ассистент", description: "API-ключ, модель, промт", href: "/admin/ai", icon: <Icon path={<><rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /><circle cx="12" cy="12" r="2.5" /></>} /> },
       /* BUSINESS-SUB: раздел перестал быть только премиумным: теперь в нём две
          независимые группы реквизитов — подписка Premium и счета бизнеса. */

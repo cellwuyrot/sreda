@@ -3,6 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { anonymizeUser } from "@/lib/deletedUser";
+import { revokeSessions } from "@/lib/tzIdSessions";
+import { invalidateUserAuthCache } from "@/lib/auth";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -17,8 +20,10 @@ export async function POST(req: Request) {
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) return NextResponse.json({ error: "Неверный пароль" }, { status: 403 });
 
-  // Delete user and all related data (cascading)
-  await prisma.user.delete({ where: { id: session.user.id } });
+  // Revoke identity access, then anonymize without cascading away community content.
+  await revokeSessions(session.user.id);
+  await anonymizeUser(session.user.id);
+  invalidateUserAuthCache(session.user.id);
 
   return NextResponse.json({ ok: true, message: "Аккаунт удалён" });
 }

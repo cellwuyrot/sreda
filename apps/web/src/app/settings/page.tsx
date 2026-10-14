@@ -17,6 +17,7 @@ import ChatAppearanceSettings from "@/components/profile/ChatAppearanceSettings"
 import PremiumAppearanceSettings from "@/components/profile/PremiumAppearanceSettings"; // PREMIUM-SKIN
 import ChatShowcase from "@/components/profile/ChatShowcase";
 import IgnoreListSection from "@/components/profile/IgnoreListSection";
+import TZIdPanel, { TZIdOverview } from "@/components/settings/TZIdPanel";
 import DesktopCachePanel from "@/components/settings/DesktopCachePanel";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import { cacheNotifyPrefs } from "@/lib/notifyPrefs";
@@ -128,7 +129,7 @@ function formatDb(db: number): string {
 
 /* ─── Settings categories (Discord-style sidebar) ─── */
 type CategoryId =
-  | "account" | "profile" | "privacy"
+  | "account" | "security" | "applications" | "profile" | "privacy"
   | "voice" | "notifications" | "appearance" | "premium" | "connect";
 
 function Icon({ path }: { path: React.ReactNode }) {
@@ -141,9 +142,11 @@ function Icon({ path }: { path: React.ReactNode }) {
 
 const CATEGORIES: { group: string; items: { id: CategoryId; label: string; icon: React.ReactNode }[] }[] = [
   {
-    group: "Настройки пользователя",
+    group: "TZ ID и профиль",
     items: [
-      { id: "account",  label: "Моя учётная запись", icon: <Icon path={<><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" /></>} /> },
+      { id: "account",  label: "TZ ID", icon: <Icon path={<><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" /></>} /> },
+      { id: "security", label: "Безопасность", icon: <Icon path={<path d="M12 3l7 4v5c0 4-3 7-7 9-4-2-7-5-7-9V7l7-4z" />} /> },
+      { id: "applications", label: "Приложения", icon: <Icon path={<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>} /> },
       { id: "profile",  label: "Профиль",             icon: <Icon path={<><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2" /><path d="M14 9h4M14 13h4M6 16h8" /></>} /> },
       { id: "privacy",  label: "Конфиденциальность",  icon: <Icon path={<path d="M12 3l7 4v5c0 4-3 7-7 9-4-2-7-5-7-9V7l7-4z" />} /> },
     ],
@@ -727,13 +730,14 @@ export default function SettingsPage() {
   // Глубокая ссылка вида /settings?cat=premium — открыть нужный раздел сразу.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = new URLSearchParams(window.location.search).get("cat");
+    const query = new URLSearchParams(window.location.search);
+    const raw = query.get("section") || query.get("cat");
     /* VPN-PLAN: раздел переименован в «Подписки», но старые ссылки (?cat=premium)
        уже разосланы в письмах и стоят в других разделах — обе формы ведут сюда.
        Идентификатор категории намеренно оставлен прежним: переименование внутри
        кода сломало бы эти ссылки без всякой пользы для человека. */
-    const cat = raw === "subscriptions" ? "premium" : raw;
-    const valid: CategoryId[] = ["account", "profile", "privacy", "voice", "notifications", "appearance", "premium", "connect"];
+    const cat = raw === "tzid" ? "account" : raw === "subscriptions" ? "premium" : raw;
+    const valid: CategoryId[] = ["account", "security", "applications", "profile", "privacy", "voice", "notifications", "appearance", "premium", "connect"];
     if (cat && (valid as string[]).includes(cat)) {
       setActiveCat(cat as CategoryId);
       setMobileContentOpen(true);
@@ -884,7 +888,7 @@ export default function SettingsPage() {
     try {
       await patchProfile({ currentPassword: passForm.currentPassword, newPassword: passForm.newPassword });
       setPassForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      showToast("Пароль изменён!", "success");
+      await signOut({ callbackUrl: "/auth/signin" });
     } catch (err) {
       showToast((err as Error).message, "error");
     } finally {
@@ -1030,7 +1034,13 @@ export default function SettingsPage() {
   // so the settings page agrees with the /connect premium badge for admins.
   const effectivePremium = hasPremium(profile);
 
-  const selectCat = (id: CategoryId) => { setActiveCat(id); setMobileContentOpen(true); };
+  const selectCat = (id: CategoryId) => {
+    setActiveCat(id); setMobileContentOpen(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("cat");
+    url.searchParams.set("section", id === "account" ? "tzid" : id);
+    window.history.replaceState(null, "", url.pathname + url.search);
+  };
 
   /* ─── Category content ─── */
   const renderCategory = () => {
@@ -1046,6 +1056,7 @@ export default function SettingsPage() {
             <ConnectProfileSettings role={profile.role} isPremium={effectivePremium} sections="connect" />
             <ChatShowcase />
             <IgnoreListSection />
+            <DesktopCachePanel />
           </div>
         );
       case "account":
@@ -1054,7 +1065,8 @@ export default function SettingsPage() {
             {/* FIX-UI-ACC: раздел «Моя учётная запись» уплотнён и выровнен:
                 dense-секции, аватар 64px, статистика — три симметричные плитки,
                 формы — попарно в сетке 2×N (см. ниже). */}
-            <Section title="Аккаунт" dense info="Нажмите на аватар, чтобы сменить картинку.">
+            <TZIdOverview id={profile.id} emailVerified={profile.emailVerified} />
+            <Section title="Профиль TZ ID" dense info="Нажмите на аватар, чтобы сменить картинку.">
               <div className="flex items-center gap-4">
                 <div className="relative flex-shrink-0">
                   <div
@@ -1108,18 +1120,7 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: "Сообщений", value: profile._count.messages },
-                  { label: "Друзей", value: friendCount },
-                  { label: "Игр сыграно", value: profile._count.gamePlayers },
-                ].map((stat) => (
-                  <div key={stat.label} className="bg-neutral-100 dark:bg-white/5 rounded-lg py-2 text-center">
-                    <p className="text-sm font-bold leading-none text-neutral-900 dark:text-white">{stat.value}</p>
-                    <p className="text-[10px] text-neutral-500 dark:text-gray-500 mt-1">{stat.label}</p>
-                  </div>
-                ))}
-              </div>
+
 
               <p className="md:hidden text-xs text-neutral-400">
                 На сайте с {new Date(profile.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}
@@ -1229,6 +1230,13 @@ export default function SettingsPage() {
               </Section>
             </div>
 
+          </>
+        );
+
+      case "applications":
+        return <TZIdPanel section="applications" />;
+      case "security":
+        return (<>
             <Section title="Смена пароля" dense>
               <form onSubmit={handleSavePassword} className="space-y-4">
                 {/* FIX-UI-ACC: три поля в один ряд на широких экранах вместо
@@ -1248,15 +1256,15 @@ export default function SettingsPage() {
               </form>
             </Section>
 
-            <DesktopCachePanel />
+            <TZIdPanel section="security" />
 
-            <Section title="Удаление аккаунта" dense subtitle="Это действие необратимо — вернуть аккаунт не получится." info="Удаляются все ваши данные, сообщения и друзья.">
+            <Section title="Удаление аккаунта" dense subtitle="Это действие необратимо — вернуть аккаунт не получится." info="Личные данные обезличиваются, вход и доступ приложений отключаются. Сообщения в сообществах сохраняются без вашего личного профиля.">
               <div className="flex gap-3">
                 <Input type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} placeholder="Введите пароль для подтверждения" />
                 <button
                   onClick={async () => {
                     if (!deletePassword) { showToast("Введите пароль", "error"); return; }
-                    if (!(await confirmDialog({ title: "Удалить аккаунт?", message: "Это действие нельзя отменить. Все ваши данные, сообщения и друзья будут удалены.", confirmText: "Удалить аккаунт", danger: true }))) return;
+                    if (!(await confirmDialog({ title: "Удалить аккаунт?", message: "Это действие нельзя отменить. Личные данные будут обезличены, все сеансы и доступ приложений завершены. Контент сообществ сохранится под удалённым автором.", confirmText: "Удалить аккаунт", danger: true }))) return;
                     setDeletingAccount(true);
                     const res = await fetch("/api/profile/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: deletePassword }) });
                     if (res.ok) { await signOut({ callbackUrl: "/" }); } else { const data = await res.json(); showToast(data.error || "Ошибка", "error"); setDeletingAccount(false); }
@@ -1274,6 +1282,20 @@ export default function SettingsPage() {
       case "profile":
         return (
           <>
+            <Section title="Активность в TrioZ">
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Сообщений", value: profile._count.messages },
+                  { label: "Друзей", value: friendCount },
+                  { label: "Игр сыграно", value: profile._count.gamePlayers },
+                ].map((stat) => (
+                  <div key={stat.label} className="bg-neutral-100 dark:bg-white/5 rounded-lg py-2 text-center">
+                    <p className="text-sm font-bold leading-none text-neutral-900 dark:text-white">{stat.value}</p>
+                    <p className="text-[10px] text-neutral-500 dark:text-gray-500 mt-1">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
+            </Section>
             <Section title="О себе">
               <form onSubmit={handleSaveBio} className="space-y-4">
                 <Field label="Коротко о себе (до 200 символов)">

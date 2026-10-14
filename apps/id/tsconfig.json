@@ -1,0 +1,16 @@
+{
+  "extends": "../web/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "incremental": false,
+    "plugins": []
+  },
+  "include": [
+    "src/**/*",
+    "scripts/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "test"
+  ]
+}
