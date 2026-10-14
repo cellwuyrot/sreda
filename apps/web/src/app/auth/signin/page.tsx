@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn } from "next-auth/react";
+import { signIn, getProviders } from "next-auth/react";
 import { alertDialog } from "@/components/ui/ConfirmDialog";
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -89,6 +89,12 @@ export default function SignInPage() {
     searchParams.get("callbackUrl"),
     isAndroidShell() || isDesktop(),
   );
+  const [tzIdAvailable, setTzIdAvailable] = useState(false);
+  useEffect(() => {
+    // Native shells retain their proven credentials flow; OIDC opens only in the web browser.
+    if (isAndroidShell() || isDesktop()) return;
+    getProviders().then(providers => setTzIdAvailable(!!providers?.["tz-id"])).catch(() => {});
+  }, []);
   const [authType, setAuthType] = useState<AuthType>("login");
   const [step, setStep] = useState<Step>("form");
   const [email, setEmail] = useState("");
@@ -512,6 +518,8 @@ export default function SignInPage() {
                   : (authType === "login" ? "Войти" : "Получить код на email")}
               </button>
             </div>
+
+            {authType === "login" && tzIdAvailable && <button type="button" disabled={loading} onClick={() => void signIn("tz-id", { callbackUrl })} className="mt-4 w-full min-h-[46px] rounded-xl border border-violet-400 px-4 py-2 font-medium text-accent hover:bg-violet-500/10 disabled:opacity-50">Войти через TZ ID</button>}
 
             <div className="mt-6 text-center">
               <button

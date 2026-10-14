@@ -76,6 +76,7 @@ model User {
   gameInvitesRecvd       GameInvite[]                @relation("GameInviteReceiver")
   reactions              Reaction[]
   badges                 UserBadge[]
+  tzIdAuthorizations     TzIdAuthorization[]
   sessions               UserSession[]
   dmConversations1       DirectConversation[]        @relation("DMUser1")
   dmConversations2       DirectConversation[]        @relation("DMUser2")
@@ -621,6 +622,8 @@ model UserBadge {
 }
 
 model UserSession {
+  expiresAt DateTime?
+  authorizations TzIdAuthorization[]
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2701,4 +2704,42 @@ model MailSendLog {
   createdAt       DateTime @default(now())
   @@index([createdAt])
   @@index([userId])
+}
+
+/// TZ ID clients. Metadata (including a confidential client's secret) is encrypted.
+model TzIdClient {
+ id String @id
+ name String
+ metadata String @db.Text
+ enabled Boolean @default(true)
+ createdAt DateTime @default(now())
+ authorizations TzIdAuthorization[]
+}
+model TzIdArtifact {
+ key String @id
+ model String
+ payload String @db.Text
+ uid String?
+ grantId String?
+ userCode String?
+ expiresAt DateTime
+ consumedAt DateTime?
+ @@index([uid])
+ @@index([grantId])
+ @@index([expiresAt])
+}
+model TzIdAuthorization {
+ id String @id
+ userId String
+ user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+ clientId String
+ client TzIdClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+ sessionId String
+ session UserSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+ scopes String
+ createdAt DateTime @default(now())
+ lastUsedAt DateTime @default(now())
+ revokedAt DateTime?
+ @@index([userId])
+ @@index([sessionId])
 }

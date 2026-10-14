@@ -562,7 +562,7 @@ export default function ProfilePage({ username }: { username?: string }) {
                   className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5 max-sm:flex-1"
                 >
                   <GearIcon size={16} style={{ color: "inherit" }} />
-                  Настройки
+                  Управление TZ ID
                 </button>
               </div>
             )}
