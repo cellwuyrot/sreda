@@ -15,6 +15,7 @@ export default function TZIdAdmin() {
   const [uris, setUris] = useState("");
   const [publicClient, setPublicClient] = useState(false);
   const [offlineAccess, setOfflineAccess] = useState(false);
+  const [apiScopes, setApiScopes] = useState<string[]>([]);
   const [result, setResult] = useState<{
     clientId: string;
     clientSecret?: string;
@@ -70,6 +71,7 @@ export default function TZIdAdmin() {
                   .filter(Boolean),
                 publicClient,
                 offlineAccess,
+                apiScopes: apiScopes.filter(s => !publicClient || !s.endsWith(":write")),
               }),
             });
             const data = await res.json();
@@ -122,6 +124,10 @@ export default function TZIdAdmin() {
           />
           Разрешить offline_access (refresh token)
         </label>
+        <fieldset className="space-y-2">
+          <legend className="font-semibold">Разрешённые права API (пользователь также даёт согласие)</legend>
+          {Object.entries({ "contact:read": "Чтение контактного адреса", "subscriptions:read": "Чтение подписок", "subscriptions:write": "Запись собственных подписок", "notifications:write": "Отправка собственных уведомлений" }).map(([scope, label]) => <label key={scope} className="flex gap-3 items-center min-h-[44px]"><input type="checkbox" disabled={publicClient && scope.endsWith(":write")} checked={apiScopes.includes(scope) && !(publicClient && scope.endsWith(":write"))} onChange={e => setApiScopes(current => e.target.checked ? [...current, scope] : current.filter(s => s !== scope))}/>{label}</label>)}
+        </fieldset>
         <button className={input} disabled={busy}>
           {busy ? "Создание…" : "Создать"}
         </button>

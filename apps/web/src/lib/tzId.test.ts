@@ -53,6 +53,7 @@ describe("TZ ID clients", () => {
       redirectUris: ["https://app.example/callback"],
       publicClient: false,
       offlineAccess: false,
+      apiScopes: [],
     });
   });
   it.each([

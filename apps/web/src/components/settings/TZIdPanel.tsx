@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 const card =
@@ -26,6 +27,10 @@ const scopeNames: Record<string, string> = {
   profile: "Имя, username, аватар",
   email: "Email",
   offline_access: "Продление доступа",
+  "contact:read": "Контактный адрес",
+  "subscriptions:read": "Чтение подписок",
+  "subscriptions:write": "Подписки этого проекта",
+  "notifications:write": "Уведомления этого проекта",
 };
 export function TZIdOverview({
   id,
@@ -75,6 +80,7 @@ export function TZIdOverview({
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
+      <Link href="/tz-id" className={button}>Кабинет TZ ID · адреса, проекты и уведомления</Link>
       <a
         href="https://id.trioz.ru"
         target="_blank"
