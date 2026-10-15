@@ -1,0 +1,16 @@
+Deleted source/docs paths relative to repository root. Apply deletions in Git; do not simply overlay the ZIP.
+
+apps/web/src/app/api/admin/payments/cloudpayments/route.ts
+apps/web/src/app/api/payments/cloudpayments/route.ts
+apps/web/src/app/api/webhooks/cloudpayments/_utils.test.ts
+apps/web/src/app/api/webhooks/cloudpayments/_utils.ts
+apps/web/src/app/api/webhooks/cloudpayments/check/route.ts
+apps/web/src/app/api/webhooks/cloudpayments/fail/route.ts
+apps/web/src/app/api/webhooks/cloudpayments/pay/route.ts
+apps/web/src/app/api/webhooks/cloudpayments/recurrent/route.ts
+apps/web/src/components/premium/CloudPaymentCheckout.tsx
+apps/web/src/lib/cloudPayments.ts
+apps/web/src/lib/cloudPaymentsCore.test.ts
+apps/web/src/lib/cloudPaymentsCore.ts
+docs/admin-payments-cloudpayments-ui-update.md
+docs/cloudpayments.md

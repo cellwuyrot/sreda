@@ -1,0 +1,48 @@
+Comparison with supplied sreda-main-tz.zip; SHA-256 of delivered content. Historical migrations unchanged.
+
+NEW	apps/web/prisma/migrations/20261016000000_business_project_roles/migration.sql	32cbb0267d9593b5049531edfadd8991290068c0452f4dcf3121964900f8c6e0
+NEW	apps/web/src/app/api/admin/tz-id/project-admins/route.test.ts	07b8a134f29d04cd66586b1e60ff1a25972b27eec41d33d2b4a365621dcab909
+NEW	apps/web/src/app/api/admin/tz-id/project-admins/route.ts	664211efeedc02f6679c99db80ef5ceecf652ce426af0a1ef809760bbd76b8fe
+NEW	apps/web/src/app/api/payments/links/route.test.ts	116bc731155d1a7357d2bdcd6eb1f98501142c161a8fd39b40d7cdf29b856943
+NEW	apps/web/src/components/admin/TzProjectAdmins.tsx	a3dde94be432827723e74ad50f72d2350c59a5abe7efeb8bc59df7cc5f6838f4
+NEW	apps/web/src/lib/tzIdProjectRoles.ts	28b0575b28ce47fbf4556ca2b4b06aa0a0ca1db147a4bf34f407dd489cf5bc9e
+NEW	apps/web/tsconfig.build.json	ce411ac5859bf2dd4085db648f5c69b60066e0f4f95d0ca7ea7b85553a253033
+NEW	docs/business-integration/DELETED-FILES.txt	182255eea7778b22709e4a3aa246685c2ebbbd0071c413bc9528ee79424193b9
+NEW	docs/business-integration/STAGE-2.md	6f3b33f6c526799e66289d302dba00b41ce1986bf470cd7afc1227013416085e
+UPDATED	README.md	368e62ae63eff8fc15fcd85e2c87fc186b9e2c860d4af4f5fe628f9b49ad3ee2
+UPDATED	apps/id/src/api.ts	75d5f4acd168e66ff7eb393f2d8e629d9aa4747223233e5881c729070dd065e7
+UPDATED	apps/id/src/provider.mjs	30caf3172eac902d6f0fed694574984e6d02d5ab73d40e9e9c2b3824873d587a
+UPDATED	apps/web/next.config.mjs	789c4de80a17a84982f0b7a95711020eaa6ff739af78d098ff9edd7986fd0738
+UPDATED	apps/web/package.json	f85fa47822e00b23cf1331b28f354adeccc7b71ced3393985d8758732ef607f7
+UPDATED	apps/web/prisma/schema.prisma	f939d0e938d8047254e312ecc54b5ca7789176a2997d1d8aec77904d520f304e
+UPDATED	apps/web/src/app/admin/payments/page.tsx	21a09effb8829804ef1dbc887337293e2aaf234ce6c695ba97978c247c0b393d
+UPDATED	apps/web/src/app/admin/tz-id/page.tsx	988462e83743d8c1f46e9f277a92c79b1122a07c50e5440c13645be930662d2a
+UPDATED	apps/web/src/app/api/admin/payments/route.ts	3961d990f6e64fb5a8b174454847aeab4115d5f05d2db3322f356c30f7ce4d79
+UPDATED	apps/web/src/app/api/admin/tz-id/route.ts	3b80d1840f9c9651c053fb2b89287b7f6c1e1f5b4484edb40a7c862c501a2ae3
+UPDATED	apps/web/src/app/api/payments/links/route.ts	5e8567e3847dde6ede350c702bfe8721c0984851a1d59fcd34be8829c248c31f
+UPDATED	apps/web/src/app/api/tz-id/management.test.ts	d152d9125dddce5c8f3d1ae63a38b041e0252373a4d56bed459065d16befcbc0
+UPDATED	apps/web/src/app/settings/page.tsx	2b2f9fa4c9a0a63a866af45e0e1d185397a2eaadafed325653db57bc205b9990
+UPDATED	apps/web/src/components/admin/AdminPaymentsPage.test.tsx	c0c26c7c3e0f33763916dcd495d753433e6656c20e58b48897b61f149a9e251d
+UPDATED	apps/web/src/components/ui/ConfirmDialog.tsx	eebcb460a904c88013025cece7b95973a625346d0c9f9bc92f2ce4aa35e92384
+UPDATED	apps/web/src/lib/paymentLinks.ts	9b3ed06ce0ddc53a1dbbb782e50557c44e684db6b6600e249b8d0605622a496e
+UPDATED	apps/web/src/lib/paymentSettings.ts	cb3c6862bd12bac7a5009e210f820524f967372fb1216253d867f4550bba7596
+UPDATED	apps/web/src/lib/tzIdClients.ts	8dc763ee89373641ec66071296942a7f6ccaaed8b07b3bbd8651f074af5eb7f0
+UPDATED	apps/web/src/lib/tzIdHub.test.ts	7e866fbf9f896d8700d488f9e57990aa538dc5899cad277406e9af476b9dcacf
+UPDATED	apps/web/src/lib/tzIdHub.ts	5017e4d3222fc25b3f1b17597dec4561691276779972fe12cdb2260ccba63851
+UPDATED	apps/web/src/lib/tzIdProjectApi.test.ts	06ea76b466bd0f99c8ff637109f2cb759d4c3ae46d058443ac9f4896e3c07946
+UPDATED	apps/web/src/test/paymentLinks.check.ts	481afaee90d12ccabb9c052877d769470afef46eb276e812e1d44c34e3b080bb
+UPDATED	ecosystem.config.cjs	1af0a4d63b7eb9e5925a5629663dc5b9d7f590ba4f003f6495646c08b9c8b91c
+DELETED	apps/web/src/app/api/admin/payments/cloudpayments/route.ts
+DELETED	apps/web/src/app/api/payments/cloudpayments/route.ts
+DELETED	apps/web/src/app/api/webhooks/cloudpayments/_utils.test.ts
+DELETED	apps/web/src/app/api/webhooks/cloudpayments/_utils.ts
+DELETED	apps/web/src/app/api/webhooks/cloudpayments/check/route.ts
+DELETED	apps/web/src/app/api/webhooks/cloudpayments/fail/route.ts
+DELETED	apps/web/src/app/api/webhooks/cloudpayments/pay/route.ts
+DELETED	apps/web/src/app/api/webhooks/cloudpayments/recurrent/route.ts
+DELETED	apps/web/src/components/premium/CloudPaymentCheckout.tsx
+DELETED	apps/web/src/lib/cloudPayments.ts
+DELETED	apps/web/src/lib/cloudPaymentsCore.test.ts
+DELETED	apps/web/src/lib/cloudPaymentsCore.ts
+DELETED	docs/admin-payments-cloudpayments-ui-update.md
+DELETED	docs/cloudpayments.md

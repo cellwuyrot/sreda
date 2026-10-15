@@ -12,7 +12,9 @@
     "migrate": "prisma migrate deploy",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "test:types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

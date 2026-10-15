@@ -34,7 +34,6 @@ interface PaymentSettings {
   pay_sbp_comment: string;
   pay_acquiring_enabled: string;
   pay_acquiring_provider: string;
-  pay_cloudpayments_public_id: string;
   pay_acquiring_link: string;
   pay_acquiring_merchant: string;
   pay_acquiring_secret: string;
@@ -52,7 +51,6 @@ interface PaymentSettings {
   vpnpay_sbp_comment: string;
   vpnpay_acquiring_enabled: string;
   vpnpay_acquiring_provider: string;
-  vpnpay_cloudpayments_public_id: string;
   vpnpay_acquiring_link: string;
   vpnpay_acquiring_merchant: string;
   vpnpay_acquiring_secret: string;
@@ -61,7 +59,6 @@ interface PaymentSettings {
 
   /* PAYLINK: общие правила оплаты по ссылке. */
   paylink_enabled: string;
-  paylink_auto_activate: string;
   paylink_reserve_minutes: string;
   paylink_instruction: string;
 
@@ -99,8 +96,7 @@ const EMPTY: PaymentSettings = {
   pay_sbp_recipient: "",
   pay_sbp_comment: "",
   pay_acquiring_enabled: "0",
-  pay_acquiring_provider: "CloudPayments",
-  pay_cloudpayments_public_id: "",
+  pay_acquiring_provider: "",
   pay_acquiring_link: "",
   pay_acquiring_merchant: "",
   pay_acquiring_secret: "",
@@ -115,15 +111,13 @@ const EMPTY: PaymentSettings = {
   vpnpay_sbp_recipient: "",
   vpnpay_sbp_comment: "",
   vpnpay_acquiring_enabled: "0",
-  vpnpay_acquiring_provider: "CloudPayments",
-  vpnpay_cloudpayments_public_id: "",
+  vpnpay_acquiring_provider: "",
   vpnpay_acquiring_link: "",
   vpnpay_acquiring_merchant: "",
   vpnpay_acquiring_secret: "",
   vpnpay_acquiring_comment: "",
 
   paylink_enabled: "0",
-  paylink_auto_activate: "0",
   paylink_reserve_minutes: "60",
   paylink_instruction: "",
 
@@ -296,7 +290,6 @@ export default function AdminPaymentsPage() {
   const vpnSame = settings.vpnpay_same_as_premium === "1";
   const vpnSbpOn = settings.vpnpay_sbp_enabled === "1";
   const payLinkOn = settings.paylink_enabled === "1";
-  const payLinkAuto = settings.paylink_auto_activate === "1";
   const bizSame = settings.bizpay_same_as_premium === "1";
   const bizSbpOn = settings.bizpay_sbp_enabled === "1";
   const bizAcqOn = settings.bizpay_acquiring_enabled === "1";
@@ -375,23 +368,7 @@ export default function AdminPaymentsPage() {
                   свободная ссылка из пула ниже. Одна ссылка = одна подписка.
                 </p>
                 <div className={payLinkOn ? "space-y-4" : "space-y-4 opacity-50 pointer-events-none"}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                        Включать подписку сразу после «Я оплатил»{" "}
-                        <InfoTooltip text="Статичная ссылка банка не присылает сайту уведомлений о зачислении. Если включить эту настройку, подписка выдаётся по словам плательщика, без сверки с выпиской." />
-                      </div>
-                      <p className="text-xs text-neutral-500 mt-1">
-                        По умолчанию выключено: заявка попадает в список ниже, и подписку
-                        выдаёте вы после проверки зачисления.
-                      </p>
-                    </div>
-                    <Toggle
-                      on={payLinkAuto}
-                      onClick={() => update({ paylink_auto_activate: payLinkAuto ? "0" : "1" })}
-                      label={payLinkAuto ? "Автоматически" : "Подтверждаю сам"}
-                    />
-                  </div>
+                  <p className="text-sm text-neutral-600 dark:text-gray-300">Нажатие «Я оплатил» создаёт заявку. Подписку выдаёт администратор только после сверки поступления денег.</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={labelClass}>Сколько держать ссылку за плательщиком, минут</label>

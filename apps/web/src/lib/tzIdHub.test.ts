@@ -78,7 +78,7 @@ describe("TZ ID contact and delegated data", () => {
         apiScopes: ["admin"],
       }),
     ).toThrow());
-  it.each(["notifications:write", "subscriptions:write"])(
+  it.each(["roles:read", "notifications:write", "subscriptions:write"])(
     "rejects write scope on public client",
     (scope) =>
       expect(() =>

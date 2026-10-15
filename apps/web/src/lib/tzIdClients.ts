@@ -50,8 +50,8 @@ export function validateClient(input: ClientInput) {
   const apiScopes = input.apiScopes ?? [];
   if (!Array.isArray(apiScopes) || apiScopes.some(s => !(TZ_ID_API_SCOPES as readonly string[]).includes(s)))
     throw new Error("Неизвестные права API");
-  if (input.publicClient && apiScopes.some(s => s.endsWith(":write")))
-    throw new Error("Запись данных проектов доступна только серверным клиентам");
+  if (input.publicClient && apiScopes.some(s => s.endsWith(":write") || s === "roles:read"))
+    throw new Error("Запись данных и чтение ролей доступны только серверным клиентам");
   return {
     apiScopes: [...new Set(apiScopes)],
     name: input.name.trim(),

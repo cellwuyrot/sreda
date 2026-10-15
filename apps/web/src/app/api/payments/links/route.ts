@@ -9,7 +9,6 @@ import { readPaymentConfig, readPublicPaymentMethods, readVpnPaymentMethods } fr
 import {
   PAYMENT_LINK_KIND_LABELS,
   PAYMENT_LINK_PLAN_LABELS,
-  activatePaymentLink,
   findActiveReservation,
   isPaymentLinkKind,
   isPaymentLinkPlan,
@@ -28,8 +27,7 @@ import {
  * POST — два действия: `reserve` (выдать ссылку) и `paid` («я оплатил»).
  *
  * Нажатие «Я оплатил» — заявление плательщика, а не факт оплаты: ссылка банка
- * ничего сайту не сообщает. Поэтому подписку включает администратор — или сам
- * сервис, если включена настройка `paylink_auto_activate`.
+ * ничего сайту не сообщает. Поэтому подписку включает только администратор после сверки зачисления.
  */
 
 export const dynamic = "force-dynamic";
@@ -43,7 +41,6 @@ async function readKindSettings(kind: PaymentLinkKind) {
   const methods = kind === "VPN" ? await readVpnPaymentMethods() : await readPublicPaymentMethods();
   return {
     enabled: config.paylink_enabled === "1",
-    autoActivate: config.paylink_auto_activate === "1",
     reserveMinutes: reserveMinutesFrom(config.paylink_reserve_minutes),
     instruction: config.paylink_instruction || "",
     priceMonth: methods.priceMonth,
@@ -162,29 +159,6 @@ export async function POST(req: NextRequest) {
             : "По этой ссылке подписка уже выдана.",
           409,
         );
-      }
-
-      const settings = await readKindSettings(reported.offer.kind);
-
-      /* Автоподтверждение — сознательный выбор владельца: сервис не может проверить
-         зачисление и верит на слово. По умолчанию выключено. */
-      if (settings.autoActivate) {
-        const activated = await activatePaymentLink({ linkId, confirmedById: null });
-        if (activated.ok) {
-          await logAction({
-            userId: session.user.id,
-            username: session.user.username || session.user.name || "user",
-            action: "update",
-            target: "PaymentLink",
-            targetId: linkId,
-            details: `Автоподтверждение оплаты по ссылке · ${PAYMENT_LINK_KIND_LABELS[activated.kind]} · подписка ${activated.subscriptionId}`,
-          });
-          return NextResponse.json({
-            status: "activated",
-            expiresAt: activated.expiresAt,
-            message: "Оплата принята, подписка включена.",
-          });
-        }
       }
 
       /* Администраторам — уведомление: иначе заявка будет ждать, пока кто-то сам

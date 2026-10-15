@@ -95,6 +95,8 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  // Application typecheck stays strict; test fixture types are checked separately.
+  typescript: { tsconfigPath: "tsconfig.build.json" },
   output: "standalone",
   // FIX-CLIENTMEDIA: изображения пользователей (аватары, иконки сообществ,
   // баннеры) больше НЕ проходят через серверный оптимизатор Next.js.

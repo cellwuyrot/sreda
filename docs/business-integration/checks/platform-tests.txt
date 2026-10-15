@@ -1,0 +1,1435 @@
+
+> trioz@0.1.0 test
+> vitest run --maxWorkers=2
+
+
+ RUN  v3.2.7 <platform-workspace>/apps/web
+
+stderr | src/app/api/messages/upload/route.test.ts > тип файла с кодеками > ИНВАРИАНТ: video/webm;codecs=vp9 принимается как видео
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:74:30
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > тип файла с кодеками > video/webm;codecs=vp8,opus — тоже видео
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:80:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > тип файла с кодеками > ИНВАРИАНТ: audio/webm;codecs=opus принимается как голос
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:89:30
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > тип файла с кодеками > тип без параметров работает как раньше
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:95:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > тип файла с кодеками > верхний регистр не мешает: тип присылает клиент
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:100:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > тип файла с кодеками > пробелы вокруг параметров не мешают
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:105:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > ИНВАРИАНТ: webm с кодеками сохраняется как .webm, а не .mp4
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:142:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > голос с кодеками тоже сохраняется как .webm
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:149:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > в ответе тип без параметров: во вложении «;codecs=vp9» ни к чему
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:154:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > видео кладётся в свою папку, голос — в свою
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:159:19
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > признак видеосообщения > note=1 у видео даёт isVideoNote
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:170:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > признак видеосообщения > без note обычное видео квадратом не становится
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:175:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > признак видеосообщения > ИНВАРИАНТ: note=1 у звука не даёт isVideoNote
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:184:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+stderr | src/app/api/messages/upload/route.test.ts > признак видеосообщения > длительность из запроса доезжает до вложения
+[Upload] Error: Error: [vitest] No "mediaSignatureError" export is defined on the "@/lib/fileValidation" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:284:17)
+    at Object.get (file://<platform-workspace>/apps/web/node_modules/vitest/dist/chunks/execute.B7h3T_Hc.js:330:16)
+    at POST (<platform-workspace>/apps/web/src/app/api/messages/upload/route.ts:94:26)
+    at upload (<platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:62:15)
+    at <platform-workspace>/apps/web/src/app/api/messages/upload/route.test.ts:190:22
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20 {
+  codeFrame: 'vi\x1B[33m.\x1B[39m\x1B[34mmock\x1B[39m(\x1B[35mimport\x1B[39m(\x1B[32m"@/lib/fileValidation"\x1B[39m)\x1B[33m,\x1B[39m \x1B[35masync\x1B[39m (importOriginal) \x1B[33m=>\x1B[39m {\n' +
+    '  \x1B[35mconst\x1B[39m actual \x1B[33m=\x1B[39m \x1B[35mawait\x1B[39m \x1B[34mimportOriginal\x1B[39m()\n' +
+    '  \x1B[35mreturn\x1B[39m {\n' +
+    '    \x1B[33m...\x1B[39mactual\x1B[33m,\x1B[39m\n' +
+    '    \x1B[90m// your mocked methods\x1B[39m\n' +
+    '  }\n' +
+    '})'
+}
+
+ ❯ |node| src/app/api/messages/upload/route.test.ts (17 tests | 13 failed) 237ms
+   × тип файла с кодеками > ИНВАРИАНТ: video/webm;codecs=vp9 принимается как видео 183ms
+     → expected 500 to be 200 // Object.is equality
+   × тип файла с кодеками > video/webm;codecs=vp8,opus — тоже видео 5ms
+     → expected undefined to be true // Object.is equality
+   × тип файла с кодеками > ИНВАРИАНТ: audio/webm;codecs=opus принимается как голос 4ms
+     → expected 500 to be 200 // Object.is equality
+   × тип файла с кодеками > тип без параметров работает как раньше 3ms
+     → expected undefined to be true // Object.is equality
+   × тип файла с кодеками > верхний регистр не мешает: тип присылает клиент 3ms
+     → expected undefined to be true // Object.is equality
+   × тип файла с кодеками > пробелы вокруг параметров не мешают 4ms
+     → expected undefined to be true // Object.is equality
+   ✓ запрещённые типы > исполняемый файл — 415 2ms
+   ✓ запрещённые типы > ИНВАРИАНТ: неизвестный контейнер с кодеками всё равно 415 2ms
+   ✓ запрещённые типы > пустой тип — 415 2ms
+   × расширение и тип в ответе > ИНВАРИАНТ: webm с кодеками сохраняется как .webm, а не .mp4 4ms
+     → .toMatch() expects to receive a string, but got undefined
+   × расширение и тип в ответе > голос с кодеками тоже сохраняется как .webm 3ms
+     → .toMatch() expects to receive a string, but got undefined
+   × расширение и тип в ответе > в ответе тип без параметров: во вложении «;codecs=vp9» ни к чему 3ms
+     → expected undefined to be 'video/webm' // Object.is equality
+   × расширение и тип в ответе > видео кладётся в свою папку, голос — в свою 7ms
+     → the given combination of arguments (undefined and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+   × признак видеосообщения > note=1 у видео даёт isVideoNote 3ms
+     → expected undefined to be true // Object.is equality
+   ✓ признак видеосообщения > без note обычное видео квадратом не становится 3ms
+   × признак видеосообщения > ИНВАРИАНТ: note=1 у звука не даёт isVideoNote 3ms
+     → expected undefined to be true // Object.is equality
+   × признак видеосообщения > длительность из запроса доезжает до вложения 3ms
+     → expected undefined to be 12 // Object.is equality
+ ❯ |node| src/app/api/dm/route.test.ts (19 tests | 2 failed) 153ms
+   ✓ GET /api/dm > без сессии возвращает 401 87ms
+   × GET /api/dm > по умолчанию ищет только PERSONAL диалоги 20ms
+     → expected "spy" to be called with arguments: [ ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  [
+-   ObjectContaining {
+-     "where": ObjectContaining {
+-       "kind": "PERSONAL",
++   {
++     "include": {
++       "handler": {
++         "select": {
++           "id": true,
++           "name": true,
++         },
++       },
++       "messages": {
++         "orderBy": {
++           "createdAt": "desc",
++         },
++         "select": {
++           "content": true,
++           "createdAt": true,
++           "id": true,
++           "userId": true,
++         },
++         "take": 1,
++       },
++       "user1": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++       "user2": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++     },
++     "orderBy": {
++       "lastMessageAt": "desc",
++     },
++     "where": {
++       "OR": [
++         {
++           "user1Id": "u1",
++         },
++         {
++           "user2Id": "u1",
++         },
++       ],
++       "kind": {
++         "in": [
++           "PERSONAL",
++           "SECURE",
++         ],
++       },
+      },
+    },
+  ]
+
+
+Number of calls: 1
+
+   ✓ GET /api/dm > ?kind=business ставит kind=BUSINESS в запрос к базе 4ms
+   × GET /api/dm > мусорное значение ?kind=что-то откатывается на PERSONAL 3ms
+     → expected "spy" to be called with arguments: [ ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  [
+-   ObjectContaining {
+-     "where": ObjectContaining {
+-       "kind": "PERSONAL",
++   {
++     "include": {
++       "handler": {
++         "select": {
++           "id": true,
++           "name": true,
++         },
++       },
++       "messages": {
++         "orderBy": {
++           "createdAt": "desc",
++         },
++         "select": {
++           "content": true,
++           "createdAt": true,
++           "id": true,
++           "userId": true,
++         },
++         "take": 1,
++       },
++       "user1": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++       "user2": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++     },
++     "orderBy": {
++       "lastMessageAt": "desc",
++     },
++     "where": {
++       "OR": [
++         {
++           "user1Id": "u1",
++         },
++         {
++           "user2Id": "u1",
++         },
++       ],
++       "kind": {
++         "in": [
++           "PERSONAL",
++           "SECURE",
++         ],
++       },
+      },
+    },
+  ]
+
+
+Number of calls: 1
+
+   ✓ GET /api/dm > успешный запрос возвращает 200 и массив 6ms
+   ✓ POST /api/dm > без сессии возвращает 401 2ms
+   ✓ POST /api/dm > без username и userId возвращает 400 2ms
+   ✓ POST /api/dm > пользователь не найден → 404 1ms
+   ✓ POST /api/dm > нет дружбы → 403 2ms
+   ✓ POST /api/dm > ищет личную переписку по паре и виду, без составного ключа 3ms
+   ✓ POST /api/dm > создаёт новый диалог с kind=PERSONAL если не найден 2ms
+   ✓ GET /api/dm?kind=business > ИНВАРИАНТ: администратор видит всю очередь, а не только свои разговоры 2ms
+   ✓ GET /api/dm?kind=business > редактор — тоже администрация: очередь целиком 2ms
+   ✓ GET /api/dm?kind=business > клиенту отдаются только его разговоры 2ms
+   ✓ GET /api/dm?kind=business > ИНВАРИАНТ: клиент видит «Администрация», а не имя сотрудника 2ms
+   ✓ GET /api/dm?kind=business > администрация видит клиента и того, кто ведёт разговор 2ms
+   ✓ GET /api/dm?kind=business > никем не взятая заявка отдаётся с пустым ведущим — это состояние очереди 3ms
+   ✓ GET /api/dm?kind=business > темы обращений берутся одним запросом, а не по одному на разговор 2ms
+   ✓ GET /api/dm?kind=business > в личной переписке связки с обращением нет вовсе 5ms
+ ❯ |desktop-shell| src/shared/vpnEmbedded.test.ts (23 tests | 3 failed) 42ms
+   ✓ разбор профиля > читает адрес, MTU и пира 4ms
+   ✓ разбор профиля > ИНВАРИАНТ: профиль без ключа или адреса непригоден 0ms
+   ✓ разбор профиля > отличает «весь трафик» от частичного режима 0ms
+   ✓ UAPI > переводит ключ в hex и отвергает мусор 1ms
+   ✓ UAPI > ИНВАРИАНТ: параметры устройства — до первого public_key 1ms
+   × UAPI > FIX-WGHANDSHAKE: keepalive задаётся всегда — иначе рукопожатие не начнётся 9ms
+     → ALL.filter is not a function
+   ✓ UAPI > метка маршрутизации — только в Linux и только для «всего трафика» 1ms
+   ✓ UAPI > FIX-WINTUN: ищет системную wintun.dll в известных местах установки 1ms
+   ✓ UAPI > берёт самое свежее рукопожатие из ответа get=1 0ms
+   ✓ настройка интерфейса > Linux: подъём даёт адрес и MTU, маршруты — отдельным шагом 7ms
+   × настройка интерфейса > ИНВАРИАНТ: подъём интерфейса не меняет маршрутизацию и DNS 11ms
+     → expected true to be false // Object.is equality
+   ✓ настройка интерфейса > ИНВАРИАНТ: в частичном режиме маршрута по умолчанию нет 0ms
+   ✓ настройка интерфейса > macOS: от петли спасает маршрут до точки подключения и две половины маршрута 0ms
+   ✓ настройка интерфейса > уборка снимает то, что не исчезает с процессом 0ms
+   ✓ настройка интерфейса > Windows: адрес штатным netsh, маршруты и DNS — после рукопожатия 0ms
+   ✓ настройка интерфейса > хост точки подключения без порта, включая IPv6 в скобках 0ms
+   × раскладка встроенного клиента > имена файлов совпадают с тем, что кладёт vendor-wireguard.mjs 3ms
+     → expected 'amneziawg.exe' to be 'wireguard.exe' // Object.is equality
+   ✓ раскладка встроенного клиента > сокет UAPI — туда, куда его кладёт сам клиент 0ms
+   ✓ раскладка встроенного клиента > маска IPv4 из длины префикса 0ms
+   ✓ маршрут-исключение до VPN-узла (Windows) > ведёт трафик до узла через прежний шлюз, а не в туннель 0ms
+   ✓ маршрут-исключение до VPN-узла (Windows) > снимается тем же адресом и интерфейсом 0ms
+   ✓ маршрут-исключение до VPN-узла (Windows) > читает шлюз и индекс из ответа системы 0ms
+   ✓ маршрут-исключение до VPN-узла (Windows) > на пустой или нулевой ответ не выдумывает шлюз 0ms
+ ❯ |node| src/app/api/admin/vpn/subscriptions/route.test.ts (3 tests | 1 failed) 22ms
+   × POST /api/admin/vpn/subscriptions — продление > досрочное продление считается от конца действующего срока, а не от сегодня 17ms
+     → expected '2026-11-15T20:43:28.962Z' to be '2026-11-01T00:00:00.000Z' // Object.is equality
+   ✓ POST /api/admin/vpn/subscriptions — продление > доступа ещё нет — срок считается от момента оплаты 2ms
+   ✓ POST /api/admin/vpn/subscriptions — продление > истёкший доступ не продлевается «задним числом» — база от момента оплаты 2ms
+ ❯ |desktop-shell| src/shared/vpnPlan.test.ts (11 tests | 1 failed) 27ms
+   ✓ выбор бинарника под платформу > Windows — только клиент AmneziaWG 3ms
+   ✓ выбор бинарника под платформу > Linux — только awg-quick 3ms
+   ✓ выбор бинарника под платформу > ИНВАРИАНТ: ни одного кандидата обычного WireGuard 1ms
+   ✓ аргументы up/down > Windows ставит службу из файла, снимает по имени туннеля 0ms
+   ✓ аргументы up/down > POSIX поднимает и снимает по одному и тому же профилю 0ms
+   ✓ повышение прав: файл и аргументы для spawn без shell > Linux — pkexec с прямым argv, без кавычек 0ms
+   × повышение прав: файл и аргументы для spawn без shell > Windows — путь с пробелом и одинарной кавычкой экранируется удвоением 9ms
+     → expected '$ErrorActionPreference=\'Stop\';$p = …' to contain '\'C:\Temp\o\'\'brien\trioz.conf\''
+   ✓ повышение прав: файл и аргументы для spawn без shell > macOS — команда уходит в osascript как административная 1ms
+   ✓ разбор рукопожатия для статуса > берётся самое свежее время среди пиров 1ms
+   ✓ разбор рукопожатия для статуса > ноль означает «рукопожатия ещё не было» 0ms
+   ✓ разбор рукопожатия для статуса > запрос статуса выбирает wg или awg под бэкенд и платформу 0ms
+ ❯ |node| src/lib/createNotification.threadGrouping.test.ts (1 test | 1 failed) 13ms
+   × bulk notification grouping > повторный @everyone по тому же Thread обновляет существующую строку 12ms
+     → expected "spy" to be called with arguments: [ ObjectContaining {"isNew": false} ]
+
+Received: 
+
+  1st spy call:
+
+  [
+-   ObjectContaining {
++   "new-notification",
++   {
++     "count": 2,
++     "entityId": "thread-1",
++     "entityType": "thread",
++     "id": "n1",
+      "isNew": false,
++     "pushEnabled": true,
++     "type": "mention",
++     "userId": "u1",
+    },
+  ]
+
+
+Number of calls: 1
+
+ ✓ |node| src/app/api/admin/mail/[address]/send/route.test.ts (6 tests) 204ms
+ ✓ |node| src/app/api/admin/servers/route.test.ts (33 tests) 322ms
+ ✓ |node| src/app/api/workspace/upload/route.test.ts (10 tests) 175ms
+ ✓ |node| src/app/api/admin/builds/route.test.ts (27 tests) 127ms
+ ✓ |node| src/app/api/dm/[id]/route.test.ts (16 tests) 222ms
+stderr | src/app/api/channels/[id]/posts/route.test.ts > публикация поста > ФИКСАЦИЯ: сбой рассылки не отменяет публикацию
+[news] рассылка не удалась: Error: почта лежит
+    at <platform-workspace>/apps/web/src/app/api/channels/[id]/posts/route.test.ts:319:32
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/app/api/channels/[id]/posts/route.test.ts (24 tests) 151ms
+ ✓ |node| src/app/api/posts/[id]/route.test.ts (23 tests) 141ms
+ ✓ |node| src/app/api/services/[id]/stages/route.test.ts (11 tests) 119ms
+stderr | src/app/api/appeals/[id]/route.test.ts > PATCH /api/appeals/[id] — только для администраторов > сбой уведомления не ломает ответ маршрута — статус по-прежнему 200
+[appeals] не удалось отправить уведомление о статусе ap1 Error: Ошибка уведомления
+    at <platform-workspace>/apps/web/src/app/api/appeals/[id]/route.test.ts:191:42
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+stderr | src/app/api/appeals/[id]/route.test.ts > GET /api/appeals/[id] — открытие гасит уведомления по заявке > ИНВАРИАНТ: сбой пометки не ломает открытие заявки
+[appeals] не удалось погасить уведомления по заявке ap1 Error: база недоступна
+    at <platform-workspace>/apps/web/src/app/api/appeals/[id]/route.test.ts:236:52
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/app/api/appeals/[id]/route.test.ts (19 tests) 129ms
+ ✓ |node| src/app/api/posts/[id]/comments/route.test.ts (15 tests) 144ms
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос одного файла > ФИКСАЦИЯ: узел не принял файл — локальный на месте, указатель не тронут
+[storage] файл messages/a.webp остался на главном сервере: узел недоступен
+
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос одного файла > ФИКСАЦИЯ: размер на узле не сошёлся — файл считается непринятым
+[storage] файл messages/a.webp остался на главном сервере: на узле 3 байт вместо 31
+
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос одного файла > после сбоя узел уходит в отдых: следующая загрузка идёт на главный сразу
+[storage] файл messages/a.webp остался на главном сервере: узел недоступен
+
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос накопленного > ФИКСАЦИЯ: порция обрывается, как только узел перестал отвечать
+[storage] файл a/1 остался на главном сервере: узел лёг
+
+ ✓ |node| src/lib/uploadOffload.test.ts (18 tests) 19ms
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > ИНВАРИАНТ: считается прирост счётчика
+AWG report: updated peer=p1 rx=2000 tx=1500
+
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > счётчик упал (интерфейс перезапустили) — прирост берётся целиком
+AWG report: updated peer=p1 rx=1100 tx=550
+
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > ИНВАРИАНТ: ставится отметка свежести учёта
+AWG report: updated peer=p1 rx=1100 tx=600
+
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > срок периода вышел — счётчики начинаются заново
+AWG report: updated peer=p1 rx=1000 tx=1000
+
+ ✓ |node| src/app/api/servers/report/route.test.ts (33 tests) 143ms
+ ✓ |node| src/lib/rateLimit.test.ts (7 tests) 110ms
+ ✓ |node| src/app/api/groups/route.test.ts (8 tests) 125ms
+ ✓ |node| src/app/api/mail/poll/route.test.ts (1 test) 52ms
+ ✓ |node| src/app/api/groups/[id]/reports/route.test.ts (15 tests) 133ms
+ ✓ |node| src/app/api/workspace/history/route.test.ts (7 tests) 76ms
+ ✓ |node| src/app/api/groups/[id]/reports/[reportId]/route.test.ts (10 tests) 62ms
+ ✓ |node| src/app/api/dm/[id]/lock/route.test.ts (11 tests) 65ms
+ ✓ |node| src/app/api/push/devices/route.test.ts (11 tests) 56ms
+ ✓ |node| src/app/api/projects/[id]/route.test.ts (11 tests) 78ms
+ ✓ |node| src/lib/workspaceAssets.test.ts (14 tests) 59ms
+stderr | src/app/api/appeals/[id]/messages/route.test.ts > POST /api/appeals/[id]/messages > сбой уведомления не ломает ответ маршрута — статус по-прежнему 201
+[appeals] не удалось отправить уведомление об ответе ap1 Error: Ошибка уведомления
+    at <platform-workspace>/apps/web/src/app/api/appeals/[id]/messages/route.test.ts:214:41
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/app/api/appeals/[id]/messages/route.test.ts (16 tests) 108ms
+ ✓ |node| src/app/api/mail/ingest/route.test.ts (8 tests) 89ms
+ ✓ |node| src/app/api/groups/[id]/censor/route.test.ts (22 tests) 104ms
+ ✓ |node| src/app/api/groups/[id]/presence/route.test.ts (8 tests) 70ms
+ ✓ |node| src/app/api/admin/mail/[address]/route.test.ts (16 tests) 68ms
+ ✓ |node| src/app/api/admin/vpn/route.test.ts (10 tests) 81ms
+ ✓ |node| src/app/api/ignores/route.test.ts (12 tests) 49ms
+ ✓ |node| src/app/api/workspace/reminders/route.test.ts (10 tests) 64ms
+ ✓ |node| src/app/api/appeals/route.test.ts (22 tests) 83ms
+ ✓ |node| src/lib/storagePlacement.test.ts (14 tests) 17ms
+ ✓ |node| src/app/api/vpn/me/route.test.ts (28 tests) 37ms
+ ✓ |node| src/app/api/admin/storage/route.test.ts (13 tests) 69ms
+ ✓ |node| src/lib/postDraft.test.ts (46 tests) 14ms
+ ✓ |node| src/lib/awgParams.test.ts (16 tests) 54ms
+ ✓ |node| src/app/api/projects/[id]/chat/route.test.ts (7 tests) 53ms
+ ✓ |node| src/lib/wgKeys.test.ts (21 tests) 42ms
+stderr | src/lib/push.test.ts > отправка > ИНВАРИАНТ: ошибка сервера доставки не удаляет устройство
+[push] устройство не приняло сообщение: 503
+
+stderr | src/lib/push.test.ts > отправка > ИНВАРИАНТ: недоступная сеть не ломает вызывающего
+[push] сеть недоступна при отправке Error: сеть недоступна
+    at <platform-workspace>/apps/web/src/lib/push.test.ts:258:13
+    at mockCall (file://<platform-workspace>/node_modules/@vitest/spy/dist/index.js:96:15)
+    at spy (file://<platform-workspace>/node_modules/tinyspy/dist/index.js:47:80)
+    at Module.sendPushToUsers (<platform-workspace>/apps/web/src/lib/push.ts:238:25)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at <platform-workspace>/apps/web/src/lib/push.test.ts:260:5
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stderr | src/lib/push.test.ts > отправка > служба не выдала пропуск — отправки нет, и это не ошибка
+[push] служба доставки не выдала пропуск: 401
+
+ ✓ |node| src/lib/push.test.ts (20 tests) 40ms
+ ✓ |node| src/lib/identity.test.ts (29 tests) 16ms
+ ✓ |vpn-agent| src/rules.test.mjs (54 tests) 28ms
+ ✓ |node| src/lib/projectConversation.test.ts (10 tests) 19ms
+ ✓ |node| src/app/api/messages/read/route.test.ts (2 tests) 15ms
+ ✓ |node| src/lib/boardTemplates.test.ts (14 tests) 14ms
+ ✓ |node| src/lib/mailImap.test.ts (7 tests) 8ms
+ ✓ |node| src/lib/messageLimits.test.ts (45 tests) 24ms
+ ✓ |node| src/lib/connectPermissions.test.ts (42 tests) 20ms
+ ✓ |node| src/lib/tzIdQr.test.ts (10 tests) 17ms
+ ✓ |node| src/lib/vpn.test.ts (61 tests) 28ms
+stderr | src/lib/appealNotify.test.ts > письма по обращениям > ИНВАРИАНТ: упавшая отправка письма не ломает уведомление
+[appealNotify] письмо не ушло Error: сервис недоступен
+    at <platform-workspace>/apps/web/src/lib/appealNotify.test.ts:367:40
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/lib/appealNotify.test.ts (26 tests) 24ms
+ ✓ |node| src/app/api/tz-id/management.test.ts (12 tests) 36ms
+ ✓ |desktop-shell| src/main/winTunnel.test.ts (13 tests) 12ms
+ ✓ |node| src/app/api/messages/history.test.ts (9 tests) 29ms
+ ✓ |node| src/lib/objectStore.test.ts (13 tests) 16ms
+ ✓ |node| src/lib/newsPost.test.ts (53 tests) 29ms
+ ✓ |node| src/lib/tzIdProjectApi.test.ts (17 tests) 31ms
+ ✓ |node| src/app/api/admin/tz-id/project-admins/route.test.ts (8 tests) 31ms
+ ✓ |node| src/lib/amneziaVpnProfile.test.ts (3 tests) 22ms
+stderr | src/lib/uploadAccess.test.ts > recordUpload > не бросает ошибку если upsert завершился неудачей (best-effort)
+[uploads] не удалось записать владельца файла messages/fail.webp Error: DB error
+    at <platform-workspace>/apps/web/src/lib/uploadAccess.test.ts:231:54
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/lib/uploadAccess.test.ts (17 tests) 19ms
+ ✓ |node| src/lib/profileMenu.test.ts (14 tests) 12ms
+ ✓ |node| src/lib/uploadPaths.test.ts (24 tests) 11ms
+ ✓ |node| src/lib/createNotification.test.ts (20 tests) 27ms
+ ✓ |node| src/app/api/admin/premium/subscriptions/route.test.ts (4 tests) 25ms
+ ✓ |node| src/app/api/voice/move-user/route.test.ts (8 tests) 16ms
+ ✓ |node| src/lib/businessChat.test.ts (40 tests) 20ms
+ ✓ |node| src/lib/tzart.test.ts (58 tests) 24ms
+ ✓ |node| src/app/api/voice/force-unmute/route.test.ts (10 tests) 20ms
+ ✓ |node| src/lib/premiumLimits.test.ts (27 tests) 6ms
+ ✓ |node| src/lib/orderStages.test.ts (32 tests) 15ms
+ ✓ |node| src/lib/connectionUsage.test.ts (16 tests) 9ms
+stderr | src/lib/mailAccounts.test.ts > mailAccounts.parseAccounts > не падает на битом JSON
+[mail] MAIL_ACCOUNTS: неверный JSON — игнорирую
+
+ ✓ |node| src/lib/mailAccounts.test.ts (13 tests) 14ms
+ ✓ |node| src/lib/premiumExpiry.test.ts (14 tests) 14ms
+ ✓ |node| src/lib/tzIdHub.test.ts (27 tests) 28ms
+stderr | src/lib/appealMail.test.ts > выбор получателей > упавшая отправка одному не срывает отправку остальным
+[appealMail] письмо не ушло: Error: сервис недоступен
+    at <platform-workspace>/apps/web/src/lib/appealMail.test.ts:130:37
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<platform-workspace>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/lib/appealMail.test.ts (13 tests) 19ms
+ ✓ |node| src/app/api/connect/search/pagination.test.ts (3 tests) 15ms
+ ✓ |desktop-shell| src/shared/navigation.test.ts (17 tests) 7ms
+ ✓ |node| src/lib/onlinePresence.test.ts (11 tests) 9ms
+ ✓ |node| src/lib/tzId.test.ts (19 tests) 18ms
+ ✓ |node| src/lib/communityTemplates.test.ts (12 tests) 21ms
+ ✓ |node| src/lib/serverMesh.test.ts (20 tests) 14ms
+ ✓ |node| src/lib/reminders.test.ts (18 tests) 7ms
+ ✓ |node| src/app/api/calendar/route.test.ts (2 tests) 10ms
+ ✓ |node| src/lib/groupModeration.test.ts (50 tests) 13ms
+ ✓ |node| src/lib/projectMail.test.ts (24 tests) 22ms
+ ✓ |node| src/lib/mediaNote.test.ts (60 tests) 13ms
+ ✓ |node| src/lib/tzartHistory.test.ts (9 tests) 12ms
+ ✓ |node| src/lib/censor.test.ts (34 tests) 14ms
+ ✓ |desktop-shell| src/shared/tunnelPolicy.test.ts (18 tests) 9ms
+ ✓ |node| src/app/api/channels/unread/route.test.ts (2 tests) 13ms
+ ✓ |node| src/lib/premiumSkin.test.ts (14 tests) 17ms
+ ✓ |node| src/app/api/calendar/[id]/route.test.ts (1 test) 12ms
+ ✓ |node| src/lib/workspaceHistory.test.ts (10 tests) 8ms
+ ✓ |node| src/lib/channelParentValidation.test.ts (4 tests) 11ms
+ ✓ |node| src/test/harness.test.ts (3 tests) 5ms
+ ✓ |desktop-shell| src/shared/tunnelService.test.ts (23 tests) 10ms
+ ✓ |node| src/lib/shell.test.ts (20 tests) 6ms
+ ✓ |node| src/lib/builds.test.ts (23 tests) 12ms
+ ✓ |node| src/app/api/payments/links/route.test.ts (1 test) 11ms
+ ✓ |desktop-shell| src/shared/mediaKeys.test.ts (10 tests) 7ms
+ ✓ |node| src/lib/workspaceMerge.test.ts (14 tests) 8ms
+ ✓ |node| src/lib/chatHistory.test.ts (8 tests) 5ms
+ ✓ |node| src/lib/mail-kit.test.ts (4 tests) 7ms
+ ✓ |node| src/lib/businessPaymentFlow.test.ts (13 tests) 8ms
+ ✓ |node| src/lib/backStack.test.ts (22 tests) 8ms
+ ✓ |node| src/lib/attachmentTypes.test.ts (13 tests) 7ms
+ ✓ |node| src/lib/channelModules.test.ts (9 tests) 9ms
+ ✓ |node| src/lib/wgIdentity.test.ts (6 tests) 7ms
+ ✓ |node| src/lib/mailListing.test.ts (17 tests) 7ms
+ ✓ |node| src/lib/mentions.test.ts (10 tests) 11ms
+ ✓ |desktop-shell| src/shared/updateState.test.ts (6 tests) 6ms
+ ✓ |node| src/lib/premium.test.ts (20 tests) 8ms
+ ✓ |node| src/lib/mailBlacklist.test.ts (3 tests) 4ms
+ ✓ |node| src/lib/downloadFile.test.ts (7 tests) 7ms
+ ✓ |node| src/lib/verificationMail.test.ts (2 tests) 3ms
+ ✓ |node| src/lib/publishScheduledMessage.test.ts (1 test) 6ms
+stderr | src/components/connect/ChannelSidebar.voiceMod.test.tsx > порог звания для мер в голосовом канале > обычный участник мер не получает
+Warning: An update to ChannelSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at ChannelSidebar (<platform-workspace>/apps/web/src/components/connect/ChannelSidebar.tsx:44:3)
+
+stderr | src/components/connect/ChannelSidebar.voiceMod.test.tsx > перенос участника перетаскиванием > обычный участник никого не перетаскивает
+Warning: An update to ChannelSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at ChannelSidebar (<platform-workspace>/apps/web/src/components/connect/ChannelSidebar.tsx:44:3)
+
+stderr | src/components/connect/ChannelSidebar.voiceMod.test.tsx > перенос участника перетаскиванием > щелчок без перетаскивания никого не переносит
+Warning: An update to ChannelSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at ChannelSidebar (<platform-workspace>/apps/web/src/components/connect/ChannelSidebar.tsx:44:3)
+
+ ✓ |jsdom| src/components/connect/ChannelSidebar.voiceMod.test.tsx (17 tests) 511ms
+ ✓ |jsdom| src/components/connect/GlobalSearchModal.test.tsx (3 tests) 1187ms
+   ✓ global search pagination > loads older matches and deduplicates results  316ms
+   ✓ global search pagination > shows a search failure rather than stale matches  348ms
+   ✓ global search pagination > ignores a previous query response even if the transport resolves after abort  521ms
+ ✓ |jsdom| src/components/admin/AdminPaymentsPage.test.tsx (4 tests) 391ms
+ ✓ |jsdom| src/components/connect/overlays/PremiumInfoModal.test.tsx (5 tests) 288ms
+ ✓ |jsdom| src/components/connect/messageFormat.test.ts (29 tests) 86ms
+ ✓ |jsdom| src/components/connect/PremiumMark.test.tsx (4 tests) 107ms
+ ✓ |jsdom| src/components/ui/VoicePlayer.test.tsx (3 tests) 126ms
+ ✓ |jsdom| src/components/connect/panelCollapse.test.tsx (7 tests) 110ms
+ ✓ |jsdom| src/components/connect/replyQuote.test.ts (6 tests) 38ms
+ ✓ |jsdom| src/components/dm/DMMessageList.test.tsx (3 tests) 141ms
+ ✓ |jsdom| src/components/ui/VideoNotePlayer.test.tsx (5 tests) 42ms
+ ✓ |jsdom| src/components/connect/useDragUser.test.ts (5 tests) 37ms
+ ✓ |jsdom| src/components/connect/news/types.test.ts (33 tests) 28ms
+ ✓ |jsdom| src/components/ui/MentionPopup.test.ts (17 tests) 7ms
+ ✓ |node| src/lib/boardBridge.test.ts (7 tests) 11ms
+ ✓ |jsdom| src/components/connect/BlockIcons.test.ts (18 tests) 5ms
+ ✓ |jsdom| src/components/connect/LinkPreviewCard.test.ts (9 tests) 4ms
+ ✓ |jsdom| src/hooks/useMessageWindow.test.ts (6 tests) 3ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 21 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |desktop-shell| src/shared/vpnEmbedded.test.ts > UAPI > FIX-WGHANDSHAKE: keepalive задаётся всегда — иначе рукопожатие не начнётся
+TypeError: ALL.filter is not a function
+ ❯ src/shared/vpnEmbedded.test.ts:113:29
+    111|     /* Профиль без PersistentKeepalive — именно на таком клиент молчал…
+    112|        поднят, ключи заданы, а первый пакет так и не ушёл. */
+    113|     const noKeepalive = ALL.filter((line) => !line.startsWith("Persist…
+       |                             ^
+    114|     const req = uapiSetRequest(parseWgConfig(noKeepalive), true, "win3…
+    115|     expect(req).toContain(`persistent_keepalive_interval=${DEFAULT_KEE…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/21]⎯
+
+ FAIL  |desktop-shell| src/shared/vpnEmbedded.test.ts > настройка интерфейса > ИНВАРИАНТ: подъём интерфейса не меняет маршрутизацию и DNS
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/shared/vpnEmbedded.test.ts:177:53
+    175|     for (const platform of ["linux", "darwin", "win32"] as NodeJS.Plat…
+    176|       const cmds = ifaceUpCommands(platform, parseWgConfig(ALL)).map((…
+    177|       expect(cmds.some((c) => c.includes("route"))).toBe(false);
+       |                                                     ^
+    178|       expect(cmds.some((c) => c.includes("dnsserver"))).toBe(false);
+    179|       expect(cmds.some((c) => c.includes("rule"))).toBe(false);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/21]⎯
+
+ FAIL  |desktop-shell| src/shared/vpnEmbedded.test.ts > раскладка встроенного клиента > имена файлов совпадают с тем, что кладёт vendor-wireguard.mjs
+AssertionError: expected 'amneziawg.exe' to be 'wireguard.exe' // Object.is equality
+
+Expected: "wireguard.exe"
+Received: "amneziawg.exe"
+
+ ❯ src/shared/vpnEmbedded.test.ts:241:54
+    239|     /* Расхождение здесь даёт сборку, в которой клиент есть, но «не на…
+    240|     /* На Windows используем официальный клиент wireguard-windows. */
+    241|     expect(embeddedClientName("win32", "wireguard")).toBe("wireguard.e…
+       |                                                      ^
+    242|     expect(embeddedClientName("win32", "amneziawg")).toBe("amneziawg.e…
+    243|     expect(embeddedClientName("linux", "wireguard")).toBe("wireguard-g…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/21]⎯
+
+ FAIL  |desktop-shell| src/shared/vpnPlan.test.ts > повышение прав: файл и аргументы для spawn без shell > Windows — путь с пробелом и одинарной кавычкой экранируется удвоением
+AssertionError: expected '$ErrorActionPreference=\'Stop\';$p = …' to contain '\'C:\Temp\o\'\'brien\trioz.conf\''
+
+Expected: "'C:\Temp\o''brien\trioz.conf'"
+Received: "$ErrorActionPreference='Stop';$p = Start-Process -FilePath 'C:\Program Files\WireGuard\wireguard.exe' -ArgumentList '"/installtunnelservice" "C:\Temp\o''brien\trioz.conf"' -Verb RunAs -WindowStyle Hidden -PassThru -Wait; exit $p.ExitCode"
+
+ ❯ src/shared/vpnPlan.test.ts:87:20
+     85|     expect(script).toContain("Start-Process -FilePath 'C:\\Program Fil…
+     86|     // Одинарная кавычка в пути профиля удвоена (o''brien), пробелов-л…
+     87|     expect(script).toContain("'C:\\Temp\\o''brien\\trioz.conf'");
+       |                    ^
+     88|     expect(script).toContain("-Verb RunAs");
+     89|     expect(script).toContain("exit $p.ExitCode");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/21]⎯
+
+ FAIL  |node| src/lib/createNotification.threadGrouping.test.ts > bulk notification grouping > повторный @everyone по тому же Thread обновляет существующую строку
+AssertionError: expected "spy" to be called with arguments: [ ObjectContaining {"isNew": false} ]
+
+Received: 
+
+  1st spy call:
+
+  [
+-   ObjectContaining {
++   "new-notification",
++   {
++     "count": 2,
++     "entityId": "thread-1",
++     "entityType": "thread",
++     "id": "n1",
+      "isNew": false,
++     "pushEnabled": true,
++     "type": "mention",
++     "userId": "u1",
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/lib/createNotification.threadGrouping.test.ts:41:18
+     39|     }));
+     40|     expect(prismaMock.notification.createManyAndReturn).not.toHaveBeen…
+     41|     expect(emit).toHaveBeenCalledWith(expect.objectContaining({ isNew:…
+       |                  ^
+     42|   });
+     43| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/21]⎯
+
+ FAIL  |node| src/app/api/dm/route.test.ts > GET /api/dm > по умолчанию ищет только PERSONAL диалоги
+AssertionError: expected "spy" to be called with arguments: [ ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  [
+-   ObjectContaining {
+-     "where": ObjectContaining {
+-       "kind": "PERSONAL",
++   {
++     "include": {
++       "handler": {
++         "select": {
++           "id": true,
++           "name": true,
++         },
++       },
++       "messages": {
++         "orderBy": {
++           "createdAt": "desc",
++         },
++         "select": {
++           "content": true,
++           "createdAt": true,
++           "id": true,
++           "userId": true,
++         },
++         "take": 1,
++       },
++       "user1": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++       "user2": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++     },
++     "orderBy": {
++       "lastMessageAt": "desc",
++     },
++     "where": {
++       "OR": [
++         {
++           "user1Id": "u1",
++         },
++         {
++           "user2Id": "u1",
++         },
++       ],
++       "kind": {
++         "in": [
++           "PERSONAL",
++           "SECURE",
++         ],
++       },
+      },
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/app/api/dm/route.test.ts:37:52
+     35|     await GET(new Request(DM_URL));
+     36| 
+     37|     expect(prismaMock.directConversation.findMany).toHaveBeenCalledWit…
+       |                                                    ^
+     38|       expect.objectContaining({
+     39|         where: expect.objectContaining({ kind: "PERSONAL" }),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/21]⎯
+
+ FAIL  |node| src/app/api/dm/route.test.ts > GET /api/dm > мусорное значение ?kind=что-то откатывается на PERSONAL
+AssertionError: expected "spy" to be called with arguments: [ ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  [
+-   ObjectContaining {
+-     "where": ObjectContaining {
+-       "kind": "PERSONAL",
++   {
++     "include": {
++       "handler": {
++         "select": {
++           "id": true,
++           "name": true,
++         },
++       },
++       "messages": {
++         "orderBy": {
++           "createdAt": "desc",
++         },
++         "select": {
++           "content": true,
++           "createdAt": true,
++           "id": true,
++           "userId": true,
++         },
++         "take": 1,
++       },
++       "user1": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++       "user2": {
++         "select": {
++           "activityStatus": true,
++           "activityUpdatedAt": true,
++           "avatar": true,
++           "avatarGlowColors": true,
++           "avatarGlowEnabled": true,
++           "customStatus": true,
++           "id": true,
++           "lastSeen": true,
++           "name": true,
++           "role": true,
++           "statusEmoji": true,
++           "username": true,
++         },
++       },
++     },
++     "orderBy": {
++       "lastMessageAt": "desc",
++     },
++     "where": {
++       "OR": [
++         {
++           "user1Id": "u1",
++         },
++         {
++           "user2Id": "u1",
++         },
++       ],
++       "kind": {
++         "in": [
++           "PERSONAL",
++           "SECURE",
++         ],
++       },
+      },
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/app/api/dm/route.test.ts:65:52
+     63|     await GET(new Request(`${DM_URL}?kind=%D1%87%D1%82%D0%BE-%D1%82%D0…
+     64| 
+     65|     expect(prismaMock.directConversation.findMany).toHaveBeenCalledWit…
+       |                                                    ^
+     66|       expect.objectContaining({
+     67|         where: expect.objectContaining({ kind: "PERSONAL" }),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > тип файла с кодеками > ИНВАРИАНТ: video/webm;codecs=vp9 принимается как видео
+AssertionError: expected 500 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 500
+
+ ❯ src/app/api/messages/upload/route.test.ts:75:20
+     73|   it("ИНВАРИАНТ: video/webm;codecs=vp9 принимается как видео", async (…
+     74|     const { status, body } = await upload("video/webm;codecs=vp9");
+     75|     expect(status).toBe(200);
+       |                    ^
+     76|     expect(body.isVideo).toBe(true);
+     77|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > тип файла с кодеками > video/webm;codecs=vp8,opus — тоже видео
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:81:26
+     79|   it("video/webm;codecs=vp8,opus — тоже видео", async () => {
+     80|     const { body } = await upload("video/webm;codecs=vp8,opus");
+     81|     expect(body.isVideo).toBe(true);
+       |                          ^
+     82|   });
+     83| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > тип файла с кодеками > ИНВАРИАНТ: audio/webm;codecs=opus принимается как голос
+AssertionError: expected 500 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 500
+
+ ❯ src/app/api/messages/upload/route.test.ts:90:20
+     88|   it("ИНВАРИАНТ: audio/webm;codecs=opus принимается как голос", async …
+     89|     const { status, body } = await upload("audio/webm;codecs=opus");
+     90|     expect(status).toBe(200);
+       |                    ^
+     91|     expect(body.isVoice).toBe(true);
+     92|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > тип файла с кодеками > тип без параметров работает как раньше
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:96:26
+     94|   it("тип без параметров работает как раньше", async () => {
+     95|     const { body } = await upload("video/webm");
+     96|     expect(body.isVideo).toBe(true);
+       |                          ^
+     97|   });
+     98| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > тип файла с кодеками > верхний регистр не мешает: тип присылает клиент
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:101:26
+     99|   it("верхний регистр не мешает: тип присылает клиент", async () => {
+    100|     const { body } = await upload("VIDEO/WEBM");
+    101|     expect(body.isVideo).toBe(true);
+       |                          ^
+    102|   });
+    103| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > тип файла с кодеками > пробелы вокруг параметров не мешают
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:106:26
+    104|   it("пробелы вокруг параметров не мешают", async () => {
+    105|     const { body } = await upload("video/webm ; codecs=vp9");
+    106|     expect(body.isVideo).toBe(true);
+       |                          ^
+    107|   });
+    108| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > ИНВАРИАНТ: webm с кодеками сохраняется как .webm, а не .mp4
+TypeError: .toMatch() expects to receive a string, but got undefined
+ ❯ src/app/api/messages/upload/route.test.ts:143:22
+    141|   it("ИНВАРИАНТ: webm с кодеками сохраняется как .webm, а не .mp4", as…
+    142|     const { body } = await upload("video/webm;codecs=vp9");
+    143|     expect(body.url).toMatch(/\.webm$/);
+       |                      ^
+    144|     const written = writeFile.mock.calls[0]?.[0] as string;
+    145|     expect(written).toMatch(/\.webm$/);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > голос с кодеками тоже сохраняется как .webm
+TypeError: .toMatch() expects to receive a string, but got undefined
+ ❯ src/app/api/messages/upload/route.test.ts:150:22
+    148|   it("голос с кодеками тоже сохраняется как .webm", async () => {
+    149|     const { body } = await upload("audio/webm;codecs=opus");
+    150|     expect(body.url).toMatch(/\.webm$/);
+       |                      ^
+    151|   });
+    152| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > в ответе тип без параметров: во вложении «;codecs=vp9» ни к чему
+AssertionError: expected undefined to be 'video/webm' // Object.is equality
+
+- Expected: 
+"video/webm"
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:155:23
+    153|   it("в ответе тип без параметров: во вложении «;codecs=vp9» ни к чему…
+    154|     const { body } = await upload("video/webm;codecs=vp9");
+    155|     expect(body.type).toBe("video/webm");
+       |                       ^
+    156|   });
+    157| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > расширение и тип в ответе > видео кладётся в свою папку, голос — в свою
+AssertionError: the given combination of arguments (undefined and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ ❯ src/app/api/messages/upload/route.test.ts:160:28
+    158|   it("видео кладётся в свою папку, голос — в свою", async () => {
+    159|     const video = await upload("video/webm;codecs=vp9");
+    160|     expect(video.body.url).toContain("/uploads/videos/");
+       |                            ^
+    161|     const voice = await upload("audio/webm;codecs=opus");
+    162|     expect(voice.body.url).toContain("/uploads/voice/");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > признак видеосообщения > note=1 у видео даёт isVideoNote
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:171:30
+    169|   it("note=1 у видео даёт isVideoNote", async () => {
+    170|     const { body } = await upload("video/webm;codecs=vp9", { note: "1"…
+    171|     expect(body.isVideoNote).toBe(true);
+       |                              ^
+    172|   });
+    173| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > признак видеосообщения > ИНВАРИАНТ: note=1 у звука не даёт isVideoNote
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:186:26
+    184|     const { body } = await upload("audio/webm;codecs=opus", { note: "1…
+    185|     expect(body.isVideoNote).toBeUndefined();
+    186|     expect(body.isVoice).toBe(true);
+       |                          ^
+    187|   });
+    188| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/21]⎯
+
+ FAIL  |node| src/app/api/messages/upload/route.test.ts > признак видеосообщения > длительность из запроса доезжает до вложения
+AssertionError: expected undefined to be 12 // Object.is equality
+
+- Expected: 
+12
+
++ Received: 
+undefined
+
+ ❯ src/app/api/messages/upload/route.test.ts:191:27
+    189|   it("длительность из запроса доезжает до вложения", async () => {
+    190|     const { body } = await upload("video/webm;codecs=vp9", { note: "1"…
+    191|     expect(body.duration).toBe(12);
+       |                           ^
+    192|   });
+    193| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/21]⎯
+
+ FAIL  |node| src/app/api/admin/vpn/subscriptions/route.test.ts > POST /api/admin/vpn/subscriptions — продление > досрочное продление считается от конца действующего срока, а не от сегодня
+AssertionError: expected '2026-11-15T20:43:28.962Z' to be '2026-11-01T00:00:00.000Z' // Object.is equality
+
+Expected: "2026-11-01T00:00:00.000Z"
+Received: "2026-11-15T20:43:28.962Z"
+
+ ❯ src/app/api/admin/vpn/subscriptions/route.test.ts:62:37
+     60|     await call({ userId: "u1", plan: "month", paymentMethod: "sbp", am…
+     61|     const expiresAt = created().expiresAt as Date;
+     62|     expect(expiresAt.toISOString()).toBe("2026-11-01T00:00:00.000Z");
+       |                                     ^
+     63|   });
+     64| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/21]⎯
+
+
+ Test Files  6 failed | 133 passed (139)
+      Tests  21 failed | 2181 passed (2202)
+   Start at  20:43:27
+   Duration  31.99s (transform 4.94s, setup 802ms, collect 9.95s, tests 8.48s, environment 6.70s, prepare 13.23s)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path <platform-workspace>/apps/web
+npm error workspace trioz@0.1.0
+npm error location <platform-workspace>/apps/web
+npm error command failed
+npm error command sh -c vitest run --maxWorkers=2
