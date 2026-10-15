@@ -10,6 +10,7 @@ import Link from "next/link";
 import { isOnline, timeAgo } from "@/lib/timeAgo";
 
 import { useAdminBackHref } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
+import AdminUserTzIdButton from "@/components/admin/AdminUserTzIdButton";
 import AdminBusiness from "@/components/admin/AdminBusiness"; // BUSINESS-PAY
 import AdminCommunities from "@/components/admin/AdminCommunities"; // ADMCOMM
 interface User {
@@ -511,7 +512,7 @@ export default function AdminUsersPage() {
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-white">{user.name}</span>
+                  <span className="font-medium text-white break-words max-w-full">{user.name}</span>
                   {editingUsername === user.id ? (
                     <div className="flex items-center gap-1">
                       <input
@@ -532,13 +533,14 @@ export default function AdminUsersPage() {
                   ) : (
                     <button
                       onClick={() => startEditUsername(user)}
-                      className="text-xs text-cyan-400/60 hover:text-cyan-400 transition-colors cursor-pointer"
+                      className="max-w-full break-all text-xs text-cyan-400/60 hover:text-cyan-400 transition-colors cursor-pointer"
                       title="Изменить логин"
                     >
                       @{user.username}
                     </button>
                   )}
-                  <span className="text-xs text-gray-500">{user.email}</span>
+                  {session?.user?.role === "ADMIN" && <AdminUserTzIdButton userId={user.id} userName={user.name} />}
+                  <span className="text-xs text-gray-500 break-all">{user.email}</span>
                   <span className={`px-2 py-0.5 rounded text-xs ${
                     user.role === "ADMIN" ? "bg-fantasy-gold/20 text-fantasy-gold" :
                     user.role === "EDITOR" ? "bg-fantasy-purple/20 text-fantasy-purple" :
@@ -568,7 +570,7 @@ export default function AdminUsersPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex flex-wrap max-w-full items-center gap-2 flex-shrink-0">
                 {/* FIX-EDR: сессии активности и назначение ролей — только для ADMIN */}
                 {session?.user?.role === "ADMIN" && (
                   <button
