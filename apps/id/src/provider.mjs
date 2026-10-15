@@ -61,7 +61,7 @@ export function createProvider({
       profile: ["name", "preferred_username", "picture"],
       email: ["email", "email_verified"],
     },
-    scopes: ["openid", "profile", "email", "offline_access", "contact:read", "subscriptions:read", "subscriptions:write", "notifications:write"],
+    scopes: ["openid", "profile", "email", "offline_access", "roles:read", "contact:read", "subscriptions:read", "subscriptions:write", "notifications:write"],
     features: {
       devInteractions: { enabled: false },
       registration: { enabled: false },

@@ -1,0 +1,1 @@
+PASS: role form, confirmation modal, empty list and error state reviewed individually at desktop/mobile widths. Isolated React preview with synthetic API only, not production E2E. Form/control boundaries and text wrap remain within containers. Confirm dialog buttons at least 44 px.

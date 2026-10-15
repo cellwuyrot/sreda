@@ -1,0 +1,52 @@
+
+> trioz-services-portal@1.0.0 test
+> vitest run
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.5 <business-workspace>
+
+ ✓ tests/security-and-access.test.ts (5 tests) 1289ms
+   ✓ password hashing (1)
+     ✓ hashes and verifies a password without storing plaintext 1284ms
+ ✓ tests/password-reset.test.ts (1 test) 449ms
+   ✓ client password reset (1)
+     ✓ revokes existing client sessions after a successful reset 443ms
+ ✓ tests/admin-all-routes.test.ts (17 tests) 404ms
+ ✓ tests/billing-admin.test.ts (5 tests) 59ms
+stderr | tests/leads-reliability.test.ts > durable public leads > returns retryable response on persistence failure without exposing credentials
+Lead persistence failed
+
+ ✓ tests/leads-reliability.test.ts (10 tests) 36ms
+ ✓ tests/integration-routes.test.ts (6 tests) 43ms
+stderr | tests/mailer.test.ts > SMTP envelope diagnostics > distinguishes a sender refusal without exposing raw SMTP response
+Lead notification not accepted { leadId: 'lead-1', channel: 'client', category: 'SENDER' }
+Lead notification not accepted { leadId: 'lead-1', channel: 'internal', category: 'SENDER' }
+
+ ✓ tests/mailer.test.ts (13 tests) 34ms
+ ✓ tests/billing-plan.test.ts (18 tests) 20ms
+ ✓ tests/tz-id-callback.test.ts (9 tests) 38ms
+ ✓ tests/tz-id-security.test.ts (9 tests) 25ms
+ ✓ tests/tz-id-link.test.ts (5 tests) 27ms
+ ✓ tests/commerce-regression.test.ts (22 tests) 28ms
+ ✓ tests/leads.test.ts (1 test) 31ms
+ ✓ tests/tz-id-project-role.test.ts (12 tests) 19ms
+ ✓ tests/uploads.test.ts (5 tests) 10ms
+ ✓ tests/mail-observability.test.ts (8 tests) 24ms
+ ✓ tests/session-status.test.ts (5 tests) 13ms
+ ✓ tests/tz-id-introspection.test.ts (3 tests) 12ms
+ ✓ tests/legal-and-navigation.test.ts (4 tests) 15ms
+ ✓ tests/api-auth.test.ts (1 test) 11ms
+ ✓ tests/admin-route-protection.test.ts (1 test) 15ms
+ ✓ tests/content.test.ts (2 tests) 6ms
+
+ Test Files  22 passed (22)
+      Tests  162 passed (162)
+   Start at  20:37:46
+   Duration  9.37s (tests 48%, import 43%, transform 6%, worker 4%)
+
+    Isolate  22 workers spawned · ~161ms startup each (spawn + environment, per file)
+             at least ~3.38s faster with isolate: false — reuses workers across files instead of one per file
+

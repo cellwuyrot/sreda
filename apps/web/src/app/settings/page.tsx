@@ -26,7 +26,6 @@ import { PREMIUM_KEY_FEATURES, PREMIUM_MAIN_ADVANTAGE } from "@/lib/premiumFeatu
 import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
 /* PAYLINK: самостоятельная оплата по ссылке банка — один блок на каждую подписку. */
 import PaymentLinkCheckout from "@/components/premium/PaymentLinkCheckout";
-import CloudPaymentCheckout from "@/components/premium/CloudPaymentCheckout";
 import {
   eventToBrowserKeys,
   browserKeysHaveMainKey,
@@ -2147,7 +2146,7 @@ export default function SettingsPage() {
                 </ul>
 
                 {priceLine && !vpnViaPremium && (
-                  <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">Стоимость: {priceLine}. При оплате через CloudPayments подписка активируется после серверного подтверждения платежа.</p>
+                  <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">Стоимость: {priceLine}. Онлайн-оплата временно недоступна. Действующие подписки сохраняются.</p>
                 )}
 
                 {(vpnPlanActive || vpnViaPremium) && (
@@ -2162,7 +2161,7 @@ export default function SettingsPage() {
                 {/* PAYLINK: если администратор загрузил ссылки — платить можно сразу, не спрашивая реквизиты. */}
                 {!vpnViaPremium && (
                   <div className="mt-3">
-                    <CloudPaymentCheckout kind="VPN" />
+                    <p className="text-sm text-neutral-500 dark:text-gray-400">Онлайн-оплата пока не подключена. Обратитесь к администратору для согласования оплаты.</p>
                     <PaymentLinkCheckout kind="VPN" />
                   </div>
                 )}
@@ -2214,7 +2213,7 @@ export default function SettingsPage() {
                 {/* PAYLINK: тот же сценарий для Premium — свой пул ссылок. */}
                 {!byRole && (
                   <div className="mt-3">
-                    <CloudPaymentCheckout kind="PREMIUM" />
+                    <p className="text-sm text-neutral-500 dark:text-gray-400">Онлайн-оплата пока не подключена. Обратитесь к администратору для согласования оплаты.</p>
                     <PaymentLinkCheckout kind="PREMIUM" />
                   </div>
                 )}

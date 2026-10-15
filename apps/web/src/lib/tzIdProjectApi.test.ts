@@ -13,7 +13,7 @@ const token = {
   accountId: "u1",
   clientId: "c1",
   scope:
-    "contact:read subscriptions:read subscriptions:write notifications:write",
+    "roles:read contact:read subscriptions:read subscriptions:write notifications:write",
 };
 const find = vi.fn();
 beforeEach(() => {
@@ -207,4 +207,21 @@ it("rejects malformed subscription request without DB changes", async () => {
     ).status,
   ).toBe(400);
   expect(prismaMock.tzIdProjectSubscription.upsert).not.toHaveBeenCalled();
+});
+
+it("only returns a role for the token's user and client, never global ADMIN",async()=>{
+ prismaMock.tzIdProjectRole.findUnique.mockResolvedValue(null);
+ expect(await call("project-role")).toEqual({status:200,body:{sub:"u1",clientId:"c1",role:"USER"}});
+ expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+ expect(prismaMock.tzIdProjectRole.findUnique).toHaveBeenCalledWith({where:{clientId_userId:{clientId:"c1",userId:"u1"}}});
+ prismaMock.tzIdProjectRole.findUnique.mockResolvedValue({role:"ADMIN",revokedAt:null} as never);
+ expect((await call("project-role")).body.role).toBe("ADMIN");
+ prismaMock.tzIdProjectRole.findUnique.mockResolvedValue({role:"ADMIN",revokedAt:new Date()} as never);
+ expect((await call("project-role")).body.role).toBe("USER");
+});
+it("requires consent and confidential client for project roles",async()=>{
+ find.mockResolvedValue({...token,scope:"openid"});expect((await call("project-role")).status).toBe(403);
+ find.mockResolvedValue(token);
+ prismaMock.tzIdClient.findFirst.mockResolvedValue({id:"c1",metadata:encryptTzData({redirect_uris:["https://app.example/callback"],scope:token.scope,token_endpoint_auth_method:"none"})} as never);
+ expect((await call("project-role")).status).toBe(403);
 });

@@ -152,7 +152,7 @@ export function ConfirmDialogHost() {
             <button
               type="button"
               onClick={() => settle(false)}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-[var(--cn-hover)]"
+              className="min-h-[44px] px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-[var(--cn-hover)]"
               style={{ border: "1px solid var(--cn-border)", color: "var(--cn-text)" }}
             >
               {cancelText}
@@ -162,7 +162,7 @@ export function ConfirmDialogHost() {
             ref={confirmBtnRef}
             type="button"
             onClick={() => settle(true)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-0 ${
+            className={`min-h-[44px] px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-0 ${
               opts.danger ? "bg-red-500 focus:ring-red-400/40" : "bg-violet-500 dark:bg-cyan-600 focus:ring-violet-400/40 dark:focus:ring-cyan-400/40"
             }`}
           >
