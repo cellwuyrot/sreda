@@ -1,0 +1,1 @@
+PASS: 1440/390px ADMIN idle, copied, error and EDITOR. Each screenshot inspected individually. Buttons remain inside user cards, status/error wraps without collision, no horizontal overflow. Synthetic local preview only. Existing styles retained.
