@@ -58,7 +58,14 @@ export async function projectApi(
         throw new HubError("Нет разрешения на эту операцию", 403);
     };
     const userId = token.accountId;
-    if (path === "/api/v1/contact" && req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    if (path === "/api/v1/project-role" && req.method === "GET") {
+      requireScope("roles:read", true);
+      const grant = await prisma.tzIdProjectRole.findUnique({
+        where: { clientId_userId: { clientId: client.id, userId } },
+      });
+      json(res, { sub: userId, clientId: client.id, role: grant?.role === "ADMIN" && !grant.revokedAt ? "ADMIN" : "USER" });
+    } else if (path === "/api/v1/contact" && req.method === "GET") {
       requireScope("contact:read");
       const user = await prisma.user.findUnique({
         where: { id: userId },

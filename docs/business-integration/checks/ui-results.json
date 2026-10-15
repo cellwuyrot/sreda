@@ -1,0 +1,21 @@
+{
+  "environment": "Isolated React UI with synthetic mocked API, not live OIDC/DB E2E",
+  "results": [
+    {
+      "width": 1440,
+      "noOverflow": true,
+      "roleForm": "PASS",
+      "grantWithConfirmation": "PASS",
+      "revokeWithConfirmation": "PASS",
+      "browserErrors": 0
+    },
+    {
+      "width": 390,
+      "noOverflow": true,
+      "roleForm": "PASS",
+      "grantWithConfirmation": "PASS",
+      "revokeWithConfirmation": "PASS",
+      "browserErrors": 0
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "engine": "PGlite (embedded PostgreSQL WASM), not production PostgreSQL",
+  "baseline": "Original schema DDL, synthetic fixtures",
+  "checks": {
+    "migrationSQL": "PASS",
+    "retiredProviderDisabled": "PASS",
+    "retiredSecretRemoved": "PASS",
+    "otherBankPreserved": "PASS",
+    "oldOrdersPreserved": "PASS",
+    "existingPremiumPreserved": "PASS",
+    "legacyCheckoutLinksDisabled": "PASS",
+    "legacyPaymentReportsRetained": "PASS",
+    "scopedGrant": "PASS",
+    "revocation": "PASS"
+  },
+  "schemaDiff": "Only TzIdProjectRole created; legacy physical tables unchanged"
+}

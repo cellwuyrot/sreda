@@ -1,0 +1,14 @@
+
+> trioz@0.1.0 test
+> vitest run --project jsdom src/components/admin/AdminPaymentsPage.test.tsx
+
+
+ RUN  v3.2.7 <platform-workspace>/apps/web
+
+ ✓ |jsdom| src/components/admin/AdminPaymentsPage.test.tsx (4 tests) 300ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  20:35:25
+   Duration  1.65s (transform 181ms, setup 79ms, collect 460ms, tests 300ms, environment 535ms, prepare 79ms)
+

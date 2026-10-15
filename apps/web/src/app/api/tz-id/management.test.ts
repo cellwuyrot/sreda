@@ -166,3 +166,29 @@ it("admin invalid redirect URI is rejected without storage", async () => {
   ).toBe(400);
   expect(prismaMock.tzIdClient.create).not.toHaveBeenCalled();
 });
+it("enables roles scope for an existing confidential client without changing its secret", async () => {
+ sessionMock.mockResolvedValue({user:{id:"a1",role:"ADMIN"}} as never);
+ const metadata={client_secret:"synthetic-do-not-return",scope:"openid profile email",redirect_uris:["https://app.example/callback"],token_endpoint_auth_method:"client_secret_basic"};
+ prismaMock.tzIdClient.findUniqueOrThrow.mockResolvedValue({id:"c1",metadata:encryptTzData(metadata)} as never);
+ prismaMock.$transaction.mockImplementation(async (fn:unknown)=>(fn as (db:typeof prismaMock)=>Promise<unknown>)(prismaMock) as never);
+ const response=await admin.PATCH(request("/api/admin/tz-id","PATCH",{id:"c1",projectRoles:true}));
+ expect(response.status).toBe(200);expect(JSON.stringify(await response.json())).not.toContain("synthetic-do-not-return");
+ const stored=prismaMock.tzIdClient.update.mock.calls[0][0].data.metadata as string;
+ const {decryptTzData}=await import("@/lib/tzIdCrypto");
+ expect(decryptTzData(stored)).toEqual({...metadata,scope:"openid profile email roles:read"});
+ expect(prismaMock.tzIdProjectRole.upsert).not.toHaveBeenCalled();
+});
+it("refuses enabling project roles on a public client",async()=>{
+ sessionMock.mockResolvedValue({user:{id:"a1",role:"ADMIN"}} as never);
+ prismaMock.tzIdClient.findUniqueOrThrow.mockResolvedValue({id:"c1",metadata:encryptTzData({scope:"openid",token_endpoint_auth_method:"none"})} as never);
+ prismaMock.$transaction.mockImplementation(async (fn:unknown)=>(fn as (db:typeof prismaMock)=>Promise<unknown>)(prismaMock) as never);
+ expect((await admin.PATCH(request("/api/admin/tz-id","PATCH",{id:"c1",projectRoles:true}))).status).toBe(400);
+ expect(prismaMock.tzIdClient.update).not.toHaveBeenCalled();
+});
+it("disabling a project still revokes its authorizations",async()=>{
+ sessionMock.mockResolvedValue({user:{id:"a1",role:"ADMIN"}} as never);
+ prismaMock.tzIdClient.findUniqueOrThrow.mockResolvedValue({id:"c1",metadata:encryptTzData({scope:"openid",token_endpoint_auth_method:"client_secret_basic"})} as never);
+ prismaMock.$transaction.mockImplementation(async (fn:unknown)=>(fn as (db:typeof prismaMock)=>Promise<unknown>)(prismaMock) as never);
+ expect((await admin.PATCH(request("/api/admin/tz-id","PATCH",{id:"c1",enabled:false}))).status).toBe(200);
+ expect(prismaMock.tzIdAuthorization.updateMany).toHaveBeenCalledWith({where:{clientId:"c1"},data:{revokedAt:expect.any(Date)}});
+});

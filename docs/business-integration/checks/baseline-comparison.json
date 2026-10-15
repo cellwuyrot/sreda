@@ -1,0 +1,8 @@
+{
+  "modifiedFailingAssertions": 21,
+  "originalFailingAssertions": 21,
+  "sameAssertions": true,
+  "method": "Same six failing test files executed from unchanged source archive, same dependency tree and clock; baseline provider tests not executed",
+  "modifiedFinalFailingAssertions": 21,
+  "finalSameAssertions": true
+}

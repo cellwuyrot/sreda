@@ -1,3 +1,4 @@
+import { tzIdSameOrigin } from "@/lib/tzIdOrigin";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -76,6 +77,7 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  if (!tzIdSameOrigin(req)) return fail("Неверный источник запроса", 403);
   const guard = await requireAdmin();
   if (guard.error) return guard.error;
   const session = guard.session!;

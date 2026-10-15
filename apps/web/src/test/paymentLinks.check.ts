@@ -55,7 +55,6 @@ const vpnKeys = [
 ];
 const payLinkKeys = [
   "paylink_enabled",
-  "paylink_auto_activate",
   "paylink_reserve_minutes",
   "paylink_instruction",
 ];
@@ -116,7 +115,7 @@ ok("клиент может взять ссылку", userRoute.includes('"reser
 ok("клиент может отметить оплату", userRoute.includes('"paid"'));
 ok("есть защита от частых нажатий", userRoute.includes("rateLimit"));
 ok("выключенная настройка закрывает оплату", userRoute.includes("paylink_enabled") || userRoute.includes("enabled"));
-ok("режим автовыдачи учитывается", userRoute.includes("paylink_auto_activate") || userRoute.includes("autoActivate"));
+ok("автовыдача по заявлению плательщика запрещена", !userRoute.includes("activatePaymentLink"));
 ok(
   "оба типа подписки обслуживаются",
   userRoute.includes("isPaymentLinkKind") &&
@@ -130,10 +129,10 @@ ok("вкладка второй подписки есть", adminPage.includes('
 ok("вкладка оплаты по ссылке есть", adminPage.includes('label: "Оплата по ссылке"'));
 ok("вкладки отрисовываются", adminPage.includes('tab === "vpn"') && adminPage.includes('tab === "paylink"'));
 ok("управление пулом ссылок встроено", adminPage.includes("<PaymentLinkManager />"));
-for (const key of ["vpn_price_month", "vpnpay_sbp_phone", "vpnpay_acquiring_link", "paylink_reserve_minutes", "paylink_auto_activate"]) {
+for (const key of ["vpn_price_month", "vpnpay_sbp_phone", "vpnpay_acquiring_link", "paylink_reserve_minutes"]) {
   ok(`в админке есть поле ${key}`, adminPage.includes(key));
 }
-ok("секрет VPN не показывается открытом текстом", adminPage.includes("vpnSecretSet") && /type="password"[\s\S]{0,200}vpnpay_acquiring_secret/.test(adminPage));
+ok("секрет VPN не подставляется в UI после чтения", adminPage.includes('vpnpay_acquiring_secret: ""') && !/value=\{settings\.vpnpay_acquiring_secret\}/.test(adminPage));
 const manager = code("src/components/admin/PaymentLinkManager.tsx");
 ok("в пуле можно загружать сразу несколько ссылок", manager.includes("textarea"));
 ok("в пуле видны заявки на подтверждение", manager.includes("AWAITING"));

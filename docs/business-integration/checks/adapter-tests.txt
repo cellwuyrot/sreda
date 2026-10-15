@@ -1,0 +1,20 @@
+
+> @trioz/id@0.1.0 test
+> node --test test/adapter.test.mjs
+
+✔ Grant stores explicit grantId and is denied when authorization revoked (2.700795ms)
+✔ Opaque access token denied for ended session or disabled client (0.53301ms)
+✔ Client registry disabled clients are unavailable immediately (0.665751ms)
+✔ Atomic consumption rejects replay, exposes consumed marker (0.620106ms)
+✔ Expired artifacts unavailable (0.361362ms)
+✔ Only public identity fields become claims (0.302676ms)
+✔ Invalid or non-HTTP avatar is omitted without breaking identity claims (0.301466ms)
+✔ Legacy sessions without an expiry never authorize a TZ ID token (0.375635ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 354.449658
