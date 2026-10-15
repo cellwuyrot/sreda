@@ -1,0 +1,226 @@
+diff --git a/apps/web/src/app/admin/users/page.tsx b/apps/web/src/app/admin/users/page.tsx
+--- a/apps/web/src/app/admin/users/page.tsx
++++ b/apps/web/src/app/admin/users/page.tsx
+@@ -10,6 +10,7 @@
+ import { isOnline, timeAgo } from "@/lib/timeAgo";
+ 
+ import { useAdminBackHref } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
++import AdminUserTzIdButton from "@/components/admin/AdminUserTzIdButton";
+ import AdminBusiness from "@/components/admin/AdminBusiness"; // BUSINESS-PAY
+ import AdminCommunities from "@/components/admin/AdminCommunities"; // ADMCOMM
+ interface User {
+@@ -511,7 +512,7 @@
+ 
+               <div className="flex-1 min-w-0">
+                 <div className="flex items-center gap-2 flex-wrap">
+-                  <span className="font-medium text-white">{user.name}</span>
++                  <span className="font-medium text-white break-words max-w-full">{user.name}</span>
+                   {editingUsername === user.id ? (
+                     <div className="flex items-center gap-1">
+                       <input
+@@ -532,13 +533,14 @@
+                   ) : (
+                     <button
+                       onClick={() => startEditUsername(user)}
+-                      className="text-xs text-cyan-400/60 hover:text-cyan-400 transition-colors cursor-pointer"
++                      className="max-w-full break-all text-xs text-cyan-400/60 hover:text-cyan-400 transition-colors cursor-pointer"
+                       title="Изменить логин"
+                     >
+                       @{user.username}
+                     </button>
+                   )}
+-                  <span className="text-xs text-gray-500">{user.email}</span>
++                  {session?.user?.role === "ADMIN" && <AdminUserTzIdButton userId={user.id} userName={user.name} />}
++                  <span className="text-xs text-gray-500 break-all">{user.email}</span>
+                   <span className={`px-2 py-0.5 rounded text-xs ${
+                     user.role === "ADMIN" ? "bg-fantasy-gold/20 text-fantasy-gold" :
+                     user.role === "EDITOR" ? "bg-fantasy-purple/20 text-fantasy-purple" :
+@@ -568,7 +570,7 @@
+                 </div>
+               </div>
+ 
+-              <div className="flex items-center gap-2 flex-shrink-0">
++              <div className="flex flex-wrap max-w-full items-center gap-2 flex-shrink-0">
+                 {/* FIX-EDR: сессии активности и назначение ролей — только для ADMIN */}
+                 {session?.user?.role === "ADMIN" && (
+                   <button
+diff --git a/apps/web/src/components/admin/AdminUserTzIdButton.tsx b/apps/web/src/components/admin/AdminUserTzIdButton.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/components/admin/AdminUserTzIdButton.tsx
+@@ -0,0 +1,49 @@
++"use client";
++
++import { useSession } from "next-auth/react";
++import { useState } from "react";
++
++export default function AdminUserTzIdButton({ userId, userName }: { userId: string; userName: string }) {
++  const { data: session, status } = useSession();
++  const [state, setState] = useState<"idle" | "loading" | "copied" | "error">("idle");
++  const [error, setError] = useState("");
++  if (status !== "authenticated" || session?.user?.role !== "ADMIN") return null;
++
++  async function copy() {
++    if (state === "loading") return;
++    setState("loading");
++    setError("");
++    try {
++      if (!navigator.clipboard?.writeText) throw new Error("Буфер обмена недоступен. Откройте сайт по HTTPS.");
++      const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/tz-id`, { cache: "no-store" });
++      if (!response.ok) {
++        throw new Error(response.status === 403 || response.status === 401
++          ? "Нет доступа. Обновите страницу и войдите как администратор."
++          : response.status === 404 ? "Пользователь не найден." : "Не удалось получить TZ ID. Повторите попытку.");
++      }
++      const data: unknown = await response.json();
++      if (!data || typeof data !== "object" || !("tzId" in data) || data.tzId !== userId) {
++        throw new Error("Не удалось проверить TZ ID. Обновите страницу.");
++      }
++      try { await navigator.clipboard.writeText(userId); }
++      catch { throw new Error("Не удалось скопировать. Разрешите доступ к буферу обмена и повторите попытку."); }
++      setState("copied");
++    } catch (cause) {
++      setError(cause instanceof Error ? cause.message : "Не удалось скопировать TZ ID.");
++      setState("error");
++    }
++  }
++
++  return (
++    <span className="inline-flex max-w-full flex-col items-start gap-1">
++      <button type="button" onClick={copy} disabled={state === "loading"}
++        aria-label={`Скопировать TZ ID пользователя ${userName}`}
++        title="Скопировать только идентификатор TZ ID"
++        className="min-h-[44px] min-w-[64px] rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-400/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 disabled:opacity-60">
++        {state === "loading" ? "Копирование…" : "TZ ID"}
++      </button>
++      {state === "copied" && <span role="status" className="text-sm text-green-300">Скопировано</span>}
++      {state === "error" && <span role="alert" className="max-w-xs break-words text-sm text-red-300">{error}</span>}
++    </span>
++  );
++}
+diff --git a/apps/web/src/components/admin/AdminUserTzIdButton.test.tsx b/apps/web/src/components/admin/AdminUserTzIdButton.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/components/admin/AdminUserTzIdButton.test.tsx
+@@ -0,0 +1,51 @@
++import React from "react";
++import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++const session = vi.hoisted(() => ({ role: "ADMIN", status: "authenticated" }));
++vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: session.role } }, status: session.status }) }));
++import AdminUserTzIdButton from "./AdminUserTzIdButton";
++const id = "cm123actualuserid";
++const clipboard = vi.fn();
++const fetcher = vi.fn();
++function mount() { render(<AdminUserTzIdButton userId={id} userName="Анна" />); }
++function click() { fireEvent.click(screen.getByRole("button", { name: "Скопировать TZ ID пользователя Анна" })); }
++beforeEach(() => {
++  session.role = "ADMIN"; session.status = "authenticated";
++  clipboard.mockReset().mockResolvedValue(undefined);
++  fetcher.mockReset().mockResolvedValue({ ok: true, json: async () => ({ tzId: id }) });
++  vi.stubGlobal("fetch", fetcher);
++  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: clipboard } });
++});
++afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
++describe("TZ ID copy button", () => {
++  it.each(["EDITOR", "USER", "CONSULTANT"])("is absent for %s and performs no request", role => {
++    session.role = role; mount(); expect(screen.queryByRole("button")).toBeNull(); expect(fetcher).not.toHaveBeenCalled();
++  });
++  it("is absent before authenticated", () => { session.status = "loading"; mount(); expect(screen.queryByRole("button")).toBeNull(); });
++  it("copies only TZ ID after server authorization", async () => {
++    mount(); expect(fetcher).not.toHaveBeenCalled(); click(); await screen.findByRole("status");
++    expect(clipboard).toHaveBeenCalledWith(id); expect(clipboard).toHaveBeenCalledTimes(1);
++    expect(fetcher).toHaveBeenCalledWith(`/api/admin/users/${id}/tz-id`, { cache: "no-store" });
++  });
++  it.each([401,403,404,500])("does not copy on API %s", async status => {
++    fetcher.mockResolvedValue({ ok: false, status }); mount(); click(); await screen.findByRole("alert");
++    expect(clipboard).not.toHaveBeenCalled(); expect(screen.queryByRole("status")).toBeNull();
++  });
++  it("rejects malformed or mismatched identifiers", async () => {
++    fetcher.mockResolvedValue({ ok: true, json: async () => ({ tzId: "someone-else" }) });
++    mount(); click(); await screen.findByRole("alert"); expect(clipboard).not.toHaveBeenCalled();
++  });
++  it("shows permission errors instead of a false success and allows retry", async () => {
++    clipboard.mockRejectedValueOnce(new Error("NotAllowedError")); mount(); click();
++    await screen.findByRole("alert"); expect(screen.queryByRole("status")).toBeNull();
++    click(); await screen.findByRole("status"); expect(screen.queryByRole("alert")).toBeNull();
++  });
++  it("handles unavailable clipboard without requesting identifiers", async () => {
++    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
++    mount(); click(); await screen.findByRole("alert"); expect(fetcher).not.toHaveBeenCalled();
++  });
++  it("handles network failure", async () => {
++    fetcher.mockRejectedValue(new Error("Network error")); mount(); click();
++    await waitFor(() => expect(screen.getByRole("alert")).not.toBeNull()); expect(clipboard).not.toHaveBeenCalled();
++  });
++});
+diff --git a/apps/web/src/app/api/admin/users/[id]/tz-id/route.ts b/apps/web/src/app/api/admin/users/[id]/tz-id/route.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/app/api/admin/users/[id]/tz-id/route.ts
+@@ -0,0 +1,23 @@
++import { NextResponse } from "next/server";
++import { getServerSession } from "next-auth";
++import { authOptions } from "@/lib/auth";
++import prisma from "@/lib/prisma";
++
++export const dynamic = "force-dynamic";
++const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
++
++// TZ ID sub is the existing User.id, not email or a separate numeric identifier.
++export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
++  const session = await getServerSession(authOptions);
++  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
++  if (session.user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403, headers });
++  const { id } = await params;
++  if (!id || id.length > 128) return NextResponse.json({ error: "Invalid identifier" }, { status: 400, headers });
++  try {
++    const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
++    if (!user) return NextResponse.json({ error: "Not found" }, { status: 404, headers });
++    return NextResponse.json({ tzId: user.id }, { headers });
++  } catch {
++    return NextResponse.json({ error: "Could not retrieve TZ ID" }, { status: 500, headers });
++  }
++}
+diff --git a/apps/web/src/app/api/admin/users/[id]/tz-id/route.test.ts b/apps/web/src/app/api/admin/users/[id]/tz-id/route.test.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/app/api/admin/users/[id]/tz-id/route.test.ts
+@@ -0,0 +1,37 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { prismaMock } from "@/test/prismaMock";
++vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
++vi.mock("@/lib/auth", () => ({ authOptions: {} }));
++vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
++import { getServerSession } from "next-auth";
++import { GET } from "./route";
++const id = "cm123actualuserid";
++const run = (value = id) => GET(new Request("https://example.test/api/admin/users/x/tz-id"), { params: Promise.resolve({ id: value }) });
++beforeEach(() => vi.mocked(getServerSession).mockResolvedValue({ user: { id: "admin", role: "ADMIN" } } as never));
++describe("admin-only TZ ID", () => {
++  it.each(["EDITOR", "USER", "CONSULTANT"])("denies %s before querying users", async role => {
++    vi.mocked(getServerSession).mockResolvedValue({ user: { role } } as never);
++    const response = await run(); expect(response.status).toBe(403); expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
++  });
++  it("denies anonymous", async () => {
++    vi.mocked(getServerSession).mockResolvedValue(null);
++    expect((await run()).status).toBe(401); expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
++  });
++  it("returns only the real User.id and prevents caching", async () => {
++    prismaMock.user.findUnique.mockResolvedValue({ id } as never);
++    const response = await run(); expect(response.status).toBe(200);
++    expect(await response.json()).toEqual({ tzId: id });
++    expect(response.headers.get("cache-control")).toContain("no-store");
++    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({ where: { id }, select: { id: true } });
++  });
++  it("returns 404 for missing user", async () => {
++    prismaMock.user.findUnique.mockResolvedValue(null); expect((await run()).status).toBe(404);
++  });
++  it("rejects invalid identifiers", async () => {
++    expect((await run("a".repeat(129))).status).toBe(400); expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
++  });
++  it("does not expose database error details", async () => {
++    prismaMock.user.findUnique.mockRejectedValue(new Error("private connection details"));
++    const response = await run(); expect(response.status).toBe(500); expect(JSON.stringify(await response.json())).not.toContain("private");
++  });
++});

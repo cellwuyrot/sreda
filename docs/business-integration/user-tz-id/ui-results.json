@@ -1,0 +1,136 @@
+[
+  {
+    "state": "admin",
+    "width": 1440,
+    "metrics": {
+      "width": 1440,
+      "scroll": 1430,
+      "buttons": [
+        {
+          "w": 64,
+          "h": 44
+        },
+        {
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    "errors": []
+  },
+  {
+    "state": "copied",
+    "width": 1440,
+    "metrics": {
+      "width": 1440,
+      "scroll": 1430,
+      "buttons": [
+        {
+          "w": 64,
+          "h": 44
+        },
+        {
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    "errors": []
+  },
+  {
+    "state": "error",
+    "width": 1440,
+    "metrics": {
+      "width": 1440,
+      "scroll": 1430,
+      "buttons": [
+        {
+          "w": 64,
+          "h": 44
+        },
+        {
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    "errors": []
+  },
+  {
+    "state": "editor",
+    "width": 1440,
+    "metrics": {
+      "width": 1440,
+      "scroll": 1430,
+      "buttons": []
+    },
+    "errors": []
+  },
+  {
+    "state": "admin",
+    "width": 390,
+    "metrics": {
+      "width": 390,
+      "scroll": 390,
+      "buttons": [
+        {
+          "w": 64,
+          "h": 44
+        },
+        {
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    "errors": []
+  },
+  {
+    "state": "copied",
+    "width": 390,
+    "metrics": {
+      "width": 390,
+      "scroll": 390,
+      "buttons": [
+        {
+          "w": 64,
+          "h": 44
+        },
+        {
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    "errors": []
+  },
+  {
+    "state": "error",
+    "width": 390,
+    "metrics": {
+      "width": 390,
+      "scroll": 390,
+      "buttons": [
+        {
+          "w": 64,
+          "h": 44
+        },
+        {
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    "errors": []
+  },
+  {
+    "state": "editor",
+    "width": 390,
+    "metrics": {
+      "width": 390,
+      "scroll": 390,
+      "buttons": []
+    },
+    "errors": []
+  }
+]
