@@ -11,6 +11,7 @@ model User {
   contactAddress String? @db.VarChar(500)
   tzProjectSubscriptions TzIdProjectSubscription[]
   tzProjectNotifications TzIdProjectNotification[]
+  tzProjectRoles TzIdProjectRole[]
   tzNotificationPreferences TzIdNotificationPreference[]
   city                   String?
   id                     String                      @id @default(cuid())
@@ -161,7 +162,7 @@ model User {
   paymentLinksReserved   PaymentLink[]               @relation("PaymentLinkReserved") // PAYLINK
   paymentLinksUsed       PaymentLink[]               @relation("PaymentLinkUsed") // PAYLINK
   paymentLinksConfirmed  PaymentLink[]               @relation("PaymentLinkConfirmed") // PAYLINK
-  cloudPaymentOrders      CloudPaymentOrder[]          // CLOUDPAYMENTS
+  legacyPaymentOrders     LegacyPaymentOrder[]
   /// PROFILE-WALL: личная страница — свои записи, комментарии, просмотры и подписки.
   wallPosts              WallPost[]                  @relation("WallAuthor") // PROFILE-WALL
   wallComments           WallComment[]               @relation("WallCommentAuthor") // PROFILE-WALL
@@ -2464,7 +2465,7 @@ model EmailDomainWhitelist {
 /// здесь: FREE → RESERVED (выдана человеку) → AWAITING (он нажал «Я оплатил») → USED
 /// (оплата подтверждена, подписка выдана). Повторно ссылка не выдаётся никогда.
 
-model CloudPaymentOrder {
+model LegacyPaymentOrder {
   id                   String    @id @default(cuid())
   userId               String
   kind                 String    @db.VarChar(16) // PREMIUM | VPN
@@ -2485,15 +2486,16 @@ model CloudPaymentOrder {
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions CloudPaymentTransaction[]
+  transactions LegacyPaymentTransaction[]
 
   @@index([userId, status])
   @@index([kind, status])
   @@index([cloudSubscriptionId])
   @@index([cloudTransactionId])
+  @@map("CloudPaymentOrder")
 }
 
-model CloudPaymentTransaction {
+model LegacyPaymentTransaction {
   id            String           @id @default(cuid())
   orderId       String
   transactionId String           @unique @db.VarChar(64)
@@ -2501,9 +2503,10 @@ model CloudPaymentTransaction {
   currency      String           @db.VarChar(8)
   createdAt     DateTime         @default(now())
 
-  order CloudPaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order LegacyPaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId, createdAt])
+  @@map("CloudPaymentTransaction")
 }
 
 model PaymentLink {
@@ -2712,6 +2715,7 @@ model MailSendLog {
 
 /// TZ ID clients. Metadata (including a confidential client's secret) is encrypted.
 model TzIdClient {
+ projectRoles TzIdProjectRole[]
  subscriptions TzIdProjectSubscription[]
  notifications TzIdProjectNotification[]
  notificationPreferences TzIdNotificationPreference[]
@@ -2813,4 +2817,17 @@ model TzIdQrLogin {
 
   @@index([interactionUid, expiresAt])
   @@index([expiresAt])
+}
+
+/// Explicit role in one confidential OIDC client. Never inherited from global TrioZ role.
+model TzIdProjectRole {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId String
+  client TzIdClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  role String @default("ADMIN") @db.VarChar(16)
+  revokedAt DateTime?
+  updatedAt DateTime @updatedAt
+  @@unique([clientId, userId])
 }

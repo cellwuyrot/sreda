@@ -9,6 +9,7 @@ import {
 } from "./username";
 
 export const TZ_ID_API_SCOPES = [
+  "roles:read",
   "contact:read",
   "subscriptions:read",
   "subscriptions:write",
@@ -19,6 +20,7 @@ export const TZ_ID_SCOPE_LABELS: Record<string, string> = {
   profile: "Имя, ник и аватар",
   email: "Email и статус подтверждения",
   offline_access: "Продление доступа",
+  "roles:read": "Чтение собственной роли только в этом проекте",
   "contact:read": "Необязательный контактный адрес",
   "subscriptions:read": "Список и сроки подписок (без платёжных данных)",
   "subscriptions:write": "Обновление подписок только этого проекта",

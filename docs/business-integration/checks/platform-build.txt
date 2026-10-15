@@ -1,0 +1,365 @@
+
+> trioz-monorepo@0.1.0 build
+> npm run build:shared && npm run build -w apps/web
+
+
+> trioz-monorepo@0.1.0 build:shared
+> npm run build -w packages/shared
+
+
+> @trioz/shared@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> trioz@0.1.0 build
+> prisma generate && next build
+
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v5.22.0) to ./../../node_modules/@prisma/client in 1.13s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+
+▲ Next.js 16.2.10 (Turbopack)
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+Turbopack build encountered 1 warnings:
+./apps/web/next.config.mjs
+Encountered unexpected file in NFT list
+A file was traced that indicates that the whole project was traced unintentionally. Somewhere in the import trace below, there are:
+- filesystem operations (like path.join, path.resolve or fs.readFile), or
+- very dynamic requires (like require('./' + foo)).
+To resolve this, you can
+- remove them if possible, or
+- only use them in development, or
+- make sure they are statically scoped to some subfolder: path.join(process.cwd(), 'data', bar), or
+- add ignore comments: path.join(/*turbopackIgnore: true*/ process.cwd(), bar)
+
+Import trace:
+  App Route:
+    ./apps/web/next.config.mjs
+    ./apps/web/src/app/api/projects/upload/route.ts
+
+
+✓ Compiled successfully in 28.0s
+  Running TypeScript ...
+  Finished TypeScript in 28.0s ...
+  Collecting page data using 1 worker ...
+[email] прямой SMTP: {
+  host: 'localhost',
+  port: 25,
+  secure: false,
+  user: '(none)',
+  pass: '(none)',
+  from: '(none)'
+}
+[email] почта не настроена: задайте SMTP_SERVICE_URL и SMTP_SERVICE_KEY
+[email] SMTP verify FAILED: connect ECONNREFUSED 127.0.0.1:25
+⚠ Using edge runtime on a page currently disables static generation for that page
+  Generating static pages using 1 worker (0/181) ...
+  Generating static pages using 1 worker (45/181) 
+  Generating static pages using 1 worker (90/181) 
+  Generating static pages using 1 worker (135/181) 
+✓ Generating static pages using 1 worker (181/181) in 571ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /about
+├ ƒ /admin
+├ ƒ /admin/about
+├ ƒ /admin/ai
+├ ƒ /admin/appeals
+├ ƒ /admin/badges
+├ ƒ /admin/broadcast
+├ ƒ /admin/builds
+├ ƒ /admin/content
+├ ƒ /admin/ecosystem
+├ ƒ /admin/games
+├ ƒ /admin/legal
+├ ƒ /admin/logs
+├ ƒ /admin/mail
+├ ƒ /admin/notifications
+├ ƒ /admin/payments
+├ ƒ /admin/premium
+├ ƒ /admin/projects
+├ ƒ /admin/restrictions
+├ ƒ /admin/restrictions/whitelist
+├ ƒ /admin/servers
+├ ƒ /admin/services
+├ ƒ /admin/services/mail
+├ ƒ /admin/tz-id
+├ ƒ /admin/users
+├ ƒ /admin/vpn
+├ ƒ /admin/welcome
+├ ƒ /admin/windows
+├ ƒ /api/admin/badges
+├ ƒ /api/admin/badges/[id]
+├ ƒ /api/admin/badges/award
+├ ƒ /api/admin/broadcast
+├ ƒ /api/admin/builds
+├ ƒ /api/admin/business
+├ ƒ /api/admin/communities
+├ ƒ /api/admin/communities/[id]
+├ ƒ /api/admin/email-whitelist
+├ ƒ /api/admin/games
+├ ƒ /api/admin/games/sync
+├ ƒ /api/admin/logs
+├ ƒ /api/admin/mail
+├ ƒ /api/admin/mail/[address]
+├ ƒ /api/admin/mail/[address]/draft
+├ ƒ /api/admin/mail/[address]/send
+├ ƒ /api/admin/mail/[address]/signature
+├ ƒ /api/admin/mail/attachment/[id]
+├ ƒ /api/admin/mail/blacklist
+├ ƒ /api/admin/mail/folders
+├ ƒ /api/admin/mail/mailboxes
+├ ƒ /api/admin/mail/message/[id]/download
+├ ƒ /api/admin/mail/message/[id]/view
+├ ƒ /api/admin/mail/templates
+├ ƒ /api/admin/mail/templates/[key]
+├ ƒ /api/admin/mail/verification-codes
+├ ƒ /api/admin/payment-links
+├ ƒ /api/admin/payment-requisites
+├ ƒ /api/admin/payment-requisites/[id]
+├ ƒ /api/admin/payments
+├ ƒ /api/admin/premium/subscriptions
+├ ƒ /api/admin/servers
+├ ƒ /api/admin/servers/import-key
+├ ƒ /api/admin/storage
+├ ƒ /api/admin/system-stats
+├ ƒ /api/admin/tz-id
+├ ƒ /api/admin/tz-id/project-admins
+├ ƒ /api/admin/upload
+├ ƒ /api/admin/vpn
+├ ƒ /api/admin/vpn/peers
+├ ƒ /api/admin/vpn/subscriptions
+├ ƒ /api/ai/chat
+├ ƒ /api/ai/limit
+├ ƒ /api/ai/settings
+├ ƒ /api/appeals
+├ ƒ /api/appeals/[id]
+├ ƒ /api/appeals/[id]/messages
+├ ƒ /api/articles
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/auth/check-username
+├ ƒ /api/auth/register
+├ ƒ /api/auth/reset-password
+├ ƒ /api/auth/send-code
+├ ƒ /api/auth/verify-code
+├ ƒ /api/builds/[id]
+├ ƒ /api/builds/next
+├ ƒ /api/business/[id]/contracts
+├ ƒ /api/business/[id]/payment
+├ ƒ /api/calendar
+├ ƒ /api/calendar/[id]
+├ ƒ /api/calendar/subscribe
+├ ƒ /api/channels
+├ ƒ /api/channels/[id]
+├ ƒ /api/channels/[id]/access
+├ ƒ /api/channels/[id]/posts
+├ ƒ /api/channels/[id]/workspace
+├ ƒ /api/channels/[id]/workspace/tables
+├ ƒ /api/channels/mute
+├ ƒ /api/channels/polls
+├ ƒ /api/channels/reorder
+├ ƒ /api/channels/tasks
+├ ƒ /api/channels/unread
+├ ƒ /api/connect/search
+├ ƒ /api/device
+├ ƒ /api/dm
+├ ƒ /api/dm/[id]
+├ ƒ /api/dm/[id]/attachments
+├ ƒ /api/dm/[id]/export
+├ ƒ /api/dm/[id]/lock
+├ ƒ /api/dm/[id]/purge
+├ ƒ /api/dm/folders
+├ ƒ /api/dm/pin
+├ ƒ /api/dm/read
+├ ƒ /api/dm/secure-cleanup
+├ ƒ /api/dm/settings
+├ ƒ /api/dm/vault
+├ ƒ /api/download/desktop
+├ ƒ /api/e2ee
+├ ƒ /api/ecosystem
+├ ƒ /api/editor/overview
+├ ƒ /api/files
+├ ƒ /api/files/[id]
+├ ƒ /api/friends
+├ ƒ /api/friends/[id]
+├ ƒ /api/games
+├ ƒ /api/games/gods/upload
+├ ƒ /api/games/invites
+├ ƒ /api/games/map-config
+├ ƒ /api/games/rooms
+├ ƒ /api/games/rooms/[id]
+├ ƒ /api/games/rooms/[id]/action
+├ ƒ /api/games/rooms/[id]/bot
+├ ƒ /api/games/rooms/[id]/players
+├ ƒ /api/geo/reverse
+├ ƒ /api/groups
+├ ƒ /api/groups/[id]
+├ ƒ /api/groups/[id]/accept-rules
+├ ƒ /api/groups/[id]/activity
+├ ƒ /api/groups/[id]/audit
+├ ƒ /api/groups/[id]/bans
+├ ƒ /api/groups/[id]/bans/[banId]
+├ ƒ /api/groups/[id]/censor
+├ ƒ /api/groups/[id]/commands/clear
+├ ƒ /api/groups/[id]/commands/history
+├ ƒ /api/groups/[id]/commands/slowmode
+├ ƒ /api/groups/[id]/commands/warn
+├ ƒ /api/groups/[id]/emoji
+├ ƒ /api/groups/[id]/emoji/[emojiId]
+├ ƒ /api/groups/[id]/leave
+├ ƒ /api/groups/[id]/members
+├ ƒ /api/groups/[id]/members/[memberId]
+├ ƒ /api/groups/[id]/members/[memberId]/timeout
+├ ƒ /api/groups/[id]/moderation/purge
+├ ƒ /api/groups/[id]/onboarding
+├ ƒ /api/groups/[id]/onboarding/send
+├ ƒ /api/groups/[id]/presence
+├ ƒ /api/groups/[id]/profile
+├ ƒ /api/groups/[id]/reports
+├ ƒ /api/groups/[id]/reports/[reportId]
+├ ƒ /api/groups/[id]/roles
+├ ƒ /api/groups/[id]/roles/[roleId]
+├ ƒ /api/groups/[id]/roles/[roleId]/channels
+├ ƒ /api/groups/[id]/roles/[roleId]/members
+├ ƒ /api/groups/[id]/stats
+├ ƒ /api/groups/[id]/transfer-ownership
+├ ƒ /api/groups/icon
+├ ƒ /api/groups/layout
+├ ƒ /api/groups/main-community
+├ ƒ /api/groups/reorder
+├ ƒ /api/heartbeat
+├ ƒ /api/ignores
+├ ƒ /api/invites
+├ ƒ /api/invites/[code]
+├ ƒ /api/link-preview
+├ ƒ /api/link-preview/image
+├ ƒ /api/mail/ingest
+├ ƒ /api/mail/poll
+├ ƒ /api/messages
+├ ƒ /api/messages/pin
+├ ƒ /api/messages/read
+├ ƒ /api/messages/scheduled
+├ ƒ /api/messages/search
+├ ƒ /api/messages/upload
+├ ƒ /api/notifications
+├ ƒ /api/og
+├ ƒ /api/og/invite/[code]
+├ ƒ /api/payments/links
+├ ƒ /api/payments/methods
+├ ƒ /api/posts/[id]
+├ ƒ /api/posts/[id]/comments
+├ ƒ /api/posts/[id]/view
+├ ƒ /api/profile
+├ ƒ /api/profile/activity
+├ ƒ /api/profile/avatar
+├ ƒ /api/profile/delete
+├ ƒ /api/profile/me
+├ ƒ /api/profile/notifications
+├ ƒ /api/profile/privacy
+├ ƒ /api/profile/public
+├ ƒ /api/profile/sessions
+├ ƒ /api/profile/status
+├ ƒ /api/projects
+├ ƒ /api/projects/[id]
+├ ƒ /api/projects/[id]/chat
+├ ƒ /api/projects/[id]/documents
+├ ƒ /api/projects/[id]/documents/[docId]
+├ ƒ /api/projects/[id]/export
+├ ƒ /api/projects/[id]/history
+├ ƒ /api/projects/[id]/invoices
+├ ƒ /api/projects/[id]/invoices/[invoiceId]
+├ ƒ /api/projects/summary
+├ ƒ /api/projects/upload
+├ ƒ /api/push/devices
+├ ƒ /api/qa
+├ ƒ /api/qa/[id]
+├ ƒ /api/qa/[id]/accept
+├ ƒ /api/qa/[id]/answers
+├ ƒ /api/qa/vote
+├ ƒ /api/reactions
+├ ƒ /api/search
+├ ƒ /api/servers/report
+├ ƒ /api/services
+├ ƒ /api/services/[id]/documents
+├ ƒ /api/services/[id]/stages
+├ ƒ /api/services/icon
+├ ƒ /api/site-content
+├ ƒ /api/tasks
+├ ƒ /api/tasks/[id]
+├ ƒ /api/tasks/[id]/attachments
+├ ƒ /api/tasks/[id]/checklist
+├ ƒ /api/tasks/assigned
+├ ƒ /api/tz-id/applications
+├ ƒ /api/tz-id/hub
+├ ƒ /api/upload/document
+├ ƒ /api/users
+├ ƒ /api/users/[id]
+├ ƒ /api/users/[id]/activity
+├ ƒ /api/users/[id]/follow
+├ ƒ /api/users/[id]/followers
+├ ƒ /api/users/[id]/following
+├ ƒ /api/voice/force-mute
+├ ƒ /api/voice/force-unmute
+├ ƒ /api/voice/kick-voice
+├ ƒ /api/voice/moderation-info
+├ ƒ /api/voice/move-user
+├ ƒ /api/voice/turn
+├ ƒ /api/vpn/me
+├ ƒ /api/vpn/ping
+├ ƒ /api/wall/[userId]
+├ ƒ /api/wall/posts/[id]
+├ ƒ /api/wall/posts/[id]/comments
+├ ƒ /api/wall/posts/[id]/view
+├ ƒ /api/wall/upload
+├ ƒ /api/welcome
+├ ƒ /api/welcome/accept
+├ ƒ /api/welcome/decline
+├ ƒ /api/wiki
+├ ƒ /api/wiki/[id]
+├ ƒ /api/wiki/[id]/revisions
+├ ƒ /api/wiki/collections
+├ ƒ /api/windows
+├ ƒ /api/workspace
+├ ƒ /api/workspace/board-list
+├ ƒ /api/workspace/history
+├ ƒ /api/workspace/reminders
+├ ƒ /api/workspace/tables
+├ ƒ /api/workspace/upload
+├ ƒ /auth/signin
+├ ƒ /connect
+├ ƒ /connect/services
+├ ƒ /editor
+├ ƒ /games
+├ ƒ /games/velderan
+├ ƒ /games/velderan/admin
+├ ƒ /games/velderan/join/[code]
+├ ƒ /games/velderan/play/[id]
+├ ƒ /games/velderan/room/[id]
+├ ƒ /invite/[code]
+├ ƒ /library
+├ ƒ /library/[slug]
+├ ƒ /partner
+├ ƒ /pero
+├ ƒ /profile
+├ ƒ /profile/[username]
+├ ƒ /projects
+├ ƒ /settings
+├ ƒ /settings/notifications
+├ ƒ /tz-id
+├ ƒ /user/[username]
+└ ƒ /workspace
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+

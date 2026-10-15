@@ -2,12 +2,14 @@
 import { useEffect, useState } from "react";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import Link from "next/link";
+import TzProjectAdmins from "@/components/admin/TzProjectAdmins";
 type Client = {
   id: string;
   name: string;
   enabled: boolean;
   redirectUris: string[];
   publicClient: boolean;
+  apiScopes?: string[];
 };
 export default function TZIdAdmin() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -71,7 +73,7 @@ export default function TZIdAdmin() {
                   .filter(Boolean),
                 publicClient,
                 offlineAccess,
-                apiScopes: apiScopes.filter(s => !publicClient || !s.endsWith(":write")),
+                apiScopes: apiScopes.filter(s => !publicClient || !(s.endsWith(":write") || s === "roles:read")),
               }),
             });
             const data = await res.json();
@@ -126,7 +128,7 @@ export default function TZIdAdmin() {
         </label>
         <fieldset className="space-y-2">
           <legend className="font-semibold">Разрешённые права API (пользователь также даёт согласие)</legend>
-          {Object.entries({ "contact:read": "Чтение контактного адреса", "subscriptions:read": "Чтение подписок", "subscriptions:write": "Запись собственных подписок", "notifications:write": "Отправка собственных уведомлений" }).map(([scope, label]) => <label key={scope} className="flex gap-3 items-center min-h-[44px]"><input type="checkbox" disabled={publicClient && scope.endsWith(":write")} checked={apiScopes.includes(scope) && !(publicClient && scope.endsWith(":write"))} onChange={e => setApiScopes(current => e.target.checked ? [...current, scope] : current.filter(s => s !== scope))}/>{label}</label>)}
+          {Object.entries({ "roles:read": "Чтение роли пользователя в этом проекте (серверный клиент)", "contact:read": "Чтение контактного адреса", "subscriptions:read": "Чтение подписок", "subscriptions:write": "Запись собственных подписок", "notifications:write": "Отправка собственных уведомлений" }).map(([scope, label]) => <label key={scope} className="flex gap-3 items-center min-h-[44px]"><input type="checkbox" disabled={publicClient && (scope.endsWith(":write") || scope === "roles:read")} checked={apiScopes.includes(scope) && !(publicClient && (scope.endsWith(":write") || scope === "roles:read"))} onChange={e => setApiScopes(current => e.target.checked ? [...current, scope] : current.filter(s => s !== scope))}/>{label}</label>)}
         </fieldset>
         <button className={input} disabled={busy}>
           {busy ? "Создание…" : "Создать"}
@@ -147,6 +149,7 @@ export default function TZIdAdmin() {
           </button>
         </section>
       )}
+      <TzProjectAdmins clients={clients} refresh={load} />
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Зарегистрированные приложения</h2>
         {clients.map((client) => (

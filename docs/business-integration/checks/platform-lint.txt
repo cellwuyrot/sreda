@@ -1,0 +1,8 @@
+
+> trioz-monorepo@0.1.0 lint
+> npm run lint -w apps/web
+
+
+> trioz@0.1.0 lint
+> eslint src/ --quiet
+

@@ -6,7 +6,7 @@ vi.mock("next/navigation",()=>({useRouter:()=>({push:vi.fn()})}));
 vi.mock("@/components/admin/PaymentRequisiteManager",()=>({default:()=> <div>Requisite manager</div>}));
 vi.mock("@/components/admin/PaymentLinkManager",()=>({default:()=> <div>Payment link manager</div>}));
 import AdminPaymentsPage from "@/app/admin/payments/page";
-const settings={premium_price_month:"299",vpn_price_month:"199",pay_sbp_enabled:"1",vpnpay_sbp_enabled:"1",vpnpay_same_as_premium:"0",bizpay_same_as_premium:"0",pay_acquiring_enabled:"1",vpnpay_acquiring_enabled:"1",pay_acquiring_provider:"CloudPayments",vpnpay_acquiring_provider:"CloudPayments",pay_acquiring_secret_set:"1",vpnpay_acquiring_secret_set:"1"};
+const settings={premium_price_month:"299",vpn_price_month:"199",pay_sbp_enabled:"1",vpnpay_sbp_enabled:"1",vpnpay_same_as_premium:"0",bizpay_same_as_premium:"0",pay_acquiring_enabled:"1",vpnpay_acquiring_enabled:"1",pay_acquiring_provider:"",vpnpay_acquiring_provider:"",pay_acquiring_secret_set:"1",vpnpay_acquiring_secret_set:"1"};
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 async function setup(){
  const fetcher=vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit)=>({ok:true,json:async()=>settings}));vi.stubGlobal("fetch",fetcher);

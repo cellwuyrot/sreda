@@ -29,7 +29,6 @@ export const PREMIUM_PAYMENT_KEYS = [
   "pay_sbp_comment",
   "pay_acquiring_enabled",
   "pay_acquiring_provider",
-  "pay_cloudpayments_public_id",
   "pay_acquiring_link",
   "pay_acquiring_merchant",
   "pay_acquiring_secret",
@@ -55,7 +54,6 @@ export const VPN_PAYMENT_KEYS = [
   "vpnpay_sbp_comment",
   "vpnpay_acquiring_enabled",
   "vpnpay_acquiring_provider",
-  "vpnpay_cloudpayments_public_id",
   "vpnpay_acquiring_link",
   "vpnpay_acquiring_merchant",
   "vpnpay_acquiring_secret",
@@ -68,12 +66,10 @@ export const VPN_PAYMENT_KEYS = [
  * Платёжная ссылка банка (например, b2b.cbrpay.ru) не сообщает сайту о
  * зачислении: об успешной оплате знают только банк и плательщик. Поэтому
  * ссылка выдаётся адресно (одна ссылка = одна подписка), а подтверждение
- * зачисления делает человек. `paylink_auto_activate` оставлен для тех, кто
- * готов включать подписку сразу по нажатию «Я оплатил» (по умолчанию выключено).
+ * зачисления делает человек. Нажатие «Я оплатил» не подтверждает зачисление: доступ выдаёт администратор после сверки.
  */
 export const PAYLINK_KEYS = [
   "paylink_enabled",
-  "paylink_auto_activate",
   "paylink_reserve_minutes",
   "paylink_instruction",
 ] as const;
@@ -130,7 +126,6 @@ export const PAYMENT_DEFAULTS: Record<PaymentKey, string> = {
   pay_sbp_comment: "",
   pay_acquiring_enabled: "0",
   pay_acquiring_provider: "",
-  pay_cloudpayments_public_id: "",
   pay_acquiring_link: "",
   pay_acquiring_merchant: "",
   pay_acquiring_secret: "",
@@ -146,14 +141,12 @@ export const PAYMENT_DEFAULTS: Record<PaymentKey, string> = {
   vpnpay_sbp_comment: "",
   vpnpay_acquiring_enabled: "0",
   vpnpay_acquiring_provider: "",
-  vpnpay_cloudpayments_public_id: "",
   vpnpay_acquiring_link: "",
   vpnpay_acquiring_merchant: "",
   vpnpay_acquiring_secret: "",
   vpnpay_acquiring_comment: "",
 
   paylink_enabled: "0",
-  paylink_auto_activate: "0",
   paylink_reserve_minutes: "60",
   paylink_instruction: "",
 
@@ -239,13 +232,8 @@ export async function readPublicPaymentMethods(): Promise<PublicPaymentMethods> 
     });
   }
 
-  const cloudPaymentsEnabled =
-    config.pay_acquiring_provider.trim().toLowerCase() === "cloudpayments" &&
-    !!config.pay_cloudpayments_public_id;
-
   if (
     config.pay_acquiring_enabled === "1" &&
-    !cloudPaymentsEnabled &&
     (config.pay_acquiring_link || config.pay_acquiring_provider)
   ) {
     methods.push({
@@ -384,13 +372,8 @@ export async function readVpnPaymentMethods(): Promise<PublicPaymentMethods> {
     });
   }
 
-  const vpnCloudPaymentsEnabled =
-    config.vpnpay_acquiring_provider.trim().toLowerCase() === "cloudpayments" &&
-    !!config.vpnpay_cloudpayments_public_id;
-
   if (
     config.vpnpay_acquiring_enabled === "1" &&
-    !vpnCloudPaymentsEnabled &&
     (config.vpnpay_acquiring_link || config.vpnpay_acquiring_provider)
   ) {
     methods.push({

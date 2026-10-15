@@ -1,0 +1,94 @@
+
+> trioz-services-portal@1.0.0 build
+> node scripts/prisma-sync.mjs && prisma generate && next build
+
+[prisma-sync] provider=sqlite
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.23                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 277ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+   ▲ Next.js 15.5.28
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 23.8s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/27) ...
+   Generating static pages (6/27) 
+   Generating static pages (13/27) 
+   Generating static pages (20/27) 
+ ✓ Generating static pages (27/27)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                       Size  First Load JS
+┌ ƒ /                                          8.02 kB         114 kB
+├ ○ /_not-found                                  217 B         103 kB
+├ ƒ /account                                   1.92 kB         108 kB
+├ ƒ /admin                                     32.4 kB         135 kB
+├ ○ /agreement                                   783 B         107 kB
+├ ƒ /api/admin/billing/plans                     217 B         103 kB
+├ ƒ /api/admin/billing/plans/[id]                217 B         103 kB
+├ ƒ /api/admin/clients                           217 B         103 kB
+├ ƒ /api/admin/clients/[id]                      217 B         103 kB
+├ ƒ /api/admin/clients/[id]/reset-password       217 B         103 kB
+├ ƒ /api/admin/commerce                          217 B         103 kB
+├ ƒ /api/admin/integrations                      217 B         103 kB
+├ ƒ /api/admin/integrations/email/test           217 B         103 kB
+├ ƒ /api/admin/integrations/email/verify         217 B         103 kB
+├ ƒ /api/admin/leads                             217 B         103 kB
+├ ƒ /api/admin/leads/[id]                        217 B         103 kB
+├ ƒ /api/admin/leads/[id]/notifications/retry    217 B         103 kB
+├ ƒ /api/admin/orders                            217 B         103 kB
+├ ƒ /api/admin/orders/[id]                       217 B         103 kB
+├ ƒ /api/admin/projects                          217 B         103 kB
+├ ƒ /api/admin/projects/[id]                     217 B         103 kB
+├ ƒ /api/admin/services                          217 B         103 kB
+├ ƒ /api/admin/services/[id]                     217 B         103 kB
+├ ƒ /api/admin/services/[id]/media/[mediaId]     217 B         103 kB
+├ ƒ /api/admin/site-settings                     217 B         103 kB
+├ ƒ /api/auth/csrf                               217 B         103 kB
+├ ƒ /api/auth/login                              217 B         103 kB
+├ ƒ /api/auth/logout                             217 B         103 kB
+├ ƒ /api/auth/tz-id/callback                     217 B         103 kB
+├ ƒ /api/auth/tz-id/link                         217 B         103 kB
+├ ƒ /api/auth/tz-id/login                        217 B         103 kB
+├ ƒ /api/leads                                   217 B         103 kB
+├ ƒ /api/orders                                  217 B         103 kB
+├ ƒ /api/projects/[id]                           217 B         103 kB
+├ ƒ /api/uploads/[file]                          217 B         103 kB
+├ ƒ /dashboard                                   548 B         103 kB
+├ ○ /enter                                     3.46 kB         110 kB
+├ ○ /login                                     3.44 kB         106 kB
+├ ƒ /payment                                     783 B         107 kB
+├ ƒ /plans                                       783 B         107 kB
+├ ƒ /plans/[id]                                2.29 kB         108 kB
+├ ○ /privacy                                     783 B         107 kB
+├ ○ /robots.txt                                  217 B         103 kB
+├ ƒ /services/[slug]                             771 B         107 kB
+└ ƒ /sitemap.xml                                 217 B         103 kB
++ First Load JS shared by all                   103 kB
+  ├ chunks/1255-dc3ddf72a1dc71a7.js            46.6 kB
+  ├ chunks/4bd1b696-f785427dddbba9fb.js        54.2 kB
+  └ other shared chunks (total)                 1.9 kB
+
+
+ƒ Middleware                                   34.3 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
