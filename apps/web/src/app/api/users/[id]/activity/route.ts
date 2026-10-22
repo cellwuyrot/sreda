@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { projectAuditWhere, AUDIT_WINDOW_DAYS } from "@/lib/projectAudit";
 
 // FIX-ADM2: активность пользователя для админ-панели —
 // активные сессии, последние входы, IP устройств, последние действия
@@ -14,6 +15,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
 
+  const since = new Date(Date.now() - AUDIT_WINDOW_DAYS * 86400000);
   const [activeSessions, logins, allSessions, actions] = await Promise.all([
     prisma.userSession.findMany({
       where: { userId: id, active: true },
@@ -22,21 +24,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       take: 20,
     }),
     prisma.userSession.findMany({
-      where: { userId: id },
+      where: { userId: id, createdAt: { gte: since } },
       select: { id: true, ip: true, userAgent: true, createdAt: true },
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
     prisma.userSession.findMany({
-      where: { userId: id, ip: { not: null } },
+      where: { userId: id, ip: { not: null }, lastUsed: { gte: since } },
       select: { ip: true, lastUsed: true },
       orderBy: { lastUsed: "desc" },
       take: 200,
     }),
     prisma.auditLog.findMany({
-      where: { userId: id },
+      where: { ...projectAuditWhere(), userId: id },
       select: { id: true, action: true, target: true, details: true, createdAt: true },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 15,
     }),
   ]);
