@@ -1,0 +1,1 @@
+cmd_Release/wasapi_capture.node := ln -f "Release/obj.target/wasapi_capture.node" "Release/wasapi_capture.node" 2>/dev/null || (rm -rf "Release/wasapi_capture.node" && cp -af "Release/obj.target/wasapi_capture.node" "Release/wasapi_capture.node")
