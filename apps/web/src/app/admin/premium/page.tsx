@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import Spinner from "@/components/ui/Spinner";
 import Link from "next/link";
+import AdminPagination from "@/components/admin/AdminPagination";
 
 import { useAdminBackHref, useAdminBackLabel } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
 interface PremiumUser {
@@ -133,20 +134,20 @@ function ConnectSubscriptionModal({
         className="glass-card p-6 max-w-lg w-full max-h-[88vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold text-white">Подписка + оплата</h3>
-        <p className="text-sm text-gray-400 mt-1">
-          Клиент: <span className="text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
+        <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Подписка + оплата</h3>
+        <p className="text-sm text-neutral-600 dark:text-gray-400 mt-1">
+          Клиент: <span className="text-neutral-900 dark:text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
         </p>
 
         <div className="mt-5 space-y-4">
           <div>
-            <label className="text-sm text-gray-400 mb-2 block">Тариф</label>
+            <label className="text-sm text-neutral-600 dark:text-gray-400 mb-2 block">Тариф</label>
             <div className="grid grid-cols-4 gap-2">
               {(["month", "quarter", "year", "lifetime"] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPlan(p)}
-                  className={`px-2 py-1.5 rounded-lg text-xs transition-all ${plan === p ? "bg-violet-500/25 text-violet-200 border border-violet-400/40" : "bg-dark-700 text-gray-400 border border-white/5 hover:border-white/20"}`}
+                  className={`px-2 py-1.5 rounded-lg text-xs transition-all ${plan === p ? "bg-violet-500/25 text-violet-800 dark:text-violet-200 border border-violet-400/40" : "bg-neutral-100 dark:bg-dark-700 text-neutral-600 dark:text-gray-400 border border-neutral-200 dark:border-white/5 hover:border-white/20"}`}
                 >
                   {PLAN_LABELS[p]}
                 </button>
@@ -155,7 +156,7 @@ function ConnectSubscriptionModal({
           </div>
 
           <div>
-            <label className="text-sm text-gray-400 mb-2 block">Способ оплаты</label>
+            <label className="text-sm text-neutral-600 dark:text-gray-400 mb-2 block">Способ оплаты</label>
             <div className="grid grid-cols-3 gap-2">
               {methodOptions.map((m) => {
                 const on = method === m;
@@ -164,7 +165,7 @@ function ConnectSubscriptionModal({
                   <button
                     key={m}
                     onClick={() => setMethod(m)}
-                    className={`px-2 py-1.5 rounded-lg text-xs transition-all ${on ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40" : "bg-dark-700 text-gray-400 border border-white/5 hover:border-white/20"}`}
+                    className={`px-2 py-1.5 rounded-lg text-xs transition-all ${on ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-400/40" : "bg-neutral-100 dark:bg-dark-700 text-neutral-600 dark:text-gray-400 border border-neutral-200 dark:border-white/5 hover:border-white/20"}`}
                   >
                     {METHOD_LABELS[m]}
                     {!enabled && m !== "manual" && <span className="block text-[9px] text-gray-500">не настроен</span>}
@@ -176,28 +177,28 @@ function ConnectSubscriptionModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">Сумма, ₽</label>
-              <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="299" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
+              <label className="text-sm text-neutral-600 dark:text-gray-400 mb-1 block">Сумма, ₽</label>
+              <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="299" className="w-full bg-neutral-100 dark:bg-dark-700 border border-neutral-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder:text-gray-600" />
             </div>
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">Номер платежа / чек</label>
-              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
+              <label className="text-sm text-neutral-600 dark:text-gray-400 mb-1 block">Номер платежа / чек</label>
+              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-neutral-100 dark:bg-dark-700 border border-neutral-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder:text-gray-600" />
             </div>
           </div>
 
           <div>
-            <label className="text-sm text-gray-400 mb-1 block">Комментарий</label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 resize-none" />
+            <label className="text-sm text-neutral-600 dark:text-gray-400 mb-1 block">Комментарий</label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-neutral-100 dark:bg-dark-700 border border-neutral-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder:text-gray-600 resize-none" />
           </div>
 
           {error && <p className="text-xs text-red-400">{error}</p>}
 
           {history.length > 0 && (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-100 dark:bg-white/5 p-3">
               <p className="text-xs font-medium text-gray-300 mb-2">История подписок</p>
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {history.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                  <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] text-neutral-600 dark:text-gray-400">
                     <span>
                       <span className={h.status === "active" ? "text-emerald-400" : "text-gray-500"}>●</span>{" "}
                       {PLAN_LABELS[h.plan] ?? h.plan} · {METHOD_LABELS[h.paymentMethod] ?? h.paymentMethod} · {h.amount}₽
@@ -210,10 +211,10 @@ function ConnectSubscriptionModal({
           )}
 
           <div className="flex gap-3 pt-1">
-            <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-violet-500/20 text-violet-300 rounded-lg hover:bg-violet-500/40 transition-all text-sm font-medium disabled:opacity-50">
+            <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-violet-500/20 text-violet-700 dark:text-violet-300 rounded-lg hover:bg-violet-500/40 transition-all text-sm font-medium disabled:opacity-50">
               {saving ? "Подключение..." : "Подключить и выдать Premium"}
             </button>
-            <button onClick={onClose} className="flex-1 px-4 py-2 bg-dark-700 text-gray-400 rounded-lg hover:bg-dark-600 transition-all text-sm">
+            <button onClick={onClose} className="flex-1 px-4 py-2 bg-neutral-100 dark:bg-dark-700 text-neutral-600 dark:text-gray-400 rounded-lg hover:bg-neutral-200 dark:hover:bg-dark-600 transition-all text-sm">
               Отмена
             </button>
           </div>
@@ -323,26 +324,26 @@ function ConnectVpnModal({
         className="glass-card p-6 max-w-lg w-full max-h-[88vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold text-white">Подписка «Ускоренный интернет»</h3>
-        <p className="text-sm text-gray-400 mt-1">
-          Клиент: <span className="text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
+        <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Подписка «Ускоренный интернет»</h3>
+        <p className="text-sm text-neutral-600 dark:text-gray-400 mt-1">
+          Клиент: <span className="text-neutral-900 dark:text-white font-medium">{user.name}</span> <span className="text-gray-500">@{user.username}</span>
         </p>
-        <p className="mt-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-[11px] leading-relaxed text-cyan-200">
+        <p className="mt-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-[11px] leading-relaxed text-cyan-800 dark:text-cyan-200">
           Даёт только надёжное соединение. Флаг Premium не выдаётся и не снимается.
         </p>
-        <p className="mt-2 text-xs text-gray-400">
+        <p className="mt-2 text-xs text-neutral-600 dark:text-gray-400">
           Сейчас: {access.vpnAccess ? (access.vpnAccessUntil ? `доступ до ${fmtDate(access.vpnAccessUntil)}` : "бессрочный доступ") : "отдельной подписки нет"}
         </p>
 
         <div className="mt-5 space-y-4">
           <div>
-            <label className="text-sm text-gray-400 mb-2 block">Тариф</label>
+            <label className="text-sm text-neutral-600 dark:text-gray-400 mb-2 block">Тариф</label>
             <div className="grid grid-cols-4 gap-2">
               {(["month", "quarter", "year", "lifetime"] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPlan(p)}
-                  className={`px-2 py-1.5 rounded-lg text-xs transition-all ${plan === p ? "bg-cyan-500/25 text-cyan-200 border border-cyan-400/40" : "bg-dark-700 text-gray-400 border border-white/5 hover:border-white/20"}`}
+                  className={`px-2 py-1.5 rounded-lg text-xs transition-all ${plan === p ? "bg-cyan-500/25 text-cyan-800 dark:text-cyan-200 border border-cyan-400/40" : "bg-neutral-100 dark:bg-dark-700 text-neutral-600 dark:text-gray-400 border border-neutral-200 dark:border-white/5 hover:border-white/20"}`}
                 >
                   {PLAN_LABELS[p]}
                 </button>
@@ -354,7 +355,7 @@ function ConnectVpnModal({
           </div>
 
           <div>
-            <label className="text-sm text-gray-400 mb-2 block">Способ оплаты</label>
+            <label className="text-sm text-neutral-600 dark:text-gray-400 mb-2 block">Способ оплаты</label>
             <div className="grid grid-cols-3 gap-2">
               {(["sbp", "acquiring", "manual"] as const).map((m) => {
                 const on = method === m;
@@ -364,7 +365,7 @@ function ConnectVpnModal({
                   <button
                     key={m}
                     onClick={() => setMethod(m)}
-                    className={`px-2 py-1.5 rounded-lg text-xs transition-all ${on ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40" : "bg-dark-700 text-gray-400 border border-white/5 hover:border-white/20"}`}
+                    className={`px-2 py-1.5 rounded-lg text-xs transition-all ${on ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-400/40" : "bg-neutral-100 dark:bg-dark-700 text-neutral-600 dark:text-gray-400 border border-neutral-200 dark:border-white/5 hover:border-white/20"}`}
                   >
                     {METHOD_LABELS[m]}
                     {/* Повторное сравнение m !== "manual" убрано. Здесь список способов —
@@ -381,28 +382,28 @@ function ConnectVpnModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">Сумма, ₽</label>
-              <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="149" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
+              <label className="text-sm text-neutral-600 dark:text-gray-400 mb-1 block">Сумма, ₽</label>
+              <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="149" className="w-full bg-neutral-100 dark:bg-dark-700 border border-neutral-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder:text-gray-600" />
             </div>
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">Номер платежа / чек</label>
-              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600" />
+              <label className="text-sm text-neutral-600 dark:text-gray-400 mb-1 block">Номер платежа / чек</label>
+              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Напр. чек СБП №…" className="w-full bg-neutral-100 dark:bg-dark-700 border border-neutral-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder:text-gray-600" />
             </div>
           </div>
 
           <div>
-            <label className="text-sm text-gray-400 mb-1 block">Комментарий</label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 resize-none" />
+            <label className="text-sm text-neutral-600 dark:text-gray-400 mb-1 block">Комментарий</label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Необязательно" className="w-full bg-neutral-100 dark:bg-dark-700 border border-neutral-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder:text-gray-600 resize-none" />
           </div>
 
           {error && <p className="text-xs text-red-400">{error}</p>}
 
           {history.length > 0 && (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-100 dark:bg-white/5 p-3">
               <p className="text-xs font-medium text-gray-300 mb-2">История подписок на соединение</p>
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {history.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                  <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] text-neutral-600 dark:text-gray-400">
                     <span>
                       <span className={h.status === "active" ? "text-cyan-400" : "text-gray-500"}>●</span>{" "}
                       {PLAN_LABELS[h.plan] ?? h.plan} · {METHOD_LABELS[h.paymentMethod] ?? h.paymentMethod} · {h.amount}₽
@@ -422,10 +423,10 @@ function ConnectVpnModal({
           )}
 
           <div className="flex gap-3 pt-1">
-            <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/40 transition-all text-sm font-medium disabled:opacity-50">
+            <button onClick={submit} disabled={saving} className="flex-1 px-4 py-2 bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 rounded-lg hover:bg-cyan-500/40 transition-all text-sm font-medium disabled:opacity-50">
               {saving ? "Подключение..." : "Подключить соединение"}
             </button>
-            <button onClick={onClose} className="flex-1 px-4 py-2 bg-dark-700 text-gray-400 rounded-lg hover:bg-dark-600 transition-all text-sm">
+            <button onClick={onClose} className="flex-1 px-4 py-2 bg-neutral-100 dark:bg-dark-700 text-neutral-600 dark:text-gray-400 rounded-lg hover:bg-neutral-200 dark:hover:bg-dark-600 transition-all text-sm">
               Закрыть
             </button>
           </div>
@@ -442,8 +443,14 @@ export default function AdminPremiumPage() {
   const { data: session, status } = useSession();
   const [users, setUsers] = useState<PremiumUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mutationError, setMutationError] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState(false);
+  const [reload, setReload] = useState(0);
   const [connectUser, setConnectUser] = useState<PremiumUser | null>(null);
   // VPN-PLAN: вторая подписка — только туннель, без флага Premium.
   const [vpnUser, setVpnUser] = useState<PremiumUser | null>(null);
@@ -452,20 +459,31 @@ export default function AdminPremiumPage() {
 
   const isAdmin = session?.user?.role === "ADMIN";
 
-  const loadUsers = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/users");
-      const data = await res.json();
-      if (Array.isArray(data)) setUsers(data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  const loadUsers = () => setReload((n) => n + 1);
   useEffect(() => {
-    if (session?.user?.role === "ADMIN" || session?.user?.role === "EDITOR") loadUsers();
-  }, [session]);
+    if (session?.user?.role !== "ADMIN" && session?.user?.role !== "EDITOR") return;
+    const controller = new AbortController();
+    setLoading(true);
+    setError(false);
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ page: String(page), perPage: "15", q: query });
+        const res = await fetch(`/api/users?${params}`, { signal: controller.signal, cache: "no-store" });
+        if (!res.ok) throw new Error("users");
+        const data = await res.json();
+        if (controller.signal.aborted) return;
+        setUsers(data.users);
+        setPages(data.pages);
+        setTotal(data.total);
+        setPage(data.page);
+      } catch {
+        if (!controller.signal.aborted) setError(true);
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [session?.user?.role, page, query, reload]);
 
   useEffect(() => {
     // Цена и включённые способы оплаты — для предзаполнения модалки подписки.
@@ -481,28 +499,22 @@ export default function AdminPremiumPage() {
     }
   }, [session]);
 
-  const filteredUsers = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter((user) =>
-      user.name.toLowerCase().includes(q) ||
-      user.username.toLowerCase().includes(q) ||
-      user.email.toLowerCase().includes(q)
-    );
-  }, [users, query]);
-
   const togglePremium = async (user: PremiumUser) => {
     setSavingId(user.id);
+    setMutationError("");
     try {
       const res = await fetch(`/api/users/${user.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isPremium: !user.isPremium }),
       });
+      if (!res.ok) throw new Error("save");
       if (res.ok) {
         const updated = await res.json();
         setUsers((prev) => prev.map((item) => item.id === user.id ? { ...item, isPremium: updated.isPremium } : item));
       }
+    } catch {
+      setMutationError("Не удалось изменить подписку. Повторите действие.");
     } finally {
       setSavingId(null);
     }
@@ -512,7 +524,7 @@ export default function AdminPremiumPage() {
     setUsers((prev) => prev.map((item) => item.id === userId ? { ...item, isPremium: true } : item));
   }, []);
 
-  if (status === "loading" || loading) {
+  if (status === "loading") {
     return <div className="min-h-screen flex items-center justify-center"><Spinner /></div>;
   }
 
@@ -521,13 +533,13 @@ export default function AdminPremiumPage() {
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-dark-900 py-8 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <Link href={backHref} className="text-sm text-accent hover:opacity-80">{backLabel}</Link>
-            <h1 className="text-3xl font-bold text-white mt-2">Подписки пользователей</h1>
-            <p className="text-gray-400 mt-1">Две независимые подписки: Premium и «Ускоренный интернет». Сроки и платежи у каждой свои.</p>
+            <h1 className="text-3xl font-bold text-neutral-900 dark:text-white mt-2">Подписки пользователей</h1>
+            <p className="text-neutral-600 dark:text-gray-400 mt-1">Две независимые подписки: Premium и «Ускоренный интернет». Сроки и платежи у каждой свои.</p>
           </div>
-          <div className="px-4 py-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-300 text-sm">
+          <div className="px-4 py-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-700 dark:text-amber-300 text-sm">
             Администраторы получают premium автоматически
           </div>
         </div>
@@ -535,10 +547,10 @@ export default function AdminPremiumPage() {
         {isAdmin && (
           <div className="glass-card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-white">Реквизиты для оплаты</h2>
-              <p className="text-xs text-gray-400">Настройте СБП и интернет-эквайринг, на которые поступает оплата от клиентов.</p>
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Реквизиты для оплаты</h2>
+              <p className="text-xs text-neutral-600 dark:text-gray-400">Настройте СБП и интернет-эквайринг, на которые поступает оплата от клиентов.</p>
             </div>
-            <Link href="/admin/payments" className="shrink-0 rounded-xl px-4 py-2 text-xs font-medium bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 transition-colors">
+            <Link href="/admin/payments" className="shrink-0 rounded-xl px-4 py-2 text-xs font-medium bg-violet-500/15 text-violet-700 dark:text-violet-300 hover:bg-violet-500/25 transition-colors">
               Открыть платёжные реквизиты →
             </Link>
           </div>
@@ -547,21 +559,24 @@ export default function AdminPremiumPage() {
         <div className="glass-card p-5 space-y-4">
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Выдача подписок</h2>
-              <p className="text-sm text-gray-400">Подписки управляются отдельно от ролей. Подписка «Ускоренный интернет» не выдаёт возможности Premium.</p>
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">Выдача подписок</h2>
+              <p className="text-sm text-neutral-600 dark:text-gray-400">Подписки управляются отдельно от ролей. Подписка «Ускоренный интернет» не выдаёт возможности Premium.</p>
             </div>
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+              aria-label="Поиск пользователей"
               placeholder="Поиск по имени, username или email"
-              className="w-full sm:w-80 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder:text-gray-500 outline-none"
+              className="w-full sm:w-80 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-100 dark:bg-white/5 px-4 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-gray-500 outline-none"
             />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          {mutationError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{mutationError}</p>}
+          <p className="text-xs text-neutral-600 dark:text-gray-400 sm:hidden">Таблицу можно прокручивать вправо, чтобы увидеть действия.</p>
+          <div role="region" aria-label="Таблица подписок пользователей" tabIndex={0} className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
               <thead>
-                <tr className="text-left text-gray-400 border-b border-white/10">
+                <tr className="text-left text-neutral-600 dark:text-gray-400 border-b border-neutral-200 dark:border-white/10">
                   <th className="py-3 pr-4">Пользователь</th>
                   <th className="py-3 pr-4">Email</th>
                   <th className="py-3 pr-4">Premium</th>
@@ -571,7 +586,10 @@ export default function AdminPremiumPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((user) => {
+                {(loading || error || users.length === 0) && <tr><td colSpan={6} className="p-6 text-center">
+                  {loading ? <Spinner className="mx-auto" /> : error ? <div role="alert">Не удалось загрузить пользователей. <button onClick={loadUsers} className="underline">Повторить</button></div> : "Пользователи не найдены"}
+                </td></tr>}
+                {!loading && !error && users.map((user) => {
                   const effectivePremium = hasPremium(user);
                   /* VPN-PLAN: туннель даёт любое из двух оснований — так же считает
                      сервер в lib/vpn.ts. Показывать только флаг подписки было бы ложью:
@@ -582,21 +600,21 @@ export default function AdminPremiumPage() {
                     ? vpnDays == null ? "Подписка — бессрочно" : `Подписка — ${vpnDays} дн.`
                     : effectivePremium ? "По Premium" : "Нет";
                   return (
-                    <tr key={user.id} className="border-b border-white/5 text-gray-200">
+                    <tr key={user.id} className="border-b border-neutral-200 dark:border-white/5 text-neutral-800 dark:text-gray-200">
                       <td className="py-3 pr-4">
                         <div>
-                          <div className="font-medium text-white">{user.name}</div>
-                          <div className="text-xs text-gray-400">@{user.username}</div>
+                          <div className="font-medium text-neutral-900 dark:text-white">{user.name}</div>
+                          <div className="text-xs text-neutral-600 dark:text-gray-400">@{user.username}</div>
                         </div>
                       </td>
-                      <td className="py-3 pr-4 text-gray-400">{user.email}</td>
+                      <td className="py-3 pr-4 text-neutral-600 dark:text-gray-400">{user.email || "—"}</td>
                       <td className="py-3 pr-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${effectivePremium ? "bg-amber-400/15 text-amber-300" : "bg-white/5 text-gray-400"}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${effectivePremium ? "bg-amber-400/15 text-amber-700 dark:text-amber-300" : "bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-gray-400"}`}>
                           {effectivePremium ? "Есть" : "Нет"}
                         </span>
                       </td>
                       <td className="py-3 pr-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${vpnPlan ? "bg-cyan-400/15 text-cyan-300" : effectivePremium ? "bg-amber-400/10 text-amber-200/80" : "bg-white/5 text-gray-400"}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${vpnPlan ? "bg-cyan-400/15 text-cyan-700 dark:text-cyan-300" : effectivePremium ? "bg-amber-400/10 text-amber-800 dark:text-amber-200/80" : "bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-gray-400"}`}>
                           {vpnLabel}
                         </span>
                         {/* Срок рядом со статусом: без даты «Есть» не говорит, надо ли продлевать. */}
@@ -604,10 +622,10 @@ export default function AdminPremiumPage() {
                           <div className="mt-1 text-[11px] text-gray-500">до {fmtDate(user.vpnAccessUntil)}</div>
                         )}
                         {!vpnPlan && vpnDays != null && vpnDays < 0 && (
-                          <div className="mt-1 text-[11px] text-orange-300/80">срок вышел {fmtDate(user.vpnAccessUntil ?? null)}</div>
+                          <div className="mt-1 text-[11px] text-orange-800 dark:text-orange-300/80">срок вышел {fmtDate(user.vpnAccessUntil ?? null)}</div>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-xs text-gray-400">
+                      <td className="py-3 pr-4 text-xs text-neutral-600 dark:text-gray-400">
                         {user.role === "ADMIN" ? "Авто-premium по роли" : user.isPremium ? "Premium выдан вручную" : vpnPlan ? "Ускоренный интернет" : "Без подписок"}
                       </td>
                       <td className="py-3">
@@ -615,7 +633,7 @@ export default function AdminPremiumPage() {
                           {isAdmin && user.role !== "ADMIN" && (
                             <button
                               onClick={() => setConnectUser(user)}
-                              className="rounded-xl px-3 py-2 text-xs font-medium bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                              className="rounded-xl px-3 py-2 text-xs font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25"
                             >
                               Подписка + оплата
                             </button>
@@ -625,7 +643,7 @@ export default function AdminPremiumPage() {
                           {isAdmin && user.role !== "ADMIN" && (
                             <button
                               onClick={() => setVpnUser(user)}
-                              className="rounded-xl px-3 py-2 text-xs font-medium bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25"
+                              className="rounded-xl px-3 py-2 text-xs font-medium bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/25"
                             >
                               Ускоренный интернет
                             </button>
@@ -633,7 +651,7 @@ export default function AdminPremiumPage() {
                           <button
                             onClick={() => togglePremium(user)}
                             disabled={savingId === user.id || user.role === "ADMIN"}
-                            className="rounded-xl px-3 py-2 text-xs font-medium bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="rounded-xl px-3 py-2 text-xs font-medium bg-violet-500/15 text-violet-700 dark:text-violet-300 hover:bg-violet-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {user.role === "ADMIN" ? "Назначается автоматически" : savingId === user.id ? "Сохранение..." : user.isPremium ? "Снять premium" : "Выдать premium"}
                           </button>
@@ -645,6 +663,7 @@ export default function AdminPremiumPage() {
               </tbody>
             </table>
           </div>
+          {!error && <AdminPagination page={page} pages={pages} total={total} loading={loading} onPageChange={setPage} />}
         </div>
       </div>
 
