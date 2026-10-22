@@ -12,6 +12,7 @@ import { isOnline, timeAgo } from "@/lib/timeAgo";
 import { useAdminBackHref } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
 import AdminUserTzIdButton from "@/components/admin/AdminUserTzIdButton";
 import AdminBusiness from "@/components/admin/AdminBusiness"; // BUSINESS-PAY
+import AdminPagination from "@/components/admin/AdminPagination";
 import AdminCommunities from "@/components/admin/AdminCommunities"; // ADMCOMM
 interface User {
   id: string;
@@ -310,7 +311,7 @@ export default function AdminUsersPage() {
   }, [session, status, router]);
 
   /* ADMSEARCH: запрос уходит на сервер с задержкой в 300 мс. Фильтровать на
-     клиенте нельзя: в памяти лежит только текущий лист из 20 человек, а искать
+     клиенте нельзя: в памяти лежит только текущий лист из 15 человек, а искать
      надо по всей базе. При новом запросе возвращаемся на первый лист. */
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -329,7 +330,7 @@ export default function AdminUsersPage() {
     const current = ++requestId.current;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), perPage: "20" });
+      const params = new URLSearchParams({ page: String(page), perPage: "15" });
       if (debouncedQuery) params.set("q", debouncedQuery);
       const res = await fetch(`/api/users?${params.toString()}`);
       const data = await res.json();
@@ -633,28 +634,7 @@ export default function AdminUsersPage() {
         </div>
             )}
 
-            {/* ADMSEARCH: листы по 20 пользователей на странице. */}
-            {pages > 1 && (
-              <div className="mt-6 flex items-center justify-center gap-3">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  Назад
-                </button>
-                <span className="text-sm text-gray-400">
-                  Страница {page} из {pages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                  disabled={page >= pages}
-                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  Вперёд
-                </button>
-              </div>
-            )}
+            <div className="mt-6"><AdminPagination page={page} pages={pages} total={total} loading={loading} onPageChange={setPage} /></div>
           </>
         ) : tab === "communities" ? (
           <AdminCommunities />

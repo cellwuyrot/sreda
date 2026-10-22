@@ -27,5 +27,5 @@ export default async function AdminLayout({
     redirect("/");
   }
 
-  return <>{children}</>;
+  return <div className="admin-workspace">{children}</div>;
 }
