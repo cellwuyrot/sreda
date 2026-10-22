@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { projectAuditWhere } from "@/lib/projectAudit";
 import { isAdminRole, isStaffRole } from "@/lib/roles";
 
 /**
@@ -31,9 +32,9 @@ export async function GET() {
       prisma.appeal.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } } }),
       prisma.partnerProject.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
       prisma.auditLog.findMany({
-        where: isAdminRole(session.user.role) ? {} : { userId: session.user.id },
-        orderBy: { createdAt: "desc" },
-        take: 30,
+        where: { ...projectAuditWhere(), ...(isAdminRole(session.user.role) ? {} : { userId: session.user.id }) },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 15,
         select: {
           id: true,
           username: true,

@@ -1,0 +1,160 @@
+{
+  "baseline": {
+    "numTotalTests": 2223,
+    "numPassedTests": 2202,
+    "numFailedTests": 21
+  },
+  "updated": {
+    "numTotalTests": 2266,
+    "numPassedTests": 2245,
+    "numFailedTests": 21
+  },
+  "added_tests": 43,
+  "new_failures": [],
+  "existing_failures": [
+    {
+      "file": "apps/desktop/src/shared/vpnEmbedded.test.ts",
+      "test": "UAPI FIX-WGHANDSHAKE: keepalive задаётся всегда — иначе рукопожатие не начнётся"
+    },
+    {
+      "file": "apps/desktop/src/shared/vpnEmbedded.test.ts",
+      "test": "настройка интерфейса ИНВАРИАНТ: подъём интерфейса не меняет маршрутизацию и DNS"
+    },
+    {
+      "file": "apps/desktop/src/shared/vpnEmbedded.test.ts",
+      "test": "раскладка встроенного клиента имена файлов совпадают с тем, что кладёт vendor-wireguard.mjs"
+    },
+    {
+      "file": "apps/desktop/src/shared/vpnPlan.test.ts",
+      "test": "повышение прав: файл и аргументы для spawn без shell Windows — путь с пробелом и одинарной кавычкой экранируется удвоением"
+    },
+    {
+      "file": "apps/web/src/lib/createNotification.threadGrouping.test.ts",
+      "test": "bulk notification grouping повторный @everyone по тому же Thread обновляет существующую строку"
+    },
+    {
+      "file": "apps/web/src/app/api/dm/route.test.ts",
+      "test": "GET /api/dm по умолчанию ищет только PERSONAL диалоги"
+    },
+    {
+      "file": "apps/web/src/app/api/dm/route.test.ts",
+      "test": "GET /api/dm мусорное значение ?kind=что-то откатывается на PERSONAL"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "тип файла с кодеками ИНВАРИАНТ: video/webm;codecs=vp9 принимается как видео"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "тип файла с кодеками video/webm;codecs=vp8,opus — тоже видео"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "тип файла с кодеками ИНВАРИАНТ: audio/webm;codecs=opus принимается как голос"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "тип файла с кодеками тип без параметров работает как раньше"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "тип файла с кодеками верхний регистр не мешает: тип присылает клиент"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "тип файла с кодеками пробелы вокруг параметров не мешают"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "расширение и тип в ответе ИНВАРИАНТ: webm с кодеками сохраняется как .webm, а не .mp4"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "расширение и тип в ответе голос с кодеками тоже сохраняется как .webm"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "расширение и тип в ответе в ответе тип без параметров: во вложении «;codecs=vp9» ни к чему"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "расширение и тип в ответе видео кладётся в свою папку, голос — в свою"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "признак видеосообщения note=1 у видео даёт isVideoNote"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "признак видеосообщения ИНВАРИАНТ: note=1 у звука не даёт isVideoNote"
+    },
+    {
+      "file": "apps/web/src/app/api/messages/upload/route.test.ts",
+      "test": "признак видеосообщения длительность из запроса доезжает до вложения"
+    },
+    {
+      "file": "apps/web/src/app/api/admin/vpn/subscriptions/route.test.ts",
+      "test": "POST /api/admin/vpn/subscriptions — продление досрочное продление считается от конца действующего срока, а не от сегодня"
+    }
+  ],
+  "checks": {
+    "web_typecheck": "passed",
+    "web_lint": "passed",
+    "tz_id_typecheck": "passed",
+    "production_build": "passed",
+    "visual": "8 viewport/theme combinations, 4 error/empty states, subscription modal; mocked API and authentication, no production DB"
+  },
+  "visual": {
+    "report": [
+      {
+        "screen": "premium",
+        "theme": "light",
+        "width": 1440,
+        "scroll": 1430
+      },
+      {
+        "screen": "premium",
+        "theme": "light",
+        "width": 390,
+        "scroll": 390
+      },
+      {
+        "screen": "premium",
+        "theme": "dark",
+        "width": 1440,
+        "scroll": 1430
+      },
+      {
+        "screen": "premium",
+        "theme": "dark",
+        "width": 390,
+        "scroll": 390
+      },
+      {
+        "screen": "logs",
+        "theme": "light",
+        "width": 1440,
+        "scroll": 1430
+      },
+      {
+        "screen": "logs",
+        "theme": "light",
+        "width": 390,
+        "scroll": 390
+      },
+      {
+        "screen": "logs",
+        "theme": "dark",
+        "width": 1440,
+        "scroll": 1430
+      },
+      {
+        "screen": "logs",
+        "theme": "dark",
+        "width": 390,
+        "scroll": 390
+      }
+    ],
+    "errors": []
+  }
+}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { positiveInteger } from "@/lib/adminPagination";
 
 /**
  * ADM-USERS: список пользователей админ-панели — с поиском и листами.
@@ -12,7 +13,7 @@ import prisma from "@/lib/prisma";
  *
  * ── Обратная совместимость ──────────────────────────────────────
  *
- * Этот же маршрут дёргают ещё две страницы — «Значки» и «Премиум», и обе
+ * Этот же маршрут дёргают ещё страница — «Значки», которая
  * ждут голый массив (`.then(setUsers)`). Поэтому форма ответа зависит от
  * запроса: без параметров — старый массив целиком, с параметрами листания —
  * конверт `{ users, total, page, pages, perPage }`. Так новая страница пользователей
@@ -20,7 +21,7 @@ import prisma from "@/lib/prisma";
  */
 
 /** Сколько пользователей на одном листе по умолчанию. */
-export const USERS_PER_PAGE = 20;
+export const USERS_PER_PAGE = 15;
 /** Потолок размера листа: чтобы `?perPage=100000` не вернул всю таблицу. */
 const MAX_PER_PAGE = 100;
 
@@ -78,15 +79,12 @@ export async function GET(req: Request) {
   if (!paginated) {
     const users = await prisma.user.findMany({
       select,
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
     return NextResponse.json(users);
   }
 
-  const perPageRaw = Number(searchParams.get("perPage"));
-  const perPage = Number.isFinite(perPageRaw) && perPageRaw > 0
-    ? Math.min(Math.floor(perPageRaw), MAX_PER_PAGE)
-    : USERS_PER_PAGE;
+  const perPage = positiveInteger(searchParams.get("perPage"), USERS_PER_PAGE, MAX_PER_PAGE);
 
   const total = await prisma.user.count({ where });
   const pages = Math.max(1, Math.ceil(total / perPage));
@@ -94,13 +92,12 @@ export async function GET(req: Request) {
   /* Номер листа зажимаем в границы УЖЕ после подсчёта. Случай из жизни:
      админ стоит на пятом листе и вводит поиск, под который подходят три
      человека. Без зажима он увидел бы пустой экран вместо найденного. */
-  const pageRaw = Number(searchParams.get("page"));
-  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.min(Math.floor(pageRaw), pages) : 1;
+  const page = Math.min(positiveInteger(searchParams.get("page"), 1), pages);
 
   const users = await prisma.user.findMany({
     where,
     select,
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     skip: (page - 1) * perPage,
     take: perPage,
   });

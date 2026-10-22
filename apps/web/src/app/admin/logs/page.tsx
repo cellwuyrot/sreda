@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import AdminPagination from "@/components/admin/AdminPagination";
 
 import { useAdminBackHref, useAdminBackLabel } from "@/components/admin/useAdminBackHref"; // FIX-EDR2
 interface AuditLog {
@@ -20,11 +21,11 @@ interface AuditLog {
 }
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
-  create: { label: "Создание", color: "text-green-400" },
-  update: { label: "Изменение", color: "text-blue-400" },
-  delete: { label: "Удаление", color: "text-red-400" },
-  ban: { label: "Бан", color: "text-orange-400" },
-  unban: { label: "Разбан", color: "text-emerald-400" },
+  create: { label: "Создание", color: "text-green-700 dark:text-green-400" },
+  update: { label: "Изменение", color: "text-blue-700 dark:text-blue-400" },
+  delete: { label: "Удаление", color: "text-red-700 dark:text-red-400" },
+  ban: { label: "Бан", color: "text-orange-700 dark:text-orange-400" },
+  unban: { label: "Разбан", color: "text-emerald-700 dark:text-emerald-400" },
 };
 
 const TARGET_LABELS: Record<string, string> = {
@@ -33,7 +34,10 @@ const TARGET_LABELS: Record<string, string> = {
   SiteContent: "Контент сайта",
   AISettings: "Настройки ИИ",
   Badge: "Бейдж",
-  Group: "Группа",
+  PremiumSubscription: "Подписка Premium",
+  VpnSubscription: "Ускоренный интернет",
+  PaymentSettings: "Настройки оплаты",
+  TzIdProjectRole: "Роль проекта TZ ID",
 };
 
 function formatTime(dateStr: string): string {
@@ -68,6 +72,8 @@ export default function AdminLogsPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [filterAction, setFilterAction] = useState("");
 
   useEffect(() => {
@@ -79,19 +85,23 @@ export default function AdminLogsPage() {
   useEffect(() => {
     if (session?.user?.role !== "ADMIN" && session?.user?.role !== "EDITOR") return;
 
+    const controller = new AbortController();
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "50" });
+    setError(false);
+    const params = new URLSearchParams({ page: String(page) });
     if (filterAction) params.set("action", filterAction);
-
-    fetch(`/api/admin/logs?${params}`)
-      .then((r) => r.json())
+    fetch(`/api/admin/logs?${params}`, { signal: controller.signal, cache: "no-store" })
+      .then((r) => { if (!r.ok) throw new Error("logs"); return r.json(); })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setLogs(data.logs || []);
         setTotal(data.total || 0);
+        setPage(data.page || 1);
       })
-      .catch(() => setLogs([]))
-      .finally(() => setLoading(false));
-  }, [session, page, filterAction]);
+      .catch(() => { if (!controller.signal.aborted) setError(true); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [session?.user?.role, page, filterAction, retry]);
 
   if (status === "loading") {
     return (
@@ -103,7 +113,7 @@ export default function AdminLogsPage() {
 
   if (session?.user?.role !== "ADMIN" && session?.user?.role !== "EDITOR") return null;
 
-  const totalPages = Math.ceil(total / 50);
+  const totalPages = Math.max(1, Math.ceil(total / 15));
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-dark-900 py-8 px-4">
@@ -115,7 +125,7 @@ export default function AdminLogsPage() {
         >
           <Link
             href={backHref}
-            className="text-sm text-gray-400 hover:text-white transition-colors mb-2 inline-block"
+            className="text-sm text-neutral-600 dark:text-gray-400 hover:text-violet-600 dark:hover:text-white transition-colors mb-2 inline-block"
           >
             {backLabel}
           </Link>
@@ -123,7 +133,7 @@ export default function AdminLogsPage() {
             Логи редактора сайта
           </h1>
           <p className="text-neutral-500 dark:text-gray-400">
-            Журнал действий администраторов и редакторов
+            Действия проекта за последние 30 дней. Личные действия сообществ и переписка не отображаются.
           </p>
         </motion.div>
 
@@ -133,8 +143,8 @@ export default function AdminLogsPage() {
               onClick={() => { setFilterAction(""); setPage(1); }}
               className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
                 !filterAction
-                  ? "bg-cyan-400/20 text-cyan-400 border border-cyan-400/30"
-                  : "text-gray-400 hover:text-white hover:bg-white/5"
+                  ? "bg-violet-500/10 text-violet-700 border border-violet-500/30 dark:bg-cyan-400/20 dark:text-cyan-400 dark:border-cyan-400/30"
+                  : "text-neutral-600 dark:text-gray-400 hover:text-violet-600 dark:hover:text-white hover:bg-white/5"
               }`}
             >
               Все
@@ -146,7 +156,7 @@ export default function AdminLogsPage() {
                 className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
                   filterAction === key
                     ? `bg-white/10 ${color} border border-white/20`
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                    : "text-neutral-600 dark:text-gray-400 hover:text-violet-600 dark:hover:text-white hover:bg-white/5"
                 }`}
               >
                 {label}
@@ -160,12 +170,16 @@ export default function AdminLogsPage() {
             <div className="p-8 text-center">
               <Spinner className="mx-auto" />
             </div>
+          ) : error ? (
+            <div role="alert" className="p-6 text-center text-red-600 dark:text-red-300">Не удалось загрузить журнал.
+              <button onClick={() => setRetry((n) => n + 1)} className="ml-3 underline">Повторить</button>
+            </div>
           ) : logs.length === 0 ? (
             <div className="p-8 text-center text-gray-400">
               Логи отсутствуют
             </div>
           ) : (
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-neutral-200 dark:divide-white/5">
               {logs.map((log, i) => {
                 const actionInfo = ACTION_LABELS[log.action] || { label: log.action, color: "text-gray-400" };
                 const targetLabel = TARGET_LABELS[log.target] || log.target;
@@ -178,7 +192,7 @@ export default function AdminLogsPage() {
                     transition={{ delay: i * 0.02 }}
                     className="p-4 hover:bg-white/5 transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className={`text-sm font-medium ${actionInfo.color}`}>
@@ -190,12 +204,12 @@ export default function AdminLogsPage() {
                           </span>
                         </div>
                         {log.details && (
-                          <p className="text-sm text-neutral-500 dark:text-gray-400 truncate">
+                          <p className="text-sm text-neutral-600 dark:text-gray-400 whitespace-pre-wrap break-words">
                             {log.details}
                           </p>
                         )}
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="sm:text-right shrink-0">
                         <div className="text-sm font-medium text-neutral-700 dark:text-gray-200">
                           @{log.username}
                         </div>
@@ -210,29 +224,7 @@ export default function AdminLogsPage() {
             </div>
           )}
 
-          {totalPages > 1 && (
-            <div className="p-4 border-t border-white/5 flex items-center justify-between">
-              <span className="text-sm text-gray-400">
-                Страница {page} из {totalPages} ({total} записей)
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-white/5 text-gray-300 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  ← Назад
-                </button>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-white/5 text-gray-300 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  Далее →
-                </button>
-              </div>
-            </div>
-          )}
+          {!error && <AdminPagination page={page} pages={totalPages} total={total} loading={loading} onPageChange={setPage} />}
         </div>
       </div>
     </div>
