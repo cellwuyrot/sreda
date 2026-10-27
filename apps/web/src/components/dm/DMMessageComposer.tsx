@@ -23,6 +23,10 @@ import { CHAT_ATTACHMENT_ACCEPT } from "@/lib/attachmentTypes";
 import { ShieldIcon, XIcon } from "@/components/ui/ConnectIcons";
 
 interface DMMessageComposerProps {
+  personal?: boolean;
+  sendOnEnter?: boolean;
+  attachmentsAllowed?: boolean;
+  onEditAttachment?: (attachment: Attachment) => void;
   input: string;
   onInputChange: (v: string) => void;
   onSend: (e: React.FormEvent) => void;
@@ -80,7 +84,7 @@ interface DMMessageComposerProps {
  */
 export default function DMMessageComposer(props: DMMessageComposerProps) {
   const {
-    input,
+    input, personal = false, sendOnEnter = true, attachmentsAllowed = true, onEditAttachment,
     onInputChange,
     onSend,
     onPaste,
@@ -194,6 +198,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
         </div>
       )}
 
+      {onEditAttachment && pendingAttachments.some(a => a.isImage) && <div className="px-3 py-1 flex flex-wrap gap-2">{pendingAttachments.filter(a => a.isImage).map(a => <button type="button" key={a.url} disabled={fileUploading || sending} onClick={() => onEditAttachment(a)} className="min-h-11 max-w-full rounded-lg border border-[var(--cn-border)] px-3 text-sm truncate">Изменить: {a.name}</button>)}</div>}
       {/* Input */}
       <div className="relative z-20 border-t border-[var(--cn-border)] bg-[var(--cn-main)]/85 backdrop-blur-md">
         {/* Extra tools panel */}
@@ -246,9 +251,9 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
             onDragOver={onDragOver}
             onDragLeave={onDragLeave}
             onDrop={onDrop}
-            className={`relative flex flex-wrap gap-2 items-end rounded-[22px] border transition-all duration-200 px-2 py-1.5 focus-within:ring-2 focus-within:ring-violet-400/30 dark:focus-within:ring-cyan-400/25 focus-within:border-violet-400/70 dark:focus-within:border-cyan-400/60 focus-within:shadow-lg ${isDragOver ? "bg-violet-50 dark:bg-cyan-900/10 border-violet-300 dark:border-cyan-700" : "border-[var(--cn-border)] bg-[var(--cn-card)]"}`}
+            className={`relative flex flex-wrap gap-2 items-end ${personal ? "rounded-xl" : "rounded-[22px]"} border transition-all duration-200 px-2 py-1.5 focus-within:ring-2 focus-within:ring-violet-400/30 dark:focus-within:ring-cyan-400/25 focus-within:border-violet-400/70 dark:focus-within:border-cyan-400/60 focus-within:shadow-lg ${isDragOver ? "bg-violet-50 dark:bg-cyan-900/10 border-violet-300 dark:border-cyan-700" : "border-[var(--cn-border)] bg-[var(--cn-card)]"}`}
           >
-            {fileUploading ? (
+            {!attachmentsAllowed ? <button type="button" onClick={onToggleFormatBar} className="min-w-11 min-h-11 text-sm" aria-label="Форматирование сообщения">Aa</button> : fileUploading ? (
               <span className="w-11 h-11 shrink-0 inline-flex items-center justify-center text-neutral-400"><Spinner size="sm" tone="current" /></span>
             ) : (
               <PlusMenu
@@ -307,7 +312,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
                 onPaste={onPaste}
                 onKeyDown={(e) => {
                   if (mentions.handleKeyDown(e, input)) return;
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing && (sendOnEnter ? !e.shiftKey : e.ctrlKey || e.metaKey)) {
                     e.preventDefault();
                     onSend(e as unknown as React.FormEvent);
                   }
@@ -338,7 +343,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
               </button>
-            ) : (
+            ) : !attachmentsAllowed ? <span className="min-w-11 min-h-11 flex items-center justify-center text-xs text-[var(--cn-text-dim)]" title="В защищённой переписке пока поддерживается только текст"><ShieldIcon size={18}/></span> : (
               /* На телефоне — запись с мини-редактором: короткое нажатие
                  переключает микрофон и квадрат, удержание пишет, отпускание
                  ставит паузу. В защищённом режиме квадрат не предлагаем: файлы
@@ -355,6 +360,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
               )
             )}
           </form>
+          {personal && <div className="pt-2 px-1 flex flex-wrap justify-between gap-1 text-sm text-[var(--cn-muted)]"><span className="hidden sm:inline">{sendOnEnter ? "Enter — отправить · Shift + Enter — строка" : "Enter — строка · Ctrl/⌘ + Enter — отправить"}</span><span>{e2eeEnabled ? "Защищённая переписка · только текст · без автоудаления" : "Обычная переписка · без E2EE"}</span></div>}
         </div>
       </div>
     </>

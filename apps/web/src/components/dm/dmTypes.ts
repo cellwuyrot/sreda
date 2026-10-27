@@ -100,6 +100,8 @@ export interface DMReaction {
 export interface Message {
   id: string;
   content: string;
+  clientMessageId?: string | null;
+  replyQuote?: string | null;
   userId: string;
   edited: boolean;
   deleted: boolean;

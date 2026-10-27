@@ -1,0 +1,61 @@
+{
+  "release": "personal-chat-2026-10-27",
+  "baseArchive": "sreda-main-reviewed-2026-10-27.zip",
+  "baseArchiveSha256": "20caa02f35ccda545f6456d1e790d6cb86027c6ce26c424a8a773f4f559fa4ef",
+  "modified": {
+    "apps/web/prisma/schema.prisma": "9b6114464d57468528e5d2108507a83979cca1f96f45373fad340728b5ebdfe8",
+    "apps/web/src/app/api/dm/[id]/attachments/route.ts": "a52eec7d9a45f8eb416b5e33e7fac7ee7b3c641ac758f2bc5c9ad5f308b596e4",
+    "apps/web/src/app/api/dm/[id]/export/route.ts": "ba6c90bdeeebf9354137b7692149549ef37555b4f643d183b3919865d3d6b22a",
+    "apps/web/src/app/api/dm/[id]/route.ts": "116fc2f3d591e54531a1f15163ab2f50e42ef56f2cc925c4695718a3a13256d4",
+    "apps/web/src/app/api/dm/read/route.ts": "a242ac228ba7d9dc65227d0ac14b4c42882e0410692992bb636a9034bc0255c2",
+    "apps/web/src/app/api/messages/upload/route.test.ts": "015df257c6ce4d2476ea37098222e9ffd6d37e3e6c8a960880574e287d853bf8",
+    "apps/web/src/app/api/messages/upload/route.ts": "19a2e50fc85e76ac34fed0e3ff101bb8560ee19c1ce6f534046b2cc8909f7fab",
+    "apps/web/src/components/dm/DMMessageComposer.tsx": "9cf169df61d02151c98ef19191df2ede5f7ea1932b32c46fef0470c0cc5ac5e7",
+    "apps/web/src/components/dm/DMMessageHeader.tsx": "e4b459bdbe8081e43e8158638729e0b95af81224be8b5536c1bf426098cacfd5",
+    "apps/web/src/components/dm/DMMessageList.tsx": "f47349993b35219d5744bbbd4ea6b9b42c224a52b4bb0c65229dcb80d8ee6ee0",
+    "apps/web/src/components/dm/DMPanel.tsx": "282e0c5c1ea4f7cbee29807282d6ba83fccc7653a238774720e5e6fdd675ef4a",
+    "apps/web/src/components/dm/dmTypes.ts": "b6f12dc1efc3a3e08c2ec294f987df7c3fa0eb8e813f1ac4aea058cf1ca6a5dd",
+    "docs/changelog.md": "f76263943c8a24dbdb234c0d6c2a8dc0a83051fa315985170dc9493daee05374"
+  },
+  "added": {
+    "apps/web/prisma/migrations/20261027000000_personal_chat_parity/migration.sql": "8284d1b3441ac36f73485643a7acd81b9d1bb1e41dae8be7f33ba601599a21f9",
+    "apps/web/src/app/api/dm/[id]/search/route.ts": "887e60414f5d70db540b01d8ff29d958a9f4794e9c8ecfba6019cbb392aa286c",
+    "apps/web/src/app/api/dm/personal-parity.test.ts": "06f7af45f3f21e0d9be1e87808d645f2ae237f5ac9539769a990746cc9e70c20",
+    "apps/web/src/app/api/dm/reactions/route.ts": "cb8675dc2dff5c3ec4f2b7ca4500b2f8c673310baac040919e891a07a0e96225",
+    "apps/web/src/components/dm/DMDetailsPanel.tsx": "fdd1a5538d6aa9cb0cf9bac17c763788c3f223e70b32c7d82fa5292d708d5d18",
+    "apps/web/src/components/dm/DMPanel.parity.test.tsx": "20685bac47dfc2f7f3afa9967d70414323cb85fd0c661dca336329ae51b5f677",
+    "apps/web/src/components/dm/DMPersonalHeader.tsx": "f0906029b85dc54a0e42ea382d3546e522ed92764cd44e4563fa8587cd649ea6",
+    "apps/web/src/lib/dmClient.test.ts": "370df0728e77fb92bcf1aa0fcc43484703543249b53e23ef372a9c27999226ba",
+    "apps/web/src/lib/dmClient.ts": "7efdfb34e91416be52731af4631d90356c4590695dfe21fb9f04f487c2253c4d",
+    "apps/web/src/lib/dmPolicy.test.ts": "9b64075806da82312b286bbe8664d8fef228bd437185296e2a6f4b45c22ec922",
+    "apps/web/src/lib/dmPolicy.ts": "b8af4ea62063413912bc00f35fb6a400681a6436a153cd79987f6e5ba02bc3ae",
+    "docs/personal-chat-2026-10-27/API-AND-MIGRATION.md": "33bb0c2a35e39fea4b183f7307d1be489eae8ed5622ffc27faab45da8c44aee6",
+    "docs/personal-chat-2026-10-27/CHANGED-FILES.md": "0198960d220b9abcbe4d825c7d924826a7f75fd739929dec2aad028730aa82d9",
+    "docs/personal-chat-2026-10-27/README-RU.md": "c75bb75eb67db636566ecb22b3bbea0053844c92cce784a2f1255782270665c3",
+    "docs/personal-chat-2026-10-27/VALIDATION.md": "be67cd287b24bebf2826e992a66f5308da78804e5c11cb95e737c8b39062c6d5",
+    "docs/personal-chat-2026-10-27/validation-logs/browser-results.json": "736331ff30854bcdb53402ea9f8562a895af1613662289da1907ef6877658c8c",
+    "docs/personal-chat-2026-10-27/validation-logs/desktop-types.log": "140b24300425729bd945e3f9fd42fea63015b1dfe3ca5ce2941263ec19bc3c1f",
+    "docs/personal-chat-2026-10-27/validation-logs/eslint.log": "904e4abc1e0b93f3e6828ce324e890e8d26da49d7bdb7e88956cc2056d709b89",
+    "docs/personal-chat-2026-10-27/validation-logs/fixture-types.log": "a3c1146a983843a81aef3d7dc1374c722b60210bf80bb0953e2736105ad5ec47",
+    "docs/personal-chat-2026-10-27/validation-logs/production-build.log": "1a67e0d7f1688c282405c76cf08c00ab117ebc0e03d4e4c808b01dae3f0796a2",
+    "docs/personal-chat-2026-10-27/validation-logs/production-web-types.log": "239326d5552d369d89dad510ccb9592d54c4b6a49744e5a77246e710a36b8803",
+    "docs/personal-chat-2026-10-27/validation-logs/upload-recheck.log": "a91134cb6f3f960cc3ddd5d86d57bffc2a3f160a609fa109a8045651c3393e68",
+    "docs/personal-chat-2026-10-27/validation-logs/vitest.log": "0334c06a48da6bb31cfce7d5a70fae190ce53035d694f693c7e1c7ddae42d5cc"
+  },
+  "removed": [],
+  "validationExitCodes": {
+    "tests": "0",
+    "types": "0",
+    "lint": "0",
+    "desktop": "0",
+    "build": "0"
+  },
+  "browserChecks": 16,
+  "fixtureTypes": {
+    "status": "KNOWN-DEBT",
+    "diagnostics": 84,
+    "files": 17
+  },
+  "liveDatabase": "NOT RUN",
+  "manifestExcludesItself": true
+}

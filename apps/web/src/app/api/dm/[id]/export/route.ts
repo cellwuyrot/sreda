@@ -76,6 +76,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  if (conversation.kind === "SECURE") return NextResponse.json({ error: "Экспорт защищённой переписки пока недоступен" }, { status: 400 });
+
   /* Вся переписка от старых сообщений к новым — читать выгрузку будут сверху
      вниз, как обычный текст. Предел в десять тысяч сообщений защищает память
      сервера: выгрузка собирается целиком в памяти, без потоковой отдачи. */
