@@ -11,6 +11,8 @@
  * снова начнёт сравнивать `file.type` целиком, эти проверки покраснеют.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { prismaMock, row } from "@/test/prismaMock";
+vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
@@ -45,6 +47,7 @@ const URL_UPLOAD = "http://localhost/api/messages/upload";
 
 beforeEach(() => {
   mockGetServerSession.mockResolvedValue({ user: { id: "u1", role: "USER" } } as never);
+  prismaMock.directConversation.findUnique.mockResolvedValue(row({ kind: "PERSONAL" }));
   writeFile.mockClear();
   recordUpload.mockClear();
 });
@@ -189,5 +192,18 @@ describe("признак видеосообщения", () => {
   it("длительность из запроса доезжает до вложения", async () => {
     const { body } = await upload("video/webm;codecs=vp9", { note: "1", duration: "12" });
     expect(body.duration).toBe(12);
+  });
+});
+
+// Security boundary must run before processing/writing a media blob.
+describe("secure upload boundary", () => {
+  it("rejects plaintext and claimed encrypted secure upload without disk writes", async () => {
+    prismaMock.directConversation.findUnique.mockResolvedValue(row({ kind: "SECURE" }));
+    for (const extra of [{}, { e2eeIv: "0123456789abcdef" }] as Record<string, string>[]) expect((await upload("audio/webm", extra)).status).toBe(400);
+    expect(writeFile).not.toHaveBeenCalled(); expect(recordUpload).not.toHaveBeenCalled();
+  });
+  it("does not permit dual-scope channel bypass", async () => {
+    expect((await upload("audio/webm", { channelId: "channel-1" })).status).toBe(400);
+    expect(writeFile).not.toHaveBeenCalled();
   });
 });

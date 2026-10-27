@@ -10,8 +10,9 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = (session.user as { id: string }).id;
-  const { conversationId } = await req.json();
-  if (!conversationId) return NextResponse.json({ error: "Missing conversationId" }, { status: 400 });
+  const { conversationId, sendReceipt = true } = await req.json().catch(() => ({}));
+  if (typeof sendReceipt !== "boolean") return NextResponse.json({ error: "Некорректная настройка" }, { status: 400 });
+  if (typeof conversationId !== "string" || !conversationId) return NextResponse.json({ error: "Missing conversationId" }, { status: 400 });
 
   const conv = await prisma.directConversation.findUnique({ where: { id: conversationId } });
   if (!conv) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -43,7 +44,9 @@ export async function POST(req: Request) {
        обновление делает то же самое и проверяется типами. */
     await prisma.directConversation.update({
       where: { id: conversationId },
-      data: conv.user1Id === userId ? { user1ReadAt: now } : { user2ReadAt: now },
+      data: conv.user1Id === userId
+        ? { user1ReadAt: now, ...(sendReceipt ? { user1ReceiptAt: now } : {}) }
+        : { user2ReadAt: now, ...(sendReceipt ? { user2ReceiptAt: now } : {}) },
     });
   }
 
@@ -74,7 +77,7 @@ export async function POST(req: Request) {
         },
   });
 
-  if (participant) {
+  if (participant && sendReceipt) {
     emitToUser(peerId, "dm-read", { conversationId, userId, readAt: now.toISOString() });
   }
 
