@@ -1,0 +1,22 @@
+import { expect, it, vi } from "vitest";
+vi.mock("electron", () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }));
+vi.mock("./config", () => ({ getConfig: () => ({ appUrl: "https://app.example/" }) }));
+vi.mock("./mainWindow", () => ({ getMainWindow: vi.fn() }));
+import { ipcMain } from "electron";
+import { getMainWindow } from "./mainWindow";
+import { trustedIpc } from "./trustedIpc";
+it("invokes privileged handlers only for the main window's trusted top frame", () => {
+  const listener = vi.fn(() => "ok");
+  trustedIpc.handle("privileged-test", listener);
+  const invoke = vi.mocked(ipcMain.handle).mock.calls[0][1];
+  const frame = { url: "https://app.example/channel" };
+  const sender = { mainFrame: frame };
+  vi.mocked(getMainWindow).mockReturnValue({ webContents: sender } as never);
+  expect(invoke({ sender, senderFrame: frame } as never)).toBe("ok");
+  expect(() => invoke({ sender, senderFrame: { url: frame.url } } as never)).toThrow("Untrusted IPC sender");
+  frame.url = "https://evil.example/";
+  expect(() => invoke({ sender, senderFrame: frame } as never)).toThrow("Untrusted IPC sender");
+  frame.url = "https://app.example/";
+  expect(() => invoke({ sender: { mainFrame: frame }, senderFrame: frame } as never)).toThrow("Untrusted IPC sender");
+  expect(listener).toHaveBeenCalledTimes(1);
+});

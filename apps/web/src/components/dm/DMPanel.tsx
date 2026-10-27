@@ -484,7 +484,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   useEffect(() => {
     if (!currentUserId) return;
     let alive = true;
-    getOrCreateKeyPair()
+    setMyPrivateKey(null);
+    setPeerPublicKey(null);
+    setKeyConflict(false);
+    getOrCreateKeyPair(currentUserId)
       .then(async (kp) => {
         if (!alive) return;
         setMyPrivateKey(kp.privateKey);
@@ -497,26 +500,19 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     };
   }, [currentUserId]);
 
-  // ── Ephemeral secure chat: clean up when tab closes or panel unmounts ──────
-  useEffect(() => {
-    const cleanup = () => navigator.sendBeacon("/api/dm/secure-cleanup");
-    window.addEventListener("beforeunload", cleanup);
-    window.addEventListener("pagehide", cleanup);
-    return () => {
-      window.removeEventListener("beforeunload", cleanup);
-      window.removeEventListener("pagehide", cleanup);
-      // При размонтировании (уход в другой раздел) — тоже чистим
-      void fetch("/api/dm/secure-cleanup", { method: "POST", credentials: "include" }).catch(() => {});
-    };
-  }, []);
+  // Secure conversations are deleted only by explicit per-conversation action.
+  // A tab unmount is not a globally meaningful end-of-conversation signal.
 
   // ── Fetch peer's public key when a conversation opens ─────────────────────
+  const peerKeyRequest = useRef(0);
   const fetchPeerKey = useCallback(async (peerId: string) => {
+    const request = ++peerKeyRequest.current;
+    setPeerPublicKey(null);
     try {
       const res = await fetch(`/api/e2ee?userId=${peerId}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        if (data.publicKey) setPeerPublicKey(data.publicKey);
+        if (request === peerKeyRequest.current) setPeerPublicKey(data.publicKey ?? null);
       }
     } catch {
       /* ignore */
@@ -524,15 +520,20 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   }, []);
 
   // ── Decrypt helper with cache ─────────────────────────────────────────────
-  const decryptCache = useRef<Map<string, string>>(new Map());
+  const decryptCache = useRef(new WeakMap<CryptoKey, Map<string, Map<string, string>>>());
   const decryptContent = useCallback(
     async (content: string): Promise<string> => {
       if (!myPrivateKey || !peerPublicKey || !isE2EEMessage(content)) return content;
-      const cached = decryptCache.current.get(content);
+      const peerVersion = `${peerPublicKey.crv}:${peerPublicKey.x}:${peerPublicKey.y}`;
+      let identities = decryptCache.current.get(myPrivateKey);
+      if (!identities) { identities = new Map(); decryptCache.current.set(myPrivateKey, identities); }
+      let cache = identities.get(peerVersion);
+      if (!cache) { cache = new Map(); identities.set(peerVersion, cache); }
+      const cached = cache.get(content);
       if (cached !== undefined) return cached;
       try {
         const dec = await decryptMessage(content, myPrivateKey, peerPublicKey);
-        decryptCache.current.set(content, dec);
+        cache.set(content, dec);
         return dec;
       } catch {
         // FIX-E2EE: при ошибке расшифровки НЕ возвращаем сырой шифртекст
@@ -608,7 +609,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     if (!selectedConvId || !otherId) return;
     setInput(localStorage.getItem(`tz-chat-draft:dm:${selectedConvId}`) ?? "");
     requestAnimationFrame(() => textareaRef.current?.focus());
-    decryptCache.current.clear();
+    peerKeyRequest.current++;
     setMessages([]);
     resetWindow();
     setReplyTo(null);

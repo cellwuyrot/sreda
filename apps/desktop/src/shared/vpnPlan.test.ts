@@ -84,7 +84,7 @@ describe("повышение прав: файл и аргументы для spa
     // Путь бинарника — в одинарных кавычках.
     expect(script).toContain("Start-Process -FilePath 'C:\\Program Files\\WireGuard\\wireguard.exe'");
     // Одинарная кавычка в пути профиля удвоена (o''brien), пробелов-ловушек нет.
-    expect(script).toContain("'C:\\Temp\\o''brien\\trioz.conf'");
+    expect(script).toContain('"C:\\Temp\\o\'\'brien\\trioz.conf"');
     expect(script).toContain("-Verb RunAs");
     expect(script).toContain("exit $p.ExitCode");
   });

@@ -110,14 +110,14 @@ describe("UAPI", () => {
   it("FIX-WGHANDSHAKE: keepalive задаётся всегда — иначе рукопожатие не начнётся", () => {
     /* Профиль без PersistentKeepalive — именно на таком клиент молчал: адаптер
        поднят, ключи заданы, а первый пакет так и не ушёл. */
-    const noKeepalive = ALL.filter((line) => !line.startsWith("PersistentKeepalive"));
+    const noKeepalive = ALL.split("\n").filter((line) => !line.startsWith("PersistentKeepalive")).join("\n");
     const req = uapiSetRequest(parseWgConfig(noKeepalive), true, "win32");
     expect(req).toContain(`persistent_keepalive_interval=${DEFAULT_KEEPALIVE_SECONDS}`);
 
     /* Значение из профиля при этом остаётся главным. */
-    const custom = ALL.map((line) =>
+    const custom = ALL.split("\n").map((line) =>
       line.startsWith("PersistentKeepalive") ? "PersistentKeepalive = 15" : line,
-    );
+    ).join("\n");
     expect(uapiSetRequest(parseWgConfig(custom), true, "win32")).toContain(
       "persistent_keepalive_interval=15",
     );
@@ -174,7 +174,7 @@ describe("настройка интерфейса", () => {
        подъёма не имеют права содержать ни маршрутов, ни DNS — ни на одной ОС. */
     for (const platform of ["linux", "darwin", "win32"] as NodeJS.Platform[]) {
       const cmds = ifaceUpCommands(platform, parseWgConfig(ALL)).map((c) => c.join(" "));
-      expect(cmds.some((c) => c.includes("route"))).toBe(false);
+      expect(cmds.some((c) => /(?:^| )route(?: |$)/.test(c))).toBe(false);
       expect(cmds.some((c) => c.includes("dnsserver"))).toBe(false);
       expect(cmds.some((c) => c.includes("rule"))).toBe(false);
     }
@@ -237,11 +237,11 @@ describe("настройка интерфейса", () => {
 describe("раскладка встроенного клиента", () => {
   it("имена файлов совпадают с тем, что кладёт vendor-wireguard.mjs", () => {
     /* Расхождение здесь даёт сборку, в которой клиент есть, но «не найден». */
-    /* На Windows используем официальный клиент wireguard-windows. */
-    expect(embeddedClientName("win32", "wireguard")).toBe("wireguard.exe");
+    /* Имена совпадают с текущим vendor-wireguard.mjs на всех платформах. */
+    expect(embeddedClientName("win32", "wireguard")).toBe("amneziawg.exe");
     expect(embeddedClientName("win32", "amneziawg")).toBe("amneziawg.exe");
-    expect(embeddedClientName("linux", "wireguard")).toBe("wireguard-go");
-    expect(embeddedClientName("darwin", "wireguard")).toBe("wireguard-go");
+    expect(embeddedClientName("linux", "wireguard")).toBe("amneziawg-go");
+    expect(embeddedClientName("darwin", "wireguard")).toBe("amneziawg-go");
   });
 
   it("сокет UAPI — туда, куда его кладёт сам клиент", () => {

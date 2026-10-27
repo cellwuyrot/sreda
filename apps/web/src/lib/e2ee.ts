@@ -18,39 +18,97 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function getOrCreateKeyPair(): Promise<{ publicKeyJwk: JsonWebKey; privateKey: CryptoKey }> {
-  const db = await openDB();
+function accountKey(userId: string): string {
+  if (!userId) throw new Error("Account required for E2EE keys");
+  return `account:${userId}:identity`;
+}
 
-  const existing = await new Promise<StoredKeyPair | undefined>((resolve, reject) => {
+async function readKey(db: IDBDatabase, key: string): Promise<StoredKeyPair | undefined> {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");
-    const req = tx.objectStore(STORE_NAME).get(KEY_ID);
+    const req = tx.objectStore(STORE_NAME).get(key);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
 
-  if (existing) {
-    db.close();
-    return { publicKeyJwk: existing.publicKey, privateKey: existing.privateKey };
-  }
-
-  const keyPair = await crypto.subtle.generateKey(
-    { name: "ECDH", namedCurve: "P-256" },
-    false,
-    ["deriveKey", "deriveBits"]
-  );
-
-  const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
-
+async function writeKey(db: IDBDatabase, key: string, value: unknown): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    store.put({ publicKey: publicKeyJwk, privateKey: keyPair.privateKey }, KEY_ID);
+    tx.objectStore(STORE_NAME).put(value, key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
+}
 
-  db.close();
-  return { publicKeyJwk, privateKey: keyPair.privateKey };
+function samePublic(a: JsonWebKey, b: JsonWebKey): boolean {
+  return a.kty === b.kty && a.crv === b.crv && a.x === b.x && a.y === b.y;
+}
+
+async function serverKey(userId: string): Promise<JsonWebKey | null> {
+  const response = await fetch(`/api/e2ee?userId=${encodeURIComponent(userId)}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw new Error("Cannot verify account key");
+  return (await response.json()).publicKey ?? null;
+}
+
+export async function getOrCreateKeyPair(userId: string): Promise<{ publicKeyJwk: JsonWebKey; privateKey: CryptoKey }> {
+  return withIdentityLock(userId, () => getOrCreateKeyPairUnlocked(userId));
+}
+async function getOrCreateKeyPairUnlocked(userId: string): Promise<{ publicKeyJwk: JsonWebKey; privateKey: CryptoKey }> {
+  const id = accountKey(userId);
+  const db = await openDB();
+  try {
+    // A network error can happen AFTER the server accepted the staged key.
+    // Recover that operation instead of discarding the previous identity.
+    let existing = await readKey(db, id);
+    const pending = await readKey(db, `${id}:pending`);
+    if (pending) {
+      try {
+        const remote = await serverKey(userId);
+        if (remote && samePublic(remote, pending.publicKey)) { await writeKey(db, id, pending); existing = pending; }
+      } catch (error) {
+        // Offline verification must not lock the user out of an intact active
+        // identity. Never promote the unverified pending key in this branch.
+        if (!existing) throw error;
+      }
+    }
+    if (!existing) {
+      const legacy = await readKey(db, KEY_ID);
+      const owner = await new Promise<string | undefined>((resolve, reject) => {
+        const req = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get("legacy-owner");
+        req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+      });
+      if (legacy && (!owner || owner === userId)) {
+        const remote = await serverKey(userId);
+        if (remote && samePublic(remote, legacy.publicKey)) {
+          // Claim and copy atomically: two tabs/accounts cannot both adopt it.
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, "readwrite"); const store = tx.objectStore(STORE_NAME);
+            const claim = store.get("legacy-owner");
+            claim.onsuccess = () => {
+              if (!claim.result || claim.result === userId) { store.put(userId, "legacy-owner"); store.put(legacy, id); }
+            };
+            tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
+          });
+          existing = await readKey(db, id);
+        }
+      }
+    }
+    if (!existing) {
+      const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveKey", "deriveBits"]);
+      const generated = { publicKey: await crypto.subtle.exportKey("jwk", pair.publicKey), privateKey: pair.privateKey };
+      // Compare-and-create inside one IDB transaction (two concurrent tabs).
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite"); const store = tx.objectStore(STORE_NAME);
+        const req = store.get(id); req.onsuccess = () => { if (!req.result) store.put(generated, id); };
+        tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
+      });
+      existing = await readKey(db, id);
+    }
+    if (!existing) throw new Error("Could not store identity");
+    return { publicKeyJwk: existing.publicKey, privateKey: existing.privateKey };
+  } finally { db.close(); }
 }
 
 /**
@@ -270,89 +328,85 @@ export async function decryptFile(
   }
 }
 
-const keyCache = new Map<string, CryptoKey>();
+let keyCache = new WeakMap<CryptoKey, Map<string, CryptoKey>>();
 
 export async function getCachedSharedKey(
   privateKey: CryptoKey,
   peerPublicKeyJwk: JsonWebKey,
   peerId: string
 ): Promise<CryptoKey> {
-  const cached = keyCache.get(peerId);
+  const cacheId = `${peerId}:${peerPublicKeyJwk.crv}:${peerPublicKeyJwk.x}:${peerPublicKeyJwk.y}`;
+  const cache = keyCache.get(privateKey) ?? new Map<string, CryptoKey>();
+  const cached = cache.get(cacheId);
   if (cached) return cached;
 
   const key = await deriveSharedKey(privateKey, peerPublicKeyJwk);
-  keyCache.set(peerId, key);
+  cache.set(cacheId, key);
+  keyCache.set(privateKey, cache);
   return key;
 }
 
 /* ── Backup / Restore ── */
 
-export async function exportKeysToJSON(): Promise<string | null> {
+export async function exportKeysToJSON(userId: string): Promise<string | null> {
   const db = await openDB();
-  const stored = await new Promise<StoredKeyPair | undefined>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const req = tx.objectStore(STORE_NAME).get(KEY_ID);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  db.close();
-  if (!stored) return null;
-
-  let privateJwk: JsonWebKey | null = null;
   try {
-    privateJwk = await crypto.subtle.exportKey("jwk", stored.privateKey);
-  } catch {
-    /* FIX-CRYPTO: здесь раньше СОЗДАВАЛАСЬ новая пара ключей и тихо
-       отправлялась на сервер — попытка СОХРАНИТЬ ключ НАВСЕГДА УНИЧТОЖАЛА
-       всю ранее зашифрованную переписку (старый приватный ключ стирался,
-       и читать старые сообщения больше было нечем). Ключ, созданный
-       неизвлекаемым, выгрузить нельзя — и это надо честно сказать, а не
-       подменять молча. */
-    throw new Error(
-      "Ключ этого устройства создан неизвлекаемым: резервная копия невозможна. " +
-        "Создайте новый ключ на втором устройстве и перенесите его через «Импорт ключа»: " +
-        "так старая переписка останется читаемой."
-    );
-  }
-
-  return JSON.stringify({ publicKey: stored.publicKey, privateKey: privateJwk });
+    const stored = await readKey(db, accountKey(userId));
+    if (!stored) return null;
+    try {
+      const privateKey = await crypto.subtle.exportKey("jwk", stored.privateKey);
+      return JSON.stringify({ version: 2, userId, publicKey: stored.publicKey, privateKey });
+    } catch {
+      throw new Error("Этот ключ неизвлекаемый: экспорт невозможен. Не очищайте данные устройства — без прежнего приватного ключа старая переписка не восстановится. Новый ключ не расшифрует старую историю.");
+    }
+  } finally { db.close(); }
 }
 
-export async function importKeysFromJSON(json: string): Promise<boolean> {
+// Web Locks serialize imports and recovery across tabs on supported browsers.
+// The queue is a same-tab fallback; server compare-and-set remains authoritative.
+const identityQueues = new Map<string, Promise<unknown>>();
+async function withIdentityLock<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+  const name = `e2ee:${accountKey(userId)}`;
+  if (typeof navigator !== "undefined" && navigator.locks) return navigator.locks.request(name, operation);
+  const previous = identityQueues.get(name) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(operation);
+  identityQueues.set(name, next);
+  try { return await next; } finally { if (identityQueues.get(name) === next) identityQueues.delete(name); }
+}
+export async function importKeysFromJSON(json: string, userId: string, confirmReplace = false): Promise<boolean> {
+  return withIdentityLock(userId, () => importKeysUnlocked(json, userId, confirmReplace));
+}
+async function importKeysUnlocked(json: string, userId: string, confirmReplace: boolean): Promise<boolean> {
+  const id = accountKey(userId);
+  let db: IDBDatabase | null = null;
   try {
-    const { publicKey, privateKey: privJwk } = JSON.parse(json);
-    if (!publicKey || !privJwk) return false;
-
-    const importedPrivate = await crypto.subtle.importKey(
-      "jwk",
-      privJwk,
-      { name: "ECDH", namedCurve: "P-256" },
-      true,
-      ["deriveKey", "deriveBits"]
-    );
-
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put({ publicKey, privateKey: importedPrivate }, KEY_ID);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-
-    /* FIX-BUG: публичный ключ уходил СТРОКОЙ (двойной JSON.stringify), а сервер
-       ждёт объект — запрос всегда отклонялся с «Invalid public key», и после
-       переноса ключа собеседник шифровал на старый. Ошибка глоталась тихо. */
-    const res = await fetch("/api/e2ee", {
-      method: "POST",
+    const parsed = JSON.parse(json);
+    if (parsed.userId && parsed.userId !== userId) return false;
+    const { publicKey, privateKey: privateJwk } = parsed;
+    if (!publicKey || !privateJwk || "d" in publicKey || publicKey.crv !== "P-256") return false;
+    const importedPrivate = await crypto.subtle.importKey("jwk", privateJwk, { name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey", "deriveBits"]);
+    const importedPublic = await crypto.subtle.importKey("jwk", publicKey, { name: "ECDH", namedCurve: "P-256" }, false, []);
+    // Validate the actual relation d*G == public point, not just JWK labels.
+    const probe = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+    const a = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: probe.publicKey }, importedPrivate, 256));
+    const b = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: importedPublic }, probe.privateKey, 256));
+    if (a.some((value, i) => value !== b[i])) return false;
+    db = await openDB();
+    const next = { publicKey, privateKey: importedPrivate };
+    // Preserve the old key and stage the new key BEFORE contacting the server.
+    // Failure never overwrites the active key; ambiguous commits are recovered.
+    const old = await readKey(db, id);
+    if (old) await writeKey(db, `${id}:history:${old.publicKey.x}:${old.publicKey.y}`, old);
+    await writeKey(db, `${id}:pending`, next);
+    const response = await fetch("/api/e2ee", {
+      method: "POST", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ publicKey, confirmReplace: true }),
+      body: JSON.stringify({ publicKey, confirmReplace }),
     });
-    if (!res.ok) return false;
-
-    keyCache.clear();
+    if (!response.ok) return false;
+    await writeKey(db, id, next);
+    keyCache = new WeakMap();
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
+  finally { db?.close(); }
 }

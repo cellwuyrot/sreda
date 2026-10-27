@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock, row } from "@/test/prismaMock";
 
+vi.mock("@/lib/connectPermissions", () => ({ getChannelPermissions: vi.fn().mockResolvedValue({ canView: true, canPost: true, channelType: "CALENDAR" }) }));
+vi.mock("@/lib/banCheck", () => ({ checkBan: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/sanitize", () => ({ sanitizeText: (text: string) => text.trim() }));
 
 import { getServerSession } from "next-auth";
-import { PATCH } from "./route";
+import { getChannelPermissions } from "@/lib/connectPermissions";
+import { PATCH, DELETE } from "./route";
 
 const session = vi.mocked(getServerSession);
 const params = { params: Promise.resolve({ id: "event-1" }) };
@@ -17,6 +20,7 @@ beforeEach(() => {
   prismaMock.calendarEvent.findUnique.mockResolvedValue(row({
     id: "event-1",
     authorId: "author-1",
+    channelId: "cal-1",
     start: new Date("2026-09-30T12:00:00.000Z"),
     end: null,
     channel: { groupId: "group-1" },
@@ -37,4 +41,15 @@ describe("PATCH /api/calendar/[id]", () => {
     expect(res.status).toBe(400);
     expect(prismaMock.calendarEvent.update).not.toHaveBeenCalled();
   });
+});
+it("blocks a moderator mutation when channel ACL denies posting", async () => {
+  vi.mocked(getChannelPermissions).mockResolvedValueOnce({ canView: true, canPost: false, channelType: "CALENDAR" } as never);
+  const req = new Request("http://localhost/api/calendar/event-1", { method: "PATCH", body: "{}" });
+  expect((await PATCH(req as never, params)).status).toBe(403);
+  expect(prismaMock.calendarEvent.update).not.toHaveBeenCalled();
+});
+it("blocks deletion after channel view access was revoked", async () => {
+  vi.mocked(getChannelPermissions).mockResolvedValueOnce({ canView: false, canPost: true, channelType: "CALENDAR" } as never);
+  expect((await DELETE(new Request("http://localhost/api/calendar/event-1") as never, params)).status).toBe(403);
+  expect(prismaMock.calendarEvent.delete).not.toHaveBeenCalled();
 });

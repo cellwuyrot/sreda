@@ -6,31 +6,18 @@ import prisma from "@/lib/prisma";
 /**
  * Одноразовые (эфемерные) зашифрованные чаты.
  *
- * POST — удалить все SECURE-разговоры текущего пользователя.
- *        Вызывается через navigator.sendBeacon при закрытии вкладки
- *        и при размонтировании DMPanel.
+ * POST — отклонить устаревший массовый beacon без удаления данных.
+ * Закрытие вкладки не является намерением удалить переписку на всех устройствах.
  *
  * DELETE — удалить конкретный SECURE-разговор (?id=...).
  */
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ ok: false }, { status: 401 });
-  const userId = session.user.id;
-  try {
-    const convs = await prisma.directConversation.findMany({
-      where: { kind: "SECURE", OR: [{ user1Id: userId }, { user2Id: userId }] },
-      select: { id: true },
-    });
-    if (convs.length === 0) return NextResponse.json({ ok: true, deleted: 0 });
-    const ids = convs.map((c) => c.id);
-    await prisma.directMessage.deleteMany({ where: { conversationId: { in: ids } } });
-    await prisma.directConversation.deleteMany({ where: { id: { in: ids } } });
-    return NextResponse.json({ ok: true, deleted: ids.length });
-  } catch (err) {
-    console.error("[secure-cleanup]", err);
-    return NextResponse.json({ ok: false }, { status: 500 });
-  }
+  // Older clients send an unscoped beacon on every navigation. Never let
+  // that destroy conversations still in use on other devices.
+  return NextResponse.json({ error: "Use explicit DELETE with a conversation id" }, { status: 409 });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -45,8 +32,10 @@ export async function DELETE(req: NextRequest) {
       select: { id: true },
     });
     if (!conv) return NextResponse.json({ ok: true, deleted: 0 });
-    await prisma.directMessage.deleteMany({ where: { conversationId: id } });
-    await prisma.directConversation.delete({ where: { id } });
+    await prisma.$transaction([
+      prisma.directMessage.deleteMany({ where: { conversationId: id } }),
+      prisma.directConversation.delete({ where: { id } }),
+    ]);
     return NextResponse.json({ ok: true, deleted: 1 });
   } catch (err) {
     console.error("[secure-cleanup/delete]", err);

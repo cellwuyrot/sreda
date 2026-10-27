@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { LRUCache } from "lru-cache";
 import { rateLimit } from "@/lib/rateLimit";
+import { externalFetch } from "@/lib/externalFetch";
 import { safeUrl } from "@/lib/urlSafety"; // FIX-OGIMG
 
 /**
@@ -73,9 +74,10 @@ async function fetchHead(target: URL, depth = 0): Promise<{ html: string; finalU
   if (depth > MAX_REDIRECTS) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let response: Response | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
-    const res = await fetch(target.toString(), {
-      redirect: "manual",
+    const res = await externalFetch(target, {
       signal: controller.signal,
       headers: {
         // Многие сайты отдают og-теги только «настоящему» браузеру.
@@ -84,8 +86,10 @@ async function fetchHead(target: URL, depth = 0): Promise<{ html: string; finalU
       },
     });
 
+    response = res;
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
+      await res.body?.cancel();
       if (!location) return null;
       const next = safeUrl(new URL(location, target).toString());
       if (!next) return null;
@@ -97,7 +101,7 @@ async function fetchHead(target: URL, depth = 0): Promise<{ html: string; finalU
     if (!type.includes("text/html") && !type.includes("application/xhtml")) return null;
 
     // Читаем по кускам и обрываем на MAX_BYTES: целиком чужую страницу не тянем.
-    const reader = res.body?.getReader();
+    reader = res.body?.getReader();
     if (!reader) return null;
     const decoder = new TextDecoder();
     let html = "";
@@ -115,6 +119,8 @@ async function fetchHead(target: URL, depth = 0): Promise<{ html: string; finalU
     return null;
   } finally {
     clearTimeout(timer);
+    if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    if (response?.body && !response.body.locked) await response.body.cancel().catch(() => {});
   }
 }
 

@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { sanitizeText } from "@/lib/sanitize";
 import prisma from "@/lib/prisma";
+import { getChannelPermissions } from "@/lib/connectPermissions";
+import { checkBan } from "@/lib/banCheck";
 
 // FIX-A2: ADMIN был пропущен в списке ролей с правом редактирования.
 const EDIT_ROLES = ["OWNER", "ADMIN", "MODERATOR"];
@@ -10,9 +12,11 @@ const EDIT_ROLES = ["OWNER", "ADMIN", "MODERATOR"];
 async function loadAndAuthorize(eventId: string, userId: string, userRole?: string) {
   const event = await prisma.calendarEvent.findUnique({
     where: { id: eventId },
-    select: { id: true, authorId: true, start: true, end: true, channel: { select: { groupId: true } } },
+    select: { id: true, channelId: true, authorId: true, start: true, end: true, channel: { select: { groupId: true } } },
   });
   if (!event) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
+  const permission = await getChannelPermissions(userId, event.channelId);
+  if (!permission?.canView || !permission.canPost || permission.channelType !== "CALENDAR") return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   const membership = await prisma.groupMember.findUnique({
     where: { userId_groupId: { userId, groupId: event.channel.groupId } },
   });
@@ -29,6 +33,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const banned = await checkBan(session.user.id);
+  if (banned) return banned;
   const auth = await loadAndAuthorize(id, session.user.id, session.user.role);
   if (auth.error) return auth.error;
 
@@ -77,6 +83,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const banned = await checkBan(session.user.id);
+  if (banned) return banned;
   const auth = await loadAndAuthorize(id, session.user.id, session.user.role);
   if (auth.error) return auth.error;
 

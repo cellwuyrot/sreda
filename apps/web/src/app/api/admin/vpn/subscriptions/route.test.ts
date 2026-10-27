@@ -5,7 +5,7 @@
  *
  * Точка отсчёта берётся из user.vpnAccessUntil (пока доступ ещё действует).
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { prismaMock, row } from "@/test/prismaMock";
 
 // Порядок vi.mock важен: объявляем ДО импорта тестируемого модуля.
@@ -18,6 +18,8 @@ vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 import { getServerSession } from "next-auth";
 
 const { POST } = await import("@/app/api/admin/vpn/subscriptions/route");
+
+afterEach(() => vi.useRealTimers());
 
 const ADMIN = { id: "admin-1", role: "ADMIN", username: "admin", name: "Админ" };
 
@@ -54,6 +56,8 @@ describe("POST /api/admin/vpn/subscriptions — продление", () => {
    * от сегодня — оставшиеся оплаченные дни не сгорают.
    */
   it("досрочное продление считается от конца действующего срока, а не от сегодня", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-15T00:00:00Z"));
     prismaMock.user.findUnique.mockResolvedValue(
       row({ id: "u1", username: "user", vpnAccess: true, vpnAccessUntil: PAID_UNTIL }),
     );

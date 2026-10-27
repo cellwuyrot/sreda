@@ -1,4 +1,5 @@
-import { ipcMain, app, session, dialog } from "electron";
+import { trustedIpc as ipcMain } from "./trustedIpc";
+import { app, session, dialog } from "electron";
 import { createHash } from "crypto";
 import { join } from "path"; // FIX-REPLAY
 import { promises as fsp } from "fs"; // FIX-REPLAY

@@ -1,4 +1,7 @@
-import { session, desktopCapturer, ipcMain } from "electron";
+import { getConfig } from "./config";
+import { trustedAppFrame } from "../shared/ipcTrust";
+import { trustedIpc as ipcMain } from "./trustedIpc";
+import { session, desktopCapturer } from "electron";
 import { IPC } from "../shared/constants";
 import type { ScreenSource, ScreenShareContext } from "../shared/types";
 
@@ -93,14 +96,18 @@ export function setupScreenShare(): void {
     }));
   });
 
-  ses.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(GRANTED_PERMISSIONS.has(permission));
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const frameUrl = details.requestingUrl || wc.getURL();
+    callback(GRANTED_PERMISSIONS.has(permission) && trustedAppFrame(frameUrl, details.isMainFrame === true, getConfig().appUrl));
   });
 
-  ses.setPermissionCheckHandler((_wc, permission) => GRANTED_PERMISSIONS.has(permission));
+  ses.setPermissionCheckHandler((wc, permission, origin, details) =>
+    !!wc && GRANTED_PERMISSIONS.has(permission) && trustedAppFrame(details.requestingUrl || origin, details.isMainFrame === true, getConfig().appUrl),
+  );
 
   ses.setDisplayMediaRequestHandler(
-    async (_request, callback) => {
+    async (request, callback) => {
+      if (!request.frame || !trustedAppFrame(request.frame.url, request.frame === request.frame.top, getConfig().appUrl)) { callback({}); return; }
       const requested = pendingContext;
       // Выбор одноразовый: следующий запрос без нового сообщения не должен
       // молча показать прошлое окно.

@@ -1,0 +1,358 @@
+
+> trioz@0.1.0 test
+> vitest run --maxWorkers=2
+
+
+ RUN  v3.2.7 <project>/apps/web
+
+ ✓ |jsdom| src/components/connect/GlobalSearchModal.test.tsx (3 tests) 1172ms
+   ✓ global search pagination > loads older matches and deduplicates results  309ms
+   ✓ global search pagination > shows a search failure rather than stale matches  322ms
+   ✓ global search pagination > ignores a previous query response even if the transport resolves after abort  540ms
+ ✓ |jsdom| src/components/admin/AdminLists.test.tsx (3 tests) 1308ms
+   ✓ admin lists > shows only 15 users, navigates and resets page on search without losing focus  955ms
+stderr | src/components/connect/ChannelSidebar.voiceMod.test.tsx > порог звания для мер в голосовом канале > обычный участник мер не получает
+Warning: An update to ChannelSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at ChannelSidebar (<project>/apps/web/src/components/connect/ChannelSidebar.tsx:44:3)
+
+stderr | src/components/connect/ChannelSidebar.voiceMod.test.tsx > перенос участника перетаскиванием > обычный участник никого не перетаскивает
+Warning: An update to ChannelSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at ChannelSidebar (<project>/apps/web/src/components/connect/ChannelSidebar.tsx:44:3)
+
+stderr | src/components/connect/ChannelSidebar.voiceMod.test.tsx > перенос участника перетаскиванием > щелчок без перетаскивания никого не переносит
+Warning: An update to ChannelSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at ChannelSidebar (<project>/apps/web/src/components/connect/ChannelSidebar.tsx:44:3)
+
+ ✓ |jsdom| src/components/connect/ChannelSidebar.voiceMod.test.tsx (17 tests) 636ms
+ ✓ |jsdom| src/components/admin/AdminPaymentsPage.test.tsx (4 tests) 386ms
+ ✓ |jsdom| src/components/connect/UserContextMenu.roles.test.tsx (2 tests) 289ms
+ ✓ |jsdom| src/components/connect/overlays/PremiumInfoModal.test.tsx (5 tests) 254ms
+ ✓ |jsdom| src/components/connect/RoleManager.test.tsx (3 tests) 244ms
+ ✓ |jsdom| src/components/connect/GroupDialogs.regression.test.tsx (2 tests) 187ms
+ ✓ |jsdom| src/components/admin/AdminUserTzIdButton.test.tsx (13 tests) 173ms
+ ✓ |jsdom| src/components/ui/VoicePlayer.test.tsx (3 tests) 115ms
+ ✓ |jsdom| src/components/connect/PremiumMark.test.tsx (4 tests) 96ms
+ ✓ |jsdom| src/components/voice/FullscreenButton.test.tsx (2 tests) 112ms
+ ✓ |jsdom| src/components/connect/panelCollapse.test.tsx (7 tests) 73ms
+ ✓ |jsdom| src/components/admin/AdminPagination.test.tsx (2 tests) 88ms
+ ✓ |jsdom| src/components/connect/messageFormat.test.ts (29 tests) 103ms
+ ✓ |jsdom| src/components/dm/DMMessageList.test.tsx (3 tests) 77ms
+ ✓ |jsdom| src/components/connect/ModalBackdrop.test.tsx (3 tests) 60ms
+ ✓ |jsdom| src/components/connect/useDragUser.test.ts (5 tests) 36ms
+ ✓ |jsdom| src/components/ui/VideoNotePlayer.test.tsx (5 tests) 46ms
+ ✓ |jsdom| src/components/connect/replyQuote.test.ts (6 tests) 25ms
+ ✓ |jsdom| src/components/connect/news/types.test.ts (33 tests) 28ms
+ ✓ |node| src/lib/boardBridge.test.ts (7 tests) 10ms
+ ✓ |jsdom| src/components/ui/MentionPopup.test.ts (17 tests) 8ms
+ ✓ |jsdom| src/components/connect/BlockIcons.test.ts (18 tests) 5ms
+ ✓ |jsdom| src/components/connect/LinkPreviewCard.test.ts (9 tests) 3ms
+ ✓ |jsdom| src/hooks/useMessageWindow.test.ts (6 tests) 4ms
+ ✓ |node| src/app/api/dm/[id]/route.test.ts (16 tests) 201ms
+ ✓ |node| src/app/api/admin/servers/route.test.ts (33 tests) 239ms
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > ИНВАРИАНТ: считается прирост счётчика
+AWG report: updated peer=p1 rx=2000 tx=1500
+
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > счётчик упал (интерфейс перезапустили) — прирост берётся целиком
+AWG report: updated peer=p1 rx=1100 tx=550
+
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > ИНВАРИАНТ: ставится отметка свежести учёта
+AWG report: updated peer=p1 rx=1100 tx=600
+
+stdout | src/app/api/servers/report/route.test.ts > учёт трафика из отчёта > срок периода вышел — счётчики начинаются заново
+AWG report: updated peer=p1 rx=1000 tx=1000
+
+ ✓ |node| src/app/api/servers/report/route.test.ts (33 tests) 149ms
+stderr | src/app/api/channels/[id]/posts/route.test.ts > публикация поста > ФИКСАЦИЯ: сбой рассылки не отменяет публикацию
+[news] рассылка не удалась: Error: почта лежит
+    at <project>/apps/web/src/app/api/channels/[id]/posts/route.test.ts:319:32
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/app/api/channels/[id]/posts/route.test.ts (24 tests) 193ms
+ ✓ |node| src/app/api/admin/mail/[address]/send/route.test.ts (6 tests) 187ms
+ ✓ |node| src/app/api/workspace/upload/route.test.ts (10 tests) 166ms
+ ✓ |node| src/app/api/posts/[id]/route.test.ts (23 tests) 122ms
+ ✓ |node| src/app/api/messages/upload/route.test.ts (17 tests) 82ms
+ ✓ |node| src/app/api/admin/builds/route.test.ts (27 tests) 138ms
+ ✓ |node| src/app/api/posts/[id]/comments/route.test.ts (15 tests) 153ms
+ ✓ |node| src/app/api/services/[id]/stages/route.test.ts (11 tests) 125ms
+ ✓ |node| src/app/api/groups/[id]/censor/route.test.ts (22 tests) 107ms
+ ✓ |node| src/app/api/groups/route.test.ts (8 tests) 103ms
+ ✓ |node| src/app/api/mail/ingest/route.test.ts (8 tests) 96ms
+stderr | src/app/api/appeals/[id]/route.test.ts > PATCH /api/appeals/[id] — только для администраторов > сбой уведомления не ломает ответ маршрута — статус по-прежнему 200
+[appeals] не удалось отправить уведомление о статусе ap1 Error: Ошибка уведомления
+    at <project>/apps/web/src/app/api/appeals/[id]/route.test.ts:191:42
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+stderr | src/app/api/appeals/[id]/route.test.ts > GET /api/appeals/[id] — открытие гасит уведомления по заявке > ИНВАРИАНТ: сбой пометки не ломает открытие заявки
+[appeals] не удалось погасить уведомления по заявке ap1 Error: база недоступна
+    at <project>/apps/web/src/app/api/appeals/[id]/route.test.ts:236:52
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/app/api/appeals/[id]/route.test.ts (19 tests) 105ms
+ ✓ |node| src/app/api/groups/[id]/reports/route.test.ts (15 tests) 72ms
+ ✓ |node| src/lib/e2ee.security.test.ts (11 tests) 47ms
+stderr | src/app/api/appeals/[id]/messages/route.test.ts > POST /api/appeals/[id]/messages > сбой уведомления не ломает ответ маршрута — статус по-прежнему 201
+[appeals] не удалось отправить уведомление об ответе ap1 Error: Ошибка уведомления
+    at <project>/apps/web/src/app/api/appeals/[id]/messages/route.test.ts:214:41
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/app/api/appeals/[id]/messages/route.test.ts (16 tests) 71ms
+ ✓ |node| src/app/api/projects/[id]/route.test.ts (11 tests) 76ms
+ ✓ |node| src/app/api/dm/route.test.ts (19 tests) 74ms
+ ✓ |node| src/app/api/workspace/history/route.test.ts (7 tests) 70ms
+ ✓ |node| src/app/api/appeals/route.test.ts (22 tests) 79ms
+ ✓ |node| src/app/api/admin/mail/[address]/route.test.ts (16 tests) 66ms
+ ✓ |node| src/app/api/push/devices/route.test.ts (11 tests) 52ms
+ ✓ |node| src/lib/rateLimit.test.ts (7 tests) 76ms
+ ✓ |node| src/app/api/ignores/route.test.ts (12 tests) 54ms
+ ✓ |node| src/app/api/admin/storage/route.test.ts (13 tests) 51ms
+ ✓ |node| src/app/api/groups/[id]/presence/route.test.ts (8 tests) 48ms
+ ✓ |node| src/app/api/dm/[id]/lock/route.test.ts (11 tests) 94ms
+ ✓ |node| src/app/api/admin/vpn/route.test.ts (10 tests) 117ms
+ ✓ |node| src/lib/workspaceAssets.test.ts (14 tests) 167ms
+ ✓ |node| src/app/api/groups/[id]/reports/[reportId]/route.test.ts (10 tests) 146ms
+ ✓ |node| src/app/api/mail/poll/route.test.ts (1 test) 86ms
+ ✓ |node| src/app/api/workspace/reminders/route.test.ts (10 tests) 115ms
+ ✓ |node| src/lib/wgKeys.test.ts (21 tests) 81ms
+stderr | src/lib/push.test.ts > отправка > ИНВАРИАНТ: ошибка сервера доставки не удаляет устройство
+[push] устройство не приняло сообщение: 503
+
+stderr | src/lib/push.test.ts > отправка > ИНВАРИАНТ: недоступная сеть не ломает вызывающего
+[push] сеть недоступна при отправке Error: сеть недоступна
+    at <project>/apps/web/src/lib/push.test.ts:258:13
+    at mockCall (file://<project>/node_modules/@vitest/spy/dist/index.js:96:15)
+    at spy (file://<project>/node_modules/tinyspy/dist/index.js:47:80)
+    at Module.sendPushToUsers (<project>/apps/web/src/lib/push.ts:238:25)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at <project>/apps/web/src/lib/push.test.ts:260:5
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stderr | src/lib/push.test.ts > отправка > служба не выдала пропуск — отправки нет, и это не ошибка
+[push] служба доставки не выдала пропуск: 401
+
+ ✓ |node| src/lib/push.test.ts (20 tests) 91ms
+ ✓ |node| src/app/api/projects/[id]/chat/route.test.ts (7 tests) 113ms
+ ✓ |node| src/app/api/vpn/me/route.test.ts (28 tests) 64ms
+ ✓ |node| src/lib/awgParams.test.ts (16 tests) 58ms
+stderr | src/lib/appealNotify.test.ts > письма по обращениям > ИНВАРИАНТ: упавшая отправка письма не ломает уведомление
+[appealNotify] письмо не ушло Error: сервис недоступен
+    at <project>/apps/web/src/lib/appealNotify.test.ts:367:40
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/lib/appealNotify.test.ts (26 tests) 55ms
+ ✓ |node| src/lib/connectPermissions.test.ts (42 tests) 35ms
+ ✓ |node| src/lib/vpn.test.ts (61 tests) 58ms
+ ✓ |node| src/lib/amneziaVpnProfile.test.ts (3 tests) 42ms
+ ✓ |node| src/app/api/admin/tz-id/project-admins/route.test.ts (8 tests) 48ms
+ ✓ |node| src/app/api/tz-id/management.test.ts (12 tests) 35ms
+ ✓ |node| src/lib/tzIdProjectApi.test.ts (17 tests) 56ms
+ ✓ |node| src/lib/tzart.test.ts (58 tests) 39ms
+stderr | src/lib/uploadAccess.test.ts > recordUpload > не сообщает об успешной загрузке при отказе индекса владельца
+[uploads] не удалось записать владельца файла messages/fail.webp Error: DB error
+    at <project>/apps/web/src/lib/uploadAccess.test.ts:228:54
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/lib/uploadAccess.test.ts (18 tests) 36ms
+ ✓ |node| src/app/api/channels/[id]/workspace/route.security.test.ts (4 tests) 15ms
+ ✓ |node| src/app/api/admin/users/[id]/tz-id/route.test.ts (8 tests) 29ms
+ ✓ |node| src/app/api/messages/history.test.ts (9 tests) 51ms
+ ✓ |node| src/lib/messageLimits.test.ts (45 tests) 60ms
+ ✓ |vpn-agent| src/rules.test.mjs (54 tests) 57ms
+ ✓ |node| src/app/api/link-preview/image/route.security.test.ts (3 tests) 43ms
+ ✓ |node| src/lib/externalFetch.test.ts (3 tests) 30ms
+ ✓ |node| src/lib/newsPost.test.ts (53 tests) 46ms
+ ✓ |node| src/app/api/admin/logs/route.test.ts (12 tests) 49ms
+ ✓ |node| src/lib/workspaceMerge.test.ts (18 tests) 20ms
+ ✓ |node| src/app/api/e2ee/route.security.test.ts (4 tests) 35ms
+ ✓ |node| src/app/api/editor/overview/privacy.test.ts (3 tests) 12ms
+ ✓ |node| src/lib/createNotification.test.ts (20 tests) 42ms
+stderr | src/lib/appealMail.test.ts > выбор получателей > упавшая отправка одному не срывает отправку остальным
+[appealMail] письмо не ушло: Error: сервис недоступен
+    at <project>/apps/web/src/lib/appealMail.test.ts:130:37
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<project>/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+
+ ✓ |node| src/lib/appealMail.test.ts (13 tests) 39ms
+ ✓ |node| src/lib/businessChat.test.ts (40 tests) 40ms
+ ✓ |node| src/app/api/connect/search/pagination.test.ts (3 tests) 28ms
+ ✓ |node| src/app/api/calendar/route.test.ts (4 tests) 32ms
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос одного файла > ФИКСАЦИЯ: узел не принял файл — локальный на месте, указатель не тронут
+[storage] файл messages/a.webp остался на главном сервере: узел недоступен
+
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос одного файла > ФИКСАЦИЯ: размер на узле не сошёлся — файл считается непринятым
+[storage] файл messages/a.webp остался на главном сервере: на узле 3 байт вместо 31
+
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос одного файла > после сбоя узел уходит в отдых: следующая загрузка идёт на главный сразу
+[storage] файл messages/a.webp остался на главном сервере: узел недоступен
+
+stderr | src/lib/uploadOffload.test.ts > STORAGE-PRIORITY: перенос накопленного > ФИКСАЦИЯ: порция обрывается, как только узел перестал отвечать
+[storage] файл a/1 остался на главном сервере: узел лёг
+
+ ✓ |node| src/lib/uploadOffload.test.ts (18 tests) 29ms
+ ✓ |node| src/lib/identity.test.ts (29 tests) 22ms
+ ✓ |node| src/app/api/workspace/route.security.test.ts (5 tests) 36ms
+ ✓ |node| src/app/api/users/pagination.test.ts (8 tests) 35ms
+ ✓ |node| src/app/api/voice/force-unmute/route.test.ts (10 tests) 22ms
+ ✓ |node| src/lib/objectStore.test.ts (13 tests) 26ms
+ ✓ |node| src/lib/tzIdHub.test.ts (27 tests) 38ms
+ ✓ |node| src/app/api/voice/move-user/route.test.ts (8 tests) 31ms
+ ✓ |node| src/lib/tzIdQr.test.ts (10 tests) 41ms
+ ✓ |node| src/lib/projectConversation.test.ts (10 tests) 23ms
+ ✓ |node| src/app/api/dm/secure-cleanup/route.security.test.ts (3 tests) 56ms
+ ✓ |node| src/lib/storagePlacement.test.ts (14 tests) 39ms
+ ✓ |node| src/lib/projectMail.test.ts (24 tests) 19ms
+ ✓ |node| src/app/api/admin/premium/subscriptions/route.test.ts (4 tests) 23ms
+ ✓ |node| src/lib/voiceMicrophone.test.ts (8 tests) 11ms
+ ✓ |node| src/app/api/admin/vpn/subscriptions/route.test.ts (3 tests) 20ms
+ ✓ |node| src/app/api/calendar/[id]/route.test.ts (3 tests) 19ms
+ ✓ |node| src/lib/postDraft.test.ts (46 tests) 28ms
+ ✓ |node| src/lib/tzId.test.ts (19 tests) 28ms
+ ✓ |node| src/lib/boardTemplates.test.ts (14 tests) 27ms
+ ✓ |node| src/app/api/messages/read/route.test.ts (2 tests) 23ms
+ ✓ |node| src/test/harness.test.ts (3 tests) 5ms
+ ✓ |desktop-shell| src/shared/vpnEmbedded.test.ts (23 tests) 23ms
+ ✓ |node| src/lib/channelParentValidation.test.ts (4 tests) 8ms
+ ✓ |node| src/lib/serverMesh.test.ts (20 tests) 22ms
+ ✓ |node| src/lib/censor.test.ts (34 tests) 26ms
+ ✓ |node| src/lib/mediaNote.test.ts (60 tests) 21ms
+ ✓ |desktop-shell| src/main/winTunnel.test.ts (13 tests) 30ms
+ ✓ |node| src/lib/backStack.test.ts (22 tests) 14ms
+ ✓ |node| src/lib/orderStages.test.ts (32 tests) 28ms
+ ✓ |node| src/app/api/users/[id]/activity/privacy.test.ts (3 tests) 60ms
+ ✓ |node| src/lib/premiumExpiry.test.ts (14 tests) 46ms
+ ✓ |desktop-shell| src/shared/tunnelService.test.ts (23 tests) 36ms
+ ✓ |node| src/lib/groupModeration.test.ts (50 tests) 12ms
+ ✓ |node| src/lib/businessPaymentFlow.test.ts (13 tests) 13ms
+ ✓ |node| src/lib/urlSafety.security.test.ts (12 tests) 21ms
+ ✓ |node| src/lib/communityTemplates.test.ts (12 tests) 12ms
+ ✓ |node| src/app/api/channels/unread/route.test.ts (2 tests) 18ms
+ ✓ |node| src/app/api/payments/links/route.test.ts (1 test) 10ms
+ ✓ |desktop-shell| src/shared/tunnelPolicy.test.ts (18 tests) 12ms
+ ✓ |node| src/lib/onlinePresence.test.ts (11 tests) 19ms
+ ✓ |desktop-shell| src/shared/mediaKeys.test.ts (10 tests) 13ms
+ ✓ |node| src/lib/profileMenu.test.ts (14 tests) 16ms
+ ✓ |node| src/app/api/voice/turn/route.security.test.ts (2 tests) 7ms
+ ✓ |node| src/lib/wgIdentity.test.ts (6 tests) 7ms
+ ✓ |node| src/lib/uploadPaths.test.ts (24 tests) 10ms
+ ✓ |desktop-shell| src/shared/navigation.test.ts (17 tests) 12ms
+ ✓ |node| src/lib/connectionUsage.test.ts (16 tests) 21ms
+ ✓ |node| src/lib/premiumSkin.test.ts (14 tests) 22ms
+ ✓ |node| src/lib/projectAudit.test.ts (12 tests) 17ms
+ ✓ |node| src/lib/builds.test.ts (23 tests) 12ms
+ ✓ |node| src/lib/mailImap.test.ts (7 tests) 11ms
+ ✓ |node| src/lib/mail-kit.test.ts (4 tests) 20ms
+ ✓ |node| src/lib/workspaceHistory.test.ts (10 tests) 14ms
+ ✓ |node| src/lib/attachmentTypes.test.ts (13 tests) 17ms
+ ✓ |desktop-shell| src/shared/vpnPlan.test.ts (11 tests) 14ms
+ ✓ |node| src/lib/workspaceValidation.test.ts (10 tests) 7ms
+ ✓ |node| src/lib/channelModules.test.ts (9 tests) 6ms
+ ✓ |node| src/lib/mailBlacklist.test.ts (3 tests) 5ms
+ ✓ |node| src/lib/reminders.test.ts (18 tests) 12ms
+stderr | src/lib/mailAccounts.test.ts > mailAccounts.parseAccounts > не падает на битом JSON
+[mail] MAIL_ACCOUNTS: неверный JSON — игнорирую
+
+ ✓ |node| src/lib/mailAccounts.test.ts (13 tests) 19ms
+ ✓ |node| src/lib/createNotification.threadGrouping.test.ts (1 test) 13ms
+ ✓ |node| src/lib/mailListing.test.ts (17 tests) 6ms
+ ✓ |node| src/lib/premiumLimits.test.ts (27 tests) 6ms
+ ✓ |node| src/lib/shell.test.ts (20 tests) 8ms
+ ✓ |node| src/lib/tzartHistory.test.ts (9 tests) 8ms
+ ✓ |node| src/lib/mentions.test.ts (10 tests) 9ms
+ ✓ |desktop-shell| src/shared/updateState.test.ts (6 tests) 7ms
+ ✓ |node| src/lib/chatHistory.test.ts (8 tests) 9ms
+ ✓ |node| src/lib/premium.test.ts (20 tests) 8ms
+ ✓ |node| src/lib/publishScheduledMessage.test.ts (1 test) 4ms
+ ✓ |node| src/lib/downloadFile.test.ts (7 tests) 7ms
+ ✓ |node| src/lib/verificationMail.test.ts (2 tests) 2ms
+ ✓ |desktop-shell| src/main/trustedIpc.test.ts (1 test) 6ms
+ ✓ |node| src/lib/realtimeTopology.test.ts (1 test) 11ms
+ ✓ |node| src/lib/turnCredentials.test.ts (1 test) 2ms
+ ✓ |desktop-shell| src/shared/ipcTrust.test.ts (1 test) 2ms
+
+ Test Files  168 passed (168)
+      Tests  2356 passed (2356)
+   Start at  21:48:26
+   Duration  47.92s (transform 6.04s, setup 1.17s, collect 15.44s, tests 12.11s, environment 9.04s, prepare 19.31s)
+

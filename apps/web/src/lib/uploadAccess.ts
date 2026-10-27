@@ -26,15 +26,13 @@
  * UPLOADS_STRICT (включён по умолчанию; отключается UPLOADS_STRICT=0), и неизвестные файлы закрываются.
  */
 
-import { LRUCache } from "lru-cache";
 import prisma from "@/lib/prisma";
 import { getChannelPermissions, canAccessConversation } from "@/lib/connectPermissions";
 import { scheduleOffload } from "@/lib/uploadOffload";
 
 export type UploadVerdict = "allow" | "deny" | "unknown";
 
-/** Ответы живут недолго: права меняются, а картинок в ленте много. */
-const verdictCache = new LRUCache<string, UploadVerdict>({ max: 20_000, ttl: 60_000 });
+// Authorization is re-evaluated per request, including after a role revocation.
 
 export interface UploadOwner {
   /** Путь внутри каталога загрузок: `messages/abc.webp`. */
@@ -49,9 +47,9 @@ export interface UploadOwner {
  * Запомнить, чему принадлежит загруженный файл. Вызывается из маршрутов
  * загрузки сразу после записи на диск.
  *
- * Ошибку намеренно глушим: файл уже лежит и уже отдан клиенту, ронять из-за
- * учётной строки саму загрузку неправильно. Пропущенная строка означает лишь
- * то, что файл останется «неизвестным» — как старые.
+ * При отказе индекса возвращаем ошибку: нельзя сообщать об успешной загрузке
+ * файла, который строгий режим выдачи затем отклонит. Offload начинается
+ * только после успешной регистрации владельца. Файл-сирота требует уборки.
  */
 export async function recordUpload(owner: UploadOwner): Promise<void> {
   try {
@@ -69,6 +67,7 @@ export async function recordUpload(owner: UploadOwner): Promise<void> {
     });
   } catch (err) {
     console.warn("[uploads] не удалось записать владельца файла", owner.path, err);
+    throw new Error("Upload ownership could not be recorded", { cause: err });
   }
 
   /* STORAGE-PRIORITY: если заведён узел хранения, файл уезжает на него. Здесь,
@@ -87,13 +86,7 @@ export async function recordUpload(owner: UploadOwner): Promise<void> {
 export async function canAccessUpload(userId: string, path: string): Promise<UploadVerdict> {
   if (!userId || !path) return "deny";
 
-  const key = `${userId}:${path}`;
-  const cached = verdictCache.get(key);
-  if (cached) return cached;
-
-  const verdict = await computeVerdict(userId, path);
-  verdictCache.set(key, verdict);
-  return verdict;
+  return computeVerdict(userId, path);
 }
 
 async function computeVerdict(userId: string, path: string): Promise<UploadVerdict> {

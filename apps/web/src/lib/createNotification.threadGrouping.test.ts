@@ -38,6 +38,6 @@ describe("bulk notification grouping", () => {
       data: expect.objectContaining({ count: { increment: 1 } }),
     }));
     expect(prismaMock.notification.createManyAndReturn).not.toHaveBeenCalled();
-    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ isNew: false }));
+    expect(emit).toHaveBeenCalledWith("new-notification", expect.objectContaining({ isNew: false }));
   });
 });

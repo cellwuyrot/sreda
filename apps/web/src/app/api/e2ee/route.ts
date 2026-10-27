@@ -133,6 +133,17 @@ export async function POST(req: NextRequest) {
         { status: 409 },
       );
     }
+
+  }
+
+  if (!current) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  const saved = await prisma.user.updateMany({
+    where: { id: session.user.id, e2eePublicKey: current.e2eePublicKey },
+    data: { e2eePublicKey: serialized },
+  });
+  if (saved.count !== 1) return NextResponse.json({ error: "Key changed concurrently; reload and retry" }, { status: 409 });
+
+  if (current.e2eePublicKey && current.e2eePublicKey !== serialized) {
     try {
       await logAction({
         userId: session.user.id,
@@ -146,11 +157,6 @@ export async function POST(req: NextRequest) {
       /* журнал — не повод отказывать в смене ключа */
     }
   }
-
-  await prisma.user.update({
-    where: { id: session.user.id },
-    data: { e2eePublicKey: serialized },
-  });
 
   return NextResponse.json({ ok: true, fingerprint: fingerprint(jwk) });
 }
