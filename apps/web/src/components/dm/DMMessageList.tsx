@@ -2,6 +2,9 @@
 
 /* FIX-DM-DOTS: useEffect/useRef держались здесь только ради обработчика «клик
    мимо меню» — вместе с меню «три точки» ушли и они. */
+import { formatMessageTime, CHAT_APPEARANCE_DEFAULT, type ChatAppearance } from "@/lib/chatAppearance";
+import type { dmCapabilities } from "@/lib/dmPolicy";
+import { FileText, Download } from "lucide-react";
 import { Fragment } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
@@ -23,6 +26,14 @@ import { getDayLabel, parseAttachments, type Attachment, type Message } from "./
 
 interface DMMessageListProps {
   messages: Message[];
+  personal?: boolean;
+  secure?: boolean;
+  capabilities?: ReturnType<typeof dmCapabilities>;
+  prefs?: ChatAppearance;
+  firstUnreadId?: string | null;
+  onJump?: (id: string) => void;
+  afterCursor?: string | null;
+  onLoadNewer?: () => void;
   currentUserId: string;
   selectedConvId: string;
   // Editing state
@@ -114,7 +125,7 @@ export default function DMMessageList(props: DMMessageListProps) {
      ровно в момент, когда курсор шёл к кнопкам. Подробно — в useHoverToolbar. */
   const hoverBar = useHoverToolbar();
   const {
-    messages,
+    messages, personal = false, secure = false, capabilities, prefs = CHAT_APPEARANCE_DEFAULT, firstUnreadId, onJump = jumpToDMMessage, afterCursor, onLoadNewer,
     currentUserId,
     editingId,
     editContent,
@@ -152,7 +163,7 @@ export default function DMMessageList(props: DMMessageListProps) {
   // Render aggregated reactions for a message
   const renderReactions = (msg: Message) => {
     const reactions = msg.reactions || [];
-    if (reactions.length === 0) return null;
+    if (reactions.length === 0 || (personal && !capabilities?.reactions)) return null;
     // Group by emoji
     const grouped: Record<string, { count: number; users: string[]; userReacted: boolean }> = {};
     for (const r of reactions) {
@@ -171,7 +182,7 @@ export default function DMMessageList(props: DMMessageListProps) {
             /* FIX-EMOJI: тот же случай, что и в каналах — глиф 20px внутри строки 16px.
                Выравнивание вынесено в tz-reaction-pill, чтобы три места с реакциями
                не расходились при следующей правке. */
-            className={`tz-reaction-pill px-2 py-1 rounded-full text-[12px] transition-colors ${
+            className={`tz-reaction-pill min-h-11 min-w-11 px-2 py-1 rounded-full text-[12px] transition-colors ${
               info.userReacted
                 ? "bg-violet-500/20 dark:bg-cyan-400/20 border border-violet-400 dark:border-cyan-400"
                 : "bg-black/5 dark:bg-white/10 border border-transparent hover:bg-black/10 dark:hover:bg-white/15"
@@ -189,7 +200,7 @@ export default function DMMessageList(props: DMMessageListProps) {
 
   return (
     <>
-      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-2 md:px-4 py-4 space-y-0.5" role="log" aria-label="Личные сообщения">
+      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-2 md:px-4 py-4 space-y-0.5" role="log" aria-label="Личные сообщения">
         {hasMore && (
           <button onClick={onLoadMore} disabled={messagesLoading} className="mx-auto flex items-center gap-1.5 rounded-full border border-neutral-200 dark:border-white/10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm px-4 py-1.5 text-xs font-medium text-neutral-600 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5 shadow-sm disabled:opacity-50 transition-all">
             {messagesLoading ? (
@@ -203,7 +214,7 @@ export default function DMMessageList(props: DMMessageListProps) {
           <div className="flex items-center justify-center h-full text-neutral-400">
             <div className="text-center">
               <ChatIcon size={44} className="mx-auto mb-3" tone="muted" />
-              <p className="text-sm">Нет сообщений. Начните общение!</p>
+              <p className="text-sm">{messagesLoading ? "Загрузка…" : "Нет сообщений. Начните общение!"}</p>
             </div>
           </div>
         ) : (
@@ -220,7 +231,7 @@ export default function DMMessageList(props: DMMessageListProps) {
               && prev.userId === msg.userId
               && !msg.replyTo
               && !msg.pinned
-              && (new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime()) < 5 * 60 * 1000;
+              && (new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime()) < (personal ? prefs.groupWindowMin : 5) * 60 * 1000;
             const msgDate = new Date(msg.createdAt);
             const prevDate = prev ? new Date(prev.createdAt) : null;
             const showDateDivider = !prev
@@ -258,10 +269,10 @@ export default function DMMessageList(props: DMMessageListProps) {
                          решает, рисовать ли кнопку, по наличию обработчика
                          (см. MessageHoverToolbar) — так кнопка исчезает целиком,
                          а не остаётся мёртвой. То же с boardContext. */
-                      onForward={isBusiness ? undefined : () => onForward(msg)}
-                      onThread={() => onOpenThread(msg)}
-                      onReact={(emoji) => onToggleReaction(msg.id, emoji)}
-                      boardContext={isBusiness ? undefined : { authorName: msg.user?.name }}
+                      onForward={isBusiness || secure ? undefined : () => onForward(msg)}
+                      onThread={!personal ? () => onOpenThread(msg) : capabilities?.threads ? () => onOpenThread(msg) : undefined}
+                      onReact={(!personal || capabilities?.reactions) && !msg.status?.match(/sending|failed/) ? (emoji) => onToggleReaction(msg.id, emoji) : undefined}
+                      boardContext={isBusiness || secure ? undefined : { authorName: msg.user?.name }}
                       /* Наведение на сам бар замораживает таймер скрытия. */
                       onHoverStart={holdBar}
                       onHoverEnd={releaseBar}
@@ -270,17 +281,17 @@ export default function DMMessageList(props: DMMessageListProps) {
                           выпадающее меню поверх переписки. Теперь это просто ещё
                           одна кнопка бара — без всплывающей панели, которой было
                           некуда поместиться. */}
-                      {!isBusiness && (
+                      {!isBusiness && !secure && (
                         <button type="button" onClick={() => onFavorite(msg)} title="В Сейф" aria-label="Добавить в Сейф">
                           <VaultIcon size={16} />
                         </button>
                       )}
                     </MessageHoverToolbar>
                   )}
-                  <div className={`max-w-[80%] md:max-w-[640px] px-3.5 py-2.5 shadow-sm ${
+                  <div className={`max-w-[92%] md:max-w-[min(80%,640px)] px-3.5 py-2.5 ${
                     msg.userId === currentUserId
-                      ? "bg-gradient-to-br from-violet-600 to-violet-700 dark:from-cyan-700 dark:to-cyan-800 text-white rounded-[20px] rounded-br-[5px]"
-                      : "bg-[var(--cn-card)] border border-[var(--cn-border)] text-neutral-900 dark:text-white rounded-[20px] rounded-bl-[5px]"
+                      ? personal ? "bg-violet-700 dark:bg-cyan-900 text-white rounded-xl rounded-br-[4px]" : "bg-gradient-to-br from-violet-600 to-violet-700 dark:from-cyan-700 dark:to-cyan-800 text-white rounded-[20px] rounded-br-[5px]"
+                      : personal ? "bg-[var(--cn-card)] border border-[var(--cn-border)] text-neutral-900 dark:text-white rounded-xl rounded-bl-[4px]" : "bg-[var(--cn-card)] border border-[var(--cn-border)] text-neutral-900 dark:text-white rounded-[20px] rounded-bl-[5px]"
                   }`}>
                     {/* Pin indicator */}
                     {msg.pinned && (
@@ -294,14 +305,14 @@ export default function DMMessageList(props: DMMessageListProps) {
                     {msg.replyTo && (
                       <button
                         type="button"
-                        onClick={() => jumpToDMMessage(msg.replyTo!.id)}
+                        onClick={() => onJump(msg.replyTo!.id)}
                         title="Перейти к исходному сообщению"
                         className={`group/reply w-full text-left flex items-stretch gap-1.5 mb-1 rounded-md overflow-hidden transition-colors ${msg.userId === currentUserId ? "bg-white/10 hover:bg-white/20" : "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10"}`}
                       >
                         <span className={`w-0.5 flex-shrink-0 rounded-full ${msg.userId === currentUserId ? "bg-white/60" : "bg-violet-500 dark:bg-cyan-400"}`} />
-                        <span className="flex-1 min-w-0 py-0.5 pr-1 text-[11px] leading-tight">
+                        <span className={`flex-1 min-w-0 py-1 pr-1 leading-tight ${personal ? "text-sm" : "text-[11px]"}`}>
                           <span className={`font-medium ${msg.userId === currentUserId ? "text-white/90" : "text-violet-600 dark:text-cyan-400"}`}>{msg.replyTo.user.name}</span>{" "}
-                          <span className={`truncate inline-block max-w-[150px] align-bottom ${msg.userId === currentUserId ? "text-white/70" : "text-neutral-500 dark:text-neutral-400"}`}>{msg.replyTo.content?.slice(0, 50) || "[файл]"}</span>
+                          <span className={`truncate inline-block max-w-[150px] align-bottom ${msg.userId === currentUserId ? "text-white/70" : "text-neutral-500 dark:text-neutral-400"}`}>{msg.replyQuote || (msg.replyTo.content?.startsWith("e2ee:") ? "Защищённое сообщение" : msg.replyTo.content?.slice(0, 100)) || "[файл]"}</span>
                         </span>
                         <svg className={`w-3 h-3 mt-0.5 mr-0.5 flex-shrink-0 opacity-0 group-hover/reply:opacity-100 transition-opacity ${msg.userId === currentUserId ? "text-white/70" : "text-neutral-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
                       </button>
@@ -323,7 +334,7 @@ export default function DMMessageList(props: DMMessageListProps) {
                       /* Длинное сообщение показывается свёрнутым — см. MessageBody. */
                       /* div, а не p: внутри бывают блоки — код и свёрнутый
                          длинный текст, — абзац их не допускает. */
-                      msg.content && <div data-i18n-skip className="tz-chat-body whitespace-pre-wrap break-words"><MessageBody text={msg.content} /></div>
+                      msg.content && <div data-message-body data-i18n-skip className="tz-chat-body whitespace-pre-wrap break-words"><MessageBody text={msg.content.startsWith("e2ee:") ? "🔒 Для просмотра нужны ключи шифрования" : msg.content} /></div>
                     )}
 
                     {/* FIX-EDITBLINK: вложения живут ВНЕ ветки редактирования.
@@ -333,7 +344,8 @@ export default function DMMessageList(props: DMMessageListProps) {
                         картинка: она перерисовывается с нуля, и это видно как
                         мигание. Заодно во время правки сообщения его картинки
                         были не видны — а правят как раз подпись к ним. */}
-                    {parseAttachments(msg.attachments).map((att: Attachment, i) => (
+                    {secure && msg.attachments && <p className="text-sm mt-2">Защищённое вложение: просмотр пока недоступен.</p>}
+                    {(!secure ? parseAttachments(msg.attachments) : []).map((att: Attachment, i) => (
                           att.isVoice ? (
                             <div key={i} className="mt-1">
                               <VoicePlayer
@@ -374,8 +386,8 @@ export default function DMMessageList(props: DMMessageListProps) {
                               />
                             </div>
                           ) : safeAttachmentUrl(att.url) ? (
-                            <a key={i} href={safeAttachmentUrl(att.url) as string} target="_blank" rel="noopener noreferrer" className="mt-1 block text-xs underline opacity-80">
-                              {att.name}
+                            <a key={i} href={safeAttachmentUrl(att.url) as string} target="_blank" rel="noopener noreferrer" className={`mt-2 flex items-center gap-3 p-3 rounded-lg border min-h-14 ${msg.userId === currentUserId ? "border-white/25 bg-white/10" : "border-[var(--cn-border)] bg-[var(--cn-main)]"}`}>
+                              <FileText size={21} className="shrink-0"/><span className="min-w-0 flex-1"><span className="block text-sm font-medium break-all">{att.name}</span><span className="text-xs opacity-80">{att.size ? `${Math.ceil(att.size / 1024)} КБ` : "Документ"}</span></span><Download size={18} className="shrink-0"/>
                             </a>
                           ) : (
                             // FIX-SEC-XSS: небезопасная схема URL — показываем имя без ссылки
@@ -386,8 +398,8 @@ export default function DMMessageList(props: DMMessageListProps) {
                       <>
                         {renderReactions(msg)}
                         <div className="flex items-center gap-1 mt-0.5">
-                          <span className={`text-[10px] ${msg.userId === currentUserId ? "text-white/60" : "text-neutral-400"}`}>
-                            {new Date(msg.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                          <span className={`${personal ? "text-sm" : "text-[10px]"} ${msg.userId === currentUserId ? "text-white/80" : personal ? "text-[var(--cn-muted)]" : "text-neutral-400"}`}>
+                            {formatMessageTime(new Date(msg.createdAt), personal ? prefs.timeFormat : "24")}
                           </span>
                           {msg.edited && <span className={`text-[9px] ${msg.userId === currentUserId ? "text-white/40" : "text-neutral-400"}`}>(ред.)</span>}
                           {/* Status icons (own messages only) */}
@@ -423,7 +435,7 @@ export default function DMMessageList(props: DMMessageListProps) {
                             </span>
                           )}
                           {/* Thread count indicator */}
-                          {(msg.threadCount ?? 0) > 0 && (
+                          {(!personal || capabilities?.threads) && (msg.threadCount ?? 0) > 0 && (
                             <button
                               onClick={() => onOpenThread(msg)}
                               className={`flex items-center gap-0.5 text-[9px] ${msg.userId === currentUserId ? "text-white/70 hover:text-white" : "text-violet-500 dark:text-cyan-400 hover:underline"}`}
@@ -450,6 +462,7 @@ export default function DMMessageList(props: DMMessageListProps) {
                     <div className="flex-1 h-px bg-[var(--cn-border)]" />
                   </div>
                 )}
+                {personal && firstUnreadId === msg.id && <div className="flex items-center gap-3 py-3 text-sm text-violet-700 dark:text-cyan-300"><span className="h-px flex-1 bg-[var(--cn-border)]"/>Новые сообщения<span className="h-px flex-1 bg-[var(--cn-border)]"/></div>}
                 {isLast ? (
                   <motion.div
                     id={`dm-msg-${msg.id}`}
@@ -478,6 +491,7 @@ export default function DMMessageList(props: DMMessageListProps) {
           {winPadBottom > 0 && <div aria-hidden style={{ height: winPadBottom }} />}
           </>
         )}
+        {afterCursor && <button type="button" disabled={messagesLoading} onClick={onLoadNewer} className="mx-auto block min-h-11 rounded-lg border border-[var(--cn-border)] px-4 text-sm">{messagesLoading ? "Загрузка…" : "Более новые сообщения"}</button>}
         <div ref={messagesEndRef} />
       </div>
 

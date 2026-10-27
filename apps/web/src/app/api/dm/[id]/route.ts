@@ -11,6 +11,8 @@ import { createNotification } from "@/lib/createNotification";
 import { messageLengthError } from "@/lib/messageLimits";
 import { hasPremium } from "@/lib/premium";
 import { businessAudience, isStaffRole, staffIds } from "@/lib/businessChat";
+import { validReplyQuote } from "@/lib/replyQuote";
+import { dmPageLimit, secureDmError } from "@/lib/dmPolicy";
 import { rateLimit } from "@/lib/rateLimit";
 
 /**
@@ -48,32 +50,51 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
+  // Thread UI is intentionally disabled until a separate thread model is implemented.
+  if (searchParams.has("threadId")) return NextResponse.json({ error: "Ветки пока не поддерживаются" }, { status: 400 });
+  const limit = dmPageLimit(searchParams.get("limit"));
   const cursor = searchParams.get("cursor");
-  const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
-  const encryptedParam = searchParams.get("encrypted"); // "true" | "false" | null (all)
-
-  // Build where clause — filter by encrypted flag if column exists
-  const encryptedFilter: { encrypted?: boolean } = {};
-  if (encryptedParam === "true")  encryptedFilter.encrypted = true;
-  if (encryptedParam === "false") encryptedFilter.encrypted = false;
-
-  const messages = await prisma.directMessage.findMany({
-    where: { conversationId: id, ...encryptedFilter },
-    include: {
-      user: { select: { id: true, name: true, username: true, avatar: true, role: true, avatarGlowEnabled: true, avatarGlowColors: true } },
-      replyTo: { select: { id: true, content: true, user: { select: { id: true, name: true } } } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-  });
-
-  const hasMore = messages.length > limit;
-  if (hasMore) messages.pop();
-
-  return NextResponse.json({
-    messages: messages.reverse(),
-    nextCursor: hasMore ? messages[0]?.id : null,
+  const after = searchParams.get("after");
+  const around = searchParams.get("around");
+  if ([cursor, after, around].filter(Boolean).length > 1) return NextResponse.json({ error: "Неоднозначная навигация" }, { status: 400 });
+  const targetId = cursor || after || around;
+  const target = targetId ? await prisma.directMessage.findFirst({ where: { id: targetId, conversationId: id } }) : null;
+  if (targetId && !target) return NextResponse.json({ error: "Сообщение не найдено" }, { status: 404 });
+  const include = {
+    user: { select: { id: true, name: true, username: true, avatar: true, role: true, avatarGlowEnabled: true, avatarGlowColors: true } },
+    replyTo: { select: { id: true, content: true, deleted: true, user: { select: { id: true, name: true } } } },
+    reactions: { include: { user: { select: { id: true, name: true, username: true } } } },
+  };
+  const where: Prisma.DirectMessageWhereInput = { conversationId: id };
+  const encryptedParam = searchParams.get("encrypted");
+  if (encryptedParam === "true" || encryptedParam === "false") where.encrypted = encryptedParam === "true";
+  const orderBy = [{ createdAt: "desc" as const }, { id: "desc" as const }];
+  let messages;
+  let hasMore = false, hasNewer = false;
+  if (around && target) {
+    const [older, newer] = await Promise.all([
+      prisma.directMessage.findMany({ where, include, orderBy, cursor: { id: target.id }, skip: 1, take: limit + 1 }),
+      prisma.directMessage.findMany({ where, include, orderBy: [{ createdAt: "asc" }, { id: "asc" }], cursor: { id: target.id }, take: limit + 1 }),
+    ]);
+    hasMore = older.length > limit; hasNewer = newer.length > limit;
+    messages = [...older.slice(0, limit).reverse(), ...newer.slice(0, limit)];
+  } else {
+    const rows = await prisma.directMessage.findMany({ where, include,
+      orderBy: after ? [{ createdAt: "asc" }, { id: "asc" }] : orderBy,
+      take: limit + 1, ...(target ? { cursor: { id: target.id }, skip: 1 } : {}),
+    });
+    const more = rows.length > limit;
+    messages = after ? rows.slice(0, limit) : rows.slice(0, limit).reverse();
+    hasMore = after ? false : more; hasNewer = after ? more : false;
+  }
+  // Redacted deletion must not leave stale quoted plaintext in a reply.
+  messages = messages.map(m => ({ ...m, ...(m.deleted ? { content: "", attachments: null, reactions: [], replyQuote: null } : {}), replyTo: m.replyTo?.deleted ? { ...m.replyTo, content: "Сообщение удалено" } : m.replyTo }));
+  const readAt = conversation.user1Id === userId ? conversation.user1ReadAt : conversation.user2ReadAt;
+  const firstUnread = await prisma.directMessage.findFirst({ where: { conversationId: id, deleted: false, userId: { not: userId }, ...(readAt ? { createdAt: { gt: readAt } } : {}) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true } });
+  return NextResponse.json({ firstUnreadId: firstUnread?.id || null, messages, nextCursor: hasMore ? messages[0]?.id : null,
+    afterCursor: hasNewer ? messages[messages.length - 1]?.id : null,
+    readAt: conversation.user1Id === userId ? conversation.user1ReadAt : conversation.user2ReadAt,
+    peerReadAt: conversation.user1Id === userId ? conversation.user2ReceiptAt : conversation.user1ReceiptAt,
   });
 }
 
@@ -133,7 +154,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Собеседник у вас в чёрном списке — сначала уберите его из ЧС" }, { status: 403 });
   }
 
-  const { content, attachments, replyToId } = await req.json();
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
+  const { content = "", attachments, replyToId, replyQuote, clientMessageId, threadId } = body;
+  if (typeof content !== "string" || (replyToId != null && typeof replyToId !== "string") ||
+      (replyQuote != null && (typeof replyQuote !== "string" || replyQuote.length > 2000 || !replyToId)) ||
+      (clientMessageId != null && (typeof clientMessageId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(clientMessageId))) || threadId != null) {
+    return NextResponse.json({ error: "Некорректные поля сообщения" }, { status: 400 });
+  }
+  const secureError = secureDmError(conversation.kind, content, attachments, replyQuote);
+  if (secureError) return NextResponse.json({ error: secureError }, { status: 400 });
   const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
   if (attachments != null && (!Array.isArray(attachments) || attachments.length > 10 || attachments.some((item: unknown) => {
     if (!item || typeof item !== "object") return true;
@@ -153,8 +183,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Пользователь запретил голосовые и видеосообщения" }, { status: 403 });
   }
   if (replyToId) {
-    const reply = await prisma.directMessage.findUnique({ where: { id: replyToId }, select: { conversationId: true } });
-    if (!reply || reply.conversationId !== id) return NextResponse.json({ error: "Некорректное сообщение для ответа" }, { status: 400 });
+    const reply = await prisma.directMessage.findUnique({ where: { id: replyToId }, select: { conversationId: true, deleted: true, content: true } });
+    if (!reply || reply.deleted || reply.conversationId !== id) return NextResponse.json({ error: "Некорректное сообщение для ответа" }, { status: 400 });
+    if (replyQuote != null && !validReplyQuote(replyQuote, reply.content)) return NextResponse.json({ error: "Цитата не соответствует исходному сообщению" }, { status: 400 });
   }
   if ((!content || !content.trim()) && !hasAttachments) {
     return NextResponse.json({ error: "Message content required" }, { status: 400 });
@@ -187,11 +218,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     userId,
     attachments: hasAttachments ? JSON.stringify(attachments) : null,
     replyToId: replyToId || null,
+    replyQuote: replyQuote ? sanitizeText(replyQuote) : null,
+    clientMessageId: clientMessageId || null,
   };
   const include = {
     user: { select: { id: true, name: true, username: true, avatar: true, role: true, avatarGlowEnabled: true, avatarGlowColors: true } },
     replyTo: { select: { id: true, content: true, user: { select: { id: true, name: true } } } },
   };
+
+  const existing = clientMessageId ? await prisma.directMessage.findUnique({
+    where: { conversationId_userId_clientMessageId: { conversationId: id, userId, clientMessageId } }, include,
+  }) : null;
+  if (existing) return NextResponse.json(existing);
 
   type DmWithIncludes = Prisma.DirectMessageGetPayload<{ include: typeof include }>;
 
@@ -205,17 +243,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       include,
     });
   } catch (err: unknown) {
-    // Fallback: if encrypted column doesn't exist yet (migration pending),
-    // create without it so DMs keep working
-    const isColErr = err instanceof Error &&
-      (err.message.includes("encrypted") || err.message.includes("Unknown field") || err.message.includes("column"));
-    if (!isColErr) throw err;
-    // Cast to a minimal shape that supports .create() — the encrypted column
-    // may be missing if the migration is pending. Avoid `any` for lint safety.
-    const fallback = prisma.directMessage as unknown as {
-      create: (args: { data: typeof baseData; include: typeof include }) => Promise<DmWithIncludes>;
-    };
-    message = await fallback.create({ data: baseData, include });
+    // Concurrent retries return the already-created message; no duplicate notifications.
+    if (clientMessageId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const existing = await prisma.directMessage.findUnique({ where: { conversationId_userId_clientMessageId: { conversationId: id, userId, clientMessageId } }, include });
+      if (existing) return NextResponse.json(existing);
+    }
+    throw err;
   }
 
   await prisma.directConversation.update({
@@ -300,7 +333,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // FIX-DM: автоответ собеседника — не чаще раза в час, никогда не ломает отправку сообщения.
   try {
-    const autoText = peerSetting?.autoReplyEnabled ? peerSetting.autoReplyText?.trim() : null;
+    const autoText = conversation.kind !== "SECURE" && peerSetting?.autoReplyEnabled ? peerSetting.autoReplyText?.trim() : null;
     if (autoText && peerId !== userId) {
       const last = peerSetting?.lastAutoReplyAt?.getTime() ?? 0;
       if (Date.now() - last > 60 * 60 * 1000) {
@@ -356,8 +389,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (access.conversation.kind === "BUSINESS" && access.conversation.locked && !isStaffRole(session.user.role)) {
     return NextResponse.json({ error: "Администрация закрыла отправку сообщений по этому обращению", locked: true }, { status: 403 });
   }
-  const { messageId, content } = await req.json();
-  if (!messageId || !content?.trim()) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  const { messageId, content } = await req.json().catch(() => ({}));
+  if (typeof messageId !== "string" || typeof content !== "string" || !content.trim()) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+
+  const secureError = secureDmError(access.conversation.kind, content);
+  if (secureError) return NextResponse.json({ error: secureError }, { status: 400 });
 
   // FIX-SEC-VALIDATION: раньше при редактировании не было лимита длины (в отличие
   // от POST) — можно было раздуть запись в БД. Зеркалим ограничение POST.
@@ -373,12 +409,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
   if (!message) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (message.deleted) return NextResponse.json({ error: "Сообщение удалено" }, { status: 409 });
   if (message.userId !== session.user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (message.conversationId !== id) return NextResponse.json({ error: "Mismatch" }, { status: 400 });
 
   const updated = await prisma.directMessage.update({
     where: { id: messageId },
-    data: { content: content.startsWith("e2ee:") ? content : sanitizeText(content), edited: true, editedAt: new Date() },
+    data: { content: content.startsWith("e2ee:") ? content : sanitizeText(content), encrypted: content.startsWith("e2ee:"), edited: true, editedAt: new Date() },
     include: {
       user: { select: { id: true, name: true, username: true, avatar: true, role: true, avatarGlowEnabled: true, avatarGlowColors: true } },
     },
