@@ -90,6 +90,7 @@ model User {
   businessPayments       BusinessPayment[]           @relation("BusinessPaymentAuthor")
   businessContracts      BusinessContract[]          @relation("BusinessContractAuthor")
   directMessages         DirectMessage[]
+  directMessageReactions DirectMessageReaction[]
   notifications          Notification[]
   /// Уведомления, возникшие ИЗ-ЗА этого человека. Каскад: удалили аккаунт —
   /// исчезли и уведомления о нём, а не остались текстом без хозяина.
@@ -556,6 +557,8 @@ model DirectConversation {
   lastMessageAt DateTime?
   user1ReadAt   DateTime?
   user2ReadAt   DateTime?
+  user1ReceiptAt DateTime?
+  user2ReceiptAt DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
@@ -573,7 +576,20 @@ model DirectConversation {
   @@index([handlerId])
 }
 
+model DirectMessageReaction {
+  id String @id @default(cuid())
+  messageId String
+  userId String
+  emoji String @db.VarChar(64)
+  message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([messageId, userId, emoji])
+}
+
 model DirectMessage {
+  replyQuote String?
+  clientMessageId String? @db.VarChar(80)
+  reactions DirectMessageReaction[]
   id             String             @id @default(cuid())
   content        String
   userId         String
@@ -598,6 +614,8 @@ model DirectMessage {
   @@index([replyToId])
   // То же, что у Message: сводка за сутки по всей таблице.
   @@index([createdAt])
+  @@unique([conversationId, userId, clientMessageId])
+  @@index([conversationId, createdAt, id])
 }
 
 model Badge {

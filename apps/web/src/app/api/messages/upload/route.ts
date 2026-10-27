@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import { checkBan } from "@/lib/banCheck";
 import { rateLimit } from "@/lib/rateLimit";
 import { mediaSignatureError, validateImageMagicBytes } from "@/lib/fileValidation";
@@ -43,11 +44,15 @@ export async function POST(req: NextRequest) {
     const conversationId = formData.get("conversationId");
     if (!file) return NextResponse.json({ error: "Файл не передан" }, { status: 400 });
 
+    if (channelId && conversationId) return NextResponse.json({ error: "Укажите только один контекст загрузки" }, { status: 400 });
     if (typeof channelId === "string" && channelId) {
       const permission = await getChannelPermissions(session.user.id, channelId);
       if (!permission?.canUpload) return NextResponse.json({ error: permission?.denialReason ?? "Нет доступа к загрузке в этот канал" }, { status: 403 });
     } else if (typeof conversationId === "string" && conversationId) {
       if (!(await canAccessConversation(session.user.id, conversationId))) return NextResponse.json({ error: "Нет доступа к этому диалогу" }, { status: 403 });
+      const conversation = await prisma.directConversation.findUnique({ where: { id: conversationId }, select: { kind: true } });
+      if (!conversation) return NextResponse.json({ error: "Диалог не найден" }, { status: 404 });
+      if (conversation.kind === "SECURE") return NextResponse.json({ error: "Вложения в защищённой переписке пока недоступны" }, { status: 400 });
     } else {
       return NextResponse.json({ error: "Для загрузки требуется channelId или conversationId" }, { status: 400 });
     }

@@ -1,6 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { prepareDmContent, mergeDmMessages } from "@/lib/dmClient";
+import { dmCapabilities } from "@/lib/dmPolicy";
+import { selectedReplyQuote } from "@/lib/replyQuote";
+import { CHAT_APPEARANCE_DEFAULT, CHAT_APPEARANCE_EVENT, loadChatAppearance, type ChatAppearance } from "@/lib/chatAppearance";
+import DMPersonalHeader from "./DMPersonalHeader";
+import DMDetailsPanel from "./DMDetailsPanel";
+const DrawingEditor = dynamic(() => import("@/components/ui/DrawingEditor"), { ssr: false });
+
 import { io, type Socket } from "socket.io-client";
 import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -32,7 +41,6 @@ import {
 } from "./dmTypes";
 import {
   decryptMessage,
-  encryptMessage,
   ensurePublicKeyPublished, // FIX-E2EEBTN
   getOrCreateKeyPair,
   isE2EEMessage,
@@ -94,6 +102,25 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
 
+  const selectedRef = useRef<string | null>(null);
+  const historyRequest = useRef(0), jumpRequest = useRef(0);
+  const initialHistory = useRef<string | null>(null);
+  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
+  const [jumpTarget, setJumpTarget] = useState<string | null>(null);
+  const [afterCursor, setAfterCursor] = useState<string | null>(null);
+  const [detailsMode, setDetailsMode] = useState<"search" | "materials" | null>(null);
+  const closeDetails = useCallback(() => setDetailsMode(null), []);
+  const [attachmentEdit, setAttachmentEdit] = useState<Attachment | null>(null);
+  const sendLock = useRef(false), reactionLocks = useRef(new Set<string>());
+  const [chatPrefs, setChatPrefs] = useState<ChatAppearance>(CHAT_APPEARANCE_DEFAULT);
+  const prefsRef = useRef(CHAT_APPEARANCE_DEFAULT);
+  useEffect(() => {
+    const store = () => { const p = loadChatAppearance(); prefsRef.current = p; setChatPrefs(p); };
+    store(); window.addEventListener(CHAT_APPEARANCE_EVENT, store);
+    return () => window.removeEventListener(CHAT_APPEARANCE_EVENT, store);
+  }, []);
+  useLayoutEffect(() => { selectedRef.current = selectedConvId; historyRequest.current++; jumpRequest.current++; }, [selectedConvId]);
+
   // Pagination
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -114,7 +141,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const [editContent, setEditContent] = useState("");
 
   // Reply
-  const [replyTo, setReplyTo] = useState<{ id: string; name: string; content: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; name: string; content: string; quote?: string } | null>(null);
 
   // День/ночь фон (настройка): показывается только внутри области чата
   const [dayNightEnabled, setDayNightEnabled] = useState<boolean>(() => {
@@ -178,6 +205,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   // E2EE
   const [myPrivateKey, setMyPrivateKey] = useState<CryptoKey | null>(null);
   const [peerPublicKey, setPeerPublicKey] = useState<JsonWebKey | null>(null);
+  const [peerKeyOwner, setPeerKeyOwner] = useState<string | null>(null);
   /* FIX-E2EEBTN: на аккаунте лежит ключ другого устройства. Тогда собеседник
      шифрует на тот ключ, и здесь читать его нечем — об этом надо сказать
      прямо, а не прятать кнопку. */
@@ -219,9 +247,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const updateDmDraft = useCallback((value: string) => {
     setInput(value);
     if (!dmDraftKey) return;
+    if (conversations.find(c => c.id === selectedConvId)?.secure) { localStorage.removeItem(dmDraftKey); return; }
     if (value) localStorage.setItem(dmDraftKey, value);
     else localStorage.removeItem(dmDraftKey);
-  }, [dmDraftKey]);
+  }, [dmDraftKey, conversations, selectedConvId]);
 
   // Socket
   const socketRef = useRef<Socket | null>(null);
@@ -255,7 +284,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const e2eeEnabled = isSecureConv;
   const visibleMessages = messages;
   const otherId = otherUser?.id ?? null;
-  const e2eeReady = !!(myPrivateKey && peerPublicKey);
+  const e2eeReady = !!(myPrivateKey && peerPublicKey) && peerKeyOwner === otherId && !keyConflict;
+  const capabilities = dmCapabilities(isBusiness ? "BUSINESS" : isSecureConv ? "SECURE" : "PERSONAL");
 
   /* FIX-DM-NTF: говорим глобальной шапке, какая переписка сейчас открыта.
 
@@ -507,12 +537,12 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const peerKeyRequest = useRef(0);
   const fetchPeerKey = useCallback(async (peerId: string) => {
     const request = ++peerKeyRequest.current;
-    setPeerPublicKey(null);
+    setPeerPublicKey(null); setPeerKeyOwner(null);
     try {
       const res = await fetch(`/api/e2ee?userId=${peerId}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        if (request === peerKeyRequest.current) setPeerPublicKey(data.publicKey ?? null);
+        if (request === peerKeyRequest.current) { setPeerPublicKey(data.publicKey ?? null); setPeerKeyOwner(peerId); }
       }
     } catch {
       /* ignore */
@@ -547,38 +577,70 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
   // ── Load messages ─────────────────────────────────────────────────────────
   const loadMessages = useCallback(
-    async (convId: string, append = false, cursor?: string) => {
+    async (convId: string, append = false, cursor?: string, newer = false) => {
+      const request = ++historyRequest.current;
       setMessagesLoading(true);
       try {
         const params = new URLSearchParams({ limit: "50" });
-        if (cursor) params.set("cursor", cursor);
+        if (cursor) params.set(newer ? "after" : "cursor", cursor);
         const res = await fetch(`/api/dm/${convId}?${params}`, { credentials: "include" });
-        if (!res.ok) return;
+        if (!res.ok) throw Error("Не удалось загрузить историю");
         const data = await res.json();
+        if (selectedRef.current !== convId || historyRequest.current !== request) return;
         const newMsgs: Message[] = data.messages || [];
-        if (append) {
-          /* Старые сообщения встанут сверху, лента вырастет, а браузер сохранит
-             scrollTop — и прочитанное уедет вниз вместе с содержимым. Запоминаем
-             расстояние до низа и возвращаем позицию сразу после отрисовки. */
-          const el = scrollContainerRef.current;
-          if (el) prependAnchorRef.current = el.scrollHeight - el.scrollTop;
-          setMessages((prev) => [...newMsgs, ...prev]);
-        } else {
-          setMessages(newMsgs);
-          requestAnimationFrame(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-          });
+        if (initialHistory.current !== convId) {
+          initialHistory.current = convId;
+          setFirstUnreadId(data.firstUnreadId || null);
         }
-        setHasMore(Boolean(data.nextCursor));
-        setNextCursor(data.nextCursor || null);
+        setPeerReadAt(data.peerReadAt || null);
+        if (append) {
+          const el = scrollContainerRef.current;
+          if (el && !newer) prependAnchorRef.current = el.scrollHeight - el.scrollTop;
+          setMessages(prev => mergeDmMessages(prev, newMsgs));
+        } else {
+          setMessages(newMsgs); setAfterCursor(data.afterCursor || null);
+          requestAnimationFrame(() => { if (selectedRef.current === convId) messagesEndRef.current?.scrollIntoView({ behavior: "auto" }); });
+        }
+        if (newer) setAfterCursor(data.afterCursor || null);
+        else { setHasMore(Boolean(data.nextCursor)); setNextCursor(data.nextCursor || null); }
+        return true;
       } catch {
-        /* ignore */
+        if (selectedRef.current === convId && request === historyRequest.current) setToast("Не удалось загрузить историю. Повторите открытие переписки.");
       } finally {
-        setMessagesLoading(false);
+        if (selectedRef.current === convId && request === historyRequest.current) setMessagesLoading(false);
       }
-    },
-    [],
+    }, [currentUserId],
   );
+  const jumpToMessage = useCallback(async (messageId: string) => {
+    if (!selectedConvId) return;
+    const convId = selectedConvId, request = ++jumpRequest.current;
+    setDetailsMode(null);
+    const index = messages.findIndex(m => m.id === messageId);
+    if (index >= 0) { revealWindow(index); setJumpTarget(messageId); return; }
+    // Invalidate any older tail/page response before opening a different history window.
+    historyRequest.current++;
+    setMessagesLoading(true);
+    try {
+      const res = await fetch(`/api/dm/${convId}?around=${encodeURIComponent(messageId)}`, { credentials: "include" });
+      if (!res.ok) throw Error("Сообщение недоступно");
+      const data = await res.json();
+      if (selectedRef.current !== convId || jumpRequest.current !== request) return;
+      setMessages(data.messages || []); setHasMore(Boolean(data.nextCursor)); setNextCursor(data.nextCursor || null); setAfterCursor(data.afterCursor || null);
+      const targetIndex = (data.messages as Message[]).findIndex(m => m.id === messageId);
+      if (targetIndex >= 0) { revealWindow(targetIndex); setJumpTarget(messageId); }
+    } catch { if (selectedRef.current === convId) setToast("Сообщение не найдено или недоступно"); }
+    finally { if (selectedRef.current === convId && jumpRequest.current === request) setMessagesLoading(false); }
+  }, [selectedConvId, messages, revealWindow]);
+  useLayoutEffect(() => {
+    if (!jumpTarget) return;
+    const index = messages.findIndex(m => m.id === jumpTarget);
+    if (index < winStart || index >= winEnd) { if (index >= 0) revealWindow(index); return; }
+    const el = document.getElementById(`dm-msg-${jumpTarget}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "auto" });
+    el.animate?.([{ backgroundColor: "rgba(139,92,246,.24)" }, { backgroundColor: "transparent" }], { duration: 1800 });
+    setJumpTarget(null);
+  }, [jumpTarget, messages, winStart, winEnd, revealWindow]);
 
   /* Отметка о прочтении беседы + синхронизация колокольчика.
 
@@ -591,7 +653,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ conversationId: convId }),
+      body: JSON.stringify({ conversationId: convId, sendReceipt: isBusiness || prefsRef.current.sendReadReceipts }),
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -602,12 +664,16 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         }
       })
       .catch(() => {});
-  }, []);
+  }, [isBusiness]);
 
   // ── When conversation changes: load messages, peer key, mark read ──────────
   useEffect(() => {
     if (!selectedConvId || !otherId) return;
-    setInput(localStorage.getItem(`tz-chat-draft:dm:${selectedConvId}`) ?? "");
+    const draftKey = `tz-chat-draft:dm:${selectedConvId}`;
+    if (isSecureConv) localStorage.removeItem(draftKey);
+    setInput(isSecureConv ? "" : localStorage.getItem(draftKey) ?? "");
+    initialHistory.current = null;
+    setFirstUnreadId(null); setPeerReadAt(null); setDetailsMode(null); setShowAttachmentsPanel(false); setPendingAttachments([]); setAttachmentEdit(null); setJumpTarget(null); setAfterCursor(null); setTypingName(null); setUserMenu(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
     peerKeyRequest.current++;
     setMessages([]);
@@ -623,62 +689,26 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
        непригодный текст. Ключ не запрашиваем — кнопка защищённого режима не
        появляется, и обещания, которого нельзя выполнить, тоже. */
     if (!isBusiness) fetchPeerKey(otherId);
-    loadMessages(selectedConvId);
-    // Mark read (+ синхронизация бейджа колокольчика по остатку непрочитанного)
-    markConversationRead(selectedConvId);
-    // Reset unread counter locally
-    setConversations((prev) => prev.map((c) => (c.id === selectedConvId ? { ...c, unread: 0 } : c)));
-    // NEW: сразу гасим цифру на значке приложения (десктоп)
-    getDesktopApi()?.refreshBadge?.();
-  }, [selectedConvId, otherId, isBusiness, fetchPeerKey, loadMessages, resetWindow, markConversationRead]);
+    void loadMessages(selectedConvId).then((loaded) => {
+      if (!loaded || selectedRef.current !== selectedConvId) return;
+      markConversationRead(selectedConvId);
+      setConversations((prev) => prev.map((c) => (c.id === selectedConvId ? { ...c, unread: 0 } : c)));
+      getDesktopApi()?.refreshBadge?.();
+    });
+  }, [selectedConvId, otherId, isBusiness, isSecureConv, fetchPeerKey, loadMessages, resetWindow, markConversationRead]);
 
   // ── Deep-link from a notification: scroll to and flash the target DM message ──
   // FIX-JUMP: раньше эффект зависел от `messages` и пере-скроллил к цели на каждое
   // обновление ленты — вид «залипал» на сообщении и не давал прокручивать вниз.
   // Теперь прокрутка выполняется ровно один раз, затем цель освобождается, а
   // подсветка гаснет по собственному таймеру и не мешает ручной прокрутке.
-  const dmHighlightAttemptsRef = useRef(0);
-  const dmFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const consumedHighlight = useRef<string | null>(null);
   useEffect(() => {
-    if (!highlightMessageId) { dmHighlightAttemptsRef.current = 0; return; }
-    // Wait until the target conversation is open and its messages have loaded.
-    if (!selectedConvId || messagesLoading || messages.length === 0) return;
-
-    const release = () => {
-      dmHighlightAttemptsRef.current = 0;
-      onHighlightConsumed?.();
-    };
-
-    /* Сообщение может быть загружено, но не отрисовано: лента показывает окно
-       вокруг видимой области. Сначала просим окно включить строку. */
-    const targetIndex = messages.findIndex((m) => m.id === highlightMessageId);
-    if (targetIndex >= 0 && (targetIndex < winStart || targetIndex >= winEnd)) {
-      revealWindow(targetIndex);
-      return;
-    }
-
-    const el = document.getElementById(`dm-msg-${highlightMessageId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      const prevBg = el.style.backgroundColor;
-      el.style.transition = "background-color 0.4s ease";
-      el.style.borderRadius = "0.5rem";
-      el.style.backgroundColor = "rgba(34,211,238,0.18)";
-      if (dmFlashTimerRef.current) clearTimeout(dmFlashTimerRef.current);
-      dmFlashTimerRef.current = setTimeout(() => { el.style.backgroundColor = prevBg; }, 1800);
-      release();
-      return;
-    }
-    if (hasMore && nextCursor && dmHighlightAttemptsRef.current < 8) {
-      dmHighlightAttemptsRef.current += 1;
-      loadMessages(selectedConvId, true, nextCursor);
-    } else {
-      release();
-    }
-  }, [highlightMessageId, selectedConvId, messages, messagesLoading, hasMore, nextCursor, loadMessages, onHighlightConsumed, winStart, winEnd, revealWindow]);
-
-  // Clear the flash timer on unmount so it never fires against a stale node.
-  useEffect(() => () => { if (dmFlashTimerRef.current) clearTimeout(dmFlashTimerRef.current); }, []);
+    if (!highlightMessageId) { consumedHighlight.current = null; return; }
+    if (!selectedConvId || messagesLoading || initialHistory.current !== selectedConvId || consumedHighlight.current === highlightMessageId) return;
+    consumedHighlight.current = highlightMessageId;
+    void jumpToMessage(highlightMessageId).finally(() => onHighlightConsumed?.());
+  }, [highlightMessageId, selectedConvId, messagesLoading, jumpToMessage, onHighlightConsumed]);
 
   useEffect(() => {
     if (!myPrivateKey || !peerPublicKey || messages.length === 0) return;
@@ -692,7 +722,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         if (!isE2EEMessage(m.content)) return m;
         const decrypted = await decryptContent(m.content);
         if (decrypted === m.content && m._encrypted) return m;
-        return { ...m, content: decrypted, _encrypted: true };
+        return { ...m, content: decrypted, _encrypted: true, replyTo: m.replyTo ? { ...m.replyTo, content: await decryptContent(m.replyTo.content) } : m.replyTo };
       }),
     ).then((decryptedMessages) => {
       if (cancelled) return;
@@ -744,6 +774,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         );
         return;
       }
+      if (afterCursor) { setShowScrollBtn(true); return; }
       // Decrypt if needed
       // FIX-E2EE: не мутируем объект, пришедший из socket-события (его может
       // переиспользовать Socket.IO при ретрае, а мутация теряет исходный
@@ -751,27 +782,17 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       if (isE2EEMessage(msg.content) && myPrivateKey && peerPublicKey) {
         msg = { ...msg, content: await decryptContent(msg.content), _encrypted: true };
       }
+      if (selectedRef.current !== selectedConvId) return;
       setMessages((prev) => {
-        // Already have the real message (e.g. POST response landed first).
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        // The server echoes our own message back over the socket. If our
-        // optimistic placeholder is still in the list, *replace* it instead of
-        // appending — otherwise the message shows up twice (the duplicate bug).
-        if (msg.userId === currentUserId) {
-          const optIdx = prev.findIndex((m) => m.id.startsWith("opt-") && m.userId === currentUserId);
-          if (optIdx !== -1) {
-            const next = [...prev];
-            next[optIdx] = { ...msg, status: "sent" };
-            return next;
-          }
-        }
-        return [...prev, msg];
+        return mergeDmMessages(prev, [{ ...msg, status: "sent" as const }]);
       });
+      if (selectedRef.current !== selectedConvId) return;
+
       requestAnimationFrame(() => {
         const el = scrollContainerRef.current;
         if (el) {
           const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
-          if (nearBottom) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          if (nearBottom && (isBusiness || prefsRef.current.autoScroll) && !afterCursor) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         }
       });
       // Update conversation preview + clear unread (we're viewing it)
@@ -791,7 +812,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     });
 
     socket.on("dm-deleted", ({ messageId }: { messageId: string }) => {
-      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: true, content: "" } : m)));
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: true, content: "", attachments: null, reactions: [] } : m)));
     });
 
     /* ARCHIVE: разговор уничтожен безвозвратно — событие приходит ОБОИМ
@@ -813,8 +834,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       );
     });
 
-    socket.on("dm-read", ({ userId: readerId, readAt }: { userId: string; readAt: string }) => {
-      if (readerId === otherId) setPeerReadAt(readAt);
+    socket.on("dm-read", ({ conversationId, userId: readerId, readAt }: { conversationId: string; userId: string; readAt: string }) => {
+      if (conversationId === selectedConvId && readerId === otherId) setPeerReadAt(readAt);
     });
 
     socket.on("dm-typing", ({ userId }: { userId: string }) => {
@@ -852,10 +873,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     socket.on("dm-pinned", ({ messageId, pinned }: { messageId: string; pinned: boolean }) => {
       setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, pinned } : m)));
       // Refresh pinned panel if open
-      if (showPinned && selectedConvId) {
+      if (selectedConvId) {
         fetch(`/api/dm/pin?conversationId=${selectedConvId}`, { credentials: "include" })
           .then((r) => r.json())
-          .then((d) => setPinnedMessages(d))
+          .then((d) => { if (selectedRef.current === selectedConvId && Array.isArray(d)) setPinnedMessages(d); })
           .catch(() => {});
       }
     });
@@ -869,7 +890,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId, selectedConvId, otherId, otherUser?.name, myPrivateKey, peerPublicKey, decryptContent, showPinned]);
+  }, [currentUserId, selectedConvId, otherId, otherUser?.name, myPrivateKey, peerPublicKey, decryptContent, showPinned, afterCursor]);
 
   // ── Typing emitter ──────────────────────────────────────────────────────────
   const emitTyping = useCallback(() => {
@@ -887,7 +908,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     async (e?: React.FormEvent) => {
       e?.preventDefault();
       const text = input.trim();
-      if ((!text && pendingAttachments.length === 0) || !selectedConvId) return;
+      if ((!text && pendingAttachments.length === 0) || !selectedConvId || sendLock.current) return;
+      if (isSecureConv && pendingAttachments.length) { showToast("Вложения в защищённой переписке пока недоступны"); return; }
 
       /* Предел длины проверяем до шифрования и отправки: иначе человек узнаёт о
          нём от сервера, уже набрав весь текст. Считаем по исходному тексту —
@@ -898,22 +920,22 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         return;
       }
 
+      sendLock.current = true;
       setSending(true);
-
-      let finalContent = text;
-      let encryptedFlag = false;
-      if (e2eeReady && e2eeEnabled && text && !isE2EEMessage(text)) {
-        try {
-          finalContent = await encryptMessage(text, myPrivateKey!, peerPublicKey!);
-          encryptedFlag = true;
-        } catch {
-          /* fall back to plain */
-        }
-      }
-
+      const convId = selectedConvId;
+      let finalContent: string;
+      try { finalContent = await prepareDmContent(isSecureConv, text, e2eeReady ? myPrivateKey : null, peerPublicKey); }
+      catch (e) { showToast(e instanceof Error ? e.message : "Ошибка шифрования"); setSending(false); sendLock.current = false; return; }
+      if (selectedRef.current !== convId) { setSending(false); sendLock.current = false; return; }
+      if (afterCursor) await loadMessages(convId);
+      if (selectedRef.current !== convId) { setSending(false); sendLock.current = false; return; }
+      const encryptedFlag = isSecureConv;
+      const clientMessageId = crypto.randomUUID();
       const optimisticId = `opt-${Date.now()}`;
       const optimisticMsg: Message = {
         id: optimisticId,
+        clientMessageId,
+        replyQuote: replyTo?.quote,
         content: text,
         userId: currentUserId,
         edited: false,
@@ -950,9 +972,12 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             content: finalContent || undefined,
             attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
             replyToId: replyTo?.id,
+            replyQuote: replyTo?.quote,
+            clientMessageId,
             encrypted: encryptedFlag,
           }),
         });
+        if (selectedRef.current !== convId) return;
         if (!res.ok) {
           // FIX-DM: показываем причину отказа (ЧС, запрет голосовых и т.п.)
           const err = await res.json().catch(() => null);
@@ -961,17 +986,19 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
           setMessages((prev) => prev.map((m) => (m.id === optimisticId ? { ...m, status: "failed" } : m)));
         } else {
           const saved = await res.json();
-          setMessages((prev) => prev.map((m) => (m.id === optimisticId ? { ...saved, content: text, _encrypted: encryptedFlag, status: "sent" } : m)));
+          setMessages(prev => mergeDmMessages(prev, [{ ...saved, content: text, _encrypted: encryptedFlag, status: "sent" as const }]));
         }
       } catch {
+        if (selectedRef.current !== convId) return;
         updateDmDraft(text);
         showToast("Ошибка сети — нажмите resend");
         setMessages((prev) => prev.map((m) => (m.id === optimisticId ? { ...m, status: "failed" } : m)));
       } finally {
+        sendLock.current = false;
         setSending(false);
       }
     },
-    [input, pendingAttachments, selectedConvId, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, replyTo, currentUserId, showToast, updateDmDraft, isPremiumAccount],
+    [input, pendingAttachments, selectedConvId, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, replyTo, currentUserId, showToast, updateDmDraft, isPremiumAccount, isSecureConv, keyConflict, afterCursor, loadMessages],
   );
 
   // ── Resend a failed message ────────────────────────────────────────────────────
@@ -980,18 +1007,15 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       if (!selectedConvId) return;
       const failedMsg = messages.find((m) => m.id === messageId);
       if (!failedMsg) return;
-      // Mark as sending again
-      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, status: "sending" } : m)));
-      let finalContent = failedMsg.content;
-      let encryptedFlag = failedMsg._encrypted || false;
-      if (e2eeReady && e2eeEnabled && finalContent && !isE2EEMessage(finalContent)) {
-        try {
-          finalContent = await encryptMessage(finalContent, myPrivateKey!, peerPublicKey!);
-          encryptedFlag = true;
-        } catch {
-          /* fall back to plain */
-        }
-      }
+      if (failedMsg.status === "sending" || sendLock.current) return;
+      let finalContent: string;
+      try { finalContent = await prepareDmContent(isSecureConv, failedMsg.content, e2eeReady ? myPrivateKey : null, peerPublicKey); }
+      catch (e) { showToast(e instanceof Error ? e.message : "Ошибка шифрования"); return; }
+      if (selectedRef.current !== selectedConvId) return;
+      const encryptedFlag = isSecureConv;
+      const clientMessageId = failedMsg.clientMessageId || crypto.randomUUID();
+      sendLock.current = true;
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, clientMessageId, status: "sending" } : m));
       const attachments = failedMsg.attachments ? JSON.parse(failedMsg.attachments) : undefined;
       try {
         const res = await fetch(`/api/dm/${selectedConvId}`, {
@@ -1002,22 +1026,26 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             content: finalContent || undefined,
             attachments,
             replyToId: failedMsg.replyTo?.id,
+            replyQuote: failedMsg.replyQuote,
+            clientMessageId,
             encrypted: encryptedFlag,
           }),
         });
+        if (selectedRef.current !== selectedConvId) return;
         if (!res.ok) {
           showToast("Повторная отправка не удалась");
           setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, status: "failed" } : m)));
         } else {
           const saved = await res.json();
-          setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...saved, content: failedMsg.content, _encrypted: encryptedFlag, status: "sent" } : m)));
+          setMessages(prev => mergeDmMessages(prev, [{ ...saved, content: failedMsg.content, _encrypted: encryptedFlag, status: "sent" as const }]));
         }
       } catch {
+        if (selectedRef.current !== selectedConvId) return;
         showToast("Ошибка сети");
         setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, status: "failed" } : m)));
-      }
+      } finally { sendLock.current = false; }
     },
-    [selectedConvId, messages, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, showToast],
+    [selectedConvId, messages, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, showToast, isSecureConv, keyConflict],
   );
 
   // ── Voice recording ──────────────────────────────────────────────────────────────
@@ -1032,6 +1060,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     async (blob: Blob, duration: number, kind: MediaNoteKind = "audio") => {
       const conversationId = selectedConvId;
       if (!conversationId) return;
+      if (isSecureConv) { showToast("В защищённой переписке пока поддерживается только текст"); return; }
       setVoiceUploading(true);
       try {
         const fd = new FormData();
@@ -1061,7 +1090,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         setVoiceUploading(false);
       }
     },
-    [selectedConvId, showToast],
+    [selectedConvId, showToast, isSecureConv],
   );
 
   // ── File upload ────────────────────────────────────────────────────────────────
@@ -1069,6 +1098,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const conversationId = selectedConvId;
       if (!conversationId) return;
+      if (isSecureConv) { showToast("В защищённой переписке пока поддерживается только текст"); return; }
       const files = Array.from(e.target.files || []);
       if (files.length === 0) return;
       setFileUploading(true);
@@ -1097,14 +1127,14 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             showToast("Ошибка загрузки файла");
           }
         }
-        if (uploaded.length > 0) setPendingAttachments((prev) => [...prev, ...uploaded]);
+        if (uploaded.length > 0 && selectedRef.current === conversationId) setPendingAttachments((prev) => [...prev, ...uploaded].slice(0, 10));
       } finally {
         setFileUploading(false);
         setUploadProgress(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [selectedConvId, showToast],
+    [selectedConvId, showToast, isSecureConv],
   );
 
   // ── Geolocation send ──────────────────────────────────────────────────────────
@@ -1112,6 +1142,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const sendGeolocation = useCallback(
     async (lat: number, lng: number, address?: string | null) => {
       if (!selectedConvId) return;
+      if (isSecureConv) { showToast("В защищённой переписке пока поддерживается только текст"); return; }
       setShowGeoPicker(false);
       // FIX-GEO: вместе с точкой сохраняем адрес (улица, дом, город) из Google Geocoding.
       const geoAttachment: Attachment = {
@@ -1169,7 +1200,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         showToast("Ошибка сети");
       }
     },
-    [selectedConvId, showToast],
+    [selectedConvId, showToast, isSecureConv],
   );
 
   const handleTextPaste = useCallback(
@@ -1198,6 +1229,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const handleComposerFiles = useCallback(async (files: File[]) => {
     const conversationId = selectedConvId;
     if (!conversationId || files.length === 0) return;
+      if (isSecureConv) { showToast("В защищённой переписке пока поддерживается только текст"); return; }
     setFileUploading(true);
     try {
       const uploaded: Attachment[] = [];
@@ -1210,11 +1242,26 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         if (!res.ok) continue;
         uploaded.push(await res.json());
       }
-      if (uploaded.length > 0) setPendingAttachments((prev) => [...prev, ...uploaded]);
+      if (uploaded.length > 0 && selectedRef.current === conversationId) setPendingAttachments((prev) => [...prev, ...uploaded].slice(0, 10));
     } finally {
       setFileUploading(false);
     }
-  }, [selectedConvId]);
+  }, [selectedConvId, isSecureConv, showToast]);
+
+  const saveAttachmentEdit = useCallback(async (dataUrl: string) => {
+    if (!selectedConvId || isSecureConv || !attachmentEdit) return;
+    const convId = selectedConvId, original = attachmentEdit;
+    setAttachmentEdit(null); setFileUploading(true);
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const fd = new FormData(); fd.append("file", new File([blob], "edited-image.png", { type: "image/png" })); fd.append("conversationId", convId);
+      const res = await fetch("/api/messages/upload", { method: "POST", body: fd });
+      if (!res.ok) throw Error("Не удалось сохранить изображение");
+      const attachment = await res.json();
+      if (selectedRef.current === convId) setPendingAttachments(prev => prev.map(a => a.url === original.url ? attachment : a));
+    } catch { showToast("Не удалось сохранить изображение. Исходное вложение сохранено."); }
+    finally { setFileUploading(false); }
+  }, [selectedConvId, isSecureConv, attachmentEdit, showToast]);
 
   // Whole-area drag&drop + paste of files/screenshots (tz-connect-update).
   const dropPaste = useFileDropPaste({ onFiles: handleComposerFiles });
@@ -1243,51 +1290,34 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     setEditContent("");
   }, []);
 
-  const saveEdit = useCallback(
-    async (messageId: string) => {
-      if (!selectedConvId || !editContent.trim()) return;
-      const prevContent = messages.find((m) => m.id === messageId)?.content;
-      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, content: editContent } : m)));
+  const saveEdit = useCallback(async (messageId: string) => {
+    if (!selectedConvId || !editContent.trim()) return;
+    const convId = selectedConvId;
+    try {
+      const content = await prepareDmContent(isSecureConv, editContent, e2eeReady ? myPrivateKey : null, peerPublicKey);
+      if (selectedRef.current !== convId) return;
+      const res = await fetch(`/api/dm/${convId}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId, content }) });
+      if (!res.ok) { const err = await res.json().catch(() => null); throw Error(err?.error || "Не удалось сохранить"); }
+      if (selectedRef.current !== convId) return;
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, content: editContent, edited: true, _encrypted: isSecureConv } : m));
       setEditingId(null);
-      try {
-        const res = await fetch(`/api/dm/${selectedConvId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ messageId, content: editContent }),
-        });
-        if (!res.ok) {
-          showToast("Не удалось сохранить");
-          setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, content: prevContent || "" } : m)));
-        }
-      } catch {
-        showToast("Ошибка сети");
-      }
-    },
-    [selectedConvId, editContent, messages, showToast],
-  );
+    } catch (e) { showToast(e instanceof Error ? e.message : "Ошибка сети"); }
+  }, [selectedConvId, editContent, isSecureConv, myPrivateKey, peerPublicKey, e2eeReady, showToast]);
 
-  const deleteMessage = useCallback(
-    async (messageId: string) => {
-      if (!selectedConvId) return;
-      setConfirmDelete(null);
-      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: true, content: "" } : m)));
-      try {
-        await fetch(`/api/dm/${selectedConvId}?messageId=${messageId}`, {
-          method: "DELETE",
-          credentials: "include",
-        });
-      } catch {
-        showToast("Не удалось удалить");
-      }
-    },
-    [selectedConvId, showToast],
-  );
+  const deleteMessage = useCallback(async (messageId: string) => {
+    if (!selectedConvId) return;
+    const convId = selectedConvId; setConfirmDelete(null);
+    try {
+      const res = await fetch(`/api/dm/${convId}?messageId=${encodeURIComponent(messageId)}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw Error("Не удалось удалить сообщение");
+      if (selectedRef.current === convId) setMessages(prev => prev.map(m => m.id === messageId ? { ...m, deleted: true, content: "", attachments: null, reactions: [] } : m));
+    } catch { showToast("Не удалось удалить сообщение"); }
+  }, [selectedConvId, showToast]);
 
   // ── E2EE file decryption (for VoicePlayer) ──────────────────────────────────
   const handleDecryptFile = useCallback(
     async (encrypted: ArrayBuffer, iv: string): Promise<ArrayBuffer> => {
-      if (!myPrivateKey || !peerPublicKey) return encrypted;
+      if (!myPrivateKey || !peerPublicKey) throw new Error("Нет ключей для расшифровки файла");
       const { decryptFile } = await import("@/lib/e2ee");
       return decryptFile(encrypted, iv, myPrivateKey, peerPublicKey);
     },
@@ -1295,67 +1325,50 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   );
 
   // ── Reactions ────────────────────────────────────────────────────────────────
-  const toggleReaction = useCallback(
-    async (messageId: string, emoji: string) => {
-      // Optimistic
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.id !== messageId) return m;
-          const reactions = m.reactions || [];
-          const exists = reactions.some((r) => r.userId === currentUserId && r.emoji === emoji);
-          return {
-            ...m,
-            reactions: exists
-              ? reactions.filter((r) => !(r.userId === currentUserId && r.emoji === emoji))
-              : [...reactions, { id: `${currentUserId}-${emoji}`, emoji, userId: currentUserId, user: { id: currentUserId, name: "Вы" } }],
-          };
-        }),
-      );
-      try {
-        await fetch("/api/dm/reactions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ messageId, emoji }),
-        });
-      } catch {
-        /* server will reconcile via socket */
-      }
-    },
-    [currentUserId],
-  );
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (!capabilities.reactions || !selectedConvId) return;
+    const key = `${messageId}:${emoji}`;
+    if (reactionLocks.current.has(key)) return;
+    const message = messages.find(m => m.id === messageId);
+    if (!message || message.status === "sending" || message.status === "failed") return;
+    const old = (message.reactions || []).find(r => r.userId === currentUserId && r.emoji === emoji);
+    const active = !old, convId = selectedConvId;
+    const setOwn = (value: boolean) => setMessages(prev => prev.map(m => m.id === messageId ? { ...m, reactions: [...(m.reactions || []).filter(r => !(r.userId === currentUserId && r.emoji === emoji)), ...(value ? [old || { id: key, emoji, userId: currentUserId, user: { id: currentUserId, name: "Вы" } }] : [])] } : m));
+    reactionLocks.current.add(key); setOwn(active);
+    try {
+      const res = await fetch("/api/dm/reactions", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId, emoji, active }) });
+      if (!res.ok) throw Error("Не удалось сохранить реакцию");
+      // Socket deltas are idempotent; do not overwrite newer peer events with an older HTTP snapshot.
+    } catch { if (selectedRef.current === convId) setOwn(!active); showToast("Не удалось сохранить реакцию"); }
+    finally { reactionLocks.current.delete(key); }
+  }, [capabilities.reactions, selectedConvId, messages, currentUserId, showToast]);
 
-  // ── Pin ──────────────────────────────────────────────────────────────────────
-  const pinMessage = useCallback(
-    async (messageId: string) => {
-      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, pinned: !m.pinned } : m)));
-      try {
-        await fetch("/api/dm/pin", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ messageId }),
-        });
-      } catch {
-        showToast("Не удалось закрепить");
-      }
-    },
-    [showToast],
-  );
+  const pinMessage = useCallback(async (messageId: string) => {
+    const convId = selectedConvId;
+    try {
+      const res = await fetch("/api/dm/pin", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId }) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw Error(data?.error || "Не удалось закрепить");
+      if (selectedRef.current === convId) setMessages(prev => prev.map(m => m.id === messageId ? { ...m, pinned: data.pinned } : m));
+    } catch (e) { showToast(e instanceof Error ? e.message : "Не удалось закрепить"); }
+  }, [showToast, selectedConvId]);
 
   const fetchPinnedMessages = useCallback(async () => {
     if (!selectedConvId) return;
     try {
       const res = await fetch(`/api/dm/pin?conversationId=${selectedConvId}`, { credentials: "include" });
-      if (res.ok) setPinnedMessages(await res.json());
+      if (res.ok) { const rows = await res.json(); if (selectedRef.current === selectedConvId) setPinnedMessages(rows); }
     } catch {
       /* ignore */
     }
   }, [selectedConvId]);
 
+  useEffect(() => { setPinnedMessages([]); if (selectedConvId && !isVaultLocked) void fetchPinnedMessages(); }, [selectedConvId, isVaultLocked, fetchPinnedMessages]);
+
   // ── Threads ──────────────────────────────────────────────────────────────────
   const openThread = useCallback(
     async (msg: Message) => {
+      if (!capabilities.threads) return;
       setActiveThread({ id: msg.id, user: msg.user.name, content: msg.content.slice(0, 100) });
       setThreadInput(localStorage.getItem(`tz-chat-draft:dm-thread:${msg.id}`) ?? "");
       setThreadMessages([]);
@@ -1369,11 +1382,11 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         /* ignore */
       }
     },
-    [selectedConvId],
+    [selectedConvId, capabilities.threads],
   );
 
   const sendThreadReply = useCallback(async () => {
-    if (!selectedConvId || !activeThread || !threadInput.trim()) return;
+    if (!capabilities.threads || !selectedConvId || !activeThread || !threadInput.trim()) return;
     const text = threadInput.trim();
     setThreadInput("");
     localStorage.removeItem(`tz-chat-draft:dm-thread:${activeThread.id}`);
@@ -1403,7 +1416,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
     } catch {
       showToast("Ошибка отправки");
     }
-  }, [selectedConvId, activeThread, threadInput, currentUserId, showToast]);
+  }, [selectedConvId, activeThread, threadInput, currentUserId, showToast, capabilities.threads]);
 
   // ── Forward ────────────────────────────────────────────────────────────────
   const openForwardModal = useCallback(async (msg: Message) => {
@@ -1503,7 +1516,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   /** FIX-FWDBUF: отправить содержимое буфера в открытый сейчас диалог. */
   const forwardHere = useCallback(
     async (item: ForwardItem) => {
-      if (!selectedConvId) return false;
+      if (!selectedConvId || isSecureConv) return false;
       let atts: unknown;
       try {
         atts = item.attachments ? JSON.parse(item.attachments) : undefined;
@@ -1518,12 +1531,13 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       }).catch(() => null);
       return !!res?.ok;
     },
-    [selectedConvId],
+    [selectedConvId, isSecureConv],
   );
 
   // ── Add to Favorites (self-conversation) ──────────────────────────────────────
   const addToFavorites = useCallback(
     async (msg: Message) => {
+      if (isSecureConv || msg._encrypted || isE2EEMessage(msg.content)) { showToast("Защищённое сообщение нельзя скопировать в обычный Сейф"); return; }
       try {
         // Find or create the self-conversation (favorites)
         const res = await fetch("/api/dm", {
@@ -1552,7 +1566,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         showToast("Ошибка при добавлении в Сейф");
       }
     },
-    [currentUserId, showToast],
+    [currentUserId, showToast, isSecureConv],
   );
 
   /* FIX-E2EECHAT: открыть защищённый разговор с тем же человеком (завести, если его ещё нет)
@@ -1684,6 +1698,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const scrollToBottom = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
+    if (afterCursor && selectedConvId) { void loadMessages(selectedConvId); return; }
     revealWindowTail();
     setShowScrollBtn(false);
     el.scrollTop = el.scrollHeight;
@@ -1693,7 +1708,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       const node = scrollContainerRef.current;
       if (node) node.scrollTop = node.scrollHeight;
     });
-  }, [revealWindowTail]);
+  }, [revealWindowTail, afterCursor, selectedConvId, loadMessages]);
 
   /* Доводка в layout-эффекте: обычный эффект выполняется после кадра, и
      промежуточное положение успевает мелькнуть на экране. */
@@ -1706,9 +1721,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
   // ── Reply handler ────────────────────────────────────────────────────────────
   const handleReply = useCallback((msg: Message) => {
-    setReplyTo({ id: msg.id, name: msg.user.name, content: msg.content.slice(0, 80) || "[вложение]" });
+    const quote = capabilities.quote ? selectedReplyQuote(document.getElementById(`dm-msg-${msg.id}`)) : undefined;
+    setReplyTo({ id: msg.id, name: msg.user.name, content: quote || msg.content.slice(0, 80) || "[вложение]", ...(quote ? { quote } : {}) });
     textareaRef.current?.focus();
-  }, []);
+  }, [capabilities.quote]);
 
   // ════════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -1723,6 +1739,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
   return (
     <>
+      {attachmentEdit && <DrawingEditor initialImage={attachmentEdit.url} title="Изображение перед отправкой" saveLabel="Прикрепить изменённое" onSave={data => void saveAttachmentEdit(data)} onClose={() => setAttachmentEdit(null)}/> }
       <div className="flex-1 flex h-full overflow-hidden relative">
         {/* COL 2: conversation list */}
         <DMConversationList
@@ -1749,18 +1766,25 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         {selectedConv && otherUser ? (
           /* PREMIUM-SKIN: тот же фон переписки, что и в каналах сообществ — личные
              сообщения не должны выглядеть чужим окном. */
-          <section {...dropPaste.dropProps} className="tz-skin-chat flex-1 flex flex-col h-full bg-[var(--cn-main)] relative min-w-0">
+          <section {...dropPaste.dropProps} className={`tz-skin-chat flex-1 flex flex-col h-full bg-[var(--cn-main)] relative min-w-0 ${detailsMode && !isBusiness ? "lg:pr-80" : ""}`}>
             {dropPaste.isDragOver && (
               <div className="tz-dropzone">Отпустите файлы, чтобы прикрепить</div>
             )}
             {dayNightEnabled && (
               <DayNightBackground opacity={dayNightOpacity / 100} />
             )}
-            <DMMessageHeader
+            {!isBusiness ? <DMPersonalHeader
+              other={isVaultConv ? { ...otherUser, name: "Сейф" } : otherUser} secure={isSecureConv} vault={isVaultConv}
+              onBack={() => setSelectedConvId(null)} onSearch={() => setDetailsMode("search")}
+              onMaterials={() => setDetailsMode("materials")}
+              onPins={() => { setShowPinned(v => !v); void fetchPinnedMessages(); }}
+              onSecure={() => { if (!isSecureConv && !e2eeReady) { if (otherId) void fetchPeerKey(otherId); showToast(keyConflict ? "Импортируйте ключ этого аккаунта через настройки E2EE" : "Ключи ещё не готовы. Проверьте настройки E2EE обоих устройств."); return; } void openCompanionChat(!isSecureConv); }}
+              onSettings={e => setUserMenu({ x: e.clientX || 16, y: e.clientY || 100 })} onError={showToast}
+            /> : <DMMessageHeader
               other={otherUser.id === currentUserId ? { ...otherUser, name: "Сейф" } : otherUser}
               /* FIX-E2EECHAT: человек должен видеть, в каком из двух разговоров он пишет:
                  имя собеседника в обоих одно и то же. */
-              subtitle={isSecureConv ? "Одноразовый • сквозное шифрование • удаляется при закрытии вкладки" : businessSubtitle}
+              subtitle={isSecureConv ? "Защищённая переписка · автоудаление не включено" : businessSubtitle}
               e2eeReady={e2eeReady}
               /* FIX-E2EEBTN: в деловом разговоре шифрования нет намеренно (его читает
                  вся администрация по роли), там кнопки быть не должно. В личной
@@ -1813,7 +1837,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                  null в деловом — кнопка есть и говорит «Не оплачено». */
               paymentStatus={isBusiness ? (payment?.status ?? null) : undefined}
               onOpenPayment={isBusiness ? () => setPaymentOpen(true) : undefined}
-            />
+            />}
+            {detailsMode && !isBusiness && !isSecureConv && !isVaultLocked && <DMDetailsPanel key={`${selectedConvId}:${detailsMode}`} conversationId={selectedConvId!} mode={detailsMode} onClose={closeDetails} onJump={id => void jumpToMessage(id)}/> }
 
             {/* FIX-DM: контекстное меню по нику и модалки */}
             {userMenu && (
@@ -1824,7 +1849,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                 settings={dmSettings}
                 onToggleBlacklist={() => { void updateDmSetting({ blacklisted: !dmSettings.blacklisted }); setUserMenu(null); }}
                 onToggleVoiceBan={() => { void updateDmSetting({ voiceBan: !dmSettings.voiceBan }); setUserMenu(null); }}
-                onShowAttachments={() => { setShowAttachmentsPanel(true); setUserMenu(null); }}
+                onShowAttachments={() => { if (!isSecureConv) setDetailsMode("materials"); setUserMenu(null); }}
                 onShowAutoReply={() => { setShowAutoReply(true); setUserMenu(null); }}
                 onClose={() => setUserMenu(null)}
               />
@@ -1845,6 +1870,9 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               />
             )}
 
+            {!isBusiness && pinnedMessages.length > 0 && <button type="button" onClick={() => { setShowPinned(v => !v); void fetchPinnedMessages(); }} className="min-h-11 border-b border-[var(--cn-border)] bg-[var(--cn-sidebar)] px-4 flex items-center gap-2 text-left text-sm">
+              <PinIcon size={15}/><b className="text-violet-600 dark:text-cyan-300">Закреплено</b><span className="truncate flex-1">{isSecureConv ? "Защищённое сообщение" : pinnedMessages[0]?.content?.slice(0, 100) || "Вложение"}</span><span className="text-xs text-[var(--cn-text-dim)]">{pinnedMessages.length}</span>
+            </button>}
             {/* Pinned panel */}
             <AnimatePresence>
               {showPinned && (
@@ -1864,10 +1892,10 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
                         <p className="text-xs text-neutral-400 text-center py-2">Нет закреплённых</p>
                       ) : (
                         pinnedMessages.map((p) => (
-                          <div key={p.id} className="p-2 rounded-lg bg-white/50 dark:bg-white/5 text-xs">
+                          <button type="button" key={p.id} onClick={() => { setShowPinned(false); void jumpToMessage(p.id); }} className="block w-full min-h-11 text-left p-2 rounded-lg bg-white/50 dark:bg-white/5 text-sm">
                             <span className="text-neutral-500">{p.user?.name}:</span>{" "}
-                            <span className="text-[var(--cn-text)]">{p.content?.slice(0, 80)}</span>
-                          </div>
+                            <span className="text-[var(--cn-text)]">{isSecureConv ? "Защищённое сообщение" : p.content?.slice(0, 80)}</span>
+                          </button>
                         ))
                       )}
                     </div>
@@ -1888,6 +1916,14 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             <ChatErrorBoundary resetKey={selectedConvId} label="Не удалось показать переписку">
             <DMMessageList
               messages={visibleMessages}
+              personal={!isBusiness}
+              secure={isSecureConv}
+              capabilities={capabilities}
+              prefs={chatPrefs}
+              firstUnreadId={firstUnreadId}
+              onJump={id => void jumpToMessage(id)}
+              afterCursor={afterCursor}
+              onLoadNewer={() => void loadMessages(selectedConvId!, true, afterCursor || undefined, true)}
               currentUserId={currentUserId}
               selectedConvId={selectedConvId!}
               editingId={editingId}
@@ -1961,10 +1997,14 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
             {/* FIX-FWDBUF: полоса появляется, когда сообщение ждёт получателя. */}
             <div className="px-3">
-              <ForwardPendingBar onSendHere={forwardHere} disabled={!selectedConvId} />
+              <ForwardPendingBar onSendHere={forwardHere} disabled={!selectedConvId || isSecureConv} />
             </div>
 
             <DMMessageComposer
+              personal={!isBusiness}
+              sendOnEnter={isBusiness || chatPrefs.sendOnEnter}
+              attachmentsAllowed={capabilities.attachments}
+              onEditAttachment={isBusiness || isSecureConv ? undefined : setAttachmentEdit}
               input={input}
               onInputChange={(v) => {
                 updateDmDraft(v);
@@ -2001,7 +2041,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
               onInsertFormat={insertFormat}
               onOpenGeo={() => setShowGeoPicker(true)}
               typingName={typingName}
-              e2eeEnabled={e2eeEnabled && e2eeReady}
+              e2eeEnabled={e2eeEnabled}
               mentionMembers={otherUser ? [{ id: otherUser.id, username: otherUser.username, name: otherUser.name, avatar: otherUser.avatar, lastSeen: otherUser.lastSeen }] : []}
             />
             </>

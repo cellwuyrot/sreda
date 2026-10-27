@@ -1,0 +1,22 @@
+{
+  "checks": [
+    "1360: composer visible",
+    "1360: no horizontal page overflow",
+    "1360: no phantom thread action",
+    "1360: full search result rendered",
+    "1360: file panel rendered",
+    "1360: socket echo and acknowledgement deduplicated",
+    "1360: no server search in secure conversation",
+    "1360: no false deletion promise",
+    "390: composer visible",
+    "390: no horizontal page overflow",
+    "390: no phantom thread action",
+    "390: full search result rendered",
+    "390: file panel rendered",
+    "390: socket echo and acknowledgement deduplicated",
+    "390: no server search in secure conversation",
+    "390: no false deletion promise"
+  ],
+  "errors": [],
+  "scope": "Actual DMPanel/components with mocked API/socket/call service; not live backend E2E"
+}
