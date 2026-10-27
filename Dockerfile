@@ -17,8 +17,8 @@ COPY packages/shared/package.json ./packages/shared/
 COPY apps/web/package.json ./apps/web/
 COPY apps/desktop/package.json ./apps/desktop/
 COPY apps/web/prisma ./apps/web/prisma/
-# --ignore-scripts: the web workspace's postinstall runs `prisma migrate
-# deploy`, which needs a live database we don't have at image-build time.
+# --ignore-scripts keeps workspace lifecycle scripts out of the image build.
+# The web postinstall only generates the client; it never mutates the database.
 # Migrations are applied at deploy time (see .gitlab-ci.yml); here we only need
 # the dependency tree, the shared contract and a generated Prisma client.
 RUN npm ci --ignore-scripts

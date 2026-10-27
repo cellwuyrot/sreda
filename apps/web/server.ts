@@ -1,3 +1,4 @@
+import { assertSingleRealtimeInstance } from "./src/lib/realtimeTopology";
 import { createServer } from "http";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
@@ -79,6 +80,8 @@ async function sessionTokenFrom(req: IncomingMessage) {
   });
   return token?.id && await liveSession(token.id as string, token.sid as string | null) ? token : null;
 }
+
+assertSingleRealtimeInstance(process.env);
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
@@ -451,7 +454,7 @@ async function serveFromNode(
          записан когда-то давно и другим кодом, а от типа зависит, покажет
          браузер видеозаметку или примет её за звук. */
       "Content-Type": uploadContentType(dir, extname(relPath).toLowerCase()),
-      "Cache-Control": isPrivate ? "private, max-age=3600" : "public, max-age=31536000, immutable",
+      "Cache-Control": isPrivate ? "private, no-store" : "public, max-age=31536000, immutable",
       "Accept-Ranges": "bytes",
     };
     const length = upstream.headers.get("content-length");
@@ -614,8 +617,9 @@ async function serveUploadedFile(
       "Content-Length": stat.size,
       /* Приватный файл не должен оседать в общих кэшах: `public` разрешал
          nginx и любому прокси по пути держать копию и отдавать её кому угодно.
-         Браузеру пользователя кэшировать можно — это его собственный диск. */
-      "Cache-Control": isPrivate ? "private, max-age=3600" : "public, max-age=31536000, immutable",
+         Также не сохраняем приватный ответ в браузерном кеше: следующий
+         запрос должен заново проверить актуальные права. */
+      "Cache-Control": isPrivate ? "private, no-store" : "public, max-age=31536000, immutable",
     };
     if (query?.get("dl") === "1") {
       // Имя приходит от клиента, поэтому вычищаем всё, чем можно сломать

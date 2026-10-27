@@ -29,6 +29,9 @@ lint:
     - npx prisma generate --schema apps/web/prisma/schema.prisma
   script:
     - npm run lint
+    - npm run typecheck -w apps/web
+    - npm run typecheck
+    - npm run test -w apps/web -- --maxWorkers=2
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -157,6 +160,7 @@ deploy:
       ALLOWED_ORIGINS=$ALLOWED_ORIGINS
       ENCRYPTION_SECRET=$ENCRYPTION_SECRET
       TURN_URL=$TURN_URL
+      TURN_AUTH_SECRET=$TURN_AUTH_SECRET
       TURN_USERNAME=$TURN_USERNAME
       TURN_CREDENTIAL=$TURN_CREDENTIAL
       SMTP_HOST=$SMTP_HOST
@@ -179,7 +183,7 @@ deploy:
         sleep 2
       done
     # Run migrations
-    - docker-compose run --rm app npx prisma db push --skip-generate
+    - docker-compose run --rm app npx prisma migrate deploy
     # Recreate ONLY the app container, in place. nginx, Postgres, Redis and
     # coturn keep running, so the reverse proxy is unable to reach the app for
     # just the couple of seconds Docker needs to swap the container — instead of

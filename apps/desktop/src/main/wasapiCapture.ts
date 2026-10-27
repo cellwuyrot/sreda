@@ -1,3 +1,4 @@
+import { trustedIpc as ipcMain } from "./trustedIpc";
 /**
  * WASAPI-SS: управление нативным захватом звука из main-процесса.
  *
@@ -6,7 +7,7 @@
  * передаёт видео без звука.
  */
 
-import { ipcMain, WebContents } from "electron";
+import { WebContents } from "electron";
 import path from "path";
 import { IPC } from "../shared/constants";
 
