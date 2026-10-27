@@ -173,15 +173,21 @@ export function JoinGroupModal({ onClose, onJoined }: { onClose: () => void; onJ
     if (!code.trim()) return;
     setError("");
     setLoading(true);
-    const res = await fetch(`/api/invites/${code.trim()}`, { method: "POST" });
-    const data = await res.json();
-    setLoading(false);
-    /* FIX-ANDROID-JOIN: если пользователь уже состоит в группе — расцениваем
-       диалог и открываем группу, а не показываем ошибку. */
-    if (res.status === 409 && data.groupId) { onJoined(data.groupId); onClose(); return; }
-    if (!res.ok) { setError(data.error || "Ошибка"); return; }
-    onJoined(data.groupId);
-    onClose();
+    try {
+      const res = await fetch(`/api/invites/${code.trim()}`, { method: "POST" });
+      const data = await res.json();
+      setLoading(false);
+      /* FIX-ANDROID-JOIN: если пользователь уже состоит в группе — расцениваем
+         диалог и открываем группу, а не показываем ошибку. */
+      if (res.status === 409 && data.groupId) { onJoined(data.groupId); onClose(); return; }
+      if (!res.ok) { setError(data.error || "Ошибка"); return; }
+      onJoined(data.groupId);
+      onClose();
+    } catch {
+      setError("Ошибка сети. Попробуйте позже.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -220,22 +226,28 @@ export function CreateChannelModal({ groupId, initialParentId = null, initialCre
   const effectiveType = createCategory ? "CATEGORY" : type === "VOICE" ? "VOICE" : enhanced ? "FEED" : type;
 
   const handleCreate = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || loading) return;
     setLoading(true);
     setError("");
-    const res = await fetch("/api/channels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), type: effectiveType, groupId, parentId: createCategory ? null : parentId, channelGroupType: createCategory ? groupType : undefined }),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Ошибка создания канала");
-      return;
+    try {
+      const res = await fetch("/api/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), type: effectiveType, groupId, parentId: createCategory ? null : parentId, channelGroupType: createCategory ? groupType : undefined }),
+      });
+      setLoading(false);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Ошибка создания канала");
+        return;
+      }
+      onCreated();
+      onClose();
+    } catch {
+      setError("Ошибка сети. Попробуйте позже.");
+    } finally {
+      setLoading(false);
     }
-    onCreated();
-    onClose();
   };
 
   return (

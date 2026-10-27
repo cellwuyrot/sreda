@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useVoice, SCREEN_COMFORT_VIEWERS, type ScreenShare, type CameraShare } from "@/contexts/VoiceContext"; // FIX-SHARECAMBOX
+import FullscreenButton from "./FullscreenButton";
 import ScreenSharePrivacyModal from "./ScreenSharePrivacyModal"; // SCREEN-PRIVATE-LIVE
 
 interface ScreenShareWindowProps {
@@ -564,7 +565,8 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
          разделы настроек: во время показа нажать на них было нельзя, а сам
          показ при этом никуда не спешил. Плашка и мини-окно остаются выше --
          это мелкие плавающие элементы, они ничего не перекрывают. */
-      className="fixed z-[45] flex items-center justify-center bg-black/85"
+      data-fullscreen-target
+      className="fullscreen-surface fixed z-[45] flex items-center justify-center bg-black/85"
       style={areaRect
         ? { left: areaRect.left, top: areaRect.top, width: areaRect.width, height: areaRect.height }
         : { inset: 0 }}
@@ -633,6 +635,7 @@ export default function ScreenShareWindow({ shares, onStopLocal, onVoiceChannel 
                 {!voice.isCameraOn && !cameraBusy && <line x1="2" y1="3" x2="22" y2="21" />}
               </svg>
             </button>
+            <FullscreenButton />
             <button type="button" onClick={() => setMode("mini")} title="Свернуть в мини-окно" className="w-8 h-8 rounded-lg text-white/55 hover:text-white hover:bg-white/[0.06] inline-flex items-center justify-center"><Icon name="mini" /></button>
             <button type="button" onClick={stopOrExit} title={canStop ? "Остановить демонстрацию" : "Прекратить просмотр"} className="w-8 h-8 rounded-lg text-red-300 hover:bg-red-500/15 inline-flex items-center justify-center"><Icon name={canStop ? "stop" : "exit"} /></button>
           </div>

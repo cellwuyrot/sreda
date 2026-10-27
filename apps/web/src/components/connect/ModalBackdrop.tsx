@@ -12,12 +12,18 @@ interface ModalBackdropProps {
 export default function ModalBackdrop({ onClose, children, maxWidth = "max-w-sm" }: ModalBackdropProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // A parent often passes an inline onClose. Updating it must not refocus
+  // the dialog on every keystroke.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
   useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
       if (e.key === "Tab" && contentRef.current) {
         const focusable = contentRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
         );
         if (focusable.length === 0) return;
         const first = focusable[0];
@@ -32,9 +38,16 @@ export default function ModalBackdrop({ onClose, children, maxWidth = "max-w-sm"
       }
     };
     document.addEventListener("keydown", handleKeyDown);
-    contentRef.current?.querySelector<HTMLElement>("input, button")?.focus();
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+    const content = contentRef.current;
+    // React's autoFocus has already run. Never steal focus from that field.
+    if (content && !content.contains(document.activeElement)) {
+      content.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled), button:not(:disabled)")?.focus();
+    }
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, []);
 
   return (
     <motion.div
