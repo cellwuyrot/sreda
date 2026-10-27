@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useRef, useCallback, useEffect, us
 import { useSession } from "next-auth/react";
 import { io, Socket } from "socket.io-client";
 import { NoiseSuppressor, NSStatus } from "@/lib/noiseSuppressor";
+import { captureOptionalMicrophone, ensureVoiceReceiver } from "@/lib/voiceMicrophone";
 import { patchedOffer, patchedAnswer } from "@/lib/sdpUtils";
 import { getDesktopApi } from "@/lib/desktop";
 import { hasPremium } from "@/lib/premium";
@@ -1449,6 +1450,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    ensureVoiceReceiver(pc, localStreamRef.current);
+
     if (screenStreamRef.current && isScreenAllowedFor(remoteSocketId)) {
       // Send the whole screen share (video + any captured audio) to the new peer.
       // SCREEN-PRIVATE: приватная трансляция физически не отправляется тем, кого
@@ -2281,12 +2284,22 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     // Immediately route the new (raw) mic to peers so speech isn't interrupted
     // while RNNoise re-initialises. Screen-share audio senders are left alone.
     const screenSenders = new Set(Array.from(screenSendersRef.current.values()).flat());
-    peersRef.current.forEach(pc => {
-      pc.getSenders().forEach(sender => {
-        if (sender.track?.kind === "audio" && !screenSenders.has(sender)) {
-          void sender.replaceTrack(newTrack).catch(() => {});
+    peersRef.current.forEach((pc, peerId) => {
+      const sender = pc.getSenders().find(s => s.track?.kind === "audio" && !screenSenders.has(s));
+      if (sender) {
+        void sender.replaceTrack(newTrack).catch(() => {});
+      } else {
+        // A listener may plug in a microphone without leaving the channel.
+        const receiver = pc.getTransceivers().find(t => t.direction !== "stopped" && !t.sender.track && t.receiver.track.kind === "audio");
+        if (receiver) {
+          receiver.direction = "sendrecv";
+          receiver.sender.setStreams(newRaw!);
+          void receiver.sender.replaceTrack(newTrack).then(() => renegotiateOutbound(peerId)).catch(() => {});
+        } else {
+          pc.addTrack(newTrack, newRaw!);
+          renegotiateOutbound(peerId);
         }
-      });
+      }
     });
 
     // Tear down the previous pipeline (old suppressor, speaking detector, stream).
@@ -2309,7 +2322,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
     oldNs?.destroy();
     if (oldRaw && oldRaw !== newRaw) oldRaw.getTracks().forEach(t => t.stop());
-  }, [startSpeakingDetection, attachNoiseSuppressor, teardownEqChain]);
+  }, [startSpeakingDetection, attachNoiseSuppressor, teardownEqChain, renegotiateOutbound]);
 
   const setMicDevice = useCallback(async (deviceId: string | null) => {
     micDeviceIdRef.current = deviceId;
@@ -2766,33 +2779,27 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       // system default if that device is gone). RNNoise still receives an
       // unprocessed mono signal; native denoising is reserved for the fallback.
       const micId = micDeviceIdRef.current;
-      try {
-        rawStream = await navigator.mediaDevices.getUserMedia(buildMicConstraints(micId, true));
-      } catch {
-        // Fallback for mics that reject the exact channel/sample-rate above.
-        try {
-          rawStream = await navigator.mediaDevices.getUserMedia(buildMicConstraints(micId, false));
-        } catch (e) {
-          // A stale saved device (unplugged headset) must not block joining —
-          // retry once on the system default before giving up.
-          if (micId) rawStream = await navigator.mediaDevices.getUserMedia(buildMicConstraints(null, false));
-          else throw e;
-        }
-      }
+      rawStream = await captureOptionalMicrophone(
+        constraints => navigator.mediaDevices.getUserMedia(constraints),
+        [buildMicConstraints(micId, true), buildMicConstraints(micId, false),
+          ...(micId ? [buildMicConstraints(null, false)] : [])],
+      );
       if (joinAttempt !== joinAttemptRef.current) {
-        rawStream.getTracks().forEach(t => t.stop());
+        rawStream?.getTracks().forEach(t => t.stop());
         return;
       }
       rawStreamRef.current = rawStream;
-      // The raw Chromium-processed microphone is immediately usable. RNNoise
-      // is attached in the background below and replaces this track without
-      // forcing the user to wait before joining.
       localStreamRef.current = rawStream;
-      setConnectionStage("optimizing-audio");
-
-      // FIX-AUDIO-DEV: RNNoise wiring now lives in a shared helper so a live
-      // microphone switch rebuilds the identical pipeline.
-      attachNoiseSuppressor(rawStream, () => joinAttempt !== joinAttemptRef.current);
+      const muted = !rawStream || pttEnabledRef.current;
+      isMutedRef.current = muted;
+      setIsMuted(muted);
+      if (rawStream) {
+        rawStream.getAudioTracks().forEach(t => { t.enabled = !muted; });
+        setConnectionStage("optimizing-audio");
+        attachNoiseSuppressor(rawStream, () => joinAttempt !== joinAttemptRef.current);
+      } else {
+        setNsStatus("idle");
+      }
 
       setConnectionStage("server");
 
@@ -2860,14 +2867,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         // FIX-GR2: звук — только при первом входе, не при восстановлении связи.
         if (!lastConnectWasReconnect) playSound(connectionSfxRef);
 
-        if (pttEnabledRef.current) {
+        if (!rawStream || pttEnabledRef.current) {
           rawStream?.getAudioTracks().forEach(t => { t.enabled = false; });
           localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
           setIsMuted(true);
           socket.emit("toggle-mute", { channelId: chId, muted: true });
         }
 
-        const self: VoiceUser = { socketId: socket.id!, userId: session.user.id, userName, muted: pttEnabledRef.current };
+        const self: VoiceUser = { socketId: socket.id!, userId: session.user.id, userName, muted: !rawStream || pttEnabledRef.current };
         setUsers(prev => [...prev.filter(u => u.socketId !== socket.id), self]);
         if (userCount > 1) {
           window.setTimeout(() => setConnectionStage(prev => prev === "media" ? "connected" : prev), 2500);
@@ -3023,9 +3030,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         // Разблокируем трек — пользователь сам решит включать ли
         rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
         localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
-        isMutedRef.current = false;
-        setIsMuted(false);
-        socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted: false });
+        const muted = !rawStreamRef.current?.getAudioTracks().length;
+        isMutedRef.current = muted;
+        setIsMuted(muted);
+        socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted });
       });
 
       // Модератор снял принудительное заглушение микрофона + наушников
@@ -3038,9 +3046,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         // Разблокируем микрофон
         rawStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
         localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = true; });
-        isMutedRef.current = false;
-        setIsMuted(false);
-        socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted: false });
+        const muted = !rawStreamRef.current?.getAudioTracks().length;
+        isMutedRef.current = muted;
+        setIsMuted(muted);
+        socketRef.current?.emit("toggle-mute", { channelId: channelIdRef.current, muted });
         // Разблокируем наушники
         if (isDeafenedRef.current) {
           isDeafenedRef.current = false;
@@ -3295,7 +3304,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   // Shared by the mute button, push-to-talk, and desktop global hotkeys.
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const setMuted = useCallback((muted: boolean) => {
-    if (!rawStreamRef.current) return;
+    if (!rawStreamRef.current?.getAudioTracks().length) return;
+    isMutedRef.current = muted;
     rawStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !muted; });
     localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = !muted; });
     setIsMuted(muted);

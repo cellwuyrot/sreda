@@ -149,3 +149,9 @@ export function mergeBoards(
     return { ...board, edges: board.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
   });
 }
+
+/** Camera position belongs to the viewer, never to a collaborator's update. */
+export function preserveLocalViews<T extends { id: string; view?: unknown }>(incoming: T[], local: T[]): T[] {
+  const views = new Map(local.map(board => [board.id, board.view]));
+  return incoming.map(board => views.has(board.id) ? { ...board, view: views.get(board.id) } : board);
+}

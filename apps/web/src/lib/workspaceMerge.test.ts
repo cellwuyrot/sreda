@@ -130,3 +130,16 @@ describe("слияние", () => {
     expect(incoming[0]!.cards[0]).toMatchObject({ x: 0 });
   });
 });
+
+describe("local camera stays local", () => {
+  it("preserves every known board's view while applying remote card updates", async () => {
+    const { preserveLocalViews } = await import("./workspaceMerge");
+    const incoming = [{ id: "b", view: { x: 0, y: 0, scale: 1 }, cards: [{ id: "remote" }] }, { id: "new", view: { x: 5, y: 5, scale: 1 }, cards: [] }];
+    const local = [{ id: "b", view: { x: 700, y: -300, scale: 2 }, cards: [] }];
+    const merged = preserveLocalViews(incoming, local);
+    expect(merged[0].view).toEqual(local[0].view);
+    expect(merged[0].cards).toEqual(incoming[0].cards);
+    expect(merged[1]).toEqual(incoming[1]);
+    expect(incoming[0].view.x).toBe(0);
+  });
+});

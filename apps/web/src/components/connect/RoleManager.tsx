@@ -47,14 +47,18 @@ export default function RoleManager({ groupId, canManage, members = [] }: RoleMa
 
   useEffect(() => { fetchRoles(); }, [fetchRoles]);
 
+  const [assignError, setAssignError] = useState("");
+  // Compare actual assignments, not the array identity recreated by the parent.
+  const membersKey = JSON.stringify(members.map(m => [m.userId, [...m.roleIds].sort()]));
   // init assignment map from members prop
   useEffect(() => {
     const map: Record<string, Set<string>> = {};
-    for (const m of members) for (const rid of m.roleIds) {
-      (map[rid] ||= new Set()).add(m.userId);
+    const entries = JSON.parse(membersKey) as [string, string[]][];
+    for (const [userId, roleIds] of entries) for (const rid of roleIds) {
+      (map[rid] ||= new Set()).add(userId);
     }
     setAssign(map);
-  }, [members]);
+  }, [groupId, membersKey]);
 
   const createRole = async () => {
     if (!newName.trim()) return;
@@ -74,7 +78,9 @@ export default function RoleManager({ groupId, canManage, members = [] }: RoleMa
   };
 
   const toggleMember = async (roleId: string, userId: string) => {
-    const has = assign[roleId]?.has(userId);
+    if (busyKey) return;
+    setAssignError("");
+    const has = assign[roleId]?.has(userId) ?? false;
     const key = roleId + ":" + userId;
     setBusyKey(key);
     // optimistic
@@ -85,13 +91,23 @@ export default function RoleManager({ groupId, canManage, members = [] }: RoleMa
       next[roleId] = set;
       return next;
     });
-    await fetch(`/api/groups/${groupId}/roles/${roleId}/members`, {
-      method: has ? "DELETE" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    }).catch(() => {});
-    setBusyKey(null);
-    fetchRoles();
+    try {
+      const res = await fetch(`/api/groups/${groupId}/roles/${roleId}/members`, {
+        method: has ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) throw new Error("assignment rejected");
+    } catch {
+      setAssign(prev => {
+        const next = new Set(prev[roleId] || []);
+        if (has) next.add(userId); else next.delete(userId);
+        return { ...prev, [roleId]: next };
+      });
+      setAssignError("Не удалось изменить роль. Попробуйте ещё раз.");
+    } finally {
+      setBusyKey(null);
+    }
   };
 
   return (
@@ -101,6 +117,7 @@ export default function RoleManager({ groupId, canManage, members = [] }: RoleMa
         <InfoTooltip text="Это просто цветные метки рядом с ником. Прав они не дают — только показывают, кто есть кто. Правами заведуют системные роли." className="ml-1" />
       </div>
 
+      {assignError && <p role="alert" className="text-xs text-red-500">{assignError}</p>}
       {/* Role list */}
       {loading ? (
         <p className="text-sm text-neutral-400 px-1 py-2">Загрузка…</p>
@@ -139,10 +156,9 @@ export default function RoleManager({ groupId, canManage, members = [] }: RoleMa
                   <div className="px-2 py-2 border-t border-[var(--cn-border,rgba(0,0,0,0.08))] bg-[var(--cn-hover)]/40 max-h-44 overflow-y-auto space-y-0.5">
                     {members.map((m) => {
                       const checked = assign[role.id]?.has(m.userId) ?? false;
-                      const key = role.id + ":" + m.userId;
                       return (
                         <label key={m.userId} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[var(--cn-hover)] cursor-pointer text-sm">
-                          <input type="checkbox" checked={checked} disabled={busyKey === key} onChange={() => toggleMember(role.id, m.userId)} className="accent-violet-600 dark:accent-cyan-400" />
+                          <input type="checkbox" checked={checked} disabled={busyKey !== null} onChange={() => toggleMember(role.id, m.userId)} className="accent-violet-600 dark:accent-cyan-400" />
                           <span className="text-neutral-800 dark:text-neutral-200 truncate">{m.name}</span>
                         </label>
                       );
