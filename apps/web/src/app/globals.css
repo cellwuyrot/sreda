@@ -1572,3 +1572,13 @@ html[data-tz-still] *::after {
     padding-bottom: 112px;
   }
 }
+
+/* Native fullscreen must not keep the chat-column inline dimensions. */
+.fullscreen-surface:fullscreen {
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+}

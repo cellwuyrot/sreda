@@ -1,5 +1,6 @@
 "use client";
 
+import FullscreenButton from "./FullscreenButton";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
@@ -1033,7 +1034,7 @@ function StageTile({ tile, onRemove }: { tile: StageMedia; onRemove?: () => void
   }, [tile.stream]);
 
   return (
-    <div className="group relative w-full h-full min-h-0 rounded-xl overflow-hidden bg-black border border-white/10">
+    <div data-fullscreen-target className="fullscreen-surface group relative w-full h-full min-h-0 rounded-xl overflow-hidden bg-black border border-white/10">
       <video
         ref={videoRef}
         autoPlay
@@ -1056,6 +1057,7 @@ function StageTile({ tile, onRemove }: { tile: StageMedia; onRemove?: () => void
         )}
         <span className="truncate">{tile.kind === "screen" ? `Экран — ${tile.name}` : tile.name}</span>
       </span>
+      <div className="absolute top-1.5 left-1.5"><FullscreenButton /></div>
       {onRemove && (
         <button
           type="button"

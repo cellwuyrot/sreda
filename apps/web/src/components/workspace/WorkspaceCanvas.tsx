@@ -51,7 +51,7 @@ import { isSpreadsheetFile, readSpreadsheetFile, SPREADSHEET_ACCEPT } from "./ta
 /* TZartstation: полотно по умолчанию для новой карточки-изображения. */
 import { DEFAULT_SCENE, defaultLayers } from "@/lib/tzart";
 /* WS-MERGE: слияние правок при живой синхронизации — чистая часть в lib. */
-import { diffDirtyIds, mergeBoards, type MergeableBoard } from "@/lib/workspaceMerge";
+import { preserveLocalViews, diffDirtyIds, mergeBoards, type MergeableBoard } from "@/lib/workspaceMerge";
 /* WS-ASSETS: разбор вложений и подстановка адреса — чистая часть в lib. */
 import { cardsToLift, parseDataUrl, withAssetUrl, type AssetCardLike } from "@/lib/workspaceAssets";
 /* WS-IDB: асинхронный кэш вместо блокирующего localStorage. */
@@ -826,6 +826,7 @@ export default function WorkspaceCanvas({
   // /workspace синхронизируется через сервер (см. /api/workspace):
   // serverSaveTimer дебаунсит запись, clientIdRef отсеивает эхо своих же сохранений.
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<(() => void) | null>(null);
   const clientIdRef = useRef("ws-" + Math.random().toString(36).slice(2));
   // GROUP-WORKSPACE: не сохраняем состояние, только что применённое из загрузки
   // или чужой правки — инач�� два открытых клиента зациклили бы взаимные записи.
@@ -1049,6 +1050,9 @@ export default function WorkspaceCanvas({
   // (каждое нажатие / перетащивание) больше не блокирует отрисовку.
   useEffect(() => {
     if (!loaded) return;
+    if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+    serverSaveTimer.current = null;
+    pendingSaveRef.current = null;
     // Применённое из загрузки/синхронизации состояние не пишем обратно.
     if (skipNextSaveRef.current) {
       skipNextSaveRef.current = false;
@@ -1056,7 +1060,9 @@ export default function WorkspaceCanvas({
     }
     // read-only участники не сохраняют на сервер (сервер тоже отклонит запись).
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-    serverSaveTimer.current = setTimeout(() => {
+    const persist = () => {
+      serverSaveTimer.current = null;
+      pendingSaveRef.current = null;
       /* WS-PERF: тяжёлый JSON.stringify выполняется один раз в 1.2 с,
          а не при каждом нажатии клавиши / движении карточки. */
       const payload: StoredState = { v: 3, boards: commitActiveBoards(), activeId, timer };
@@ -1074,10 +1080,22 @@ export default function WorkspaceCanvas({
              следующие правки. Только при успехе: после отказа сервер о наших
              изменениях не знает, и терять их при чужом снимке нельзя. */
           if (res.ok) lastSyncedRef.current = payload.boards as unknown as MergeableBoard[];
+          else setNotice(`Не удалось сохранить рабочую среду (${res.status}). Локальная копия сохранена.`);
         })
-        .catch(() => {});
-    }, 1200);
+        .catch(() => setNotice("Нет связи с сервером. Рабочая среда сохранена только на этом устройстве."));
+    };
+    pendingSaveRef.current = persist;
+    serverSaveTimer.current = setTimeout(persist, 1200);
+    return () => {
+      if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+    };
   }, [cards, edges, view, timer, boards, activeId, loaded, lsKey, saveUrl, readOnly, commitActiveBoards]);
+
+  // A route change must neither leave an orphan timer nor discard the last
+  // debounced edit. Flush the final snapshot once on SPA unmount.
+  useEffect(() => () => {
+    pendingSaveRef.current?.();
+  }, []);
 
   /**
    * WS-ASSETS: вложения уезжают в файловое хранилище, а в карточке остаётся адрес.
@@ -1199,12 +1217,16 @@ export default function WorkspaceCanvas({
       if (remote) socket.emit("join-channel", { channelId: remote.channelId });
       else socket.emit("join-dm", userId);
     });
+    let disposed = false;
+    let requestId = 0;
     socket.on(evt, async (payload: { clientId?: string | null }) => {
       if (payload && payload.clientId === clientIdRef.current) return; // наше же сохранение
+      const currentRequest = ++requestId;
       try {
         const res = await fetch(loadUrl, { cache: "no-store" });
         if (!res.ok) return;
         const body = await res.json();
+        if (disposed || currentRequest !== requestId) return;
         if (remote && typeof body?.canEdit === "boolean") setCanEdit(body.canEdit);
         if (body && typeof body.data === "string") {
           const incoming = JSON.parse(body.data) as StoredState;
@@ -1220,25 +1242,35 @@ export default function WorkspaceCanvas({
              него сохраняются. Раньше здесь стояла простая замена, и всё, что
              человек успел сделать за последние секунды, исчезало без следа:
              на общем холсте — при каждом сохранении соседа. */
+          let serverBoards: MergeableBoard[] | null = null;
+          let hasLocalEdits = false;
           if (incoming && incoming.v === 3 && Array.isArray(incoming.boards)) {
+            serverBoards = incoming.boards as unknown as MergeableBoard[];
             const local = commitRef.current() as unknown as MergeableBoard[];
             const dirty = diffDirtyIds(lastSyncedRef.current, local);
-            if (dirty.size > 0) {
+            hasLocalEdits = dirty.size > 0;
+            if (hasLocalEdits) {
               incoming.boards = mergeBoards(
                 incoming.boards as unknown as MergeableBoard[],
                 local,
                 dirty,
               ) as unknown as Board[];
             }
+            // Keep pan/zoom for EVERY known board, not just the active one.
+            incoming.boards = preserveLocalViews(incoming.boards, local as unknown as Board[]);
           }
-          skipNextSaveRef.current = true;
+          skipNextSaveRef.current = !hasLocalEdits;
           applyStored(incoming);
+          // Merged local edits are not acknowledged server state. Retain them
+          // as dirty and let the debounce publish the merged result.
+          if (serverBoards) lastSyncedRef.current = serverBoards;
         }
       } catch {
         /* ignore */
       }
     });
     return () => {
+      disposed = true;
       socket.disconnect();
     };
   }, [userId, remote, loadUrl, applyStored]);

@@ -135,6 +135,10 @@ export default function UserContextMenu({
   const [friendState, setFriendState] = useState<FriendState>("loading");
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [assignedRoles, setAssignedRoles] = useState<Set<string>>(new Set(targetRoleIds));
+  const [assignedSystemRole, setAssignedSystemRole] = useState(targetRole);
+  useEffect(() => { setAssignedSystemRole(targetRole); }, [groupId, user.id, targetRole]);
+  const roleIdsKey = JSON.stringify(targetRoleIds);
+  useEffect(() => { setAssignedRoles(new Set(JSON.parse(roleIdsKey) as string[])); }, [groupId, user.id, roleIdsKey]);
   const [openSub, setOpenSub] = useState<SubMenu>(null);
   /** Черновик никнейма: null — поле закрыто, строка — идёт ввод. */
   const [nickDraft, setNickDraft] = useState<string | null>(null);
@@ -148,11 +152,11 @@ export default function UserContextMenu({
     if (!groupId) return [];
     return allowedActions({
       role: viewerRole,
-      targetRole,
+      targetRole: assignedSystemRole,
       isSelf,
       hasMessage: !!message,
     });
-  }, [groupId, viewerRole, targetRole, isSelf, message]);
+  }, [groupId, viewerRole, assignedSystemRole, isSelf, message]);
 
   const can = useCallback((a: ModerationAction) => actions.includes(a), [actions]);
   const grantableRoles = useMemo(() => assignableRoles(viewerRole), [viewerRole]);
@@ -401,7 +405,7 @@ export default function UserContextMenu({
   const setRole = async (role: string) => {
     if (!groupId || !targetMemberId) return;
     if (await api(`/api/groups/${groupId}/members/${targetMemberId}`, "PATCH", { role })) {
-      setOpenSub(null);
+      setAssignedSystemRole(role);
       setNotice(`Новая роль: ${ROLE_LABEL[role] ?? role}`);
     }
   };
@@ -491,14 +495,14 @@ export default function UserContextMenu({
                 ? `Был(а) ${timeAgo(user.lastSeen)}`
                 : "Не в сети"}
           </div>
-          {(targetRole || targetTags.length > 0) && (
+          {(assignedSystemRole || targetTags.length > 0) && (
             <div className="flex flex-wrap items-center gap-1 mt-1.5">
-              {targetRole && (
+              {assignedSystemRole && (
                 <span
                   className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
                   style={{ background: "var(--cn-accent-dim)", color: "var(--cn-accent-text)" }}
                 >
-                  {ROLE_LABEL[targetRole] ?? targetRole}
+                  {ROLE_LABEL[assignedSystemRole] ?? assignedSystemRole}
                 </span>
               )}
               {targetTags.map((t) => (
@@ -512,7 +516,7 @@ export default function UserContextMenu({
               ))}
             </div>
           )}
-          {groupId && (targetRole || targetTags.length > 0) && (
+          {groupId && (assignedSystemRole || targetTags.length > 0) && (
             <div className="text-[10px] text-neutral-400 mt-1">в этом сообществе</div>
           )}
         </div>
@@ -674,9 +678,9 @@ export default function UserContextMenu({
               {openSub === "setrole" && (
                 <div className="pl-2">
                   {grantableRoles.map((r) => (
-                    <button key={r} className={ITEM} disabled={busy || r === targetRole} onClick={() => setRole(r)}>
+                    <button key={r} className={ITEM} disabled={busy || r === assignedSystemRole} onClick={() => setRole(r)}>
                       <span>{ROLE_LABEL[r]}</span>
-                      {r === targetRole && <span className="text-green-500"><CheckIcon size={12} style={{ color: "inherit" }} /></span>}
+                      {r === assignedSystemRole && <span className="text-green-500"><CheckIcon size={12} style={{ color: "inherit" }} /></span>}
                     </button>
                   ))}
                 </div>
