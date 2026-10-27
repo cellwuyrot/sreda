@@ -1,0 +1,16 @@
+
+> trioz-monorepo@0.1.0 typecheck
+> npm run build:shared && npm run typecheck -w apps/desktop
+
+
+> trioz-monorepo@0.1.0 build:shared
+> npm run build -w packages/shared
+
+
+> @trioz/shared@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> trioz-connect-desktop@1.1.7 typecheck
+> tsc -p tsconfig.json --noEmit
+

@@ -1,3 +1,15 @@
+# Техническое ревью — обновление 2026-10-27
+
+Исправлены ACL календаря, DNS/IP-проверка превью и body timeout, staging/account isolation E2EE, разрушительный cleanup при закрытии вкладки, workspace CAS/merge/validation, отзыв доступа к вложениям и trust boundary desktop IPC. Добавлены TURN REST credentials и CI release gates; конфигурация ограничена одним realtime-процессом.
+
+- [Подробности и статусы T01–T14](./review-2026-10-27/TECHNICAL-UPDATE-RU.md)
+- [Проверки и ограничения](./review-2026-10-27/VALIDATION.md)
+- [Внедрение и откат](./review-2026-10-27/ROLLOUT-RU.md)
+
+Важно: protected chats теперь удаляются явно, не по закрытию вкладки; nonextractable key recovery и distributed realtime не заявляются реализованными. PostgreSQL/coturn/целевые ОС требуют staging-приёмки.
+
+---
+
 # Эмодзи, форматы вложений, скачивание картинок и счётчик новостей
 
 Подробный разбор причин — [docs/explainers/emoji-attachments-images-news.md](./explainers/emoji-attachments-images-news.md).

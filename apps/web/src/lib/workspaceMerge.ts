@@ -155,3 +155,44 @@ export function preserveLocalViews<T extends { id: string; view?: unknown }>(inc
   const views = new Map(local.map(board => [board.id, board.view]));
   return incoming.map(board => views.has(board.id) ? { ...board, view: views.get(board.id) } : board);
 }
+
+/** Ignore per-viewer camera when determining shared edits. */
+export function sharedBoardFingerprint(board: MergeableBoard): string {
+  const { view: _view, ...shared } = board;
+  return JSON.stringify(shared);
+}
+export function hasWorkspaceChanges(base: MergeableBoard[], local: MergeableBoard[]): boolean {
+  return base.length !== local.length || base.some((board, i) => !local[i] || sharedBoardFingerprint(board) !== sharedBoardFingerprint(local[i]));
+}
+
+/** Three-way item merge: edit wins against concurrent delete; an unchanged
+ * item does NOT resurrect a deliberate deletion. Same-item edit uses local. */
+function mergeThreeWay<T extends { id: string }>(base: T[], local: T[], remote: T[], signature: (item: T) => string = fingerprint): T[] {
+  const previous = new Map(base.map(x => [x.id, x]));
+  const mine = new Map(local.map(x => [x.id, x]));
+  const theirs = new Map(remote.map(x => [x.id, x]));
+  const result: T[] = [];
+  for (const key of new Set([...remote.map(x => x.id), ...local.map(x => x.id)])) {
+    const b = previous.get(key), l = mine.get(key), r = theirs.get(key);
+    if (!l) { if (r && (!b || signature(r) !== signature(b))) result.push(r); continue; }
+    if (!r) { if (!b || signature(l) !== signature(b)) result.push(l); continue; }
+    result.push(!b || signature(l) !== signature(b) ? l : r);
+  }
+  return result;
+}
+
+export function mergeWorkspaceBoards(base: MergeableBoard[], local: MergeableBoard[], remote: MergeableBoard[]): MergeableBoard[] {
+  const kept = mergeThreeWay(base, local, remote, sharedBoardFingerprint);
+  return kept.map(board => {
+    const b = base.find(x => x.id === board.id), l = local.find(x => x.id === board.id), r = remote.find(x => x.id === board.id);
+    if (!l || !r) return board;
+    const cards = mergeThreeWay(b?.cards ?? [], l.cards, r.cards);
+    const ids = new Set(cards.map(x => x.id));
+    const metadata = (item: MergeableBoard) => {
+      const { cards: _cards, edges: _edges, view: _view, ...rest } = item;
+      return JSON.stringify(rest);
+    };
+    const chosen = !b || metadata(l) !== metadata(b) ? l : r;
+    return { ...r, ...chosen, cards, edges: mergeThreeWay(b?.edges ?? [], l.edges, r.edges).filter(e => ids.has(e.from) && ids.has(e.to)) };
+  });
+}

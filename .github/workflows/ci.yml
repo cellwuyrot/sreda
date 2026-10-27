@@ -51,7 +51,16 @@ jobs:
         run: npx prisma generate --schema apps/web/prisma/schema.prisma
 
       - name: Run migrations
-        run: npx prisma db push --skip-generate --schema apps/web/prisma/schema.prisma
+        run: npx prisma migrate deploy --schema apps/web/prisma/schema.prisma
+
+      - name: Typecheck web
+        run: npm run typecheck -w apps/web
+
+      - name: Typecheck desktop
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm run test -w apps/web -- --maxWorkers=2
 
       - name: Lint
         run: npm run lint

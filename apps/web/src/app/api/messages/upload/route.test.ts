@@ -17,7 +17,7 @@ vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/banCheck", () => ({ checkBan: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/rateLimit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/premium", () => ({ hasPremium: () => true }));
-vi.mock("@/lib/fileValidation", () => ({ validateImageMagicBytes: () => true }));
+vi.mock("@/lib/fileValidation", () => ({ validateImageMagicBytes: () => true, mediaSignatureError: () => null }));
 vi.mock("@/lib/connectPermissions", () => ({
   canAccessConversation: vi.fn().mockResolvedValue(true),
   getChannelPermissions: vi.fn().mockResolvedValue({ canUpload: true }),

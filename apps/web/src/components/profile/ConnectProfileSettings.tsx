@@ -68,6 +68,7 @@ export default function ConnectProfileSettings({
   const showConnect = sections !== "appearance";
   const showAppearance = sections !== "connect";
   const { data: session } = useSession();
+  const [confirmKeyReplace, setConfirmKeyReplace] = useState(false);
   const sessionUser = session?.user as { id?: string; name?: string; username?: string } | undefined;
   /* Свечение аватара, анимированный баннер и фон дня и ночи — платные
      возможности. Раньше здесь стояла проверка должности, из-за чего
@@ -550,16 +551,20 @@ export default function ConnectProfileSettings({
           <KeyIcon size={18} tone="active" /> Шифрование E2EE
           <InfoTooltip text="Экспорт и импорт ключей, чтобы расшифровывать старые сообщения на новом устройстве." />
         </h3>
+        <p className="text-xs text-amber-600 my-2">Новые ключи неизвлекаемы: их нельзя экспортировать. Не очищайте хранилище устройства без принятого плана восстановления.</p>
+        <label className="flex gap-2 text-xs my-2"><input type="checkbox" checked={confirmKeyReplace} onChange={e => setConfirmKeyReplace(e.target.checked)} />Подтверждаю замену серверного ключа при импорте. Старые сообщения могут требовать прежний ключ.</label>
         <div className="flex gap-2">
           <button
             onClick={async () => {
-              const json = await exportKeysToJSON();
+              try {
+              const json = await exportKeysToJSON(session?.user?.id || "");
               if (!json) { setError("Ключи не найдены"); return; }
               const blob = new Blob([json], { type: "application/json" });
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url; a.download = "tz-e2ee-keys.json"; a.click();
               URL.revokeObjectURL(url);
+              } catch (error) { setError(error instanceof Error ? error.message : "Ошибка экспорта ключа"); }
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-xl text-xs font-medium hover:bg-violet-500/20 transition-colors"
           >
@@ -571,9 +576,9 @@ export default function ConnectProfileSettings({
               const f = e.target.files?.[0];
               if (!f) return;
               const text = await f.text();
-              const ok = await importKeysFromJSON(text);
+              const ok = await importKeysFromJSON(text, session?.user?.id || "", confirmKeyReplace);
               if (ok) { setError(null); setSuccessToast("Ключи восстановлены!"); setTimeout(() => setSuccessToast(null), 3500); }
-              else setError("Неверный формат файла ключей");
+              else setError("Импорт не завершён: проверьте аккаунт, пару ключей, подтверждение замены и соединение. Прежний активный ключ не удалён.");
               e.target.value = "";
             }} />
           </label>
