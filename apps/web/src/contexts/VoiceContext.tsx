@@ -972,21 +972,37 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const pttPulseTimerRef    = useRef<NodeJS.Timeout | null>(null);
   const isPremiumRef        = useRef(false);
 
-  /* ── Fetch TURN/ICE config from API ── */
+  // REST credentials expire. Refresh periodically, on resume, and before join;
+  // existing peers receive fresh configuration for subsequent ICE restarts.
+  const refreshIceRef = useRef<() => Promise<void>>(async () => {});
+  const iceExpiryRef = useRef<number | null>(null);
   useEffect(() => {
-    fetch("/api/voice/turn").then(r => r.json()).then(data => {
-      if (data?.iceServers) {
-        // If TURN is configured, force relay-only to avoid NAT issues
+    let disposed = false;
+    const refresh = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch("/api/voice/turn", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("ICE configuration unavailable");
+        const data = await response.json();
+        if (disposed || !Array.isArray(data?.iceServers)) return;
+        iceExpiryRef.current = typeof data.expiresAt === "number" ? data.expiresAt * 1000 : null;
         const hasTurn = data.iceServers.some((s: { urls: string | string[] }) =>
-          (Array.isArray(s.urls) ? s.urls : [s.urls]).some((u: string) => u.startsWith("turn"))
-        );
-        iceConfigRef.current = {
-          iceServers: data.iceServers,
-          iceTransportPolicy: hasTurn ? "relay" : "all",
-          iceCandidatePoolSize: 2,
-        };
-      }
-    }).catch(() => {});
+          (Array.isArray(s.urls) ? s.urls : [s.urls]).some((u: string) => u.startsWith("turn")));
+        iceConfigRef.current = { iceServers: data.iceServers, iceTransportPolicy: hasTurn ? "relay" : "all", iceCandidatePoolSize: 2 };
+        peersRef.current.forEach(pc => {
+          try { pc.setConfiguration(iceConfigRef.current); } catch { /* closed peer */ }
+        });
+      } catch {
+        if (iceExpiryRef.current !== null && iceExpiryRef.current <= Date.now()) iceConfigRef.current = DEFAULT_ICE;
+      } finally { clearTimeout(timeout); }
+    };
+    refreshIceRef.current = refresh;
+    void refresh();
+    const interval = setInterval(() => void refresh(), 10 * 60_000);
+    const resume = () => { if (!document.hidden) void refresh(); };
+    document.addEventListener("visibilitychange", resume);
+    return () => { disposed = true; clearInterval(interval); document.removeEventListener("visibilitychange", resume); };
   }, []);
 
   /* Keep channelIdRef in sync */
@@ -2746,6 +2762,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       await new Promise(r => setTimeout(r, 50));
     }
     const joinAttempt = ++joinAttemptRef.current;
+    await refreshIceRef.current();
+    if (joinAttempt !== joinAttemptRef.current) return;
 
     // FIX-V2: страховка от «призрачной» демонстрации: если от прошлой сессии остался
     // захваченный экран — глушим его до подключения. Демонстрация начинается

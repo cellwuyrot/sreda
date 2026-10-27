@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { isStaleWorkspaceRevision } from "@/lib/workspaceValidation";
 import BackButton from "@/components/ui/BackButton"; // BACK-STEP
 import { io } from "socket.io-client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -51,7 +52,7 @@ import { isSpreadsheetFile, readSpreadsheetFile, SPREADSHEET_ACCEPT } from "./ta
 /* TZartstation: полотно по умолчанию для новой карточки-изображения. */
 import { DEFAULT_SCENE, defaultLayers } from "@/lib/tzart";
 /* WS-MERGE: слияние правок при живой синхронизации — чистая часть в lib. */
-import { preserveLocalViews, diffDirtyIds, mergeBoards, type MergeableBoard } from "@/lib/workspaceMerge";
+import { preserveLocalViews, hasWorkspaceChanges, mergeWorkspaceBoards, type MergeableBoard } from "@/lib/workspaceMerge";
 /* WS-ASSETS: разбор вложений и подстановка адреса — чистая часть в lib. */
 import { cardsToLift, parseDataUrl, withAssetUrl, type AssetCardLike } from "@/lib/workspaceAssets";
 /* WS-IDB: асинхронный кэш вместо блокирующего localStorage. */
@@ -761,7 +762,7 @@ export default function WorkspaceCanvas({
   const commitRef = useRef<() => Board[]>(() => []);
   const loadUrl = remote?.loadUrl ?? "/api/workspace";
   const saveUrl = remote?.saveUrl ?? "/api/workspace";
-  const lsKey = remote ? `tz-ws-channel:${remote.channelId}` : storageKey(userId);
+  const lsKey = remote ? `tz-ws-channel:${userId}:${remote.channelId}` : storageKey(userId);
 
   // Named working canvases. `cards`/`edges`/`view` above are the live state of
   // the board identified by `activeId`; the other boards are held in `boards`.
@@ -826,6 +827,9 @@ export default function WorkspaceCanvas({
   // /workspace синхронизируется через сервер (см. /api/workspace):
   // serverSaveTimer дебаунсит запись, clientIdRef отсеивает эхо своих же сохранений.
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revisionRef = useRef<string | null | undefined>(undefined);
+  const accessDeniedRef = useRef(false);
+  const refreshRemoteRef = useRef<(() => Promise<void>) | null>(null);
   const pendingSaveRef = useRef<(() => void) | null>(null);
   const clientIdRef = useRef("ws-" + Math.random().toString(36).slice(2));
   // GROUP-WORKSPACE: не сохраняем состояние, только что применённое из загрузки
@@ -1012,12 +1016,21 @@ export default function WorkspaceCanvas({
   // Загрузка: сначала сервер (общий для веба и десктопа), при недоступности — localStorage
   useEffect(() => {
     let cancelled = false;
+    revisionRef.current = undefined;
+    accessDeniedRef.current = false;
+    setLoaded(false);
     (async () => {
       let stored: StoredState | LegacyStoredState | null = null;
       try {
         const res = await fetch(loadUrl, { cache: "no-store" });
+        if (res.status === 401 || res.status === 403) {
+          if (!cancelled) { accessDeniedRef.current = true; revisionRef.current = undefined; setCanEdit(false); setCards([]); setEdges([]); setBoards([]); setNotice("Доступ к рабочей среде закрыт"); }
+          return; // Never reveal cached contents after an explicit denial.
+        }
         if (res.ok) {
           const payload = await res.json();
+          if (cancelled || isStaleWorkspaceRevision(revisionRef.current, payload.updatedAt ?? null)) return;
+          if (!cancelled) revisionRef.current = payload.updatedAt ?? null;
           if (remote && typeof payload?.canEdit === "boolean") setCanEdit(payload.canEdit);
           if (payload && typeof payload.data === "string") {
             stored = JSON.parse(payload.data) as StoredState;
@@ -1061,6 +1074,7 @@ export default function WorkspaceCanvas({
     // read-only участники не сохраняют на сервер (сервер тоже отклонит запись).
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
     const persist = () => {
+      if (accessDeniedRef.current) return;
       serverSaveTimer.current = null;
       pendingSaveRef.current = null;
       /* WS-PERF: тяжёлый JSON.stringify выполняется один раз в 1.2 с,
@@ -1069,18 +1083,24 @@ export default function WorkspaceCanvas({
       const json = JSON.stringify(payload);
       /* WS-IDB: асинхронная запись не блокирует поток. */
       void idbSet(lsKey, json);
-      if (readOnly) return;
+      if (readOnly || revisionRef.current === undefined) return;
+      const expectedRevision = revisionRef.current;
       fetch(saveUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: json, clientId: clientIdRef.current }),
+        body: JSON.stringify({ data: json, clientId: clientIdRef.current, baseUpdatedAt: expectedRevision }),
       })
-        .then((res) => {
-          /* WS-MERGE: отправленное стало общим знанием — от него и считаем
-             следующие правки. Только при успехе: после отказа сервер о наших
-             изменениях не знает, и терять их при чужом снимке нельзя. */
-          if (res.ok) lastSyncedRef.current = payload.boards as unknown as MergeableBoard[];
-          else setNotice(`Не удалось сохранить рабочую среду (${res.status}). Локальная копия сохранена.`);
+        .then(async (res) => {
+          if (res.ok) {
+            const ack = await res.json();
+            if (revisionRef.current === expectedRevision) {
+              revisionRef.current = ack.updatedAt;
+              lastSyncedRef.current = payload.boards as unknown as MergeableBoard[];
+            }
+          } else if (res.status === 409) {
+            setNotice("Получены параллельные изменения. Слияние и повторное сохранение…");
+            await refreshRemoteRef.current?.();
+          } else setNotice(`Не удалось сохранить рабочую среду (${res.status}). Локальная копия сохранена.`);
         })
         .catch(() => setNotice("Нет связи с сервером. Рабочая среда сохранена только на этом устройстве."));
     };
@@ -1213,20 +1233,26 @@ export default function WorkspaceCanvas({
   useEffect(() => {
     const socket = io({ path: "/api/socketio", withCredentials: true });
     const evt = remote ? "channel-workspace-updated" : "workspace-updated";
+    let connectedOnce = false;
     socket.on("connect", () => {
       if (remote) socket.emit("join-channel", { channelId: remote.channelId });
       else socket.emit("join-dm", userId);
+      if (connectedOnce) void refreshRemoteRef.current?.();
+      connectedOnce = true;
     });
     let disposed = false;
     let requestId = 0;
-    socket.on(evt, async (payload: { clientId?: string | null }) => {
-      if (payload && payload.clientId === clientIdRef.current) return; // наше же сохранение
+    const pullRemote = async () => {
       const currentRequest = ++requestId;
       try {
         const res = await fetch(loadUrl, { cache: "no-store" });
+        if (disposed || currentRequest !== requestId) return;
+        if (res.status === 401 || res.status === 403) { accessDeniedRef.current = true; revisionRef.current = undefined; setCanEdit(false); setCards([]); setEdges([]); setBoards([]); return; }
         if (!res.ok) return;
         const body = await res.json();
-        if (disposed || currentRequest !== requestId) return;
+        if (disposed || currentRequest !== requestId || isStaleWorkspaceRevision(revisionRef.current, body.updatedAt ?? null)) return;
+        accessDeniedRef.current = false;
+        revisionRef.current = body.updatedAt ?? null;
         if (remote && typeof body?.canEdit === "boolean") setCanEdit(body.canEdit);
         if (body && typeof body.data === "string") {
           const incoming = JSON.parse(body.data) as StoredState;
@@ -1247,15 +1273,8 @@ export default function WorkspaceCanvas({
           if (incoming && incoming.v === 3 && Array.isArray(incoming.boards)) {
             serverBoards = incoming.boards as unknown as MergeableBoard[];
             const local = commitRef.current() as unknown as MergeableBoard[];
-            const dirty = diffDirtyIds(lastSyncedRef.current, local);
-            hasLocalEdits = dirty.size > 0;
-            if (hasLocalEdits) {
-              incoming.boards = mergeBoards(
-                incoming.boards as unknown as MergeableBoard[],
-                local,
-                dirty,
-              ) as unknown as Board[];
-            }
+            hasLocalEdits = hasWorkspaceChanges(lastSyncedRef.current, local);
+            incoming.boards = mergeWorkspaceBoards(lastSyncedRef.current, local, serverBoards) as unknown as Board[];
             // Keep pan/zoom for EVERY known board, not just the active one.
             incoming.boards = preserveLocalViews(incoming.boards, local as unknown as Board[]);
           }
@@ -1268,9 +1287,14 @@ export default function WorkspaceCanvas({
       } catch {
         /* ignore */
       }
+    };
+    refreshRemoteRef.current = pullRemote;
+    socket.on(evt, (payload: { clientId?: string | null }) => {
+      if (payload?.clientId !== clientIdRef.current) void pullRemote();
     });
     return () => {
       disposed = true;
+      refreshRemoteRef.current = null;
       socket.disconnect();
     };
   }, [userId, remote, loadUrl, applyStored]);

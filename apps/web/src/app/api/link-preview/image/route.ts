@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { rateLimit } from "@/lib/rateLimit";
+import { externalFetch } from "@/lib/externalFetch";
 import { safeUrl } from "@/lib/urlSafety";
 
 /**
@@ -41,37 +42,21 @@ const ALLOWED_TYPES: Record<string, string> = {
   "image/vnd.microsoft.icon": "image/x-icon",
 };
 
-async function fetchImage(target: URL, depth = 0): Promise<Response | null> {
+async function fetchImage(target: URL, signal: AbortSignal, depth = 0): Promise<Response | null> {
   if (depth > MAX_REDIRECTS) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(target.toString(), {
-      redirect: "manual",
-      signal: controller.signal,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        Accept: "image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8",
-        /* Referer своего же сайта: именно его ждёт защита от хотлинка. */
-        Referer: `${target.protocol}//${target.host}/`,
-      },
-    });
-
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (!location) return null;
-      const next = safeUrl(new URL(location, target).toString());
-      if (!next) return null;
-      return fetchImage(next, depth + 1);
-    }
-    if (!res.ok) return null;
-    return res;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+  const res = await externalFetch(target, {
+    signal,
+    headers: { "User-Agent": "TriozBot/1.0", Accept: "image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8" },
+  });
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get("location");
+    await res.body?.cancel();
+    if (!location) return null;
+    const next = safeUrl(new URL(location, target).toString());
+    return next ? fetchImage(next, signal, depth + 1) : null;
   }
+  if (!res.ok) { await res.body?.cancel(); return null; }
+  return res;
 }
 
 export async function GET(req: NextRequest) {
@@ -85,7 +70,12 @@ export async function GET(req: NextRequest) {
   const target = safeUrl(req.nextUrl.searchParams.get("url") || "");
   if (!target) return NextResponse.json({ error: "Некорректная ссылка" }, { status: 400 });
 
-  const upstream = await fetchImage(target);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let upstream: Response | null = null;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+  upstream = await fetchImage(target, controller.signal);
   if (!upstream) return NextResponse.json({ error: "Картинка недоступна" }, { status: 404 });
 
   const rawType = (upstream.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
@@ -96,7 +86,7 @@ export async function GET(req: NextRequest) {
   if (declared > MAX_BYTES) return NextResponse.json({ error: "Слишком большая картинка" }, { status: 413 });
 
   /* Читаем кусками и обрываем на пределе: заголовку о размере верить нельзя. */
-  const reader = upstream.body?.getReader();
+  reader = upstream.body?.getReader();
   if (!reader) return NextResponse.json({ error: "Картинка недоступна" }, { status: 404 });
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -130,4 +120,12 @@ export async function GET(req: NextRequest) {
       "X-Content-Type-Options": "nosniff",
     },
   });
+  } catch {
+    return NextResponse.json({ error: controller.signal.aborted ? "Таймаут картинки" : "Ошибка получения картинки" }, { status: controller.signal.aborted ? 504 : 502 });
+  } finally {
+    clearTimeout(timeout);
+    if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    // Reject early on invalid type/length without leaving an upstream socket.
+    if (upstream?.body && !upstream.body.locked) await upstream.body.cancel().catch(() => {});
+  }
 }

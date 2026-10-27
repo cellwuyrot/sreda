@@ -36,13 +36,20 @@ services:
     restart: unless-stopped
     # Пароль необязателен, но если REDIS_PASSWORD задан — Redis его потребует.
     # Тогда же пропишите REDIS_URL вида redis://default:пароль@redis:6379.
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then set -- --requirepass "$$REDIS_PASSWORD"; else set --; fi
+        exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction "$$@"
     volumes:
       - redis_data:/data
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'if [ -n "$$REDIS_PASSWORD" ]; then export REDISCLI_AUTH="$$REDIS_PASSWORD"; else unset REDISCLI_AUTH; fi; redis-cli --no-auth-warning ping | grep -qx PONG']
       interval: 5s
       timeout: 3s
       retries: 5
@@ -58,12 +65,19 @@ services:
       - ./turnserver.conf:/etc/turnserver.conf:ro
     # Учётные данные передаются параметром запуска, а не лежат в конфигурации:
     # turnserver.conf хранится в репозитории, и всё записанное в нём — публично.
+    environment:
+      TURN_AUTH_SECRET: ${TURN_AUTH_SECRET:-}
+      TURN_USERNAME: ${TURN_USERNAME:-trioz}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
+    entrypoint: ["/bin/sh", "-ec"]
     command:
-      [
-        "-c",
-        "/etc/turnserver.conf",
-        "--user=${TURN_USERNAME:-trioz}:${TURN_CREDENTIAL:?TURN_CREDENTIAL не задан}",
-      ]
+      - |
+        if [ -n "$$TURN_AUTH_SECRET" ]; then
+          exec turnserver -c /etc/turnserver.conf --use-auth-secret --static-auth-secret="$$TURN_AUTH_SECRET"
+        fi
+        test -n "$$TURN_CREDENTIAL" || { echo "Configure TURN_AUTH_SECRET or TURN_CREDENTIAL" >&2; exit 1; }
+        exec turnserver -c /etc/turnserver.conf --user="$$TURN_USERNAME:$$TURN_CREDENTIAL"
+
 
   # ─── TrioZ App ────────────────────────────────────────────────────────
   app:
@@ -89,7 +103,9 @@ services:
       ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?ENCRYPTION_SECRET не задан}
       TURN_URL: ${TURN_URL:-turn:localhost:3478}
       TURN_USERNAME: ${TURN_USERNAME:-trioz}
-      TURN_CREDENTIAL: ${TURN_CREDENTIAL:?TURN_CREDENTIAL не задан}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
+      TURN_AUTH_SECRET: ${TURN_AUTH_SECRET:-}
+      REALTIME_REPLICAS: "1"
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER}

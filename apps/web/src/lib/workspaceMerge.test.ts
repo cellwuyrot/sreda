@@ -143,3 +143,33 @@ describe("local camera stays local", () => {
     expect(incoming[0].view.x).toBe(0);
   });
 });
+
+describe("three-way collaboration", () => {
+  it("keeps independent concurrent edits and a local deletion", async () => {
+    const { mergeWorkspaceBoards } = await import("./workspaceMerge");
+    const base = [board("b", [card("a"), card("b"), card("deleted")])];
+    const local = [board("b", [card("a", { x: 20 }), card("b")])];
+    const remote = [board("b", [card("a"), card("b", { x: 30 }), card("deleted")])];
+    const merged = mergeWorkspaceBoards(base, local, remote)[0];
+    expect(merged.cards.map(c => c.id)).toEqual(["a", "b"]);
+    expect(merged.cards[0].x).toBe(20); expect(merged.cards[1].x).toBe(30);
+  });
+  it("preserves concurrent edits against delete, and tracks empty boards and rename", async () => {
+    const { mergeWorkspaceBoards, hasWorkspaceChanges } = await import("./workspaceMerge");
+    const base = [board("b", [card("a")])];
+    const local = [{ ...board("b", []), name: "renamed" }, board("new", [])];
+    const remote = [board("b", [card("a", { x: 15 })])];
+    const result = mergeWorkspaceBoards(base, local, remote);
+    expect(result[0].cards[0].x).toBe(15); expect(result[0].name).toBe("renamed");
+    expect(result[1].id).toBe("new"); expect(hasWorkspaceChanges(base, local)).toBe(true);
+  });
+});
+
+it("remote board rename is not undone by an unrelated local card move", async () => {
+  const { mergeWorkspaceBoards } = await import("./workspaceMerge");
+  const base = [{ ...board("b", [card("a")]), name: "old" }];
+  const local = [{ ...base[0], cards: [card("a", { x: 10 })] }];
+  const remote = [{ ...base[0], name: "new" }];
+  const merged = mergeWorkspaceBoards(base, local, remote)[0];
+  expect(merged.name).toBe("new"); expect(merged.cards[0].x).toBe(10);
+});

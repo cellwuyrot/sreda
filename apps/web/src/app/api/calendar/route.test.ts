@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock, row } from "@/test/prismaMock";
 
+vi.mock("@/lib/connectPermissions", () => ({ getChannelPermissions: vi.fn().mockResolvedValue({ canView: true, canPost: true, channelType: "CALENDAR" }) }));
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
@@ -9,12 +10,14 @@ vi.mock("@/lib/banCheck", () => ({ checkBan: vi.fn().mockResolvedValue(null) }))
 vi.mock("@/lib/sanitize", () => ({ sanitizeText: (text: string) => text.trim() }));
 
 import { getServerSession } from "next-auth";
+import { NextRequest } from "next/server";
+import { getChannelPermissions } from "@/lib/connectPermissions";
 import { GET } from "./route";
 
 const session = vi.mocked(getServerSession);
 
 function request(query: string) {
-  return new Request(`http://localhost/api/calendar?channelId=cal-1&${query}`);
+  return new NextRequest(`http://localhost/api/calendar?channelId=cal-1&${query}`);
 }
 
 beforeEach(() => {
@@ -50,4 +53,13 @@ describe("GET /api/calendar — диапазон", () => {
       }),
     }));
   });
+});
+it("denies a hidden calendar before reading its events", async () => {
+  vi.mocked(getChannelPermissions).mockResolvedValueOnce({ canView: false, canPost: false, channelType: "CALENDAR" } as never);
+  expect((await GET(request(""))).status).toBe(403);
+  expect(prismaMock.calendarEvent.findMany).not.toHaveBeenCalled();
+});
+it("does not treat another channel type as a calendar", async () => {
+  vi.mocked(getChannelPermissions).mockResolvedValueOnce({ canView: true, canPost: true, channelType: "TEXT" } as never);
+  expect((await GET(request(""))).status).toBe(404);
 });

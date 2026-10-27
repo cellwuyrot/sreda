@@ -27,7 +27,7 @@ describe("GET /api/dm", () => {
     expect(res.status).toBe(401);
   });
 
-  it("по умолчанию ищет только PERSONAL диалоги", async () => {
+  it("по умолчанию ищет PERSONAL и SECURE, не BUSINESS", async () => {
     mockGetServerSession.mockResolvedValue({ user: { id: "u1" } } as never);
     prismaMock.directConversation.findMany.mockResolvedValue([]);
 
@@ -36,7 +36,7 @@ describe("GET /api/dm", () => {
 
     expect(prismaMock.directConversation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ kind: "PERSONAL" }),
+        where: expect.objectContaining({ kind: { in: ["PERSONAL", "SECURE"] } }),
       })
     );
   });
@@ -55,7 +55,7 @@ describe("GET /api/dm", () => {
     );
   });
 
-  it("мусорное значение ?kind=что-то откатывается на PERSONAL", async () => {
+  it("мусорное значение ?kind=что-то откатывается на личные диалоги", async () => {
     mockGetServerSession.mockResolvedValue({ user: { id: "u1" } } as never);
     prismaMock.directConversation.findMany.mockResolvedValue([]);
 
@@ -64,7 +64,7 @@ describe("GET /api/dm", () => {
 
     expect(prismaMock.directConversation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ kind: "PERSONAL" }),
+        where: expect.objectContaining({ kind: { in: ["PERSONAL", "SECURE"] } }),
       })
     );
   });

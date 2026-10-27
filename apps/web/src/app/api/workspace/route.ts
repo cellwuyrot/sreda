@@ -1,3 +1,4 @@
+import { validateWorkspace, parseWorkspaceRevision } from "@/lib/workspaceValidation";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -41,20 +42,30 @@ export async function PUT(req: Request) {
   if (typeof data !== "string" || data.length === 0) {
     return NextResponse.json({ error: "data (string) required" }, { status: 400 });
   }
-  if (data.length > MAX_BYTES) {
+  if (Buffer.byteLength(data, "utf8") > MAX_BYTES) {
     return NextResponse.json({ error: "Workspace state too large" }, { status: 413 });
   }
+  let parsed: unknown;
+  try { parsed = JSON.parse(data); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+  if (!validateWorkspace(parsed)) return NextResponse.json({ error: "Invalid workspace schema" }, { status: 400 });
+  const expected = parseWorkspaceRevision(body?.baseUpdatedAt);
+  if (expected === undefined) return NextResponse.json({ error: "Reload this client: workspace revision required" }, { status: 428 });
+  // updatedAt is both CAS token and monotonically increasing millisecond clock.
+  const updatedAt = new Date(Math.max(Date.now(), (expected?.getTime() ?? 0) + 1));
   try {
-    JSON.parse(data);
-  } catch {
-    return NextResponse.json({ error: "data must be valid JSON" }, { status: 400 });
+    if (expected === null) {
+      await prisma.workspaceState.create({ data: { userId: session.user.id, data, updatedAt } });
+    } else {
+      const result = await prisma.workspaceState.updateMany({
+        where: { userId: session.user.id, updatedAt: expected },
+        data: { data, updatedAt },
+      });
+      if (result.count !== 1) return NextResponse.json({ error: "Workspace changed; merge and retry" }, { status: 409 });
+    }
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") return NextResponse.json({ error: "Workspace already exists" }, { status: 409 });
+    throw error;
   }
-
-  const state = await prisma.workspaceState.upsert({
-    where: { userId: session.user.id },
-    update: { data },
-    create: { userId: session.user.id, data },
-  });
 
   /* WS-HISTORY: снимок раз в интервал — страховка от потери холста. Ошибка
      снимка не мешает сохранению: страховка не должна ронять саму работу
@@ -67,8 +78,8 @@ export async function PUT(req: Request) {
   // Отправитель отфильтровывает своё событие по clientId.
   emitToUser(session.user.id, "workspace-updated", {
     clientId,
-    updatedAt: state.updatedAt,
+    updatedAt: updatedAt,
   });
 
-  return NextResponse.json({ ok: true, updatedAt: state.updatedAt });
+  return NextResponse.json({ ok: true, updatedAt: updatedAt });
 }

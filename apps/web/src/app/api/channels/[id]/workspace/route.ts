@@ -1,3 +1,4 @@
+import { validateWorkspace, parseWorkspaceRevision } from "@/lib/workspaceValidation";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -15,7 +16,7 @@ import { captureSnapshot } from "@/lib/workspaceSnapshots"; // WS-HISTORY
  *   - canPost  — кто может редактировать (postAccess: ALL / MOD / ADMIN).
  * Если доступа на чтение нет — 403 (клиент показывает скелетон и ничего больше).
  * Сервер — источник истины: правки без canPost отклоняются, лимит холстов
- * (MAX_BOARDS) обрезается на сервере, чтобы его нельзя было обойти через API.
+ * (MAX_BOARDS) проверяется на сервере, чтобы его нельзя было обойти через API.
  */
 
 const MAX_BYTES = 4_000_000; // ~4 МБ на состояние (холсты с рисунками/картинками)
@@ -65,7 +66,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (typeof raw !== "string" || raw.length === 0) {
     return NextResponse.json({ error: "data (string) required" }, { status: 400 });
   }
-  if (raw.length > MAX_BYTES) {
+  if (Buffer.byteLength(raw, "utf8") > MAX_BYTES) {
     return NextResponse.json({ error: "Состояние рабочей среды слишком большое" }, { status: 413 });
   }
 
@@ -76,24 +77,26 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "data must be valid JSON" }, { status: 400 });
   }
 
-  // Обрезаем количество холстов до лимита на сервере — клиентскую проверку
-  // обойти нельзя. Работает только для актуального формата (v3 с массивом boards).
-  let data = raw;
-  if (parsed && typeof parsed === "object" && "boards" in parsed) {
-    const p = parsed as { boards?: unknown[]; activeId?: string };
-    if (Array.isArray(p.boards) && p.boards.length > MAX_BOARDS) {
-      p.boards = p.boards.slice(0, MAX_BOARDS);
-      const ids = p.boards.map((b) => (b as { id?: string }).id).filter(Boolean) as string[];
-      if (p.activeId && !ids.includes(p.activeId)) p.activeId = ids[0];
-      data = JSON.stringify(parsed);
+  if (!validateWorkspace(parsed, MAX_BOARDS)) return NextResponse.json({ error: "Invalid workspace schema" }, { status: 400 });
+  const data = raw;
+  const expected = parseWorkspaceRevision(body?.baseUpdatedAt);
+  if (expected === undefined) return NextResponse.json({ error: "Reload this client: workspace revision required" }, { status: 428 });
+  // updatedAt is both CAS token and monotonically increasing millisecond clock.
+  const updatedAt = new Date(Math.max(Date.now(), (expected?.getTime() ?? 0) + 1));
+  try {
+    if (expected === null) {
+      await prisma.channelWorkspaceState.create({ data: { channelId: channelId, data, updatedAt, updatedById: session.user.id } });
+    } else {
+      const result = await prisma.channelWorkspaceState.updateMany({
+        where: { channelId: channelId, updatedAt: expected },
+        data: { data, updatedAt, updatedById: session.user.id },
+      });
+      if (result.count !== 1) return NextResponse.json({ error: "Workspace changed; merge and retry" }, { status: 409 });
     }
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") return NextResponse.json({ error: "Workspace already exists" }, { status: 409 });
+    throw error;
   }
-
-  const state = await prisma.channelWorkspaceState.upsert({
-    where: { channelId },
-    update: { data, updatedById: session.user.id },
-    create: { channelId, data, updatedById: session.user.id },
-  });
 
   /* WS-HISTORY: снимок общего холста раз в интервал. Здесь он нужнее, чем в
      личной среде: холст правят несколько человек, и «кто-то что-то стёр»
@@ -106,8 +109,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   emitToChannel(channelId, "channel-workspace-updated", {
     channelId,
     clientId,
-    updatedAt: state.updatedAt,
+    updatedAt: updatedAt,
   });
 
-  return NextResponse.json({ ok: true, updatedAt: state.updatedAt });
+  return NextResponse.json({ ok: true, updatedAt: updatedAt });
 }

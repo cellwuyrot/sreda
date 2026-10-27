@@ -5,6 +5,7 @@ import { rateLimit } from "@/lib/rateLimit";
 import { checkBan } from "@/lib/banCheck";
 import { sanitizeText } from "@/lib/sanitize";
 import prisma from "@/lib/prisma";
+import { getChannelPermissions } from "@/lib/connectPermissions";
 import type { Prisma } from "@prisma/client";
 
 // FIX-A2: ADMIN был пропущен в списке ролей с правом редактирования.
@@ -21,6 +22,9 @@ export async function GET(req: NextRequest) {
   const to = searchParams.get("to");
   if (!channelId) return NextResponse.json({ error: "channelId required" }, { status: 400 });
 
+  const permission = await getChannelPermissions(session.user.id, channelId);
+  if (!permission || permission.channelType !== "CALENDAR") return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!permission.canView) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { groupId: true } });
   if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
 
@@ -73,7 +77,7 @@ export async function GET(req: NextRequest) {
     select: { eventId: true },
   });
 
-  const canEdit = EDIT_ROLES.includes(membership.role) || session.user.role === "ADMIN";
+  const canEdit = permission.canPost && (EDIT_ROLES.includes(membership.role) || session.user.role === "ADMIN");
   return NextResponse.json({
     events,
     canEdit,
@@ -106,6 +110,9 @@ export async function POST(req: NextRequest) {
     if (endDate < startDate) return NextResponse.json({ error: "End before start" }, { status: 400 });
   }
 
+  const permission = await getChannelPermissions(session.user.id, channelId);
+  if (!permission || permission.channelType !== "CALENDAR") return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!permission.canView || !permission.canPost) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { groupId: true, type: true } });
   if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
   if (channel.type !== "CALENDAR") return NextResponse.json({ error: "Not a Calendar channel" }, { status: 400 });

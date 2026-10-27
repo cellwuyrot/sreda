@@ -2,10 +2,7 @@
  * Тесты модуля uploadAccess.ts
  * Зона B, P0 — права на файлы вложений.
  *
- * ВНИМАНИЕ: в модуле есть LRU-кэш verdictCache (20 000 записей, TTL 60 с).
- * Кэш живёт на уровне модуля и НЕ сбрасывается между тестами автоматически.
- * Чтобы кэш не ломал изоляцию, каждый тест использует уникальные пути файлов
- * (path = `file-<testId>.webp`), так что кэш-коллизий не возникает.
+ * Решения проверяются при каждом запросе: отзыв прав не ждёт TTL кеша.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -227,10 +224,17 @@ describe("recordUpload", () => {
     );
   });
 
-  it("не бросает ошибку если upsert завершился неудачей (best-effort)", async () => {
+  it("не сообщает об успешной загрузке при отказе индекса владельца", async () => {
     prismaMock.uploadedFile.upsert.mockRejectedValue(new Error("DB error"));
     await expect(
       recordUpload({ path: "messages/fail.webp", uploaderId: "u1" })
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("Upload ownership");
   });
+});
+
+it("rechecks the same file immediately after permission revocation", async () => {
+  prismaMock.uploadedFile.findUnique.mockResolvedValue(row({ uploaderId: "other", channelId: "c" }));
+  mockGetChannelPermissions.mockResolvedValueOnce({ canView: true }).mockResolvedValueOnce({ canView: false });
+  expect(await canAccessUpload("viewer", "messages/same.webp")).toBe("allow");
+  expect(await canAccessUpload("viewer", "messages/same.webp")).toBe("deny");
 });
