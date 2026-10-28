@@ -79,20 +79,6 @@ interface ProfileData {
   };
 }
 
-interface PaymentMethodPublic {
-  id: "sbp" | "acquiring";
-  label: string;
-  fields: { label: string; value: string }[];
-  link?: string;
-  comment?: string;
-}
-
-interface PaymentMethodsResponse {
-  priceMonth: string;
-  currency: string;
-  methods: PaymentMethodPublic[];
-}
-
 const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   ADMIN:      { label: "Администратор", color: "text-red-400" },
   EDITOR:     { label: "Редактор",      color: "text-violet-400" },
@@ -630,7 +616,6 @@ export default function SettingsPage() {
   const [mobileContentOpen, setMobileContentOpen] = useState(false);
 
   /* PREMIUM-PAY: способы оплаты подписки (заполняются администратором). */
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodsResponse | null>(null);
 
   /* Desktop shell config (global hotkeys) */
   const [desktopCfg, setDesktopCfg] = useState<DesktopConfig | null>(null);
@@ -703,17 +688,6 @@ export default function SettingsPage() {
     const api = getDesktopApi();
     api?.getConfig().then(setDesktopCfg).catch(() => {});
   }, []);
-
-  // PREMIUM-PAY: подтягиваем включённые администратором способы оплаты, чтобы
-  // показать в разделе Premium, как оформить подписку.
-  useEffect(() => {
-    if (session?.user) {
-      fetch("/api/payments/methods")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => { if (data) setPaymentMethods(data); })
-        .catch(() => {});
-    }
-  }, [session]);
 
   // Глубокая ссылка вида /settings?cat=premium — открыть нужный раздел сразу.
   useEffect(() => {
@@ -2010,7 +1984,7 @@ export default function SettingsPage() {
         );
 
       case "premium":
-        return <ProfileSubscriptions profile={profile} effectivePremium={effectivePremium} paymentMethods={paymentMethods} />;
+        return <ProfileSubscriptions profile={profile} effectivePremium={effectivePremium} />;
     }
   };
 
