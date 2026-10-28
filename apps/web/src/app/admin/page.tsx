@@ -61,7 +61,7 @@ const GROUPS: NavGroup[] = [
     label: "Пользователи и сообщество",
     items: [
       { title: "Пользователи", description: "Управление, баны, роли", href: "/admin/users", icon: <Icon path={<><circle cx="9" cy="8" r="3.5" /><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" /><path d="M16 5.5a3 3 0 0 1 0 5.7M18 20c0-2.4-.9-4.2-2.3-5.3" /></>} />, countKey: "users" },
-      { title: "Подписки пользователей", description: "Premium и подписка «Ускоренный интернет»", href: "/admin/premium", icon: <Icon path={<path d="M12 3l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.4 1.1-6.5L2.6 9.8l6.5-.9L12 3z" />} /> },
+      { title: "Подписки пользователей", description: "Доступ и подключения Business / TZ ID", href: "/admin/premium", icon: <Icon path={<path d="M12 3l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.4 1.1-6.5L2.6 9.8l6.5-.9L12 3z" />} /> },
       { title: "Значки", description: "Награды и достижения", href: "/admin/badges", icon: <Icon path={<><circle cx="12" cy="9" r="5" /><path d="M9 13.5 8 21l4-2 4 2-1-7.5" /></>} /> },
       { title: "Обращения", description: "История обращений, обратная связь", href: "/admin/appeals", icon: <Icon path={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>} /> },
       { title: "Проекты", description: "Заявки личных кабинетов, прогресс работ", href: "/admin/projects", icon: <Icon path={<><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /><path d="m9 13 2 2 4-4" /></>} /> }, // FIX-CABINET
@@ -79,7 +79,6 @@ const GROUPS: NavGroup[] = [
       { title: "ИИ-ассистент", description: "API-ключ, модель, промт", href: "/admin/ai", icon: <Icon path={<><rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /><circle cx="12" cy="12" r="2.5" /></>} /> },
       /* BUSINESS-SUB: раздел перестал быть только премиумным: теперь в нём две
          независимые группы реквизитов — подписка Premium и счета бизнеса. */
-      { title: "Платежи", description: "Реквизиты Premium и счетов бизнеса", href: "/admin/payments", icon: <Icon path={<><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></>} /> },
       /* MAIL-WHITELIST: ограничения на входе в проект — отдельный раздел, а не
          таблица прямо в обзоре: списков будет больше одного. */
       { title: "Настройки ограничений", description: "Белые списки: кто может зарегистрироваться в проекте", href: "/admin/restrictions", icon: <Icon path={<><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><path d="M12 14v2" /></>} /> },
@@ -113,7 +112,6 @@ const QUICK_ACTIONS = [
   { title: "Создать статью", href: "/admin/content" },
   { title: "Управление пользователями", href: "/admin/users" },
   { title: "Управление премиумом", href: "/admin/premium" },
-  { title: "Платежи", href: "/admin/payments" },
   { title: "Рассылка уведомлений", href: "/admin/broadcast" },
 ];
 
