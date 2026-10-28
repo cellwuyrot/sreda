@@ -28,3 +28,18 @@ it("never claims a hosting server was stopped without manual confirmation", asyn
 it("preserves independent Premium rights when one managed term expires", async () => { db.tzManagedService.findFirst.mockResolvedValue(row({ id: "service", clientId: "business", title: "Premium", accessKind: "PREMIUM" })); db.user.findFirst.mockResolvedValue(row({ id: "customer" })); db.user.findUniqueOrThrow.mockResolvedValue(row({ id: "customer", isPremium: true })); db.tzManagedConnection.findUnique.mockResolvedValue(null); db.tzManagedConnection.upsert.mockResolvedValue(row({ id: "connection" })); db.premiumSubscription.findFirst.mockResolvedValue(row({ id: "other" })); db.premiumSubscription.findMany.mockResolvedValue([{ expiresAt: null }] as never); await managedAction({ ...ctx, machine: true }, { ...fulfillment, expectedAccessKind: "PREMIUM", status: "EXPIRED" }); expect(db.user.update).toHaveBeenCalledWith({ where: { id: "customer" }, data: { isPremium: true } }); });
 
 it("limits physical status polling to the authenticated client",async()=>{await managedAction({...ctx,machine:true},{action:"deliveryStatus",externalIds:["subscription"]});expect(db.tzManagedConnection.findMany).toHaveBeenCalledWith(expect.objectContaining({where:{clientId:"business",externalId:{in:["subscription"]}}}));await expect(managedAction(ctx,{action:"deliveryStatus",externalIds:["subscription"]})).rejects.toMatchObject({status:400});});
+
+it.each(["VPN", "PREMIUM"])("activates the standard %s entitlement for the same customer, not a separate copy", async kind => {
+  const until = new Date(Date.now() + 86400000);
+  db.tzManagedService.findFirst.mockResolvedValue(row({ id: "service", clientId: "business", title: kind, accessKind: kind }));
+  db.user.findFirst.mockResolvedValue(row({ id: "customer" }));
+  db.user.findUniqueOrThrow.mockResolvedValue(row({ id: "customer", isPremium: false, vpnAccess: false }));
+  db.tzManagedConnection.findUnique.mockResolvedValue(null);
+  db.tzManagedConnection.upsert.mockResolvedValue(row({ id: "connection" }));
+  const model = kind === "PREMIUM" ? db.premiumSubscription : db.vpnSubscription;
+  model.findFirst.mockResolvedValue(null);
+  model.findMany.mockResolvedValue([{ expiresAt: until }] as never);
+  await managedAction({ ...ctx, machine: true }, { ...fulfillment, expectedAccessKind: kind, paidUntil: until.toISOString() });
+  expect(model.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "managed-connection" }, create: expect.objectContaining({ userId: "customer", paymentMethod: "business", status: "active", expiresAt: until }) }));
+  expect(db.user.update).toHaveBeenCalledWith({ where: { id: "customer" }, data: kind === "PREMIUM" ? { isPremium: true } : { vpnAccess: true, vpnAccessUntil: until } });
+});

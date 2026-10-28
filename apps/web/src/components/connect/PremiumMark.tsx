@@ -97,11 +97,11 @@ export default function PremiumMark({ isPremium, onClick, size = 44, asToggle = 
 
   const label = switchMode
     ? "Открыть защищённое соединение (правая кнопка — включить или выключить)"
-    : "Открыть информацию о premium";
+    : "Открыть надёжное соединение и подписки Premium";
 
   const title = switchMode
     ? `${tunnel.on ? "Соединение включено" : tunnel.pending ? "Переключаем…" : "Соединение выключено"} · левая кнопка — подробности · правая кнопка — ${tunnel.on ? "выключить" : "включить"}`
-    : "TZ.Connect Premium";
+    : "Соединение и подписки · TZ.Connect";
 
   return (
     <button

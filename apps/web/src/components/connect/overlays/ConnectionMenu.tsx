@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PremiumMark from "@/components/connect/PremiumMark";
 import { LINK_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
+import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
 import { daysLeftLabel } from "@/lib/connectionUsage";
 
 /**
@@ -176,7 +177,8 @@ export default function ConnectionMenu({
   const serviceEnabled = state?.serviceEnabled !== false;
   const entitled = state?.entitled === true;
   const planLabel = plan?.label || (entitled ? "Доступ есть" : `Нет подписки ${LINK_PLAN_QUOTED}`);
-  const active = !!peer && serviceEnabled && entitled;
+  const active = peer?.enabled === true && serviceEnabled && entitled;
+  const accessKnown = typeof state?.entitled === "boolean";
 
   return (
     <div className="relative" ref={boxRef}>
@@ -188,160 +190,43 @@ export default function ConnectionMenu({
           className={`pointer-events-none absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 ${
             active ? "bg-green-500" : "bg-amber-500"
           }`}
-          style={{ borderColor: "var(--cn-panel, #14161c)" }}
+          style={{ borderColor: "var(--cn-sidebar, #14161c)" }}
         />
       )}
 
       {open && (
-        <div
-          className={`absolute z-50 mt-2 w-[288px] rounded-xl border p-3 shadow-xl ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
-          style={{
-            background: "var(--cn-panel, #14161c)",
-            borderColor: "var(--cn-border)",
-            color: "var(--cn-text)",
-          }}
-          role="dialog"
-          aria-label={LINK_NAME}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">{LINK_NAME}</p>
-              <p className="mt-0.5 text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                {loading
-                  ? "Проверяем…"
-                  : !state
-                    ? "Состояние недоступно"
-                    : stale
-                      ? "Данные могут быть неактуальны"
-                      : !serviceEnabled
-                        ? "Сервис временно выключен"
-                      : active
-                        ? "Включено"
-                        : peer
-                          ? "Настроено, но не работает"
-                          : "Выключено"}
-              </p>
-            </div>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                active ? "bg-green-500/15 text-green-400" : "bg-white/10"
-              }`}
-              style={active ? undefined : { color: "var(--cn-muted)" }}
-            >
-              {active ? "Вкл" : "Выкл"}
-            </span>
+        <div className={`absolute z-50 mt-2 w-[min(360px,calc(100vw-32px))] max-h-[min(80vh,640px)] overflow-y-auto rounded-2xl border p-4 shadow-xl ${align === "right" ? "right-0" : "left-0"}`}
+          style={{ background: "var(--cn-sidebar, #14161c)", borderColor: "var(--cn-border, #3a3f47)", color: "var(--cn-text, #f3f4f6)" }} role="dialog" aria-label={LINK_NAME}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0"><p className="text-base font-semibold">{LINK_NAME}</p><p className="mt-1 text-sm opacity-75">Подписка, подключение и профиль</p></div>
+            <button type="button" aria-label="Закрыть меню соединения" onClick={() => setOpen(false)} className="-mr-2 -mt-2 grid h-11 w-11 shrink-0 place-items-center rounded-lg hover:bg-white/10 focus-visible:outline focus-visible:outline-2">×</button>
           </div>
-
-          {error && <p className="mt-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-[11px] text-red-400">{error}</p>}
-          {notice && <p className="mt-2 rounded-lg bg-green-500/10 px-2 py-1.5 text-[11px] text-green-400">{notice}</p>}
-
-          {state && (
-            <>
-              {/* Тариф и срок — одной строкой: вопрос всегда задают вместе. */}
-              <div className="mt-3 rounded-lg px-2.5 py-2" style={{ background: "var(--cn-hover)" }}>
-                <p className="text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                  Тариф
-                </p>
-                <p className="text-xs font-medium">
-                  {planLabel}
-                  {plan?.until ? (
-                    <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
-                      · {daysLeftLabel(plan.until)}
-                    </span>
-                  ) : plan?.kind && plan.kind !== "none" ? (
-                    <span className="ml-1 font-normal" style={{ color: "var(--cn-muted)" }}>
-                      · без срока
-                    </span>
-                  ) : null}
-                </p>
+          {error && <p role="alert" className="mt-3 rounded-lg bg-red-500/10 p-3 text-sm">{error}{stale ? ". Последние данные могут быть неактуальны." : ". Это не означает, что подписка закончилась."}</p>}
+          {notice && <p role="status" className="mt-3 rounded-lg bg-green-500/10 p-3 text-sm">{notice}</p>}
+          {loading && <p role="status" className="mt-3 text-sm opacity-75">Проверяем доступ…</p>}
+          {!loading && (!state || !accessKnown) && <button type="button" onClick={() => void load()} className="mt-3 min-h-11 rounded-lg border border-current px-3 text-sm">Повторить проверку доступа</button>}
+          {state && accessKnown && <div className="mt-4 space-y-4">
+            <div className="rounded-xl border p-3" style={{ borderColor: "var(--cn-border, #3a3f47)" }}>
+              <p className="text-sm opacity-75">{entitled ? "Ваш доступ" : "Подключение услуги"}</p>
+              <p className="mt-1 text-base font-semibold">{planLabel}</p>
+              {entitled && <p className="mt-1 text-sm opacity-75">{plan?.until ? daysLeftLabel(plan.until) : "Без ограничения срока"}</p>}
+              {!entitled && <p className="mt-2 text-sm opacity-75">Оформите подписку в Business. После подтверждения оплаты доступ появится в этом аккаунте TZ ID.</p>}
+            </div>
+            {entitled && <>
+              {!serviceEnabled && <p role="status" className="text-sm">Сервис временно выключен. Подписка от этого не меняется.</p>}
+              <p className="text-sm opacity-75">{active ? "Профиль активен. Состояние соединения на устройстве — в окне подключения." : "Откройте подключение, чтобы включить соединение в приложении или скачать профиль в браузере."}</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={!onOpenPremiumInfo} onClick={() => { setOpen(false); onOpenPremiumInfo?.(); }} className="min-h-11 min-w-0 flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold disabled:opacity-50" style={{ background: "#87dfd8", color: "#132625" }}>Открыть подключение</button>
+                {peer?.enabled && <button type="button" disabled={busy} onClick={() => void disconnect()} className="min-h-11 rounded-xl border border-red-400/40 px-3 py-2.5 text-sm disabled:opacity-50">Отключить профиль</button>}
               </div>
-
-
-
-              {/* Выбор сервера — только те, куда действительно можно сесть. */}
-              <div className="mt-3">
-                <p className="text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                  Сервер
-                </p>
-                {servers.length === 0 ? (
-                  <p className="mt-1 text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                    Свободных серверов сейчас нет — попробуйте позже.
-                  </p>
-                ) : (
-                  <div className="mt-1 space-y-1">
-                    {servers.map((server) => {
-                      const chosen = !!peer?.nodeId && server.id === peer.nodeId;
-                      return (
-                        <button
-                          key={server.id}
-                          type="button"
-                          disabled={busy || chosen || server.full === true || !peer}
-                          onClick={() => void switchServer(server.id)}
-                          className="flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-xs transition-colors disabled:opacity-60"
-                          style={{
-                            borderColor: chosen ? "var(--cn-accent)" : "var(--cn-border)",
-                            background: chosen ? "var(--cn-accent-dim)" : "transparent",
-                          }}
-                        >
-                          <span className="min-w-0 flex-1 truncate">
-                            {server.name}
-                            {server.region ? (
-                              <span className="ml-1" style={{ color: "var(--cn-muted)" }}>
-                                {server.region}
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="shrink-0 text-[10px]" style={{ color: "var(--cn-muted)" }}>
-                            {server.full === true ? "нет мест" : "доступен"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {!peer && servers.length > 0 && (
-                  <p className="mt-1 text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                    Сервер можно выбрать после первого включения.
-                  </p>
-                )}
-              </div>
-
-              {/* Действия. «Включить» ведёт в окно: ключ показывается один раз и его
-                  нужно успеть сохранить. */}
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    onOpenPremiumInfo?.();
-                  }}
-                  className="flex-1 rounded-lg px-3 py-2 text-xs font-medium"
-                  style={{ background: "var(--cn-accent)", color: "var(--cn-accent-text)" }}
-                >
-                  {peer ? "Настроить" : entitled ? "Включить" : "Оформить"}
-                </button>
-                {peer && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void disconnect()}
-                    className="rounded-lg bg-red-500/15 px-3 py-2 text-xs font-medium text-red-400 disabled:opacity-50"
-                  >
-                    Выключить
-                  </button>
-                )}
-              </div>
-
-              {!entitled && (
-                <p className="mt-2 text-[11px]" style={{ color: "var(--cn-muted)" }}>
-                  {plan?.note ||
-                    `Соединение входит в Premium и в подписку ${LINK_PLAN_QUOTED} — условия у них одинаковые.`}
-                </p>
-              )}
-            </>
-          )}
+              {servers.length > 0 && <details className="rounded-xl border p-3" style={{ borderColor: "var(--cn-border, #3a3f47)" }}><summary className="cursor-pointer text-sm font-medium">Сервер подключения</summary><div className="mt-3 space-y-2">{servers.map(server => {
+                const chosen = !!peer?.nodeId && server.id === peer.nodeId;
+                return <button key={server.id} type="button" disabled={busy || chosen || server.full === true || !peer} onClick={() => void switchServer(server.id)} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm disabled:opacity-60" style={{ borderColor: chosen ? "var(--cn-accent)" : "var(--cn-border)", background: chosen ? "var(--cn-accent-dim)" : "transparent" }}><span className="min-w-0 break-words">{server.name} {server.region || ""}</span><span className="shrink-0">{chosen ? "Выбран" : server.full ? "Нет мест" : "Доступен"}</span></button>;
+              })}{!peer && <p className="text-sm opacity-75">Сервер можно выбрать после создания профиля.</p>}</div></details>}
+            </>}
+            <BusinessSubscriptionActions kind={plan?.kind === "premium" && entitled ? "PREMIUM" : "VPN"} active={entitled} compact />
+            <a href="/settings?cat=subscriptions" className="inline-flex min-h-11 items-center text-sm underline underline-offset-4">Все подписки и возможности</a>
+          </div>}
         </div>
       )}
     </div>
