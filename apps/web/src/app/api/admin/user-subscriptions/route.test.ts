@@ -9,6 +9,8 @@ const call = (q = "") => GET(new Request(`https://trioz.ru/api/admin/user-subscr
 beforeEach(() => {
   vi.mocked(getServerSession).mockResolvedValue({ user: { id: "admin", role: "ADMIN" } } as never);
   prismaMock.user.count.mockResolvedValue(1);
+  prismaMock.premiumSubscription.findMany.mockResolvedValue([]);
+  prismaMock.vpnSubscription.findMany.mockResolvedValue([]);
   prismaMock.user.findMany.mockResolvedValue(row([{ id: "user-1", name: "User", username: "user", isPremium: false, vpnAccess: true, vpnAccessUntil: new Date("2099-01-01") }]));
   prismaMock.tzManagedConnection.findMany.mockResolvedValue(row([{ id: "connection-1", userId: "user-1", title: "Надёжное соединение", accessKind: "VPN", status: "ACTIVE", paidUntil: new Date("2099-01-01"), manualState: "NONE" }]));
 });

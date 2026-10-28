@@ -9,7 +9,7 @@ beforeEach(() => { fetcher.mockReset(); fetcher.mockResolvedValue({ ok: true, js
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it("shows shared service name and Premium includes VPN without payment forms", async () => {
   render(<Page />); await screen.findByText("Premium из Business");
-  expect(screen.getByText("Premium, включая соединение")).toBeInTheDocument();
+  expect(screen.getAllByText("Premium, включая соединение").length).toBeGreaterThan(0);
   expect(screen.queryByText("Подписка + оплата")).toBeNull(); expect(screen.queryByText("Реквизиты для оплаты")).toBeNull();
   expect(screen.getByRole("link", { name: /Управлять услугами в Business/ })).toHaveAttribute("href", "https://business.trioz.ru/admin/service-hub");
   expect(fetcher.mock.calls.every(([, init]) => !init.method || init.method === "GET")).toBe(true);

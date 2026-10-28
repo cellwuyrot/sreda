@@ -43,3 +43,14 @@ it.each(["VPN", "PREMIUM"])("activates the standard %s entitlement for the same 
   expect(model.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "managed-connection" }, create: expect.objectContaining({ userId: "customer", paymentMethod: "business", status: "active", expiresAt: until }) }));
   expect(db.user.update).toHaveBeenCalledWith({ where: { id: "customer" }, data: kind === "PREMIUM" ? { isPremium: true } : { vpnAccess: true, vpnAccessUntil: until } });
 });
+it.each(["VPN", "PREMIUM"])("tracks %s trust separately and retains other rights when that trust is revoked", async kind => {
+  const until = new Date(Date.now() + 86400000);
+  db.tzManagedService.findFirst.mockResolvedValue(row({ id: "service", clientId: "business", title: kind, accessKind: kind }));
+  db.user.findFirst.mockResolvedValue(row({ id: "customer" })); db.user.findUniqueOrThrow.mockResolvedValue(row({ id: "customer", isPremium: true, vpnAccess: true }));
+  db.tzManagedConnection.findUnique.mockResolvedValue(null); db.tzManagedConnection.upsert.mockResolvedValue(row({ id: "trust-connection" }));
+  const model = kind === "PREMIUM" ? db.premiumSubscription : db.vpnSubscription;
+  model.findFirst.mockResolvedValue(row({ id: "manual-other" })); model.findMany.mockResolvedValue([{ expiresAt: null }] as never);
+  await managedAction({ ...ctx, machine: true }, { ...fulfillment, expectedAccessKind: kind, accessSource: "TRUST", paidUntil: until.toISOString(), status: "EXPIRED" });
+  expect(model.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ paymentMethod: "business-trust", status: "expired" }) }));
+  expect(db.user.update).toHaveBeenCalledWith({ where: { id: "customer" }, data: kind === "PREMIUM" ? { isPremium: true } : { vpnAccess: true, vpnAccessUntil: null } });
+});
