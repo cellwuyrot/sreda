@@ -98,15 +98,16 @@ async function fulfill(ctx: Context, input: Record<string, unknown>) {
     if (current && (current.serviceId !== service.id || current.userId !== subject)) throw new ServiceHubError("Подключение принадлежит другой услуге", 409);
     if (current && current.version >= version) return { ok: true, reused: true, status: current.status };
     const active = input.status === "ACTIVE" && until > new Date(); const manual = service.accessKind === "MANUAL";
-    const data = { clientId, userId: subject, serviceId: service.id, externalId, title: service.title, accessKind: service.accessKind, paidUntil: until, version, status: manual && active ? "PENDING" : active ? "ACTIVE" : "EXPIRED", manualState: manual ? (active ? (current?.manualState === "DONE" && current.status === "ACTIVE" ? "DONE" : "ACTIVATION_PENDING") : "DEACTIVATION_PENDING") : "NONE" };
+    const source = input.accessSource === "TRUST" ? "TRUST" : "PAID";
+    const data = { accessSource: source, clientId, userId: subject, serviceId: service.id, externalId, title: service.title, accessKind: service.accessKind, paidUntil: until, version, status: manual && active ? "PENDING" : active ? "ACTIVE" : "EXPIRED", manualState: manual ? (active ? (current?.manualState === "DONE" && current.status === "ACTIVE" ? "DONE" : "ACTIVATION_PENDING") : "DEACTIVATION_PENDING") : "NONE" };
     if (manual && active && data.manualState === "DONE") data.status = "ACTIVE";
     const row = await tx.tzManagedConnection.upsert({ where: { clientId_externalId: { clientId, externalId } }, create: data, update: data });
-    if (!manual) await builtinAccess(tx, subject, service.accessKind, row.id, until, active);
+    if (!manual) await builtinAccess(tx, subject, service.accessKind, row.id, until, active, source);
     await tx.tzServiceAudit.create({ data: { clientId, actorId: "billing-worker", action: "access.sync", details: JSON.stringify({ id: row.id, version, status: data.status }) } });
     return { ok: true, status: data.status };
   }, { isolationLevel: "Serializable" });
 }
-async function builtinAccess(tx: Prisma.TransactionClient, userId: string, kind: string, connectionId: string, until: Date, active: boolean) {
+async function builtinAccess(tx: Prisma.TransactionClient, userId: string, kind: string, connectionId: string, until: Date, active: boolean, source = "PAID") {
   const id = `managed-${connectionId}`; const isPremium = kind === "PREMIUM";
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
   const model = (isPremium ? tx.premiumSubscription : tx.vpnSubscription) as typeof tx.premiumSubscription;
@@ -114,7 +115,7 @@ async function builtinAccess(tx: Prisma.TransactionClient, userId: string, kind:
   const other = await model.findFirst({ where: { userId } });
   const legacy = isPremium ? user.isPremium : (user.vpnAccess && (!user.vpnAccessUntil || user.vpnAccessUntil > new Date()));
   if (active && legacy && !other) await model.upsert({ where: { id: `legacy-${kind}-${userId}` }, create: { id: `legacy-${kind}-${userId}`, userId, plan: "lifetime", paymentMethod: "manual", status: "active", expiresAt: isPremium ? null : user.vpnAccessUntil, note: "Сохранено ранее выданное право до подключения общего каталога" }, update: {} });
-  const ledger = { userId, plan: "managed", paymentMethod: "business", status: active ? "active" : "expired", expiresAt: until, reference: connectionId };
+  const ledger = { userId, plan: "managed", paymentMethod: source === "TRUST" ? "business-trust" : "business", status: active ? "active" : "expired", expiresAt: until, reference: connectionId };
   await model.upsert({ where: { id }, create: { id, ...ledger }, update: ledger });
   const remaining = await model.findMany({ where: { userId, status: "active", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, select: { expiresAt: true } });
   const unlimited = remaining.some(r => r.expiresAt === null); const max = remaining.reduce<Date | null>((acc, r) => r.expiresAt && (!acc || r.expiresAt > acc) ? r.expiresAt : acc, null);
@@ -125,6 +126,6 @@ export async function expireManagedServices() {
   const rows = await prisma.tzManagedConnection.findMany({ where: { paidUntil: { lte: new Date() }, status: { in: ["ACTIVE", "PENDING"] } }, take: 200 });
   for (const row of rows) await prisma.$transaction(async tx => {
     const lock = await tx.tzManagedConnection.updateMany({ where: { id: row.id, version: row.version, paidUntil: { lte: new Date() }, status: { in: ["ACTIVE", "PENDING"] } }, data: { status: "EXPIRED", manualState: row.accessKind === "MANUAL" ? "DEACTIVATION_PENDING" : "NONE" } });
-    if (lock.count && row.accessKind !== "MANUAL") await builtinAccess(tx, row.userId, row.accessKind, row.id, row.paidUntil, false);
+    if (lock.count && row.accessKind !== "MANUAL") await builtinAccess(tx, row.userId, row.accessKind, row.id, row.paidUntil, false, row.accessSource);
   });
 }

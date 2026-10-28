@@ -3,15 +3,16 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import ManualSubscriptionGrant from "@/components/admin/ManualSubscriptionGrant";
 import { hasPremium } from "@/lib/premium";
 import { hasActiveVpnPlan } from "@/lib/vpnPlan";
 import { useAdminBackHref, useAdminBackLabel } from "@/components/admin/useAdminBackHref";
 
 interface Connection {
-  id: string; title: string; accessKind: string; status: string; paidUntil: string; manualState: string;
+  accessSource?: string; id: string; title: string; accessKind: string; status: string; paidUntil: string; manualState: string;
 }
 interface User {
-  id: string; name: string; username: string; email?: string; role: string;
+  manualGrants?: { id: string; kind: string; status: string; expiresAt: string | null; note: string | null }[]; id: string; name: string; username: string; email?: string; role: string;
   isPremium: boolean; vpnAccess: boolean; vpnAccessUntil: string | null; connections: Connection[];
 }
 const statuses: Record<string, string> = { ACTIVE: "Доступ действует", EXPIRED: "Срок завершён", PENDING: "Ожидает подключения" };
@@ -62,7 +63,7 @@ export default function AdminPremiumPage() {
         <p className="mt-2 text-neutral-600 dark:text-gray-300">Оплата — в Business. Здесь — права пользователей и подключения из общего каталога Business и TZ ID.</p>
       </header>
       <section className="rounded-2xl border border-neutral-200 p-4 dark:border-white/15">
-        <p>Данные обновляются каждые 30 секунд и при возвращении в окно. Доступ появляется после подтверждения оплаты и успешной синхронизации из Business.</p>
+        <p>Данные обновляются каждые 30 секунд и при возвращении в окно. Оплаченный доступ появляется после подтверждения банка и синхронизации из Business. Доверительный доступ и ручные назначения отмечаются отдельно.</p>
         <p className="mt-2 text-sm text-neutral-600 dark:text-gray-300">Premium включает надёжное соединение. Ранее выданные права сохранены. На trioz.ru оплата и подтверждение банковских операций не выполняются.</p>
         <div className="mt-3 flex flex-wrap gap-4">
           <a href="https://business.trioz.ru/admin/service-hub" target="_blank" rel="noopener noreferrer" className="underline">Управлять услугами в Business ↗</a>
@@ -88,9 +89,10 @@ export default function AdminPremiumPage() {
             <h3 className="mt-4 font-medium">Подключения Business / TZ ID</h3>
             {user.connections.length ? <ul className="mt-2 space-y-3">{user.connections.map(c => <li key={c.id} className="rounded-xl bg-neutral-100 p-3 dark:bg-black/20">
               <p className="font-medium">{c.title}</p>
-              <p className="mt-1 text-sm">{statuses[c.status] || "Требуется проверка"} · до {date(c.paidUntil)}</p>
+              <p className="mt-1 text-sm">{c.accessSource === "TRUST" && c.status === "ACTIVE" ? "Доверительный доступ — оплата ожидается" : statuses[c.status] || "Требуется проверка"} · до {date(c.paidUntil)}</p>
               <p className="mt-1 text-sm text-neutral-600 dark:text-gray-300">{c.accessKind === "PREMIUM" ? "Premium, включая соединение" : c.accessKind === "VPN" ? "Надёжное соединение" : "Услуга с ручным исполнением"}{c.manualState === "ACTIVATION_PENDING" ? " · ожидает подключения исполнителем" : c.manualState === "DEACTIVATION_PENDING" ? " · ожидает отключения исполнителем" : ""}</p>
             </li>)}</ul> : <p className="mt-2 text-sm text-neutral-600 dark:text-gray-300">Подключений из Business пока нет.{premium || vpn ? " Действуют ранее выданные права или доступ по роли." : " Подписка не подключена."}</p>}
+            {role === "ADMIN" && <ManualSubscriptionGrant userId={user.id} grants={user.manualGrants || []} onChanged={() => setReload(n => n + 1)} />}
           </article>;
         })}</div>
       </>}
