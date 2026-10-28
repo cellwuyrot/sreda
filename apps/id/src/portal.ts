@@ -297,6 +297,9 @@ export function makePortal({
         return true;
       }
       const snapshot = await hubSnapshot(session.userId);
+      const projectAdminCount = await prisma.tzIdProjectRole.count({where:{userId:session.userId,revokedAt:null,role:"ADMIN"}});
+      const manager = await prisma.user.findUnique({where:{id:session.userId},select:{role:true}});
+      const manageLink = projectAdminCount || manager?.role === "ADMIN" ? `<a class="button secondary" href="${escape(webOrigin)}/tz-id/services">Услуги и администраторы проектов</a>` : "";
       const user = snapshot.profile;
       if (!user) throw new HubError("Профиль не найден", 404);
       const section = Object.hasOwn(
@@ -349,7 +352,7 @@ export function makePortal({
           : section === "addresses"
             ? `<section class="panel"><h2>Контактный адрес</h2><p>Необязательно. Укажите удобный способ связи или адрес. Передача проектам — только с отдельным разрешением.</p>${form("profile", `<label>Контактный адрес<textarea name="contactAddress" maxlength="500" rows="4">${escape(user.contactAddress || "")}</textarea></label><button>Сохранить</button>`)}</section>`
             : section === "subscriptions"
-              ? `<p>Подписки внешних проектов не включают Premium или VPN в TrioZ. Оплата остаётся в соответствующем проекте.</p><div class="cards">${subscriptions}</div><a class="button secondary" href="${escape(webOrigin)}/settings?section=premium">Управлять подписками TrioZ</a>`
+              ? `<p>Оплата и продление выполняются в проекте услуги. Для услуг общего каталога оплаченный доступ управляется автоматически; ручные подключения имеют отдельный статус.</p><div class="cards">${subscriptions}</div><a class="button secondary" href="${escape(webOrigin)}/settings?section=premium">Управлять подписками TrioZ</a>`
               : section === "applications"
                 ? applications
                 : section === "notifications"
@@ -368,7 +371,7 @@ export function makePortal({
           "",
         )}</nav>${form("logout", "<button class=secondary>Выйти из TZ ID</button>")}</aside>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end(frame(sections[section], content, sidebar));
+      res.end(frame(sections[section], manageLink + content, sidebar));
     } catch (e) {
       if (
         path.startsWith("/api/") &&

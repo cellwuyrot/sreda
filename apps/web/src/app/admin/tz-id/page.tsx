@@ -42,7 +42,7 @@ export default function TZIdAdmin() {
   }
   return <main className="max-w-5xl mx-auto px-4 py-6 sm:p-8 space-y-6 text-base leading-relaxed">
     <Link href="/admin" className="inline-flex items-center min-h-[44px] underline">← Администрирование</Link>
-    <header className="space-y-2"><h1 className="text-3xl font-semibold">TZ ID · вход в ваши проекты</h1><p className="max-w-2xl text-neutral-600 dark:text-neutral-300">Подключайте сайты к единому аккаунту, управляйте их доступом и назначайте администраторов. Настройки существующих приложений можно изменить без замены ключей.</p></header>
+    <Link href="/tz-id/services" className="underline inline-flex min-h-[44px] items-center">Услуги и администраторы проектов →</Link><header className="space-y-2"><h1 className="text-3xl font-semibold">TZ ID · вход в ваши проекты</h1><p className="max-w-2xl text-neutral-600 dark:text-neutral-300">Подключайте сайты к единому аккаунту, управляйте их доступом и назначайте администраторов. Настройки существующих приложений можно изменить без замены ключей.</p></header>
     {error && <div role="alert" className="rounded-lg border border-red-400 p-4 space-y-2"><p>{error}</p><button className="underline min-h-[44px]" disabled={busy} onClick={async () => { setError(""); try { await load(); setEditing(null); setCreating(false); } catch (e) { setError((e as Error).message); } }}>Обновить список</button></div>}
     {notice && <p role="status" className="rounded-lg border border-green-500 p-4">{notice}</p>}
     <section className="space-y-4" aria-label="Подключённые приложения">
