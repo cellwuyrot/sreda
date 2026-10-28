@@ -1824,6 +1824,12 @@ app.prepare().then(() => {
      Вложения теперь живут столько же, сколько сообщение, к которому приложены,
      и исчезают только вместе с ним. */
 
+  const serviceExpiry = async () => {
+    if (!(await acquireTaskLock("trioz:lock:managed-services", 50000))) return;
+    try { const { expireManagedServices } = await import("./src/lib/serviceHub"); await expireManagedServices(); } catch { console.error("[Services] Не удалось проверить сроки услуг"); }
+  };
+  setInterval(serviceExpiry, 60000); setTimeout(serviceExpiry, 10000);
+
   /* Срок подписки Premium: раз в шесть часов снимаем премиум там, где
      оплаченный срок вышел. Без этой задачи `expiresAt` был украшением —
      подписка «на месяц» работала бессрочно. */
