@@ -7,7 +7,6 @@ export type SubscriptionProfile = {
   premium?: { active: boolean; source: "none" | "role" | "subscription"; plan: string | null; startedAt: string | null; expiresAt: string | null; daysLeft?: number | null; granted: boolean };
   vpn?: { active: boolean; expiresAt: string | null; daysLeft?: number | null; viaPremium: boolean };
 };
-type PaymentMethods = { methods: { id: string; label: string; fields: { label: string; value: string }[]; link?: string }[] };
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; dense?: boolean; children: ReactNode }) {
   return <section className="mb-6" aria-label={title}><h2 className="text-xl font-semibold text-neutral-900 dark:text-white">{title}</h2>{subtitle && <p className="mb-3 mt-1 text-sm text-neutral-600 dark:text-gray-300">{subtitle}</p>}{children}</section>;
 }
@@ -21,15 +20,9 @@ function pluralDays(n: number): string {
   return "дней";
 }
 
-export default function ProfileSubscriptions({ profile, effectivePremium, paymentMethods = null }: { profile: SubscriptionProfile; effectivePremium: boolean; paymentMethods?: PaymentMethods | null }) {
+export default function ProfileSubscriptions({ profile, effectivePremium }: { profile: SubscriptionProfile; effectivePremium: boolean }) {
 
-        /* VPN-PLAN: раздел — ровно два блока: «Только VPN» и «Premium».
-
-           Прежняя верстка была витриной: преимущество, список возможностей,
-           таблица сравнения с обычным профилем и два блока оплаты. В настройках
-           человек решает другую задачу: понять, что у него есть и до какого числа.
-           Поэтому остались две карточки со статусом, а реквизиты спрятаны под
-           строку «Как оплатить» — они нужны один раз в месяц, а не каждый вход. */
+        // Status and access live here; checkout and manual settlement live only in Business.
         const premiumInfo = profile.premium;
         const expiresAt = premiumInfo?.expiresAt ? new Date(premiumInfo.expiresAt) : null;
         /* Счётчик считает сервер: у него одна дата на всех, а браузер может стоять
@@ -68,40 +61,6 @@ export default function ProfileSubscriptions({ profile, effectivePremium, paymen
             : vpnViaPremium
               ? "Отдельная подписка не нужна: надёжное соединение входит в Premium."
               : "Только надёжное соединение для ваших устройств, без остальных возможностей Premium.";
-
-        /* Реквизиты у обеих подписок одни и те же, различается только комментарий
-           к платежу — именно по нему администратор поймёт, что подключать. */
-        const payDetails = (hint: string) => (
-          <details className="mt-3 rounded-xl border border-neutral-200 dark:border-white/10">
-            <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-neutral-600 dark:text-gray-300">Реквизиты для ручной оплаты</summary>
-            <div className="space-y-2 px-3 pb-3">
-              {paymentMethods && paymentMethods.methods.length > 0 ? (
-                <>
-                  {paymentMethods.methods.map((m) => (
-                    <div key={m.id} className="rounded-lg bg-neutral-50 dark:bg-white/5 p-2.5">
-                      <p className="text-sm font-semibold text-neutral-900 dark:text-white">{m.label}</p>
-                      {m.fields.map((f) => (
-                        <div key={f.label} className="mt-1 flex items-center justify-between gap-3 text-sm">
-                          <span className="text-neutral-400">{f.label}</span>
-                          <span className="font-medium text-neutral-700 dark:text-gray-200 text-right break-all">{f.value}</span>
-                        </div>
-                      ))}
-                      {m.link && (
-                        <a href={m.link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-sm font-medium text-violet-600 dark:text-cyan-400 hover:underline">
-                          Перейти к оплате →
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                  <p className="text-sm text-neutral-400">{hint}</p>
-                </>
-              ) : (
-                <p className="text-sm text-neutral-500 dark:text-gray-400">Способы оплаты пока не настроены — напишите администратору.</p>
-              )}
-            </div>
-          </details>
-        );
-
 
         return (
           <>
@@ -149,9 +108,7 @@ export default function ProfileSubscriptions({ profile, effectivePremium, paymen
                     Включить в TZ.Connect →
                   </a>
                 )}
-                {!vpnViaPremium && !!paymentMethods?.methods.length && payDetails(vpnPlanActive
-                  ? "Для продления укажите в комментарии к платежу username и «Интернет»."
-                  : "В комментарии к платежу укажите username и «Интернет» — иначе платёж примут за Premium.")}
+
 
 
               </div>
@@ -189,13 +146,7 @@ export default function ProfileSubscriptions({ profile, effectivePremium, paymen
 
                 {!byRole && <div className="mt-4"><BusinessSubscriptionActions kind="PREMIUM" active={premiumActive} /></div>}
 
-                {byRole ? (
-                  <p className="mt-3 text-sm text-neutral-500 dark:text-gray-400">Подписка дана ролью в команде: платить ничего не нужно, срока у неё нет.</p>
-                ) : (
-                  !!paymentMethods?.methods.length && payDetails(premiumActive
-                    ? "Для продления укажите в комментарии к платежу ваш username."
-                    : "В комментарии к платежу укажите ваш username — по нему администратор найдёт аккаунт.")
-                )}
+                {byRole && <p className="mt-3 text-sm text-neutral-500 dark:text-gray-400">Подписка дана ролью в команде: платить ничего не нужно, срока у неё нет.</p>}
 
 
               </div>
