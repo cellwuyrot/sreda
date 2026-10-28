@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  PREMIUM_KEY_FEATURES,
-  PREMIUM_MAIN_ADVANTAGE,
-} from "@/lib/premiumFeatures";
-import PremiumFeatureIcon from "@/components/premium/PremiumFeatureIcon";
+import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { deviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
 import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
@@ -1107,87 +1103,12 @@ export default function PremiumInfoModal({
         ) : vpnEntitled ? (
           <VpnPanel onClose={onClose} />
         ) : (
-          <div className="p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-amber-500">
-                  TZ Premium
-                </p>
-                <h3 className="mt-1 text-xl font-semibold text-neutral-900 dark:text-white">
-                  Больше возможностей
-                </h3>
-              </div>
-              <button
-                onClick={onClose}
-                className="rounded-xl p-2 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-neutral-700 dark:hover:text-white"
-                aria-label="Закрыть"
-              >
-                <XIcon size={15} style={{ color: "inherit" }} />
-              </button>
-            </div>
-
-            <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-              <span className="text-sm font-medium text-neutral-900 dark:text-white">
-                Текущий тариф
-              </span>
-              <span className="rounded-full bg-neutral-200 px-3 py-1 text-xs font-medium text-neutral-500 dark:bg-white/10 dark:text-gray-400">
-                Обычный аккаунт
-              </span>
-            </div>
-
-            {/* Основное преимущество подписки */}
-            <div className="mt-4 rounded-2xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-500">
-                {PREMIUM_MAIN_ADVANTAGE.badge}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-white">
-                {PREMIUM_MAIN_ADVANTAGE.title}
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">
-                {PREMIUM_MAIN_ADVANTAGE.description}
-              </p>
-            </div>
-
-            {/* 5 ключевых возможностей, которые преобладают в витрине */}
-            <div className="mt-5">
-              <p className="text-xs font-medium text-neutral-900 dark:text-white">
-                Ключевые возможности
-              </p>
-              <ul className="mt-3 space-y-2.5">
-                {PREMIUM_KEY_FEATURES.map((f) => (
-                  <li key={f.id} className="flex gap-3">
-                    {/* Контурная иконка вместо эмодзи — единый стиль набора. */}
-                    <span className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-500">
-                      <PremiumFeatureIcon id={f.id} size={18} />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-neutral-900 dark:text-white">
-                        {f.title}
-                      </p>
-                      <p className="text-xs text-neutral-500 dark:text-gray-400">
-                        {f.description}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Подробности (сравнение тарифов) и подключение — в настройках профиля */}
-            <div className="mt-6 space-y-2">
-              {onOpenSettings && (
-                <button
-                  onClick={onOpenSettings}
-                  data-shell-hide="true"
-                  className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-4 py-2.5 text-sm font-semibold text-[#4a3200] shadow-[0_0_18px_rgba(240,190,60,0.35)] transition hover:opacity-90"
-                >
-                  Подробнее и подключение
-                </button>
-              )}
-              <p className="text-center text-[11px] text-neutral-400 dark:text-white/40">
-                Сравнение тарифов и оплата — в настройках профиля → Premium.
-              </p>
-            </div>
+          <div className="p-6 text-neutral-900 dark:text-white">
+            <div className="flex items-start justify-between gap-3"><div><p className="text-sm text-neutral-500 dark:text-gray-300">Подписки TrioZ</p><h3 className="mt-1 text-2xl font-semibold">Подключите нужные возможности</h3></div><button onClick={onClose} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl hover:bg-neutral-100 dark:hover:bg-white/10" aria-label="Закрыть"><XIcon size={18} /></button></div>
+            <p className="mt-3 text-base text-neutral-600 dark:text-gray-300">Оплата — в Business, доступ — в вашем аккаунте TrioZ. Повторно создавать аккаунт не нужно.</p>
+            <section className="mt-5 rounded-2xl border border-neutral-200 p-4 dark:border-white/20"><h4 className="text-lg font-semibold">Надёжное соединение</h4><p className="mb-4 mt-2 text-sm text-neutral-600 dark:text-gray-300">Защищённое подключение для ваших устройств. Отдельная подписка не включает остальные возможности Premium.</p><BusinessSubscriptionActions kind="VPN" /></section>
+            <section className="mt-4 rounded-2xl border border-neutral-200 p-4 dark:border-white/20"><h4 className="text-lg font-semibold">Premium</h4><p className="mb-4 mt-2 text-sm text-neutral-600 dark:text-gray-300">Дополнительные возможности TrioZ и надёжное соединение. Отдельная подписка на соединение не нужна.</p><BusinessSubscriptionActions kind="PREMIUM" /></section>
+            {onOpenSettings && <button onClick={onOpenSettings} className="mt-4 min-h-11 w-full rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium dark:border-white/20">Все возможности и мои подписки</button>}
           </div>
         )}
       </div>
