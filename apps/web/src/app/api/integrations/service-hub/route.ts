@@ -1,0 +1,4 @@
+import { NextRequest, NextResponse } from "next/server";
+import { bridgeContext, managedAction, ServiceHubError } from "@/lib/serviceHub";
+export const runtime = "nodejs"; export const dynamic = "force-dynamic";
+export async function POST(req: NextRequest) { try { const raw = await req.text(); if (raw.length > 65536) return NextResponse.json({ error: "Запрос слишком большой" }, { status: 413 }); const input = JSON.parse(raw); if (!input || Array.isArray(input)) throw Error(); const ctx = await bridgeContext(req.headers, raw, input); return NextResponse.json(await managedAction(ctx, input), { headers: { "Cache-Control": "no-store" } }); } catch (e) { return NextResponse.json({ error: e instanceof ServiceHubError ? e.message : "Не удалось выполнить синхронизацию" }, { status: e instanceof ServiceHubError ? e.status : 400 }); } }
