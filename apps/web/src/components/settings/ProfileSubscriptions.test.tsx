@@ -1,0 +1,11 @@
+import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import ProfileSubscriptions from "./ProfileSubscriptions";
+import { BUSINESS_SUBSCRIPTIONS_URL } from "@/lib/businessSubscriptions";
+let available: boolean;
+beforeEach(() => { available = true; vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ offers: { VPN: available ? { kind: "VPN", title: "Надёжное соединение", href: BUSINESS_SUBSCRIPTIONS_URL, prices: [{ months: 1, amountMinor: 20000 }] } : null, PREMIUM: null } }) }))); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("profile subscriptions show links only for configured offers", async () => { render(<ProfileSubscriptions profile={{}} effectivePremium={false} />); expect(await screen.findByRole("link", { name: /Оформить в Business/ })).toBeTruthy(); await screen.findByText(/Предложение Premium пока не опубликовано/); expect(screen.queryByText(/Онлайн-оплата пока не подключена/)).toBeNull(); expect(screen.getAllByRole("link", { name: /Оформить в Business/ })).toHaveLength(1); });
+it("an active VPN customer keeps a connection entry and a management link", async () => { render(<ProfileSubscriptions profile={{ vpn: { active: true, viaPremium: false, expiresAt: null } }} effectivePremium={false} />); expect(await screen.findByRole("link", { name: /Управлять подпиской/ })).toBeTruthy(); expect(screen.getByRole("link", { name: /Включить в TZ.Connect/ }).getAttribute("href")).toBe("/connect"); });
+it("Premium already including VPN does not offer a duplicate VPN subscription", async () => { render(<ProfileSubscriptions profile={{ vpn: { active: false, viaPremium: true, expiresAt: null }, premium: { active: true, source: "role", plan: null, startedAt: null, expiresAt: null, granted: false } }} effectivePremium />); expect(screen.getByText(/Доступ есть по Premium/)).toBeTruthy(); expect(screen.queryByRole("link", { name: /Оформить в Business/ })).toBeNull(); expect(fetch).not.toHaveBeenCalled(); });
+it("does not show purchase links for unconfigured offers", async () => { available = false; render(<ProfileSubscriptions profile={{}} effectivePremium={false} />); await screen.findByText(/Предложение надёжного соединения пока не опубликовано/); expect(screen.queryByRole("link", { name: /Business/ })).toBeNull(); });
