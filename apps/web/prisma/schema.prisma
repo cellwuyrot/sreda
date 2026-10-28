@@ -2866,6 +2866,7 @@ model TzManagedService {
  @@index([clientId, published])
 }
 model TzManagedConnection {
+ accessSource String @default("PAID")
  id String @id @default(cuid())
  clientId String
  userId String

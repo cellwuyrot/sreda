@@ -33,10 +33,15 @@ export async function GET(req: Request) {
     const userIds = users.map(u => u.id);
     const connections = userIds.length ? await prisma.tzManagedConnection.findMany({
       where: { userId: { in: userIds } }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }], take: 1001,
-      select: { id: true, userId: true, title: true, accessKind: true, status: true, paidUntil: true, manualState: true, updatedAt: true },
+      select: { id: true, userId: true, title: true, accessKind: true, status: true, paidUntil: true, manualState: true, accessSource: true, updatedAt: true },
     }) : [];
+    const grants = userIds.length && role === "ADMIN" ? await Promise.all([
+      prisma.premiumSubscription.findMany({ where: { userId: { in: userIds }, paymentMethod: "manual-admin" }, select: { id: true, userId: true, status: true, expiresAt: true, note: true }, orderBy: { createdAt: "desc" }, take: 500 }),
+      prisma.vpnSubscription.findMany({ where: { userId: { in: userIds }, paymentMethod: "manual-admin" }, select: { id: true, userId: true, status: true, expiresAt: true, note: true }, orderBy: { createdAt: "desc" }, take: 500 }),
+    ]) : [[], []];
     const now = new Date();
     return NextResponse.json({ users: users.map(user => ({ ...user,
+      manualGrants: grants.flatMap((rows, index) => rows.filter(g => g.userId === user.id).map(g => ({ ...g, kind: index === 0 ? "PREMIUM" : "VPN" }))),
       connections: connections.slice(0, 1000).filter(c => c.userId === user.id).map(c => ({
         ...c, status: c.paidUntil <= now && ["ACTIVE", "PENDING"].includes(c.status) ? "EXPIRED" : c.status,
       })),
