@@ -1,0 +1,27 @@
+import React from "react";
+import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
+vi.mock("@/components/ui/ConfirmDialog", () => ({ confirmDialog: vi.fn(async () => true) }));
+vi.mock("@/components/admin/TzProjectAdmins", () => ({ default: () => <p>Назначения администраторов</p> }));
+import Page from "@/app/admin/tz-id/page";
+const client = { id: "existing", name: "Business", enabled: true, publicClient: false, offlineAccess: false, apiScopes: ["roles:read"], revision: "rev", redirectUris: ["https://business.trioz.ru/api/auth/tz-id/callback"] };
+const fetcher = vi.fn();
+beforeEach(() => { vi.stubGlobal("React", React); vi.stubGlobal("fetch", fetcher); fetcher.mockReset(); fetcher.mockImplementation(async (_url, options) => new Response(JSON.stringify(options?.method ? { ok: true } : [client]), { status: 200 })); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("opens an existing application's settings and saves renewal without creating a new identity", async () => {
+ render(<Page/>); fireEvent.click(await screen.findByRole("button", { name: "Настроить" }));
+ const name = screen.getByLabelText("Название приложения") as HTMLInputElement;
+ expect(name.value).toBe("Business");
+ fireEvent.change(name, { target: { value: "Business updated" } });
+ fireEvent.click(screen.getByRole("checkbox", { name: /Продлевать вход/ }));
+ fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+ await waitFor(() => expect(fetcher.mock.calls.some(c => c[1]?.method === "PATCH")).toBe(true));
+ const call = fetcher.mock.calls.find(c => c[1]?.method === "PATCH")!;
+ expect(JSON.parse(call[1].body)).toEqual({ id: "existing", revision: "rev", settings: { name: "Business updated", redirectUris: client.redirectUris, offlineAccess: true, apiScopes: ["roles:read"] } });
+ expect(fetcher.mock.calls.some(c => c[1]?.method === "POST")).toBe(false);
+});
+it("cancel discards edits without a mutation", async () => { render(<Page/>); fireEvent.click(await screen.findByRole("button", { name: "Настроить" })); fireEvent.click(screen.getByRole("button", { name: "Отмена" })); expect(screen.queryByLabelText("Название приложения")).not.toBeInTheDocument(); expect(fetcher.mock.calls.some(c => c[1]?.method)).toBe(false); });
+it("keeps failed edits open and shows the server conflict", async () => { render(<Page/>); fireEvent.click(await screen.findByRole("button", { name: "Настроить" })); fetcher.mockImplementation(async (_url, opts) => new Response(JSON.stringify(opts?.method ? { error: "Настройки уже изменились" } : [client]), { status: opts?.method ? 409 : 200 })); fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" })); expect(await screen.findByRole("alert")).toHaveTextContent("Настройки уже изменились"); expect(screen.getByLabelText("Название приложения")).toBeInTheDocument(); });
+it("shows a useful empty state", async () => { fetcher.mockResolvedValue(new Response("[]")); render(<Page/>); expect(await screen.findByText(/Пока нет подключённых/)).toBeInTheDocument(); });
+it("shows a load error instead of presenting a false empty state", async () => { fetcher.mockResolvedValue(new Response("{}", { status: 403 })); render(<Page/>); expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить"); expect(screen.queryByText(/Пока нет подключённых/)).not.toBeInTheDocument(); });
