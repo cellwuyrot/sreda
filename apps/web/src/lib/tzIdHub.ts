@@ -14,8 +14,12 @@ export const TZ_ID_API_SCOPES = [
   "subscriptions:read",
   "subscriptions:write",
   "notifications:write",
+  "services:manage",
+  "services:fulfill",
 ] as const;
 export const TZ_ID_SCOPE_LABELS: Record<string, string> = {
+  "services:manage": "Управление услугами и администраторами своего проекта",
+  "services:fulfill": "Серверная выдача оплаченных прав для услуг своего проекта",
   openid: "Постоянный идентификатор TZ ID",
   profile: "Имя, ник и аватар",
   email: "Email и статус подтверждения",
@@ -147,7 +151,7 @@ export async function identityPatch(
   return data;
 }
 export async function hubSubscriptions(userId: string) {
-  const [user, premium, subscriptions] = await Promise.all([
+  const [user, premium, subscriptions, managed] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -168,6 +172,7 @@ export async function hubSubscriptions(userId: string) {
       orderBy: { updatedAt: "desc" },
       take: 200,
     }),
+    prisma.tzManagedConnection.findMany({where:{userId},orderBy:{updatedAt:"desc"},take:200}),
   ]);
   const premiumActive =
     hasPremium(user) && (!premium?.expiresAt || premium.expiresAt > new Date());
@@ -198,6 +203,7 @@ export async function hubSubscriptions(userId: string) {
       source: "trioz",
       projectEnabled: true,
     },
+    ...(managed || []).map(row=>({id:row.id,projectId:row.clientId,projectName:"Услуги проекта",title:row.title,status:row.paidUntil<=new Date()?"expired":row.status==="ACTIVE"?"active":row.manualState==="ACTIVATION_PENDING"?"pending_activation":"expired",expiresAt:row.paidUntil,source:"managed",projectEnabled:true})),
     ...subscriptions.map((row) => ({
       id: row.id,
       projectId: row.clientId,

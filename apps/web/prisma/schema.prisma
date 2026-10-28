@@ -2849,3 +2849,49 @@ model TzIdProjectRole {
   updatedAt DateTime @updatedAt
   @@unique([clientId, userId])
 }
+
+model TzManagedService {
+ id String @id @default(cuid())
+ clientId String
+ title String
+ description String
+ accessKind String @default("MANUAL")
+ prices String @default("{}")
+ methods String @default("[\"ONE_TIME\"]")
+ allowCancel Boolean @default(true)
+ published Boolean @default(false)
+ revision Int @default(1)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([clientId, published])
+}
+model TzManagedConnection {
+ id String @id @default(cuid())
+ clientId String
+ userId String
+ serviceId String
+ externalId String
+ title String
+ accessKind String
+ status String @default("PENDING")
+ paidUntil DateTime
+ version Int
+ manualState String @default("NONE")
+ updatedAt DateTime @updatedAt
+ @@unique([clientId, externalId])
+ @@index([userId, paidUntil])
+}
+model TzServiceAudit {
+ id String @id @default(cuid())
+ clientId String
+ actorId String
+ action String
+ details String
+ createdAt DateTime @default(now())
+ @@index([clientId, createdAt])
+}
+model TzBridgeNonce {
+ id String @id
+ expiresAt DateTime
+ @@index([expiresAt])
+}
