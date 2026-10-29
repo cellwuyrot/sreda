@@ -1,0 +1,16 @@
+import {NextResponse} from "next/server";
+import {getServerSession} from "next-auth";
+import {authOptions} from "@/lib/auth";
+import prisma from "@/lib/prisma";
+import {tzIdSameOrigin} from "@/lib/tzIdOrigin";
+import {monitorProjects,monitorHosts} from "@/lib/projectMonitor";
+export async function GET(){const s=await getServerSession(authOptions);if(s?.user?.role!=="ADMIN")return NextResponse.json({error:"Нет доступа"},{status:403});try{const [projects,hosts,nodes]=await Promise.all([monitorProjects(),monitorHosts(),prisma.serverNode.findMany({select:{id:true,name:true,enabled:true}})]);return NextResponse.json({projects,hosts,nodes,refreshedAt:new Date().toISOString()},{headers:{"Cache-Control":"no-store"}});}catch{return NextResponse.json({error:"Мониторинг временно недоступен"},{status:503});}}
+export async function POST(req:Request){const s=await getServerSession(authOptions);if(s?.user?.role!=="ADMIN"||!tzIdSameOrigin(req))return NextResponse.json({error:"Нет доступа"},{status:403});try{const b=await req.json();await prisma.$transaction(async tx=>{
+ if(b.action==="project"){if(typeof b.name!=="string"||!b.name.trim()||b.name.length>120||typeof b.ownerId!=="string")throw Error();const owner=await tx.user.findFirst({where:{id:b.ownerId,isDeleted:false,role:"CONSULTANT"}});if(!owner)throw Error();if(b.id){const p=await tx.partnerProject.findUnique({where:{id:String(b.id)}});if(!p)throw Error();await tx.partnerProject.update({where:{id:p.id},data:{name:b.name.trim(),ownerId:owner.id}});}else await tx.partnerProject.create({data:{name:b.name.trim(),ownerId:owner.id,purpose:"Партнёрский проект с мониторингом",status:"IN_PROGRESS"}});}
+ else if(b.action==="deployment"){if(typeof b.appName!=="string"||!/^[a-zA-Z0-9_. -]{1,100}$/.test(b.appName)||typeof b.namespace!=="string"||!/^[a-zA-Z0-9_.-]{1,60}$/.test(b.namespace)||typeof b.required!=="boolean"||typeof b.healthRequired!=="boolean")throw Error();const [project,node]=await Promise.all([tx.partnerProject.findUnique({where:{id:String(b.projectId)}}),tx.serverNode.findUnique({where:{id:String(b.nodeId)}})]);if(!project||!node)throw Error();await tx.projectDeployment.create({data:{projectId:project.id,nodeId:node.id,appName:b.appName,namespace:b.namespace,required:b.required,healthRequired:b.healthRequired}});}
+ else if(b.action==="settings"){if(typeof b.required!=="boolean"||typeof b.healthRequired!=="boolean")throw Error();await tx.projectDeployment.update({where:{id:String(b.id)},data:{required:b.required,healthRequired:b.healthRequired}});}
+ else if(b.action==="toggle"){if(typeof b.enabled!=="boolean")throw Error();await tx.projectDeployment.update({where:{id:String(b.id)},data:{enabled:b.enabled}});}
+ else if(b.action==="remove"){await tx.projectDeployment.delete({where:{id:String(b.id)}});}
+ else throw Error();
+ await tx.auditLog.create({data:{userId:s.user.id,username:s.user.username||s.user.name||"admin",action:"monitor."+b.action,target:"PartnerProject",targetId:String(b.projectId||b.id||""),details:JSON.stringify({ownerId:b.ownerId,appName:b.appName,nodeId:b.nodeId,enabled:b.enabled})}});
+ });return NextResponse.json({ok:true});}catch{return NextResponse.json({error:"Проверьте проект, CONSULTANT-владельца, узел и уникальность приложения PM2. Изменений нет."},{status:409});}}

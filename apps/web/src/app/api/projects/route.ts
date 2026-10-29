@@ -7,7 +7,7 @@ import { createNotification } from "@/lib/createNotification";
 // FIX-CABINET: проекты личного кабинета.
 // GET  /api/projects             — свои проекты (владелец)
 // GET  /api/projects?scope=staff — все проекты (ADMIN | EDITOR): заявки на обработку
-// POST /api/projects             — создать проект (CONSULTANT | ADMIN)
+// POST /api/projects             — создать проект (ADMIN)
 //
 // STAGES: вместе с проектом отдаём его услугу с набором этапов. Отдельного
 // запроса за услугой нет намеренно: список кабинета рисует полоску прогресса
@@ -61,8 +61,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user.role !== "CONSULTANT" && session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Личный кабинет доступен только партнёрам TrioZ" }, { status: 403 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Проекты создаёт администратор" }, { status: 403 });
   }
 
   const data = await req.json().catch(() => null);
