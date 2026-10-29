@@ -1,0 +1,114 @@
+[
+  {
+    "app": "main",
+    "state": "active",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "main",
+    "state": "active",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "main",
+    "state": "help",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "main",
+    "state": "help",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "main",
+    "state": "empty",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "main",
+    "state": "empty",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "main",
+    "state": "error",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "main",
+    "state": "error",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "active",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "active",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "help",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "help",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "empty",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "empty",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "error",
+    "width": 390,
+    "overflow": false,
+    "runtimeErrors": 0
+  },
+  {
+    "app": "biz",
+    "state": "error",
+    "width": 1440,
+    "overflow": false,
+    "runtimeErrors": 0
+  }
+]

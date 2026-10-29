@@ -422,3 +422,9 @@ describe("STORAGE-PRIORITY: хранилище узла", () => {
     expect(prismaMock.serverNode.delete).toHaveBeenCalled();
   });
 });
+
+it("uses a monitor heartbeat for APP nodes without fabricating VPN availability",async()=>{
+ const now=new Date();
+ prismaMock.serverNode.findMany.mockResolvedValue(row([node({id:"app",kind:"APP",monitorSeenAt:now,lastSeenAt:null}),node({id:"vpn",kind:"VPN",monitorSeenAt:now,lastSeenAt:null})]));
+ const result=await call("GET");expect(result.status).toBe(200);expect(result.body.nodes[0].status).toBe("online");expect(result.body.nodes[1].status).toBe("offline");
+});

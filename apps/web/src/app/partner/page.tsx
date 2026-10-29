@@ -372,12 +372,13 @@ export default function PartnerPage() {
                       {showArchived ? "К активным" : `Архив (${archivedProjects.length})`}
                     </button>
                   )}
-                  <button onClick={() => setShowAdd(true)} className="flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-violet-500 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400">
+                  {role === "ADMIN" && <button onClick={() => setShowAdd(true)} className="flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-violet-500 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400">
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     Добавить проект
-                  </button>
+                  </button>}
                 </div>
 
+                <p className="px-5 py-4 text-sm text-neutral-600 dark:text-gray-300">Проекты создаёт администратор. <a href="https://business.trioz.ru/dashboard" target="_blank" rel="noopener noreferrer" className="underline">Мониторинг моих проектов в Business ↗</a></p>
                 {loadingProjects ? (
                   <div className="grid min-h-72 place-items-center px-6 py-12"><Spinner /></div>
                 ) : visibleProjects.length === 0 ? (
@@ -492,7 +493,7 @@ export default function PartnerPage() {
         </div>
       )}
 
-      {showAdd && (
+      {showAdd && role === "ADMIN" && (
         <AddProjectModal
           onClose={() => setShowAdd(false)}
           onCreated={(p) => { setShowAdd(false); setProjects((prev) => [p, ...prev]); setOpenId(p.id); }}
