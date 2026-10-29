@@ -1,73 +1,8 @@
 "use client";
-
-// FIX-ADM1: метрики раздела «Сервисы и система» (админ-панель и редакторская)
-import { useEffect, useState } from "react";
-
-interface SystemStats {
-  onlineNow: number;
-  messages24h: number;
-  activeProjects: number | null;
-  systemErrors: number | null;
-  aiRequests: number | null;
-  storageUsage: string | null;
-  serverLoad: string | null;
-}
-
-const CARDS: { key: keyof SystemStats; label: string; stub?: boolean }[] = [
-  { key: "onlineNow", label: "Онлайн сейчас всего" },
-  { key: "messages24h", label: "Сообщений за сутки" },
-  { key: "activeProjects", label: "Активных проектов", stub: true },
-  { key: "systemErrors", label: "Ошибок системы", stub: true },
-  { key: "aiRequests", label: "AI-запросов", stub: true },
-  { key: "storageUsage", label: "Использование хранилища", stub: true },
-  { key: "serverLoad", label: "Загруженность сервера", stub: true },
-];
-
-export default function SystemStatsPanel() {
-  const [stats, setStats] = useState<SystemStats | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      fetch("/api/admin/system-stats", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (!cancelled && data) setStats(data);
-        })
-        .catch(() => {});
-    };
-    load();
-    const timer = setInterval(load, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
-  const display = (card: { key: keyof SystemStats; stub?: boolean }): string => {
-    if (card.stub) return "—";
-    if (!stats) return "…";
-    const value = stats[card.key];
-    return value === null || value === undefined ? "0" : String(value);
-  };
-
-  return (
-    <div className="rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-5">
-      <h2 className="mb-1 text-base font-semibold text-neutral-900 dark:text-white">Состояние системы</h2>
-      <p className="mb-4 text-xs text-neutral-500 dark:text-gray-400">Метрики обновляются автоматически каждые 30 секунд</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {CARDS.map((card) => (
-          <div key={card.key} className="relative rounded-2xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 p-4">
-            {card.stub && (
-              <span className="absolute right-2 top-2 rounded-full bg-neutral-200/70 dark:bg-white/10 px-2 py-0.5 text-[10px] font-medium text-neutral-500 dark:text-gray-400">
-                скоро
-              </span>
-            )}
-            <p className="text-2xl font-bold text-neutral-900 dark:text-white">{display(card)}</p>
-            <p className="mt-0.5 text-xs text-neutral-500 dark:text-gray-400">{card.label}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+import {useEffect,useState} from "react";
+import Help from "./MonitorHelp";
+type Stats={onlineNow:number|null;messages24h:number|null;activeProjects:number|null;storageUsage:string|null;serverLoad:string|null;refreshedAt:string;measuredAt?:string;partial?:boolean;unavailable?:boolean;hostsWithFreshData?:number;hostsWithReports?:number;projectStates?:{total:number;up:number;degraded:number;down:number;unknown:number;disabled:number}};
+export default function SystemStatsPanel(){const [data,setData]=useState<Stats|null>(null),[error,setError]=useState("");useEffect(()=>{let alive=true;let running=false;const load=async()=>{if(running||document.visibilityState!=="visible")return;running=true;try{const r=await fetch("/api/admin/system-stats",{cache:"no-store",signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error();const d=await r.json();if(alive){setData(d);setError("");}}catch{if(alive)setError("Не удалось обновить показатели. Последние значения могут быть устаревшими.");}finally{running=false;}};void load();const t=setInterval(()=>void load(),30000);const focus=()=>void load();window.addEventListener("focus",focus);return()=>{alive=false;clearInterval(t);window.removeEventListener("focus",focus);};},[]);
+ const cards:[string,number|string|null|undefined,string][]=[["Онлайн в приложении",data?.onlineNow,"Пользователи с видимым heartbeat за 60 секунд, не VPN-подключения"],["Сообщений за 24 часа",data?.messages24h,"Каналы и личная переписка; только количество"],["Проектов работает",data?.activeProjects,"Все включённые компоненты подтверждены; частичные и неизвестные статусы считаются отдельно"],["Хранилище серверов",data?.storageUsage,"Занято и зарезервировано / объём файловых систем со свежими данными. Не сумма папок проектов"],["Загруженность серверов",data?.serverLoad,"CPU ≥90% или доступной RAM <10%. Только машины со свежими измерениями"]];
+ return <section className="rounded-2xl border border-neutral-200 bg-white p-5 text-neutral-900 dark:border-white/10 dark:bg-neutral-900 dark:text-white"><div className="flex flex-wrap justify-between gap-3"><h2 className="text-xl font-semibold">Состояние системы</h2><a className="min-h-11 underline" href="/admin/monitor">Проекты и серверы →</a></div><p className="mb-4 text-sm text-neutral-500 dark:text-gray-400">Опрос каждые 30 секунд. {data?`Получено: ${new Date(data.refreshedAt).toLocaleString("ru-RU")}`:"Ожидание данных"}</p>{error&&<p role="alert" className="mb-4 rounded-xl border border-red-400 p-3">{error}</p>}{(data?.partial||data?.unavailable)&&<p role="status" className="mb-4">Часть источников недоступна. Пропуски не заменяются нулями.</p>}<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{cards.map(([title,value,hint])=><div className="rounded-xl border border-neutral-200 p-4 dark:border-white/20" key={title}><p className="text-sm text-neutral-500 dark:text-gray-400">{title}</p><p className="mt-2 break-words text-2xl font-semibold">{value==null?data?"Нет данных":"…":value}</p><p className="mt-2 text-sm text-neutral-600 dark:text-gray-300">{hint}</p></div>)}</div>{data?.projectStates&&<p className="mt-4 text-sm">Проектов всего: {data.projectStates.total} · частично работают: {data.projectStates.degraded} · недоступны: {data.projectStates.down} · без данных: {data.projectStates.unknown} · не настроены / отключены: {data.projectStates.disabled}</p>}<p className="mt-2 text-sm">{data?.hostsWithFreshData!=null?`Серверов со свежими данными: ${data.hostsWithFreshData}; записей узлов с отчётами: ${data.hostsWithReports}.`:"Агент мониторинга должен быть установлен отдельно."}</p><Help><p>Показатели собирает агент, а не открытая вкладка. Без его установки реальные CPU, RAM и диски не появятся. Данные старше двух минут не считаются актуальными.</p><p>PM2 online — не гарантия работоспособного сайта. Настройте обязательную проверку HTTP в карточке размещения. Подробные шаги — в разделе «Проекты и серверы».</p></Help></section>;
 }

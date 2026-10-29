@@ -777,6 +777,9 @@ model ChannelRolePower {
 /// Токен в открытом виде НЕ хранится: в базе только SHA-256, а сам токен
 /// показывается администратору один раз при создании или перевыпуске.
 model ServerNode {
+  monitorReport String? @db.Text
+  monitorSeenAt DateTime?
+  deployments ProjectDeployment[]
   id   String @id @default(cuid())
   name String @unique
   /// MAIN | CHILD
@@ -1682,6 +1685,7 @@ model BlockedIdentity {
 // (см. apps/web/src/lib/orderStages.ts). Выполненный этап откатить нельзя,
 // поэтому прогресс только растёт.
 model PartnerProject {
+  deployments ProjectDeployment[]
   id        String                  @id @default(cuid())
   ownerId   String
   name      String
@@ -2895,4 +2899,29 @@ model TzBridgeNonce {
  id String @id
  expiresAt DateTime
  @@index([expiresAt])
+}
+
+model ProjectDeployment {
+ id String @id @default(cuid())
+ projectId String
+ project PartnerProject @relation(fields:[projectId], references:[id], onDelete:Cascade)
+ nodeId String
+ node ServerNode @relation(fields:[nodeId], references:[id], onDelete:Cascade)
+ appName String
+ namespace String @default("default")
+ required Boolean @default(true)
+ enabled Boolean @default(true)
+ healthRequired Boolean @default(true)
+ createdAt DateTime @default(now())
+ @@unique([nodeId, appName, namespace])
+ @@index([projectId])
+}
+model MonitorSample {
+ id String @id @default(cuid())
+ nodeId String
+ sampledAt DateTime
+ receivedAt DateTime @default(now())
+ payload String @db.Text
+ @@index([nodeId, sampledAt])
+  @@index([receivedAt])
 }

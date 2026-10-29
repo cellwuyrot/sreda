@@ -1830,6 +1830,17 @@ app.prepare().then(() => {
   };
   setInterval(serviceExpiry, 60000); setTimeout(serviceExpiry, 10000);
 
+  // Храним метрики семь дней, даже если агент больше не подключается.
+  const monitorCleanup = async () => {
+    if (!(await acquireTaskLock("trioz:lock:monitor-cleanup", 50_000))) return;
+    try {
+      await prisma.monitorSample.deleteMany({ where: { receivedAt: { lt: new Date(Date.now() - 7 * 86400_000) } } });
+      await prisma.tzBridgeNonce.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    }
+    catch { console.error("[Monitor] Не удалось очистить историю метрик"); }
+  };
+  setInterval(monitorCleanup, 3600_000); setTimeout(monitorCleanup, 30_000);
+
   /* Срок подписки Premium: раз в шесть часов снимаем премиум там, где
      оплаченный срок вышел. Без этой задачи `expiresAt` был украшением —
      подписка «на месяц» работала бессрочно. */
