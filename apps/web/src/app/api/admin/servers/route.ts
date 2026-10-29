@@ -46,6 +46,7 @@ function publicNode(node: {
   tokenHash: string | null;
   lastReport: string | null;
   lastSeenAt: Date | null;
+  monitorSeenAt?: Date | null;
   enabled: boolean;
   note: string;
   createdAt: Date;
@@ -83,8 +84,10 @@ function publicNode(node: {
     storageKeyId: node.storageKeyId,
     hasStorageSecret: !!node.storageSecretEnc,
     hasToken: !!node.tokenHash,
-    lastSeenAt: node.lastSeenAt,
-    status: nodeStatus(node.lastSeenAt, node.enabled),
+    // Monitoring heartbeat may mark an APP host alive, never a VPN/storage agent.
+    lastSeenAt: node.kind === "APP" && node.monitorSeenAt && (!node.lastSeenAt || node.monitorSeenAt > node.lastSeenAt) ? node.monitorSeenAt : node.lastSeenAt,
+    status: nodeStatus(node.kind === "APP" && node.monitorSeenAt && (!node.lastSeenAt || node.monitorSeenAt > node.lastSeenAt) ? node.monitorSeenAt : node.lastSeenAt, node.enabled),
+    monitorSeenAt: node.monitorSeenAt || null,
     enabled: node.enabled,
     note: node.note,
     createdAt: node.createdAt,

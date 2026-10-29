@@ -1,0 +1,17 @@
+import {it,expect} from "vitest";
+import {parseMonitorReport,deploymentState,projectState} from "./projectMonitorPolicy";
+const report=()=>({sampledAt:new Date().toISOString(),fingerprint:"a".repeat(64),cpu:12,memoryTotal:100,memoryAvailable:40,cores:2,load1:0.2,disks:[{label:"rootfs",total:100,available:30}],apps:[{deploymentId:"d",state:"online",instances:2,cpu:30,memory:20,restarts:1,uptimeSeconds:100,health:"ok",storageBytes:null}]});
+const dep=(extra={})=>({id:"d",enabled:true,healthRequired:true,node:{enabled:true,monitorSeenAt:new Date(),monitorReport:JSON.stringify(report())},...extra});
+it("accepts whitelisted telemetry, drops env and path fields",()=>{const r=report();const parsed=parseMonitorReport({...r,token:"secret",env:{pass:"hidden"}},new Set(["d"]));expect(parsed).not.toHaveProperty("env");expect(parsed).not.toHaveProperty("token");expect(parsed.apps[0].storageBytes).toBeNull();});
+it("rejects cross-node deployments and duplicates",()=>{expect(()=>parseMonitorReport(report(),new Set(["other"]))).toThrow();const r=report();r.apps.push(r.apps[0]);expect(()=>parseMonitorReport(r,new Set(["d"]))).toThrow();});
+it.each([-400000,120000])("rejects stale/future samples %s",offset=>{expect(()=>parseMonitorReport({...report(),sampledAt:new Date(Date.now()+offset).toISOString()},new Set(["d"]))).toThrow();});
+it("rejects impossible disks",()=>{expect(()=>parseMonitorReport({...report(),disks:[{label:"root",total:100,available:101}]},new Set(["d"]))).toThrow();});
+it("online process plus successful health is up",()=>expect(deploymentState(dep())).toBe("up"));
+it("fresh host with stale sample is not up",()=>{const r=report();r.sampledAt=new Date(Date.now()-130000).toISOString();expect(deploymentState(dep({node:{enabled:true,monitorSeenAt:new Date(),monitorReport:JSON.stringify(r)}}))).toBe("unknown");});
+it("stale receipt is not a working deployment",()=>expect(deploymentState(dep({node:{enabled:true,monitorSeenAt:new Date(Date.now()-130000),monitorReport:JSON.stringify(report())}}))).toBe("unknown"));
+it("requires health for a website; supports explicit PM2-only worker",()=>{const r=report();r.apps[0].health="unconfigured";const d=dep({node:{enabled:true,monitorSeenAt:new Date(),monitorReport:JSON.stringify(r)}});expect(deploymentState(d)).toBe("unknown");expect(deploymentState({...d,healthRequired:false})).toBe("up");});
+it("failed HTTP is down even with PM2 online",()=>{const r=report();r.apps[0].health="failed";expect(deploymentState(dep({node:{enabled:true,monitorSeenAt:new Date(),monitorReport:JSON.stringify(r)}}))).toBe("down");});
+it("disabled is distinct from missing data",()=>expect(deploymentState(dep({enabled:false}))).toBe("disabled"));
+it("counts a cluster as a single project state and degrades optional failures",()=>{expect(projectState([{state:"up",required:true},{state:"down",required:false}])).toBe("degraded");expect(projectState([{state:"up",required:true}])).toBe("up");});
+it("does not turn unknown mandatory data green",()=>expect(projectState([{state:"unknown",required:true},{state:"up",required:false}])).toBe("unknown"));
+it("empty and disabled projects are not counted active",()=>{expect(projectState([])).toBe("disabled");expect(projectState([{state:"disabled",required:true}])).toBe("disabled");});

@@ -1,0 +1,4 @@
+apps/web/src/app/api/admin/monitor/route.test.ts
+CI-ORIGIN-FIX.md
+TEST-REPORT-PROJECT-MONITORING.md
+PROJECT-MONITORING-MANIFEST.sha256
