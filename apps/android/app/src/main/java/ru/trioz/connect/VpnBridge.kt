@@ -1,81 +1,50 @@
 package ru.trioz.connect
 
-import android.webkit.JavascriptInterface
+import android.net.Uri
+import androidx.webkit.WebViewFeature
+import androidx.webkit.JavaScriptReplyProxy
 import org.json.JSONObject
 
-/**
- * VPN-ANDROID: JavaScript-мост для управления нативным VPN-туннелем.
- *
- * Зеркалит `window.triozDesktop.vpn` из десктоп-оболочки:
- *   up(config)  — поднять туннель по готовому профилю WireGuard/AmneziaWG
- *   down()      — снять туннель
- *   status()    — текущее состояние (синхронно, строка JSON)
- *
- * Мост работает только на нашем origin (см. originOk). Стороннее
- * iframe или перехваченная страница не получат доступа к управлению VPN.
- *
- * Вызовы приходят из потока JS-движка, поэтому все изменения состояния
- * делаем через Handler/runOnUiThread в MainActivity.
- */
-class VpnBridge(
-    private val activity: MainActivity,
-    private val originOk: () -> Boolean,
-) {
-    companion object {
-        const val JS_NAME = "TriozVpnBridge"
-    }
-
-    /**
-     * Поднять туннель. Принимает готовый профиль WireGuard/AmneziaWG
-     * (строка .conf с приватным ключом). Возвращает JSON-состояние.
-     *
-     * Если у приложения ещё нет разрешения VPN, MainActivity покажет
-     * системный диалог и дождётся ответа пользователя.
-     */
-    @JavascriptInterface
-    fun up(config: String): String {
-        if (!originOk()) return errorJson("Доступ запрещён")
-        if (config.isBlank()) return errorJson("Профиль пуст")
-        return try {
-            activity.runOnUiThread { activity.vpnUp(config) }
-            pendingJson()
+/** Main-frame + exact-origin WebMessage listener. No addJavascriptInterface for VPN. */
+class VpnBridge(private val activity: MainActivity) {
+    private var account = ""
+    companion object { const val JS_NAME = "TriozVpnBridge" }
+    fun receive(raw: String, source: Uri, mainFrame: Boolean, reply: JavaScriptReplyProxy) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
+        if (!mainFrame || !Config.isTrustedOrigin(source.toString()) || raw.length > 40000) return
+        var id = ""
+        try {
+            val request = JSONObject(raw)
+            id = request.getString("id")
+            require(id.matches(Regex("[A-Za-z0-9-]{1,80}")))
+            val result: Any = when (request.getString("op")) {
+                "status" -> AmneziaVpnService.snapshot()
+                "admission" -> VpnAdmissionPolicy.check(activity).let {
+                    JSONObject().put("allowed", it.allowed).put("message", it.message).put("version", it.version)
+                }
+                "publicKey" -> {
+                    val admission = VpnAdmissionPolicy.check(activity)
+                    check(admission.allowed) { admission.message }
+                    val idScope = request.getString("account")
+                    require(idScope.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+                    account = idScope
+                    VpnKeyStore(activity).pair(account).publicKey.toBase64()
+                }
+                "up" -> {
+                    val admission = VpnAdmissionPolicy.check(activity)
+                    check(admission.allowed) { admission.message }
+                    val config = request.getString("config")
+                    VpnProfile.withNativeKey(config, VpnKeyStore(activity).pair(account).privateKey.toBase64())
+                    activity.vpnUp(config, account)
+                    JSONObject().put("state", "connecting").put("since", JSONObject.NULL).put("error", JSONObject.NULL)
+                        .put("backend", "amneziawg").put("embedded", true)
+                }
+                "down" -> { activity.vpnDown(); AmneziaVpnService.snapshot() }
+                else -> throw IllegalArgumentException("Unknown operation")
+            }
+            reply.postMessage(JSONObject().put("id", id).put("result", result).toString())
         } catch (e: Exception) {
-            errorJson(e.message ?: "Ошибка запуска VPN")
+            reply.postMessage(JSONObject().put("id", id).put("error", e.message?.take(500) ?: "Ошибка VPN").toString())
         }
     }
-
-    /** Снять туннель. */
-    @JavascriptInterface
-    fun down(): String {
-        if (!originOk()) return errorJson("Доступ запрещён")
-        return try {
-            activity.runOnUiThread { activity.vpnDown() }
-            disconnectingJson()
-        } catch (e: Exception) {
-            errorJson(e.message ?: "Ошибка остановки VPN")
-        }
-    }
-
-    /** Текущее состояние туннеля — синхронно. */
-    @JavascriptInterface
-    fun status(): String = buildStateJson(
-        AmneziaVpnService.state,
-        AmneziaVpnService.since,
-        AmneziaVpnService.lastError,
-    )
-
-    // ── JSON helpers ─────────────────────────────────────────────────────
-
-    private fun buildStateJson(st: VpnState, since: String?, error: String?): String =
-        JSONObject().apply {
-            put("state", st.jsonKey)
-            put("since", since ?: JSONObject.NULL)
-            put("error", error ?: JSONObject.NULL)
-            put("backend", if (st == VpnState.ON || st == VpnState.CONNECTING) "amneziawg" else JSONObject.NULL)
-            put("embedded", true)
-        }.toString()
-
-    private fun pendingJson() = buildStateJson(VpnState.CONNECTING, null, null)
-    private fun disconnectingJson() = buildStateJson(VpnState.DISCONNECTING, null, null)
-    private fun errorJson(msg: String) = buildStateJson(VpnState.ERROR, null, msg)
 }

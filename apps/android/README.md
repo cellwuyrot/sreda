@@ -1,3 +1,6 @@
+> **Android VPN 0.4.0:** актуальная инструкция по политике допуска, Firebase, подписи APK/AAB и Google Play — [docs/android-release.md](../../docs/android-release.md).
+> Старый `android-fixes.patch` не применять: изменения уже интегрированы. Android не использует стороннее приложение AmneziaVPN для встроенного подключения.
+
 # Connect — Android-клиент
 
 Нативная Android-оболочка мессенджера **TZ.Connect**. По той же схеме, что и
@@ -43,8 +46,8 @@
   вместе с ним — отдельно ничего устанавливать не нужно.
 - Устройство или эмулятор с **Android 8.0 (API 26)** или новее.
 
-Версии инструментов зафиксированы в проекте: Gradle 8.9 (через wrapper),
-Android Gradle Plugin 8.6.1, Kotlin 1.9.25, `compileSdk`/`targetSdk` 34.
+Версии инструментов зафиксированы в проекте: Gradle 8.11.1 (через wrapper),
+Android Gradle Plugin 8.10.1, Kotlin 2.2.0, `compileSdk`/`targetSdk` 36.
 
 ## Куда смотрит приложение (адрес сервера)
 
@@ -59,9 +62,10 @@ buildConfigField("String", "START_PATH", "\"/connect\"")
 Поменяй `APP_URL` на адрес своего сервера (например, свой домен или
 `https://<твой-домен>`), если разворачиваешь TZ.Connect отдельно.
 
-> Для локальной отладки на эмуляторе раскомментируй строку в блоке `debug` —
+> Только для отладки веб-оболочки на эмуляторе раскомментируй строку в блоке `debug` —
 > `http://10.0.2.2:3005` указывает на `localhost:3005` хоста. Cleartext-HTTP
 > для `10.0.2.2`/`localhost` уже разрешён в `res/xml/network_security_config.xml`.
+> Нативный VPN-мост принимает только точный HTTPS-origin; через HTTP он недоступен.
 
 ## Сборка APK через Android Studio (самый простой путь)
 
@@ -93,45 +97,20 @@ cd apps/android
 ./gradlew assembleDebug
 # → app/build/outputs/apk/debug/app-debug.apk
 
-# Release-сборка (неподписанная):
+# Release-сборка (требуется свой upload key):
 ./gradlew assembleRelease
-# → app/build/outputs/apk/release/app-release-unsigned.apk
+# → app/build/outputs/apk/release/app-release.apk
 ```
 
 На Windows вместо `./gradlew` используй `gradlew.bat`.
 
-## Подписанный release-APK (для распространения)
+## Подписанный выпуск
 
-Debug-APK подписан отладочным ключом и годится только для тестов. Для «боевого»
-APK нужен свой ключ:
-
-1. **Создай ключ** (один раз):
-
-   ```bash
-   keytool -genkeypair -v -keystore connect-release.jks \
-     -keyalg RSA -keysize 2048 -validity 10000 -alias connect
-   ```
-
-2. Рядом с `app/build.gradle.kts` создай файл **`keystore.properties`**
-   (он уже в `.gitignore`, в репозиторий не попадёт):
-
-   ```properties
-   storeFile=../connect-release.jks
-   storePassword=ТВОЙ_ПАРОЛЬ
-   keyAlias=connect
-   keyPassword=ТВОЙ_ПАРОЛЬ
-   ```
-
-3. Добавь в `app/build.gradle.kts` чтение этого файла и `signingConfig` для
-   `release` (шаблон — в комментарии ниже), затем:
-
-   ```bash
-   ./gradlew assembleRelease
-   ```
-
-   Проще всего сделать это через мастер Android Studio:
-   **Build → Generate Signed Bundle / APK → APK** — он проведёт по шагам и
-   сам пропишет подпись.
+Актуальные команды создания upload key, подписи APK/AAB, Firebase и публикации
+Google Play — в [docs/android-release.md](../../docs/android-release.md).
+Чтение `app/keystore.properties` и release signing уже реализованы.
+Без собственного ключа release завершается ошибкой, debug-fallback отсутствует.
+Секреты builder хранить вне одноразового клона через `TRIOZ_ANDROID_CONFIG_DIR`.
 
 ## Раздача APK с сайта (кнопка на /about)
 

@@ -16,8 +16,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { getDesktopApi, type DesktopVpnState } from "@/lib/desktop";
-import { deviceKeyPair } from "@/lib/wgIdentity";
+import { type DesktopVpnState } from "@/lib/desktop";
+import { getVpnBridge } from "@/lib/vpnBridge";
+import { vpnEnrollmentKeys } from "@/lib/vpnEnrollment";
 import { buildWireGuardConfig } from "@/lib/wgKeys";
 
 /** Режим маршрутизации: весь трафик или только сервисы проекта. */
@@ -104,7 +105,7 @@ async function waitPeerApplied(): Promise<boolean> {
  * запросов он тоже не делает — значок TZ там остаётся просто входом в окно.
  */
 export function useDesktopTunnel(): DesktopTunnel {
-  const bridge = useMemo(() => getDesktopApi()?.vpn ?? null, []);
+  const bridge = useMemo(() => getVpnBridge(), []);
   const [state, setState] = useState<DesktopVpnState | null>(null);
   const [access, setAccess] = useState<AccessState | null>(null);
   const [pending, setPending] = useState(false);
@@ -186,7 +187,7 @@ export function useDesktopTunnel(): DesktopTunnel {
          Прежде здесь создавалась новая пара на каждое нажатие, сервер
          перезаписывал запись пира, а агент на узле удалял прежний ключ — вместе
          с уже работающим соединением. Подробности в lib/wgIdentity.ts. */
-      const pair = deviceKeyPair();
+      const pair = await vpnEnrollmentKeys();
       const res = await fetch("/api/vpn/me", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -225,8 +226,8 @@ export function useDesktopTunnel(): DesktopTunnel {
       });
       setState(await bridge.up(config));
       return true;
-    } catch {
-      setError("Не удалось переключить соединение");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось переключить соединение");
       return false;
     } finally {
       setPending(false);
