@@ -41,7 +41,21 @@ import {
   throttleSignature,
 } from "./rules.mjs";
 
+import {checkNetwork, peerHealth, HEALTH_INTERVAL_MS} from "./network.mjs";
 const run = promisify(execFile);
+let networkHealth = {};
+let networkCheckedAt = 0;
+async function refreshNetworkHealth() {
+  if (Date.now()-networkCheckedAt < HEALTH_INTERVAL_MS) return;
+  networkCheckedAt=Date.now();
+  networkHealth=await checkNetwork((file,args)=>run(file,args,{timeout:8000,maxBuffer:65536}), {
+    iface: CONFIG.iface, port: CONFIG.port,
+    egress: process.env.WG_EGRESS_INTERFACE || "",
+    repair: process.env.WG_NETWORK_REPAIR === "1",
+  });
+  if (networkHealth.vpnRepair === "applied" || networkHealth.vpnRepair === "failed")
+    log("network repair:",networkHealth.vpnRepair);
+}
 
 /**
  * FIX-WGPUBKEY: запуск команды с данными на стандартном входе.
@@ -403,6 +417,8 @@ async function report(publicKey) {
       wgPublicKey: publicKey,
       endpoint: CONFIG.endpointHost ? `${CONFIG.endpointHost}:${CONFIG.port}` : "",
       tool: await detectTool(),
+      ...networkHealth,
+      ...peerHealth(peers),
     },
     /* Параметры интерфейса идут отдельным полем, а не внутри отчёта: отчёт
        целиком показывается в панели как диагностика, а эти значения нужны
@@ -419,6 +435,7 @@ async function report(publicKey) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${CONFIG.token}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (res.status === 401) {
@@ -434,6 +451,8 @@ async function report(publicKey) {
 /* ─────────────────────────────── Цикл ─────────────────────────────── */
 
 async function tick(publicKey) {
+  // Independent of the main server: repair local rules even while it is offline.
+  await refreshNetworkHealth();
   const answer = await report(publicKey);
   if (Array.isArray(answer?.peers)) {
     const peers = acceptPeers(answer.peers);

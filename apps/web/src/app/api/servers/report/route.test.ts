@@ -467,3 +467,19 @@ describe("лимит трафика в списке пиров", () => {
     expect(res.body.peers[0].throttleKbps).toBe(0);
   });
 });
+
+describe('VPN network health report',()=>{
+ it('persists only schema-validated diagnostic fields for a VPN node',async()=>{
+  mockFindNode.mockResolvedValue(vpnNode() as never);
+  await call({report:{vpnHealthVersion:1,vpnCheckedAtMs:Date.now(),vpnNat:'missing',vpnInterface:'ready',vpnRepair:'failed',vpnEgress:'ens3',vpnError:'secret stderr'}});
+  const args=prismaMock.serverNode.update.mock.calls[0][0] as {data:{lastReport:string}};
+  const stored=JSON.parse(args.data.lastReport);
+  expect(stored.vpnNat).toBe('missing');expect(stored.vpnRepair).toBe('failed');expect(stored.vpnEgress).toBe('ens3');expect(stored).not.toHaveProperty('vpnError');
+ });
+ it('does not accept VPN diagnostic claims from another kind of node',async()=>{
+  mockFindNode.mockResolvedValue(vpnNode({kind:'APP'}) as never);
+  await call({report:{vpnHealthVersion:1,vpnNat:'ready'}});
+  const args=prismaMock.serverNode.update.mock.calls[0][0] as {data:{lastReport:string}};
+  expect(JSON.parse(args.data.lastReport)).not.toHaveProperty('vpnNat');
+ });
+});
