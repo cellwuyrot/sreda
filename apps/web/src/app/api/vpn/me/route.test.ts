@@ -126,6 +126,7 @@ function makeNextRequest(body: unknown): import("next/server").NextRequest {
 // ── Сброс моков перед каждым тестом ────────────────────────────────────────
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(getServerSession).mockResolvedValue({ user: SESSION_USER } as never);
   vi.mocked(getVpnSettings).mockResolvedValue(MOCK_SETTINGS as never);
   vi.mocked(hasVpnEntitlement).mockResolvedValue(true);
@@ -490,5 +491,81 @@ describe("POST: режим маршрутизации", () => {
     await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, routing: "ALL" }));
     const args = prismaMock.vpnPeer.update.mock.calls[0][0] as { data: { routing: string } };
     expect(args.data.routing).toBe("ALL");
+  });
+});
+
+// The selected server is a contract: failures must not silently auto-select.
+describe("POST: явный выбор узла", () => {
+  beforeEach(() => {
+    prismaMock.serverNode.findFirst.mockResolvedValue({ ...MOCK_NODE, lastSeenAt: new Date() } as never);
+  });
+
+  it.each(["", "  ", 7, null, {}, "x".repeat(129)])("отклоняет некорректный nodeId %j", async (nodeId) => {
+    const res = await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, nodeId }));
+    expect(res.status).toBe(400);
+    expect(prismaMock.vpnPeer.upsert).not.toHaveBeenCalled();
+  });
+
+  it("выдаёт первый профиль на выбранном узле, без auto-pick", async () => {
+    const res = await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, nodeId: "node-1" }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).peer.nodeId).toBe("node-1");
+    expect(chooseAddress).toHaveBeenCalledWith("node-1", null);
+    expect(pickVpnNode).not.toHaveBeenCalled();
+    expect(prismaMock.vpnPeer.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ nodeId: "node-1" }),
+    }));
+  });
+
+  it.each(["missing", "stale", "full", "incomplete"])("не подменяет %s узел другим", async (scenario) => {
+    if (scenario === "missing") prismaMock.serverNode.findFirst.mockResolvedValue(null);
+    if (scenario === "stale") prismaMock.serverNode.findFirst.mockResolvedValue({ ...MOCK_NODE, lastSeenAt: new Date(0) } as never);
+    if (scenario === "full") prismaMock.serverNode.findFirst.mockResolvedValue({ ...MOCK_NODE, lastSeenAt: new Date(), _count: { vpnPeers: 100 } } as never);
+    if (scenario === "incomplete") vi.mocked(nodeTunnel).mockReturnValue({ ...MOCK_WG, endpoint: null });
+    const res = await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, nodeId: "node-1" }));
+    expect(res.status).toBe(scenario === "missing" ? 404 : 409);
+    expect(pickVpnNode).not.toHaveBeenCalled();
+    expect(prismaMock.vpnPeer.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
+  });
+
+  it("переносит существующий профиль на выбранный узел и возвращает его endpoint", async () => {
+    prismaMock.vpnPeer.findUnique.mockImplementation(({ where }: { where: Record<string, unknown> }) =>
+      Promise.resolve("publicKey" in where ? null : { ...MOCK_PEER, nodeId: "old", node: MOCK_NODE }) as never);
+    vi.mocked(nodeTunnel).mockReturnValue({ ...MOCK_WG, endpoint: "selected.example:51820" });
+    const res = await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, nodeId: "node-1" }));
+    expect(res.status).toBe(200);
+    expect(chooseAddress).toHaveBeenCalledWith("node-1", expect.objectContaining({ nodeId: "old" }));
+    expect(prismaMock.vpnPeer.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ nodeId: "node-1", lastHandshakeAt: null }) }));
+    expect((await res.json()).peer.tunnel.endpoint).toBe("selected.example:51820");
+    expect(pickVpnNode).not.toHaveBeenCalled();
+  });
+
+  it("разрешает перевыпуск на своём заполненном узле", async () => {
+    prismaMock.vpnPeer.findUnique.mockImplementation(({ where }: { where: Record<string, unknown> }) =>
+      Promise.resolve("publicKey" in where ? null : { ...MOCK_PEER, node: MOCK_NODE }) as never);
+    prismaMock.serverNode.findFirst.mockResolvedValue({ ...MOCK_NODE, lastSeenAt: new Date(), _count: { vpnPeers: 100 } } as never);
+    prismaMock.vpnPeer.update.mockResolvedValue(MOCK_PEER as never);
+    expect((await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, nodeId: "node-1" }))).status).toBe(200);
+    expect(prismaMock.vpnPeer.update).toHaveBeenCalledOnce();
+    expect(chooseAddress).not.toHaveBeenCalled();
+  });
+
+  it("выбор сервера не обходит подписку", async () => {
+    vi.mocked(hasVpnEntitlement).mockResolvedValue(false);
+    expect((await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, nodeId: "node-1" }))).status).toBe(403);
+    expect(prismaMock.serverNode.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.vpnPeer.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH: свежесть выбранного сервера", () => {
+  it("не переносит профиль на узел с устаревшим отчётом", async () => {
+    const { PATCH } = await import("@/app/api/vpn/me/route");
+    prismaMock.vpnPeer.findUnique.mockResolvedValue(MOCK_PEER as never);
+    prismaMock.serverNode.findFirst.mockResolvedValue({ ...MOCK_NODE, id: "node-2", lastSeenAt: new Date(0) } as never);
+    const res = await PATCH(makeNextRequest({ nodeId: "node-2" }));
+    expect(res.status).toBe(409);
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
   });
 });
