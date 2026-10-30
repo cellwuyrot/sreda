@@ -16,35 +16,15 @@ import {
 } from "@/lib/amneziaVpnProfile";
 import { QRCodeSVG } from "qrcode.react";
 
-/* REFACTOR-A: модалка TZ Premium / VPN — вынесена из app/connect/page.tsx.
-   Для обычных аккаунтов — витрина подписки.
-
-   VPN-AUTOPREMIUM: доступ больше не выдаётся администратором вручную. Признак
-   Premium системе известен, поэтому повторять его вводом логина в панели было
-   лишним шагом, который к тому же ограничивал выдачу рабочим временем админа.
-   Теперь при открытии этого окна клиент сам создаёт пару ключей и регистрирует
-   публичную половину — от пользователя не требуется ничего.
-
-   Почему ключ рождается здесь, а не на сервере: приватная половина не должна
-   существовать нигде, кроме устройства владельца. Она живёт только в памяти
-   этой страницы, попадает в готовый профиль и не сохраняется даже у нас в
-   localStorage.
-
-   VPN-ONECLICK: профиль больше не отдаётся человеку файлом. Раньше окно строило
-   `.conf` и предлагало скачать его для стороннего клиента (Amnezia) — то есть
-   «включение» на деле было ручной установкой пакета. Теперь собранный профиль
-   уходит прямо в десктоп-оболочку, и она поднимает туннель сама, по кнопке.
-   В браузере системный туннель поднять физически нечем, поэтому там окно честно
-   отправляет человека в приложение вместо выдачи файла.
-
-   Свой X25519 (см. lib/wgKeys.ts), а не WebCrypto: X25519 в `crypto.subtle`
-   появился только в Chromium 133, а десктоп-оболочка проекта собрана на
-   Electron 33 — то есть именно там, где VPN нужнее всего, WebCrypto бы не
-   сработал. */
+/* TZ: в приложении соединение поднимает desktop-мост; в браузере пользователь
+   выбирает сервер и явно создаёт профиль AmneziaVPN. Открытие окна не выдаёт
+   профиль. Приватный ключ остаётся на устройстве (см. wgIdentity); серверу
+   передаются только публичный ключ, режим и идентификатор выбранного узла. */
 
 type VpnRouting = "ALL" | "SERVICES";
 
 interface VpnPeerState {
+  nodeId?: string;
   address: string;
   exitIp: string;
   /* VPN-ROUTING: что идёт через туннель у этого человека. Выбор его, не админа. */
@@ -76,6 +56,7 @@ interface ServerChoice {
   region?: string;
   load?: number;
   full?: boolean;
+  ready?: boolean;
   current?: boolean;
 }
 
@@ -209,6 +190,9 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   >("loading");
   const hasStateRef = useRef(false);
   const refreshInFlightRef = useRef<Promise<VpnState | null> | null>(null);
+  // null follows the existing peer; an explicit choice survives background refresh.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const chosenNodeId = selectedNodeId ?? state?.peer?.nodeId ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   /* Выбранный режим до нажатия кнопки. В браузере по умолчанию «весь трафик» — этого
@@ -273,6 +257,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   const enroll = useCallback(
     async (
       mode: VpnRouting,
+      nodeId: string | null = chosenNodeId,
     ): Promise<{ config: string; peer: VpnPeerState } | null> => {
       /* FIX-KEYSTICK: тот же ключ устройства, что и у выключателя в панели. Иначе
        два места выдавали разные ключи и вытесняли друг друга на узле. */
@@ -280,7 +265,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/vpn/me", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicKey: pair.publicKey, routing: mode }),
+        body: JSON.stringify({ publicKey: pair.publicKey, routing: mode, ...(nodeId ? { nodeId } : {}) }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -293,7 +278,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         serviceEnabled: prev?.serviceEnabled ?? true,
         entitled: prev?.entitled ?? true,
         nodeReady: prev?.nodeReady ?? true,
-        peer: { ...peer, nodeId: prev?.peer?.nodeId },
+        peer,
       }));
       setError("");
       if (peer.tunnel.serverPublicKey && peer.tunnel.endpoint) {
@@ -312,19 +297,19 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       }
       return null;
     },
-    [],
+    [chosenNodeId],
   );
 
   /* VPN-ONECLICK: включить соединение. Собираем свежий профиль и тут же
      передаём его оболочке — она поднимает туннель. Файл никуда не сохраняется:
      профиль живёт ровно до того, как уедет в туннель. */
   const connect = useCallback(
-    async (mode: VpnRouting) => {
+    async (mode: VpnRouting, nodeId?: string) => {
       const bridge = getDesktopApi()?.vpn;
       if (!bridge) return;
       setBusy(true);
       try {
-        const enrolled = await enroll(mode);
+        const enrolled = await enroll(mode, nodeId);
         if (!enrolled) return;
         const st = await bridge.up(enrolled.config);
         setTunnel(st);
@@ -408,10 +393,11 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         return;
       }
       setError("");
+      setSelectedNodeId(nodeId);
       await refresh();
       const wasUp = tunnel?.state === "on" || tunnel?.state === "connecting";
       if (getDesktopApi()?.vpn && wasUp) {
-        await connect(routing);
+        await connect(routing, nodeId);
       }
     } catch {
       setError("Ошибка сети");
@@ -531,6 +517,10 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
 
   const plan = state?.plan ?? null;
   const servers = Array.isArray(state?.servers) ? state.servers : [];
+  const selectedServer = servers.find((server) => server.id === chosenNodeId);
+  const selectionUnavailable = !chosenNodeId ||
+    (servers.length > 0 && !selectedServer) || selectedServer?.ready === false ||
+    (!!selectedServer?.full && chosenNodeId !== state?.peer?.nodeId);
   const profileSignature = state?.peer
     ? [
         state.peer.nodeId ?? "",
@@ -538,16 +528,24 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         state.peer.address,
         state.peer.tunnel.endpoint ?? "",
         state.peer.tunnel.allowedIps,
+        state.peer.tunnel.serverPublicKey ?? "",
+        state.peer.tunnel.dns,
+        JSON.stringify(state.peer.tunnel.extra ?? null),
       ].join("|")
     : "";
   const currentAmneziaProfile =
-    amneziaProfile?.signature === profileSignature ? amneziaProfile : null;
+    !selectionUnavailable && amneziaProfile?.signature === profileSignature && chosenNodeId === state?.peer?.nodeId
+      ? amneziaProfile : null;
 
   /* Обработчик используется только одной кнопкой и не передаётся в
      мемоизированные дочерние компоненты. Поэтому ручная memoization здесь не
      нужна: React Compiler сам отслеживает чтение state и не сталкивается с
      намеренно более узкой зависимостью state?.peer. */
   const prepareAmneziaProfile = async () => {
+    if (selectionUnavailable) {
+      setError("Выберите доступный сервер перед созданием профиля.");
+      return;
+    }
     setBusy(true);
     setShowAmneziaQr(false);
     try {
@@ -562,11 +560,14 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       setAmneziaProfile({
         ...profile,
         signature: [
-          state?.peer?.nodeId ?? "",
+          peer.nodeId ?? "",
           peer.routing,
           peer.address,
           peer.tunnel.endpoint ?? "",
           peer.tunnel.allowedIps,
+          peer.tunnel.serverPublicKey ?? "",
+          peer.tunnel.dns,
+          JSON.stringify(peer.tunnel.extra ?? null),
         ].join("|"),
       });
       setError("");
@@ -758,7 +759,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
                   ? "Скачайте профиль и откройте его приложением WireGuard — соединение поднимается там."
                   : desktopShell
                     ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
-                    : "Соединение поднимается в приложении TZ Connect для компьютера — в браузере системный туннель включить нельзя."}
+                    : "Выберите сервер и создайте профиль ниже. Импортируйте его в AmneziaVPN: сам браузер VPN не включает."}
               </span>
             </>
           )}
@@ -879,25 +880,39 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* Выбор сервера — только тому, кто действительно может подключиться из
-            приложения: в браузере переезд ничего бы не поднял. */}
-        {canTunnel && state?.peer && servers.length > 0 && (
+        {/* В браузере выбор применяется только при явном создании профиля. */}
+        {state?.entitled && state.serviceEnabled && (
           <div className="mt-3">
-            <p className="text-xs font-medium text-neutral-700 dark:text-white/80">
-              Сервер
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Сервер</p>
+              <button type="button" disabled={busy} onClick={() => void refresh()}
+                className="text-xs text-violet-700 underline dark:text-cyan-300 disabled:opacity-50">
+                Обновить список серверов
+              </button>
+            </div>
+            {servers.length === 0 && <p className="mt-2 text-xs text-neutral-500 dark:text-white/50">Сейчас нет доступных серверов.</p>}
             <div className="mt-2 grid gap-2">
               {servers.map((server) => {
-                const unavailable = !!server.full && !server.current;
+                const unavailable = server.ready === false || (!!server.full && server.id !== state?.peer?.nodeId);
+                const selected = server.id === chosenNodeId;
                 return (
                   <button
                     key={server.id}
                     type="button"
-                    disabled={busy || server.current || unavailable}
-                    onClick={() => void switchServer(server.id)}
-                    aria-pressed={!!server.current}
+                    disabled={busy || unavailable || (canTunnel && server.current)}
+                    onClick={() => {
+                      if (canTunnel && state?.peer) {
+                        void switchServer(server.id);
+                      } else {
+                        setSelectedNodeId(server.id);
+                        setAmneziaProfile(null);
+                        setShowAmneziaQr(false);
+                        setError("");
+                      }
+                    }}
+                    aria-pressed={selected}
                     className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-default ${
-                      server.current
+                      selected
                         ? "border-violet-500 bg-violet-500/[0.06] dark:border-cyan-400 dark:bg-cyan-400/[0.06]"
                         : unavailable
                           ? "border-neutral-200 opacity-50 dark:border-white/10"
@@ -909,11 +924,10 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
                         {server.name}
                       </span>
                       <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                        {server.current
-                          ? "текущий"
-                          : unavailable
-                            ? "нет мест"
-                            : "доступен"}
+                        {server.ready === false ? "нет связи"
+                          : selected ? "выбран"
+                          : server.current ? "текущий"
+                          : unavailable ? "нет мест" : "доступен"}
                       </span>
                     </span>
                     {server.region && (
@@ -925,8 +939,10 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
                 );
               })}
             </div>
-            <p className="mt-1.5 text-[10px] leading-relaxed text-neutral-400 dark:text-white/30">
-              При смене сервера включённый туннель сам переедет на новый узел.
+            <p className="mt-1.5 text-xs leading-relaxed text-neutral-500 dark:text-white/60">
+              {canTunnel
+                ? "При смене сервера включённый туннель сам переедет на новый узел."
+                : "Выберите сервер и создайте профиль для AmneziaVPN. При смене сервера импортируйте новый профиль: прежний перестанет работать. Один аккаунт — один профиль подключения."}
             </p>
           </div>
         )}
@@ -956,7 +972,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         {/* Альтернативный клиент использует ровно тот же готовый профиль и peer.
             Здесь нет лимитов, отдельного ключа или второй VPN-логики — меняется
             только контейнер выдачи: vpn:// и QR. */}
-        {ready && (
+        {state?.entitled && state.serviceEnabled && (
           <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
             <p className="text-xs font-medium text-neutral-800 dark:text-white/80">
               AmneziaVPN
@@ -966,10 +982,12 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
               режима создайте профиль заново.
             </p>
 
+            {!chosenNodeId && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{servers.length ? "Сначала выберите сервер выше." : "Нет доступных серверов. Попробуйте обновить состояние позже."}</p>}
+            {chosenNodeId && selectionUnavailable && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Выбранный сервер недоступен. Обновите список или выберите другой.</p>}
             {!currentAmneziaProfile ? (
               <button
                 type="button"
-                disabled={busy || nodeIncomplete}
+                disabled={busy || selectionUnavailable}
                 onClick={() => void prepareAmneziaProfile()}
                 className="mt-3 w-full rounded-xl border border-violet-500/30 bg-violet-500/[0.08] px-3 py-2.5 text-xs font-medium text-violet-700 transition hover:bg-violet-500/[0.12] disabled:opacity-50 dark:border-cyan-400/30 dark:bg-cyan-400/[0.08] dark:text-cyan-300"
               >
