@@ -64,6 +64,14 @@ object Config {
         return allowedPrefixes.any { clean == it || clean.startsWith("$it/") }
     }
 
+    fun isTrustedOrigin(url: String): Boolean = try {
+        val target = Uri.parse(url)
+        val base = Uri.parse(appUrl)
+        target.scheme == "https" && base.scheme == "https" && target.userInfo == null &&
+            target.host.equals(base.host, ignoreCase = true) &&
+            (if (target.port == -1) 443 else target.port) == (if (base.port == -1) 443 else base.port)
+    } catch (_: Exception) { false }
+
     /** true, когда [url] ведёт на другой origin (или не-web схему). */
     fun isExternal(url: String): Boolean {
         return try {
@@ -73,9 +81,9 @@ object Config {
             val base = Uri.parse(appUrl)
             val targetPort = if (target.port != -1) target.port else defaultPort(scheme)
             val basePort = if (base.port != -1) base.port else defaultPort(base.scheme)
-            !(target.host.equals(base.host, ignoreCase = true) && targetPort == basePort)
+            !(scheme == base.scheme && target.host.equals(base.host, ignoreCase = true) && targetPort == basePort)
         } catch (_: Exception) {
-            false
+            true
         }
     }
 
@@ -84,7 +92,7 @@ object Config {
         return try {
             if (isExternal(url)) false else !isAllowedPath(Uri.parse(url).path)
         } catch (_: Exception) {
-            false
+            true
         }
     }
 

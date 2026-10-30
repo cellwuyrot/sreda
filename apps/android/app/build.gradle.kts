@@ -1,4 +1,5 @@
 import java.util.Properties
+import groovy.json.JsonSlurper
 
 plugins {
     id("com.android.application")
@@ -31,12 +32,10 @@ if (hasPushConfig) {
 // подписывать приходилось руками на своём ПК; теперь он работает сам, если
 // рядом лежит app/keystore.properties (в git его нет и быть не должно).
 //
-// Файла нет — сборка НЕ падает: релиз просто остаётся неподписанным, а годный к
-// установке APK даёт задача assembleDebug. Так на чистой машине без ключей
-// проект по-прежнему собирается, и это важно: ключ есть не у каждого, кто
-// клонирует репозиторий.
+// Файла нет — release запрещён. Для разработки без production-ключей
+// доступна assembleDebug. Автоматической подмены release на debug нет.
 //
-// Пути в файле — относительно каталога apps/android. Пример содержимого:
+// storeFile: абсолютный путь (предпочтительно) или относительно apps/android.
 //
 //   storeFile=app/trioz-release.jks
 //   storePassword=…
@@ -76,9 +75,16 @@ val syncLauncherIcon = tasks.register<Copy>("syncLauncherIcon") {
 
 android {
     namespace = "ru.trioz.connect"
-    compileSdk = 34
+    compileSdk = 36
 
     sourceSets["main"].res.srcDir(generatedIconRes)
+    sourceSets["main"].manifest.srcFile(layout.buildDirectory.file("generated/vpn-policy/AndroidManifest.xml"))
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/vpn-policy/assets"))
+    testOptions { unitTests.isIncludeAndroidResources = true }
+    packaging {
+        jniLibs.useLegacyPackaging = false
+        resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+    }
 
     /* FIX-BOOT: служба доставки — отдельный набор исходников app/src/push.
 
@@ -122,9 +128,9 @@ android {
     defaultConfig {
         applicationId = "ru.trioz.connect"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 2
-        versionName = "0.3.3"
+        targetSdk = 36
+        versionCode = 3
+        versionName = "0.4.0"
 
         // The web origin the WebView loads. Override per build type / flavour
         // here without touching the Kotlin source (consumed by Config.kt).
@@ -139,27 +145,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            /* FIX-SIGN: ключа нет — подписываем отладочным ключом, а не отдаём
-               неподписанный APK.
+            // No debug-key fallback for production. Debug builds remain available.
+            if (hasReleaseKeystore) signingConfig = signingConfigs.getByName("release")
 
-               Неподписанный APK Android ставить отказывается: телефон показывает
-               «Приложение не установлено» без каких-либо пояснений, и человек
-               остаётся с бесполезным файлом. Отладочный ключ генерируется сам, он
-               есть на любой машине, поэтому такой APK хотя бы устанавливается и
-               его можно проверить.
-
-               Для публикации он не годится (ключ не ваш и одинаков у всех), об
-               этом в лог уходит явное предупреждение — см. app/keystore.properties
-               в apps/android/README.md. */
-            if (hasReleaseKeystore) {
-                signingConfig = signingConfigs.getByName("release")
-            } else {
-                signingConfig = signingConfigs.getByName("debug")
-                logger.warn(
-                    "BUILDS: app/keystore.properties не найден — релизный APK подписан ОТЛАДОЧНЫМ ключом. " +
-                        "Устанавливается, но для публикации НЕ годится: положите keystore.properties и соберите заново.",
-                )
-            }
         }
         debug {
             // Handy for pointing the debug build at a local dev server:
@@ -201,11 +189,55 @@ dependencies {
     // VPN-ANDROID: AmneziaWG Go-backend для нативного VPN-туннеля.
     // Официальная нативная реализация AmneziaWG для Android,
     // аналог wireguard-android с параметрами маскировки.
-    implementation("com.github.amnezia-vpn:amneziawg-android:3.0.7.8")
+    implementation("com.zaneschepke:amneziawg-android:2.3.7")
+    implementation("androidx.webkit:webkit:1.14.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
     implementation("androidx.core:core-ktx:1.13.1")
 
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.google.android.material:material:1.12.0")
+}
+
+// One source of truth: exact package queries AND runtime policy are generated together.
+val generateVpnPolicy = tasks.register("generateVpnPolicy") {
+    val policy = rootProject.file("vpn-admission-policy.json")
+    val manifest = file("src/main/AndroidManifest.xml")
+    inputs.files(policy, manifest)
+    val output = layout.buildDirectory.dir("generated/vpn-policy")
+    outputs.dir(output)
+    doLast {
+        val value = JsonSlurper().parse(policy) as Map<*, *>
+        require(value["version"] is Number && (value["version"] as Number).toInt() > 0)
+        require(value["enabled"] is Boolean)
+        val packages = value["packages"] as List<*>
+        require(packages.size <= 200)
+        val ids = packages.map {
+            val entry = it as Map<*, *>
+            val id = entry["package"] as String
+            require(id.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")))
+            require((entry["label"] as String).isNotBlank())
+            id
+        }
+        require(ids.distinct().size == ids.size)
+        val queries = "<queries>" + ids.joinToString("") { "<package android:name=\"$it\" />" } + "</queries>"
+        val dir = output.get().asFile
+        dir.mkdirs()
+        dir.resolve("AndroidManifest.xml").writeText(manifest.readText().replace("<!-- VPN_POLICY_QUERIES -->", queries))
+        dir.resolve("assets").mkdirs()
+        policy.copyTo(dir.resolve("assets/vpn-admission-policy.json"), overwrite = true)
+    }
+}
+tasks.named("preBuild") { dependsOn(generateVpnPolicy) }
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    doLast { require(hasReleaseKeystore) { "Release requires app/keystore.properties; use assembleDebug for tests" } }
+}
+tasks.configureEach {
+    if (name == "preReleaseBuild") dependsOn(verifyReleaseSigning)
+    if (name.contains("Manifest") || name.contains("Assets")) dependsOn(generateVpnPolicy)
+    if (name in listOf("assembleRelease", "bundleRelease", "validateSigningRelease")) {
+        doFirst { require(hasReleaseKeystore) { "Release requires app/keystore.properties; use assembleDebug for tests" } }
+    }
 }

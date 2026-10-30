@@ -4,218 +4,165 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
-import org.amnezia.awg.GoBackend
-import org.amnezia.awg.config.Config
-import java.io.StringReader
+import androidx.core.app.ServiceCompat
+import org.amnezia.awg.backend.GoBackend
+import org.amnezia.awg.backend.Tunnel
+import org.amnezia.awg.backend.TunnelActionHandler
+import org.json.JSONObject
 import java.time.Instant
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
-/**
- * VPN-ANDROID: нативный VPN-сервис на основе AmneziaWG Go-бэкенда.
- *
- * Архитектура повторяет десктоп-оболочку:
- *   1. Веб-часть собирает профиль (с приватным ключом устройства).
- *   2. JavaScript-мост VpnBridge передаёт его сюда.
- *   3. Сервис поднимает AmneziaWG-туннель через GoBackend.
- *   4. Изменения состояния уходят обратно в WebView через
- *      evaluateJavascript (аналог IPC.VPN_STATE в десктопе).
- *
- * Приватный ключ живёт только в памяти сервиса и нигде не записывается.
- */
-class AmneziaVpnService : VpnService() {
-
+/** Foreground controller. The library's protected VpnService owns TUN/socket protection. */
+class AmneziaVpnService : Service() {
     companion object {
-        private const val TAG = "AmneziaVpnService"
-        private const val NOTIF_CHANNEL = "vpn_tunnel"
-        private const val NOTIF_ID = 7001
-
-        const val ACTION_UP = "ru.trioz.connect.VPN_UP"
-        const val ACTION_DOWN = "ru.trioz.connect.VPN_DOWN"
-        const val EXTRA_CONFIG = "config"
-
-        /**
-         * Публичное состояние — читается VpnBridge синхронно.
-         * Обновляется только из основного потока сервиса.
-         */
-        @Volatile var state: VpnState = VpnState.OFF
-        @Volatile var since: String? = null
-        @Volatile var lastError: String? = null
-
-        /** Запустить туннель — вызывается из MainActivity после получения разрешения. */
-        fun startUp(context: Context, config: String) {
-            val intent = Intent(context, AmneziaVpnService::class.java).apply {
-                action = ACTION_UP
-                putExtra(EXTRA_CONFIG, config)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+        private const val CHANNEL = "vpn_tunnel"
+        private const val NOTIFICATION = 7001
+        private const val UP = "ru.trioz.connect.VPN_UP"
+        private const val DOWN = "ru.trioz.connect.VPN_DOWN"
+        @Volatile var state = VpnState.OFF; private set
+        @Volatile var since: String? = null; private set
+        @Volatile var lastError: String? = null; private set
+        @Volatile private var rx = 0L
+        @Volatile private var tx = 0L
+        @Volatile private var handshake = 0L
+        fun snapshot() = JSONObject().put("state", state.jsonKey).put("since", since ?: JSONObject.NULL)
+            .put("error", lastError ?: JSONObject.NULL).put("backend", "amneziawg").put("embedded", true)
+            .put("rxBytes", rx).put("txBytes", tx).put("lastHandshakeMs", handshake)
+        fun report(s: VpnState, error: String? = null) {
+            state = s; lastError = error
+            if (s == VpnState.ON && since == null) since = Instant.now().toString()
+            if (s == VpnState.OFF || s == VpnState.ERROR) since = null
+            MainActivity.onVpnStateChanged?.invoke(s, since, error)
         }
-
-        /** Остановить туннель. */
+        fun startUp(context: Context, config: String, account: String) {
+            val intent = Intent(context, AmneziaVpnService::class.java).setAction(UP).putExtra("config", config).putExtra("account", account)
+            context.startForegroundService(intent)
+        }
         fun startDown(context: Context) {
-            context.startService(
-                Intent(context, AmneziaVpnService::class.java).apply { action = ACTION_DOWN },
-            )
+            if (state == VpnState.OFF || state == VpnState.ERROR) { report(VpnState.OFF); return }
+            context.startService(Intent(context, AmneziaVpnService::class.java).setAction(DOWN))
         }
     }
-
+    private val worker = Executors.newSingleThreadScheduledExecutor()
+    private val generation = AtomicLong()
     private var backend: GoBackend? = null
-    private var tunnel: TriozTunnel? = null
-
-    // ── Lifecycle ────────────────────────────────────────────────────────
-
+    private var tunnel: Tunnel? = null
+    private var started = 0L
+    private var stopping = false
+    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onCreate() {
+        super.onCreate()
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL, "VPN-соединение", NotificationManager.IMPORTANCE_LOW))
+        worker.scheduleWithFixedDelay({ monitor() }, 2, 3, TimeUnit.SECONDS)
+    }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val command = generation.incrementAndGet()
         when (intent?.action) {
-            ACTION_UP -> {
-                val config = intent.getStringExtra(EXTRA_CONFIG) ?: ""
-                if (config.isNotBlank()) bringUp(config)
+            UP -> {
+                report(VpnState.CONNECTING)
+                ServiceCompat.startForeground(this, NOTIFICATION, notification("Подключение VPN…"),
+                    if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
+                val raw = intent.getStringExtra("config").orEmpty()
+                worker.execute {
+                    if (command != generation.get()) return@execute
+                    try {
+                        val admission = VpnAdmissionPolicy.check(this)
+                        check(admission.allowed) { admission.message }
+                        check(VpnService.prepare(this) == null) { "Нет системного разрешения VPN" }
+                        stopBackend()
+                        val cfg = VpnProfile.withNativeKey(raw, VpnKeyStore(this).pair(intent.getStringExtra("account").orEmpty()).privateKey.toBase64())
+                        val hooks = object : TunnelActionHandler {
+                            override fun runPreUp(scripts: Collection<String>) { check(scripts.isEmpty()) }
+                            override fun runPostUp(scripts: Collection<String>) { check(scripts.isEmpty()) }
+                            override fun runPreDown(scripts: Collection<String>) { check(scripts.isEmpty()) }
+                            override fun runPostDown(scripts: Collection<String>) { check(scripts.isEmpty()) }
+                        }
+                        val be = GoBackend(this, hooks)
+                        val tun = object : Tunnel {
+                            override fun getName() = "trioz"
+                            override fun isIpv4ResolutionPreferred() = true
+                            override fun isMetered() = true
+                            override fun onStateChange(newState: Tunnel.State) {
+                                if (newState == Tunnel.State.DOWN && !stopping && !worker.isShutdown)
+                                    worker.execute { if (tunnel === this) fail("Системное VPN-соединение остановлено") }
+                            }
+                        }
+                        backend = be; tunnel = tun
+                        rx = 0; tx = 0; handshake = 0; since = null
+                        started = SystemClock.elapsedRealtime()
+                        check(be.setState(tun, Tunnel.State.UP, cfg) == Tunnel.State.UP)
+                        // ON is reported only after a fresh authenticated handshake, not interface creation.
+                        if (command != generation.get()) stopBackend()
+                    } catch (_: Exception) {
+                        if (command == generation.get()) fail("Не удалось запустить VPN. Проверьте допуск, разрешение и доступность сервера.")
+                    }
+                }
             }
-            ACTION_DOWN -> bringDown()
-            else -> bringDown()
+            DOWN -> {
+                report(VpnState.DISCONNECTING)
+                worker.execute { stopBackend(); report(VpnState.OFF); finishService() }
+            }
+            else -> { report(VpnState.OFF); stopSelf() }
         }
         return START_NOT_STICKY
     }
-
-    override fun onRevoke() {
-        // Система отозвала разрешение VPN (другое приложение попросило его).
-        Log.i(TAG, "VPN permission revoked by system")
-        bringDown()
+    private fun monitor() {
+        if (backend == null || tunnel == null) return
+        try {
+            val admission = VpnAdmissionPolicy.check(this)
+            if (!admission.allowed) { fail(admission.message); return }
+            if (VpnService.prepare(this) != null) { fail("Разрешение VPN отозвано системой"); return }
+            val stats = backend!!.getStatistics(tunnel!!)
+            rx = stats.totalRx(); tx = stats.totalTx()
+            handshake = stats.peers().mapNotNull { stats.peer(it)?.latestHandshakeEpochMillis() }.maxOrNull() ?: 0
+            val recent = handshake > 0 && System.currentTimeMillis() - handshake in 0..180000
+            if (recent) {
+                started = SystemClock.elapsedRealtime()
+                if (state != VpnState.ON) {
+                    report(VpnState.ON)
+                    getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification("VPN: рукопожатие подтверждено"))
+                }
+            } else {
+                if (SystemClock.elapsedRealtime() - started > 60000) { fail("Сервер не подтвердил VPN-соединение. Проверьте сеть или смените сервер."); return }
+                if (state != VpnState.CONNECTING) report(VpnState.CONNECTING)
+            }
+        } catch (_: Exception) { fail("Ошибка проверки VPN-соединения") }
     }
-
+    private fun stopBackend() {
+        stopping = true
+        try { tunnel?.let { backend?.setState(it, Tunnel.State.DOWN, null) } } catch (_: Exception) { }
+        finally { backend = null; tunnel = null; stopping = false }
+    }
+    private fun fail(message: String) {
+        stopBackend()
+        report(VpnState.ERROR, message)
+        finishService()
+    }
+    private fun finishService() { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
     override fun onDestroy() {
-        bringDown()
+        generation.incrementAndGet()
+        worker.execute { stopBackend(); if (state != VpnState.ERROR) report(VpnState.OFF) }
+        worker.shutdown()
         super.onDestroy()
     }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    // ── Tunnel lifecycle ─────────────────────────────────────────────────
-
-    private fun bringUp(rawConfig: String) {
-        setState(VpnState.CONNECTING, null, null)
-        ensureNotifChannel()
-        startForeground(NOTIF_ID, buildNotification(VpnState.CONNECTING))
-
-        try {
-            val cfg = Config.parse(StringReader(rawConfig))
-            val tun = TriozTunnel(cfg.`interface`.name.ifBlank { "trioz" })
-            tunnel = tun
-
-            val be = GoBackend(this)
-            backend = be
-
-            // GoBackend.setState поднимает туннель:
-            // создаёт VpnService.Builder, устанавливает адреса/DNS/маршруты,
-            // запускает amneziawg-go в режиме в памяти.
-            val fd = be.setState(tun, org.amnezia.awg.backend.Tunnel.State.UP, cfg)
-            if (fd == null) {
-                throw IllegalStateException("GoBackend вернул null — туннель не поднялся")
-            }
-
-            setState(VpnState.ON, Instant.now().toString(), null)
-            startForeground(NOTIF_ID, buildNotification(VpnState.ON))
-            Log.i(TAG, "AmneziaWG tunnel UP")
-        } catch (e: Exception) {
-            Log.e(TAG, "Tunnel UP failed", e)
-            val msg = e.message ?: "Ошибка запуска туннеля"
-            setState(VpnState.ERROR, null, msg)
-            stopForeground(true)
-            stopSelf()
-        }
-    }
-
-    private fun bringDown() {
-        if (state == VpnState.OFF) return
-        setState(VpnState.DISCONNECTING, since, null)
-        try {
-            val be = backend
-            val tun = tunnel
-            if (be != null && tun != null) {
-                be.setState(tun, org.amnezia.awg.backend.Tunnel.State.DOWN, null)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Tunnel DOWN error (ignored)", e)
-        } finally {
-            backend = null
-            tunnel = null
-            setState(VpnState.OFF, null, null)
-            stopForeground(true)
-            stopSelf()
-            Log.i(TAG, "AmneziaWG tunnel DOWN")
-        }
-    }
-
-    // ── State ────────────────────────────────────────────────────────────
-
-    private fun setState(s: VpnState, sinceVal: String?, err: String?) {
-        state = s
-        since = sinceVal
-        lastError = err
-        // Уведомить WebView — MainActivity слушает через статический callback.
-        MainActivity.onVpnStateChanged?.invoke(s, sinceVal, err)
-    }
-
-    // ── Notification ─────────────────────────────────────────────────────
-
-    private fun ensureNotifChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val nm = getSystemService(NotificationManager::class.java)
-        if (nm.getNotificationChannel(NOTIF_CHANNEL) != null) return
-        nm.createNotificationChannel(
-            NotificationChannel(NOTIF_CHANNEL, "VPN-туннель", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Статус защищённого соединения"
-            },
-        )
-    }
-
-    private fun buildNotification(vpnState: VpnState): Notification {
-        val tapIntent = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val (title, text) = when (vpnState) {
-            VpnState.ON -> Pair("Соединение активно", "Трафик защищён AmneziaWG")
-            VpnState.CONNECTING -> Pair("Подключение…", "Устанавливается защищённое соединение")
-            VpnState.DISCONNECTING -> Pair("Отключение…", "")
-            else -> Pair("VPN", "")
-        }
-        return NotificationCompat.Builder(this, NOTIF_CHANNEL)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(tapIntent)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
+    private fun notification(text: String): Notification {
+        val tap = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val stop = PendingIntent.getService(this, 1, Intent(this, AmneziaVpnService::class.java).setAction(DOWN), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("TrioZ VPN").setContentText(text).setContentIntent(tap).setOngoing(true)
+            .setSilent(true).addAction(0, "Отключить", stop).build()
     }
 }
-
-/**
- * Реализация интерфейса Tunnel, нужного GoBackend.
- * Хранит имя и отдаёт GoBackend'у при каждом вызове setState.
- */
-private class TriozTunnel(private val name: String) : org.amnezia.awg.backend.Tunnel {
-    override fun getName(): String = name
-    override fun onStateChange(newState: org.amnezia.awg.backend.Tunnel.State) {
-        // GoBackend сам обновляет состояние; нам дублировать не нужно.
-    }
-}
-
-/** Состояние туннеля — зеркало VpnConnState из десктоп-оболочки. */
-enum class VpnState(val jsonKey: String) {
-    OFF("off"),
-    CONNECTING("connecting"),
-    ON("on"),
-    DISCONNECTING("disconnecting"),
-    ERROR("error"),
-}
+enum class VpnState(val jsonKey: String) { OFF("off"), CONNECTING("connecting"), ON("on"), DISCONNECTING("disconnecting"), ERROR("error") }

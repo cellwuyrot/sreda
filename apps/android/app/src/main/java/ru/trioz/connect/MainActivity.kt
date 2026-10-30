@@ -1,6 +1,11 @@
 package ru.trioz.connect
 
 import android.Manifest
+import android.app.AlertDialog
+import androidx.webkit.WebViewCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.webkit.WebViewFeature
 import android.app.Activity
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
@@ -107,17 +112,18 @@ class MainActivity : AppCompatActivity() {
      * После получения разрешения запускаем сервис с этим профилем.
      */
     private var pendingVpnConfig: String? = null
+    private var pendingVpnAccount: String = ""
 
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 val config = pendingVpnConfig ?: return@registerForActivityResult
                 pendingVpnConfig = null
-                AmneziaVpnService.startUp(this, config)
+                startCheckedVpn(config, pendingVpnAccount)
             } else {
                 pendingVpnConfig = null
                 // Пользователь отказал — сообщаем об этом веб-части.
-                notifyVpnState(VpnState.ERROR, null, "Разрешение VPN не выдано")
+                AmneziaVpnService.report(VpnState.ERROR, "Разрешение VPN не выдано")
             }
         }
 
@@ -134,16 +140,28 @@ class MainActivity : AppCompatActivity() {
     // ── VPN public API (вызывается из VpnBridge через runOnUiThread) ──────
 
     /** Запустить туннель с готовым профилем WireGuard/AmneziaWG. */
-    fun vpnUp(config: String) {
-        val prepareIntent = VpnService.prepare(this)
-        if (prepareIntent != null) {
-            // Разрешения ещё нет — сохраняем профиль и показываем диалог.
-            pendingVpnConfig = config
-            vpnPermissionLauncher.launch(prepareIntent)
-        } else {
-            // Разрешение уже есть — запускаем сервис сразу.
-            AmneziaVpnService.startUp(this, config)
+    private fun startCheckedVpn(config: String, account: String) {
+        val admission = VpnAdmissionPolicy.check(this)
+        if (!admission.allowed) { AmneziaVpnService.report(VpnState.ERROR, admission.message); return }
+        try { AmneziaVpnService.startUp(this, config, account) }
+        catch (_: Exception) { AmneziaVpnService.report(VpnState.ERROR, "Android не разрешил запуск VPN. Откройте приложение и повторите.") }
+    }
+    fun vpnUp(config: String, account: String) {
+        val admission = VpnAdmissionPolicy.check(this)
+        if (!admission.allowed) { AmneziaVpnService.report(VpnState.ERROR, admission.message); return }
+        val prefs = getSharedPreferences("vpn-consent", MODE_PRIVATE)
+        val proceed = {
+            val intent = VpnService.prepare(this)
+            if (intent != null) { pendingVpnConfig = config; pendingVpnAccount = account; vpnPermissionLauncher.launch(intent) }
+            else startCheckedVpn(config, account)
         }
+        if (prefs.getInt("policy-version", 0) == admission.version) proceed()
+        else AlertDialog.Builder(this).setTitle("VPN и локальная проверка допуска")
+            .setMessage("VPN шифрует трафик до выбранного сервера TrioZ. Перед подключением и во время работы приложение локально проверяет пакеты из политики этой сборки. При совпадении VPN недоступен. Список установленных приложений не отправляется на сервер. Это не гарантия защиты от обнаружения VPN. При отключении VPN Android может использовать обычную сеть. Продолжить?")
+            .setPositiveButton("Продолжить") { _, _ ->
+                prefs.edit().putInt("policy-version", admission.version).apply(); proceed()
+            }.setNegativeButton("Отмена") { _, _ -> AmneziaVpnService.report(VpnState.OFF) }
+            .setOnCancelListener { AmneziaVpnService.report(VpnState.OFF) }.show()
     }
 
     /** Остановить туннель. */
@@ -162,6 +180,7 @@ class MainActivity : AppCompatActivity() {
         }.toString()
         // Экранируем для вставки в JS-строку.
         val escaped = json.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+        if (!Config.isTrustedOrigin(webView.url.orEmpty())) return
         webView.evaluateJavascript("window.__androidVpnState && window.__androidVpnState(\"$escaped\")", null)
     }
 
@@ -174,6 +193,12 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            insets
+        }
 
         configureWebView()
         registerBackNavigation()
@@ -255,19 +280,23 @@ class MainActivity : AppCompatActivity() {
             NotificationBridge.JS_NAME,
         )
 
-        // VPN-ANDROID: мост управления нативным туннелем.
-        webView.addJavascriptInterface(
-            VpnBridge(
-                activity = this,
-                originOk = { webOriginTrusted },
-            ),
-            VpnBridge.JS_NAME,
-        )
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            val bridge = VpnBridge(this)
+            WebViewCompat.addWebMessageListener(webView, VpnBridge.JS_NAME, setOf(Config.appUrl)) {
+                _, message, origin, mainFrame, reply ->
+                bridge.receive(message.data.orEmpty(), origin, mainFrame, reply)
+            }
+        }
+
     }
 
     // ── Navigation policy ─────────────────────────────────────────────────
 
     private inner class ConnectWebViewClient : WebViewClient() {
+        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            webOriginTrusted = false
+            super.onPageStarted(view, url, favicon)
+        }
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url.toString()
             when {
@@ -279,14 +308,14 @@ class MainActivity : AppCompatActivity() {
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             super.doUpdateVisitedHistory(view, url, isReload)
-            webOriginTrusted = url != null && url.startsWith(Config.appUrl)
+            webOriginTrusted = url != null && Config.isTrustedOrigin(url)
             if (isReload || url == null || !Config.isBlockedInApp(url)) return
             if (view.canGoBack()) view.goBack() else view.loadUrl(Config.startUrl)
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
-            webOriginTrusted = url != null && url.startsWith(Config.appUrl)
+            webOriginTrusted = url != null && Config.isTrustedOrigin(url)
             contentReady = true
 
             // VPN-ANDROID: при перезагрузке страницы отдаём актуальное состояние.
@@ -328,6 +357,7 @@ class MainActivity : AppCompatActivity() {
             origin: String,
             callback: GeolocationPermissions.Callback,
         ) {
+            if (!Config.isTrustedOrigin(origin)) { callback.invoke(origin, false, false); return }
             if (hasLocationPermission()) {
                 callback.invoke(origin, true, false)
             } else {
@@ -365,6 +395,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleWebPermission(request: PermissionRequest) {
+        if (!Config.isTrustedOrigin(request.origin.toString())) { request.deny(); return }
         val wanted = request.resources.filter {
             it == PermissionRequest.RESOURCE_AUDIO_CAPTURE ||
                 it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
