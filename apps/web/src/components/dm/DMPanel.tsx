@@ -27,6 +27,9 @@ import DMConversationList from "./DMConversationList";
 import DMMessageHeader from "./DMMessageHeader";
 import DMMessageList from "./DMMessageList";
 import DMMessageComposer from "./DMMessageComposer";
+import LinkPreviewDraft from "@/components/connect/LinkPreviewDraft";
+import {useLinkPreviewDraft} from "@/hooks/useLinkPreviewDraft";
+import {notifyPreviewState, type PreviewEvent} from "@/components/connect/MessageLinkPreview";
 // BUSINESS-PAY: окно оплаты за кнопкой в шапке делового разговора.
 import BusinessPaymentModal from "./BusinessPaymentModal";
 import type { BusinessPaymentView } from "@/lib/businessPayment";
@@ -244,6 +247,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const dmDraftKey = selectedConvId ? `tz-chat-draft:dm:${selectedConvId}` : null;
+  const previewDraft = useLinkPreviewDraft(input, dmDraftKey ? `${dmDraftKey}:${currentUserId}` : null, !!conversations.find(c => c.id === selectedConvId)?.secure);
   const updateDmDraft = useCallback((value: string) => {
     setInput(value);
     if (!dmDraftKey) return;
@@ -807,6 +811,11 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       markConversationRead(selectedConvId);
     });
 
+    socket.on("link-preview-state", (detail: PreviewEvent) => {
+      notifyPreviewState(detail);
+      if(detail.scope === "dm" && typeof detail.suppressed === "boolean") setMessages(prev => prev.map(m => m.id === detail.id ? {...m, previewSuppressed:detail.suppressed} : m));
+    });
+
     socket.on("dm-edited", (msg: Message) => {
       setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)));
     });
@@ -935,6 +944,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
       const optimisticMsg: Message = {
         id: optimisticId,
         clientMessageId,
+        previewSuppressed: previewDraft.suppressed,
         replyQuote: replyTo?.quote,
         content: text,
         userId: currentUserId,
@@ -975,6 +985,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             replyQuote: replyTo?.quote,
             clientMessageId,
             encrypted: encryptedFlag,
+            previewSuppressed: previewDraft.suppressed,
           }),
         });
         if (selectedRef.current !== convId) return;
@@ -986,6 +997,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
           setMessages((prev) => prev.map((m) => (m.id === optimisticId ? { ...m, status: "failed" } : m)));
         } else {
           const saved = await res.json();
+          previewDraft.clear();
           setMessages(prev => mergeDmMessages(prev, [{ ...saved, content: text, _encrypted: encryptedFlag, status: "sent" as const }]));
         }
       } catch {
@@ -998,7 +1010,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
         setSending(false);
       }
     },
-    [input, pendingAttachments, selectedConvId, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, replyTo, currentUserId, showToast, updateDmDraft, isPremiumAccount, isSecureConv, keyConflict, afterCursor, loadMessages],
+    [previewDraft, input, pendingAttachments, selectedConvId, e2eeReady, e2eeEnabled, myPrivateKey, peerPublicKey, replyTo, currentUserId, showToast, updateDmDraft, isPremiumAccount, isSecureConv, keyConflict, afterCursor, loadMessages],
   );
 
   // ── Resend a failed message ────────────────────────────────────────────────────
@@ -1029,6 +1041,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             replyQuote: failedMsg.replyQuote,
             clientMessageId,
             encrypted: encryptedFlag,
+            previewSuppressed: failedMsg.previewSuppressed === true,
           }),
         });
         if (selectedRef.current !== selectedConvId) return;
@@ -2001,6 +2014,7 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             </div>
 
             <DMMessageComposer
+              previewControl={!isSecureConv && chatPrefs.linkPreviews ? <LinkPreviewDraft url={previewDraft.url} suppressed={previewDraft.suppressed} onChange={previewDraft.setSuppressed} /> : undefined}
               personal={!isBusiness}
               sendOnEnter={isBusiness || chatPrefs.sendOnEnter}
               attachmentsAllowed={capabilities.attachments}

@@ -156,7 +156,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
-  const { content = "", attachments, replyToId, replyQuote, clientMessageId, threadId } = body;
+  const { content = "", attachments, replyToId, replyQuote, clientMessageId, threadId, previewSuppressed } = body;
+  if (previewSuppressed !== undefined && typeof previewSuppressed !== "boolean") return NextResponse.json({ error: "Invalid preview preference" }, { status: 400 });
   if (typeof content !== "string" || (replyToId != null && typeof replyToId !== "string") ||
       (replyQuote != null && (typeof replyQuote !== "string" || replyQuote.length > 2000 || !replyToId)) ||
       (clientMessageId != null && (typeof clientMessageId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(clientMessageId))) || threadId != null) {
@@ -239,7 +240,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // а не по клиентскому полю (раньше любой truthy `encrypted` из тела запроса
     // подменял классификацию сообщения).
     message = await prisma.directMessage.create({
-      data: { ...baseData, encrypted: !!isE2EE },
+      data: { ...baseData, encrypted: !!isE2EE, previewSuppressed: !!isE2EE || previewSuppressed === true },
       include,
     });
   } catch (err: unknown) {

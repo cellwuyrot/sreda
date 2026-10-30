@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import AdminSystemShell from "@/components/admin/AdminSystemShell";
 import { redirect } from "next/navigation";
 
 /**
@@ -27,5 +28,5 @@ export default async function AdminLayout({
     redirect("/");
   }
 
-  return <div className="admin-workspace">{children}</div>;
+  return <div className="admin-workspace"><AdminSystemShell>{children}</AdminSystemShell></div>;
 }

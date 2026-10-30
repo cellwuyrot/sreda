@@ -7,7 +7,7 @@ import Link from "next/link";
 import BackButton from "@/components/ui/BackButton"; // BACK-STEP
 import Spinner from "@/components/ui/Spinner";
 import Input from "@/components/ui/Input";
-import InfoTooltip from "@/components/ui/InfoTooltip";
+import InfoTooltip from "@/components/admin/AdminHelp";
 import {
   DEFAULT_TRAFFIC_LIMIT_GB,
   MAX_THROTTLE_KBPS,
@@ -281,7 +281,7 @@ export default function AdminVpnPage() {
         ) : (
           <>
             {/* ── Выключатель ── */}
-            <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Сервис «{LINK_NAME}»</h2>
@@ -326,7 +326,7 @@ export default function AdminVpnPage() {
                 положено и что будет, когда он это истратит». Поэтому лимит, длина
                 периода и правило при исчерпании стоят выше технических параметров
                 туннеля: первое видят подписчики, второе — никто. */}
-            <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
                 Что входит в подписку{" "}
                 <InfoTooltip
@@ -428,7 +428,7 @@ export default function AdminVpnPage() {
               {/* Сводка по расходу: без неё лимит — число без последствий. */}
               {summary && (
                 <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+                  <div className="admin-card rounded-xl border border-neutral-200 p-3 dark:border-white/10">
                     <p className="text-[11px] text-neutral-500 dark:text-gray-400">Подписчиков с подключением</p>
                     <p className="mt-0.5 text-sm font-medium text-neutral-900 dark:text-white">
                       {summary.subscribers}
@@ -437,7 +437,7 @@ export default function AdminVpnPage() {
                       </span>
                     </p>
                   </div>
-                  <div className="rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+                  <div className="admin-card rounded-xl border border-neutral-200 p-3 dark:border-white/10">
                     <p className="text-[11px] text-neutral-500 dark:text-gray-400">Израсходовано за текущие периоды</p>
                     <p className="mt-0.5 text-sm font-medium text-neutral-900 dark:text-white">
                       {formatTraffic(summary.usedBytes)}
@@ -448,7 +448,7 @@ export default function AdminVpnPage() {
                       )}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-neutral-200 p-3 sm:col-span-2 dark:border-white/10">
+                  <div className="admin-card rounded-xl border border-neutral-200 p-3 sm:col-span-2 dark:border-white/10">
                     <p className="text-[11px] text-neutral-500 dark:text-gray-400">Исчерпали лимит</p>
                     <p className="mt-0.5 text-sm font-medium text-neutral-900 dark:text-white">
                       {summary.overLimitPeers === 0 ? "Ни одного" : `${summary.overLimitPeers} чел.`}
@@ -464,7 +464,7 @@ export default function AdminVpnPage() {
             </section>
 
             {/* ── Параметры туннеля ── */}
-            <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
                 Что получают устройства{" "}
                 <InfoTooltip
@@ -484,7 +484,7 @@ export default function AdminVpnPage() {
                 </p>
 
                 {/* Вариант 1 — весь трафик */}
-                <div className="mt-2 rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+                <div className="mt-2 admin-card rounded-xl border border-neutral-200 p-3 dark:border-white/10">
                   <span className="block text-sm font-medium text-neutral-900 dark:text-white">Весь трафик</span>
                   <span className="mt-0.5 block text-[11px] text-neutral-500 dark:text-gray-400">
                     Всё с устройства идёт через узел. Адрес подменяется, но и вся нагрузка на узле.
@@ -509,7 +509,7 @@ export default function AdminVpnPage() {
                 </div>
 
                 {/* Вариант 2 — только сервисы TZ */}
-                <div className="mt-2 rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+                <div className="mt-2 admin-card rounded-xl border border-neutral-200 p-3 dark:border-white/10">
                   <span className="block text-sm font-medium text-neutral-900 dark:text-white">
                     Только сервисы TZ{" "}
                     <InfoTooltip text="Адреса самого проекта: подсеть туннеля и, если нужно, публичные адреса серверов TZ. Остальной трафик у человека пойдёт напрямую, минуя узел." />
@@ -611,7 +611,7 @@ export default function AdminVpnPage() {
                       "Настройки сохранены",
                     )
                   }
-                  className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+                  className="admin-primary rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
                 >
                   {saving ? "Сохранение…" : "Сохранить"}
                 </button>
@@ -628,7 +628,7 @@ export default function AdminVpnPage() {
             </section>
 
             {/* ── Узлы ── */}
-            <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
                   Узлы{" "}
@@ -659,7 +659,7 @@ export default function AdminVpnPage() {
                   {nodes.map((node) => {
                     const meta = NODE_STATE[node.state];
                     return (
-                      <div key={node.id} className="rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+                      <div key={node.id} className="admin-card rounded-xl border border-neutral-200 p-3 dark:border-white/10">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium text-neutral-900 dark:text-white">{node.name}</span>
                           {node.region && <span className="text-[11px] text-neutral-400">{node.region}</span>}

@@ -57,7 +57,7 @@ export default function AdminRestrictionsPage() {
           <Link
             key={section.href}
             href={section.href}
-            className="group flex items-center gap-4 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-4 py-3.5 transition-all duration-200 hover:border-violet-400/60 dark:hover:border-cyan-500/50 hover:shadow-sm"
+            className="group flex items-center gap-4 admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-4 py-3.5 transition-all duration-200 hover:border-violet-400/60 dark:hover:border-cyan-500/50 hover:shadow-sm"
           >
             <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:bg-cyan-500/10 dark:text-cyan-400">
               {section.icon}

@@ -1,23 +1,564 @@
 "use client";
-import {useEffect,useState,useCallback} from "react";
+import { useEffect, useState, useCallback } from "react";
 import Help from "./MonitorHelp";
-type Deployment={id:string;appName:string;namespace:string;nodeId:string;nodeName:string;state:string;enabled:boolean;required:boolean;healthRequired:boolean;sampledAt:string|null;metrics:{cpu:number|null;memory:number|null;restarts:number|null;uptimeSeconds:number|null;storageBytes:number|null;health:string}|null};
-type Project={id:string;name:string;ownerId:string;state:string;deployments:Deployment[]};
-type Host={id:string;name:string;enabled:boolean;fresh:boolean;report:{sampledAt:string;cpu:number|null;memoryTotal:number|null;memoryAvailable:number|null;load1:number|null;cores:number|null;disks:{label:string;total:number;available:number}[]}|null};
-const labels:Record<string,string>={up:"Работает",degraded:"Частично работает",down:"Недоступен",unknown:"Нет данных / проверки",disabled:"Отключён / не настроен"};
-const bytes=(n:number|null|undefined)=>n==null?"Нет данных":`${(n/1073741824).toFixed(2)} ГБ`;
-export default function ProjectMonitorAdmin(){
- const [data,setData]=useState<{projects:Project[];hosts:Host[];nodes:{id:string;name:string}[];refreshedAt:string}|null>(null),[error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
- const [name,setName]=useState(""),[owner,setOwner]=useState(""),[editing,setEditing]=useState("");const [projectId,setProjectId]=useState(""),[nodeId,setNodeId]=useState(""),[appName,setAppName]=useState(""),[namespace,setNamespace]=useState("default"),[required,setRequired]=useState(true),[healthRequired,setHealth]=useState(true);
- const load=useCallback(async()=>{const r=await fetch("/api/admin/monitor",{cache:"no-store",signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error("Не удалось обновить мониторинг. Последние данные могут быть устаревшими.");setData(await r.json());setError("");},[]);
- useEffect(()=>{const refresh=()=>{if(document.visibilityState==="visible")void load().catch(e=>setError(e.message));};refresh();const t=setInterval(refresh,30000);window.addEventListener("focus",refresh);return()=>{clearInterval(t);window.removeEventListener("focus",refresh);};},[load]);
- async function action(body:Record<string,unknown>){setBusy(true);setError("");setNotice("");try{const r=await fetch("/api/admin/monitor",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error);await load();setNotice("Сохранено. Приложения PM2 не перезапускались.");}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- const field="mt-1 min-h-11 w-full rounded-xl border border-neutral-400 bg-transparent px-3 py-2";const button="min-h-11 rounded-xl bg-blue-600 px-4 py-2 text-white disabled:opacity-50";const panel="rounded-2xl border border-neutral-300 p-5 dark:border-white/20";
- return <section className="mx-auto max-w-6xl space-y-6 p-4 text-neutral-900 dark:text-white sm:p-8"><a className="underline" href="/admin">← Администрирование</a><header><p className="text-sm text-neutral-500 dark:text-gray-400">Сервисы и система / Мониторинг</p><h1 className="mt-2 text-3xl font-semibold">Проекты и серверы</h1><p className="mt-3">Проект → размещение PM2 → сервер. Только наблюдение, без команд управления.</p></header>
- <Help><p>1. В разделе «Серверы» создайте отдельный узел «Приложение», роль «Дочерний», для каждой физической машины (в том числе текущей) и сохраните токен в конфигурации агента, не в чат.</p><p>2. На машине запустите deploy/monitor-node.sh от имени владельца PM2. Выберите правильный PM2_HOME. Агент ничего не перезапускает.</p><p>3. Создайте проект для CONSULTANT или привяжите существующий. Добавьте имя приложения PM2 и namespace, затем настройте healthChecks и projectPaths по ID размещения в локальном файле агента.</p><p>4. Обязательная HTTP-проверка без настройки даёт «Нет данных / проверки». Для фонового процесса можно отключить её: тогда подтверждается только состояние PM2, не результат выполнения задач.</p><p>Роль CONSULTANT не даёт доступ к чужим проектам или админке Business. Партнёр видит свой кабинет /dashboard в Business.</p></Help>
- <div className="flex flex-wrap items-center gap-3"><button className={button} disabled={busy} onClick={()=>void load().catch(e=>setError(e.message))}>Обновить</button><p className="text-sm">{data?`Получено: ${new Date(data.refreshedAt).toLocaleString("ru-RU")}. Опрос каждые 30 секунд.`:"Загрузка…"}</p></div>{error&&<p role="alert" className="rounded-xl border border-red-400 p-4">{error}</p>}{notice&&<p role="status" className="rounded-xl border border-green-500 p-4">{notice}</p>}
- <div className="grid gap-6 lg:grid-cols-2"><form className={panel+" space-y-4"} onSubmit={e=>{e.preventDefault();void action({action:"project",id:editing||undefined,name,ownerId:owner});}}><h2 className="text-xl font-semibold">{editing?"Владелец и название проекта":"Создать партнёрский проект"}</h2><label className="block">Название<input className={field} required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label><label className="block">ID владельца в TrioZ (CONSULTANT)<input className={field} required value={owner} onChange={e=>setOwner(e.target.value)}/></label><p className="text-sm">Проекты создаёт только ADMIN. Передача владельца немедленно меняет доступ к мониторингу после обновления кабинета.</p><button className={button} disabled={busy}>Сохранить проект</button>{editing&&<button type="button" className="ml-3 min-h-11 underline" onClick={()=>{setEditing("");setName("");setOwner("");}}>Отмена</button>}</form>
- <form className={panel+" space-y-4"} onSubmit={e=>{e.preventDefault();void action({action:"deployment",projectId,nodeId,appName,namespace,required,healthRequired});}}><h2 className="text-xl font-semibold">Привязать размещение PM2</h2><label className="block">Проект<select className={field} required value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Выберите проект</option>{data?.projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label className="block">Узел мониторинга<select className={field} required value={nodeId} onChange={e=>setNodeId(e.target.value)}><option value="">Выберите сервер</option>{data?.nodes.map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select></label><div className="grid gap-3 sm:grid-cols-2"><label>Имя PM2<input className={field} required maxLength={100} value={appName} onChange={e=>setAppName(e.target.value)}/></label><label>Namespace<input className={field} required value={namespace} onChange={e=>setNamespace(e.target.value)}/></label></div><label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={required} onChange={e=>setRequired(e.target.checked)}/>Обязательный компонент проекта</label><label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={healthRequired} onChange={e=>setHealth(e.target.checked)}/>Требовать успешную HTTP-проверку</label><button className={button} disabled={busy}>Добавить размещение</button></form></div>
- <section className="space-y-4"><h2 className="text-2xl font-semibold">Партнёрские проекты</h2>{data&&!data.projects.length&&<p className={panel}>Проектов пока нет. Создайте проект и назначьте владельца.</p>}{data?.projects.map(p=><article key={p.id} className={panel+" space-y-3"}><div className="flex flex-wrap justify-between gap-3"><h3 className="text-xl font-semibold">{p.name}</h3><strong>{labels[p.state]}</strong></div><p className="break-all text-sm">Владелец: {p.ownerId}</p><button className="min-h-11 underline" onClick={()=>{setEditing(p.id);setName(p.name);setOwner(p.ownerId);window.scrollTo({top:0,behavior:"auto"});}}>Изменить владельца / название</button>{!p.deployments.length&&<p>Размещений нет — проект не считается работающим.</p>}{p.deployments.map(d=><div className="rounded-xl bg-neutral-100 p-4 dark:bg-white/5" key={d.id}><p className="break-words font-medium">{d.appName} · {d.namespace} · {d.nodeName}</p><p>{labels[d.state]} · {d.required?"обязательный":"дополнительный"}</p><p className="mt-2 break-all text-sm">ID для конфигурации агента: {d.id}</p><p className="mt-2 text-sm">CPU: {d.metrics?.cpu==null?"Нет данных":`${d.metrics.cpu.toFixed(1)}% PM2`} · RAM: {bytes(d.metrics?.memory)} · Файлы проекта: {bytes(d.metrics?.storageBytes)}</p><p className="text-sm">Перезапуски: {d.metrics?.restarts??"Нет данных"} · Проверка: {d.metrics?.health==="ok"?"успешна":d.metrics?.health==="failed"?"не проходит":"не настроена / нет данных"}</p><p className="text-sm">Измерено: {d.sampledAt?new Date(d.sampledAt).toLocaleString("ru-RU"):"ещё не получено"}</p><div className="mt-2 flex flex-wrap gap-4"><button className="min-h-11 underline" disabled={busy} onClick={()=>void action({action:"settings",id:d.id,required:!d.required,healthRequired:d.healthRequired})}>{d.required?"Сделать дополнительным":"Сделать обязательным"}</button><button className="min-h-11 underline" disabled={busy} onClick={()=>{if(!d.healthRequired||confirm("Оценивать только состояние PM2? Доступность HTTP приложения больше не будет обязательной."))void action({action:"settings",id:d.id,required:d.required,healthRequired:!d.healthRequired});}}>{d.healthRequired?"Не требовать HTTP-проверку":"Требовать HTTP-проверку"}</button><button className="min-h-11 underline" disabled={busy} onClick={()=>void action({action:"toggle",id:d.id,enabled:!d.enabled})}>{d.enabled?"Исключить из мониторинга":"Включить мониторинг"}</button><button className="min-h-11 underline" disabled={busy} onClick={()=>{if(confirm("Удалить только привязку? Процесс и его файлы не изменятся."))void action({action:"remove",id:d.id});}}>Удалить привязку</button></div></div>)}</article>)}</section>
- <section className="space-y-4"><h2 className="text-2xl font-semibold">Ресурсы серверов</h2><Help><p>CPU и RAM машины не равны сумме процессов PM2. Файлы проекта — логический объём, диск — физическое свободное место. Нет отчёта более двух минут — текущие показатели недостоверны. Одинаковая физическая машина не суммируется дважды в сводке.</p></Help>{data&&!data.hosts.length&&<p className={panel}>Отчётов агента ещё нет. Установите агент на главном и нужных дочерних серверах.</p>}{data?.hosts.map(h=><article className={panel} key={h.id}><h3 className="text-xl font-semibold">{h.name}</h3><p className="mt-2">{h.fresh?"Свежие данные":!h.enabled?"Узел отключён":"Данные устарели"}</p>{h.fresh&&h.report?<><p className="mt-2">CPU: {h.report.cpu==null?"Нет данных":`${h.report.cpu.toFixed(1)}%`} · RAM свободно: {bytes(h.report.memoryAvailable)} / {bytes(h.report.memoryTotal)}</p><p>Load 1 мин.: {h.report.load1??"Нет данных"} · ядер: {h.report.cores??"Нет данных"}</p>{h.report.disks.map(d=><p className="mt-2" key={d.label}>Диск {d.label}: доступно {bytes(d.available)} из {bytes(d.total)}</p>)}{!h.report.disks.length&&<p>Нет данных о дисках</p>}</>:<p className="mt-2">Последние значения не выдаются за актуальные.</p>}</article>)}</section></section>;
+type Deployment = {
+  id: string;
+  appName: string;
+  namespace: string;
+  nodeId: string;
+  nodeName: string;
+  state: string;
+  enabled: boolean;
+  required: boolean;
+  healthRequired: boolean;
+  sampledAt: string | null;
+  metrics: {
+    cpu: number | null;
+    memory: number | null;
+    restarts: number | null;
+    uptimeSeconds: number | null;
+    storageBytes: number | null;
+    health: string;
+  } | null;
+};
+type Project = {
+  id: string;
+  name: string;
+  ownerId: string;
+  state: string;
+  deployments: Deployment[];
+};
+type Host = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  fresh: boolean;
+  report: {
+    sampledAt: string;
+    cpu: number | null;
+    memoryTotal: number | null;
+    memoryAvailable: number | null;
+    load1: number | null;
+    cores: number | null;
+    disks: { label: string; total: number; available: number }[];
+  } | null;
+};
+const labels: Record<string, string> = {
+  up: "Работает",
+  degraded: "Частично работает",
+  down: "Недоступен",
+  unknown: "Нет данных / проверки",
+  disabled: "Отключён / не настроен",
+};
+const bytes = (n: number | null | undefined) =>
+  n == null ? "Нет данных" : `${(n / 1073741824).toFixed(2)} ГБ`;
+export default function ProjectMonitorAdmin() {
+  const [data, setData] = useState<{
+      projects: Project[];
+      hosts: Host[];
+      nodes: { id: string; name: string }[];
+      refreshedAt: string;
+    } | null>(null),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [name, setName] = useState(""),
+    [owner, setOwner] = useState(""),
+    [editing, setEditing] = useState("");
+  const [projectId, setProjectId] = useState(""),
+    [nodeId, setNodeId] = useState(""),
+    [appName, setAppName] = useState(""),
+    [namespace, setNamespace] = useState("default"),
+    [required, setRequired] = useState(true),
+    [healthRequired, setHealth] = useState(true);
+  const load = useCallback(async () => {
+    const r = await fetch("/api/admin/monitor", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok)
+      throw Error(
+        "Не удалось обновить мониторинг. Последние данные могут быть устаревшими.",
+      );
+    setData(await r.json());
+    setError("");
+  }, []);
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible")
+        void load().catch((e) => setError(e.message));
+    };
+    refresh();
+    const t = setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [load]);
+  async function action(body: Record<string, unknown>) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const r = await fetch("/api/admin/monitor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (!r.ok) throw Error(d.error);
+      await load();
+      setNotice("Сохранено. Приложения PM2 не перезапускались.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const field =
+    "mt-1 min-h-11 w-full rounded-xl border border-neutral-400 bg-transparent px-3 py-2";
+  const button =
+    "admin-primary min-h-11 rounded-xl px-4 py-2 disabled:opacity-50";
+  const panel =
+    "admin-card rounded-2xl border border-neutral-300 p-5 dark:border-white/20";
+  return (
+    <section className="mx-auto max-w-6xl space-y-6 p-4 text-neutral-900 dark:text-white sm:p-8">
+      <a className="underline" href="/admin">
+        ← Администрирование
+      </a>
+      <header>
+        <p className="text-sm text-neutral-500 dark:text-gray-400">
+          Сервисы и система / Мониторинг
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold">Проекты и серверы</h1>
+        <p className="mt-3">
+          Проект → размещение PM2 → сервер. Только наблюдение, без команд
+          управления.
+        </p>
+      </header>
+      <nav className="admin-section-links" aria-label="Разделы мониторинга">
+        <a href="#monitor-projects">Проекты</a>
+        <a href="#monitor-resources">Ресурсы серверов</a>
+        <a href="#monitor-setup">Настройка агента</a>
+      </nav>
+      <div id="monitor-setup" />
+      <Help>
+        <p>
+          1. В разделе «Серверы» создайте отдельный узел «Приложение», роль
+          «Дочерний», для каждой физической машины (в том числе текущей) и
+          сохраните токен в конфигурации агента, не в чат.
+        </p>
+        <p>
+          2. На машине запустите deploy/monitor-node.sh от имени владельца PM2.
+          Выберите правильный PM2_HOME. Агент ничего не перезапускает.
+        </p>
+        <p>
+          3. Создайте проект для CONSULTANT или привяжите существующий. Добавьте
+          имя приложения PM2 и namespace, затем настройте healthChecks и
+          projectPaths по ID размещения в локальном файле агента.
+        </p>
+        <p>
+          4. Обязательная HTTP-проверка без настройки даёт «Нет данных /
+          проверки». Для фонового процесса можно отключить её: тогда
+          подтверждается только состояние PM2, не результат выполнения задач.
+        </p>
+        <p>
+          Роль CONSULTANT не даёт доступ к чужим проектам или админке Business.
+          Партнёр видит свой кабинет /dashboard в Business.
+        </p>
+      </Help>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          className={button}
+          disabled={busy}
+          onClick={() => void load().catch((e) => setError(e.message))}
+        >
+          Обновить
+        </button>
+        <p className="text-sm">
+          {data
+            ? `Получено: ${new Date(data.refreshedAt).toLocaleString("ru-RU")}. Опрос каждые 30 секунд.`
+            : "Загрузка…"}
+        </p>
+      </div>
+      {error && (
+        <p role="alert" className="rounded-xl border border-red-400 p-4">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="rounded-xl border border-green-500 p-4">
+          {notice}
+        </p>
+      )}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <form
+          className={panel + " space-y-4"}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void action({
+              action: "project",
+              id: editing || undefined,
+              name,
+              ownerId: owner,
+            });
+          }}
+        >
+          <h2 className="text-xl font-semibold">
+            {editing
+              ? "Владелец и название проекта"
+              : "Создать партнёрский проект"}
+          </h2>
+          <label className="block">
+            Название
+            <input
+              className={field}
+              required
+              maxLength={120}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            ID владельца в TrioZ (CONSULTANT)
+            <input
+              className={field}
+              required
+              value={owner}
+              onChange={(e) => setOwner(e.target.value)}
+            />
+          </label>
+          <p className="text-sm">
+            Проекты создаёт только ADMIN. Передача владельца немедленно меняет
+            доступ к мониторингу после обновления кабинета.
+          </p>
+          <button className={button} disabled={busy}>
+            Сохранить проект
+          </button>
+          {editing && (
+            <button
+              type="button"
+              className="ml-3 min-h-11 underline"
+              onClick={() => {
+                setEditing("");
+                setName("");
+                setOwner("");
+              }}
+            >
+              Отмена
+            </button>
+          )}
+        </form>
+        <form
+          className={panel + " space-y-4"}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void action({
+              action: "deployment",
+              projectId,
+              nodeId,
+              appName,
+              namespace,
+              required,
+              healthRequired,
+            });
+          }}
+        >
+          <h2 className="text-xl font-semibold">Привязать размещение PM2</h2>
+          <label className="block">
+            Проект
+            <select
+              className={field}
+              required
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+            >
+              <option value="">Выберите проект</option>
+              {data?.projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            Узел мониторинга
+            <select
+              className={field}
+              required
+              value={nodeId}
+              onChange={(e) => setNodeId(e.target.value)}
+            >
+              <option value="">Выберите сервер</option>
+              {data?.nodes.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              Имя PM2
+              <input
+                className={field}
+                required
+                maxLength={100}
+                value={appName}
+                onChange={(e) => setAppName(e.target.value)}
+              />
+            </label>
+            <label>
+              Namespace
+              <input
+                className={field}
+                required
+                value={namespace}
+                onChange={(e) => setNamespace(e.target.value)}
+              />
+            </label>
+          </div>
+          <label className="flex min-h-11 items-center gap-3">
+            <input
+              type="checkbox"
+              checked={required}
+              onChange={(e) => setRequired(e.target.checked)}
+            />
+            Обязательный компонент проекта
+          </label>
+          <label className="flex min-h-11 items-center gap-3">
+            <input
+              type="checkbox"
+              checked={healthRequired}
+              onChange={(e) => setHealth(e.target.checked)}
+            />
+            Требовать успешную HTTP-проверку
+          </label>
+          <button className={button} disabled={busy}>
+            Добавить размещение
+          </button>
+        </form>
+      </div>
+      <section id="monitor-projects" className="space-y-4">
+        <h2 className="text-2xl font-semibold">Партнёрские проекты</h2>
+        {data && !data.projects.length && (
+          <p className={panel}>
+            Проектов пока нет. Создайте проект и назначьте владельца.
+          </p>
+        )}
+        {data?.projects.map((p) => (
+          <article key={p.id} className={panel + " space-y-3"}>
+            <div className="flex flex-wrap justify-between gap-3">
+              <h3 className="text-xl font-semibold">{p.name}</h3>
+              <strong>{labels[p.state]}</strong>
+            </div>
+            <p className="break-all text-sm">Владелец: {p.ownerId}</p>
+            <button
+              className="min-h-11 underline"
+              onClick={() => {
+                setEditing(p.id);
+                setName(p.name);
+                setOwner(p.ownerId);
+                window.scrollTo({ top: 0, behavior: "auto" });
+              }}
+            >
+              Изменить владельца / название
+            </button>
+            {!p.deployments.length && (
+              <p>Размещений нет — проект не считается работающим.</p>
+            )}
+            {p.deployments.map((d) => (
+              <div
+                className="rounded-xl bg-neutral-100 p-4 dark:bg-white/5"
+                key={d.id}
+              >
+                <p className="break-words font-medium">
+                  {d.appName} · {d.namespace} · {d.nodeName}
+                </p>
+                <p>
+                  {labels[d.state]} ·{" "}
+                  {d.required ? "обязательный" : "дополнительный"}
+                </p>
+                <p className="mt-2 break-all text-sm">
+                  ID для конфигурации агента: {d.id}
+                </p>
+                <p className="mt-2 text-sm">
+                  CPU:{" "}
+                  {d.metrics?.cpu == null
+                    ? "Нет данных"
+                    : `${d.metrics.cpu.toFixed(1)}% PM2`}{" "}
+                  · RAM: {bytes(d.metrics?.memory)} · Файлы проекта:{" "}
+                  {bytes(d.metrics?.storageBytes)}
+                </p>
+                <p className="text-sm">
+                  Перезапуски: {d.metrics?.restarts ?? "Нет данных"} · Проверка:{" "}
+                  {d.metrics?.health === "ok"
+                    ? "успешна"
+                    : d.metrics?.health === "failed"
+                      ? "не проходит"
+                      : "не настроена / нет данных"}
+                </p>
+                <p className="text-sm">
+                  Измерено:{" "}
+                  {d.sampledAt
+                    ? new Date(d.sampledAt).toLocaleString("ru-RU")
+                    : "ещё не получено"}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-4">
+                  <button
+                    className="min-h-11 underline"
+                    disabled={busy}
+                    onClick={() =>
+                      void action({
+                        action: "settings",
+                        id: d.id,
+                        required: !d.required,
+                        healthRequired: d.healthRequired,
+                      })
+                    }
+                  >
+                    {d.required
+                      ? "Сделать дополнительным"
+                      : "Сделать обязательным"}
+                  </button>
+                  <button
+                    className="min-h-11 underline"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        !d.healthRequired ||
+                        confirm(
+                          "Оценивать только состояние PM2? Доступность HTTP приложения больше не будет обязательной.",
+                        )
+                      )
+                        void action({
+                          action: "settings",
+                          id: d.id,
+                          required: d.required,
+                          healthRequired: !d.healthRequired,
+                        });
+                    }}
+                  >
+                    {d.healthRequired
+                      ? "Не требовать HTTP-проверку"
+                      : "Требовать HTTP-проверку"}
+                  </button>
+                  <button
+                    className="min-h-11 underline"
+                    disabled={busy}
+                    onClick={() =>
+                      void action({
+                        action: "toggle",
+                        id: d.id,
+                        enabled: !d.enabled,
+                      })
+                    }
+                  >
+                    {d.enabled
+                      ? "Исключить из мониторинга"
+                      : "Включить мониторинг"}
+                  </button>
+                  <button
+                    className="min-h-11 underline"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          "Удалить только привязку? Процесс и его файлы не изменятся.",
+                        )
+                      )
+                        void action({ action: "remove", id: d.id });
+                    }}
+                  >
+                    Удалить привязку
+                  </button>
+                </div>
+              </div>
+            ))}
+          </article>
+        ))}
+      </section>
+      <section id="monitor-resources" className="space-y-4">
+        <h2 className="text-2xl font-semibold">Ресурсы серверов</h2>
+        <Help>
+          <p>
+            CPU и RAM машины не равны сумме процессов PM2. Файлы проекта —
+            логический объём, диск — физическое свободное место. Нет отчёта
+            более двух минут — текущие показатели недостоверны. Одинаковая
+            физическая машина не суммируется дважды в сводке.
+          </p>
+        </Help>
+        {data && !data.hosts.length && (
+          <p className={panel}>
+            Отчётов агента ещё нет. Установите агент на главном и нужных
+            дочерних серверах.
+          </p>
+        )}
+        {data?.hosts.map((h) => (
+          <article className={panel} key={h.id}>
+            <h3 className="text-xl font-semibold">{h.name}</h3>
+            <p className="mt-2">
+              {h.fresh
+                ? "Свежие данные"
+                : !h.enabled
+                  ? "Узел отключён"
+                  : "Данные устарели"}
+            </p>
+            {h.fresh && h.report ? (
+              <>
+                <div className="admin-metrics-grid">
+                  <div className="admin-metric">
+                    <span>CPU</span>
+                    <strong>
+                      {h.report.cpu == null
+                        ? "Нет данных"
+                        : `${h.report.cpu.toFixed(1)}%`}
+                    </strong>
+                    {h.report.cpu != null && (
+                      <progress
+                        max={100}
+                        value={h.report.cpu}
+                        aria-label="Использование CPU"
+                      />
+                    )}
+                  </div>
+                  <div className="admin-metric">
+                    <span>RAM · свободно</span>
+                    <strong>{bytes(h.report.memoryAvailable)}</strong>
+                    <small>из {bytes(h.report.memoryTotal)}</small>
+                    {h.report.memoryTotal != null &&
+                      h.report.memoryTotal > 0 &&
+                      h.report.memoryAvailable != null && (
+                        <progress
+                          max={h.report.memoryTotal}
+                          value={h.report.memoryAvailable}
+                          aria-label="Свободная RAM"
+                        />
+                      )}
+                  </div>
+                  <div className="admin-metric">
+                    <span>Нагрузка · 1 мин.</span>
+                    <strong>{h.report.load1 ?? "Нет данных"}</strong>
+                    <small>Ядер: {h.report.cores ?? "Нет данных"}</small>
+                  </div>
+                </div>
+                {h.report.disks.map((d) => (
+                  <p className="mt-2" key={d.label}>
+                    Диск {d.label}: доступно {bytes(d.available)} из{" "}
+                    {bytes(d.total)}
+                  </p>
+                ))}
+                {!h.report.disks.length && <p>Нет данных о дисках</p>}
+              </>
+            ) : (
+              <p className="mt-2">
+                Последние значения не выдаются за актуальные.
+              </p>
+            )}
+          </article>
+        ))}
+      </section>
+    </section>
+  );
 }

@@ -52,6 +52,7 @@ export interface ReplyTo {
 }
 
 export interface Message {
+  previewSuppressed?: boolean;
   id: string;
   content: string;
   createdAt: string;

@@ -30,7 +30,7 @@ export function filterScheduledMentionRecipients(params: {
  * вычисляются из текста. Это не «голый prisma.message.create».
  */
 export async function publishScheduledMessage(
-  scheduled: { id: string; content: string; channelId: string; userId: string },
+  scheduled: { id: string; content: string; channelId: string; userId: string; previewSuppressed?: boolean },
   emit: (channelId: string, message: unknown) => void,
 ): Promise<void> {
   const [user, channel, permission] = await Promise.all([
@@ -75,6 +75,7 @@ export async function publishScheduledMessage(
   const message = await prisma.message.create({
     data: {
       content,
+      previewSuppressed: scheduled.previewSuppressed === true,
       channelId: scheduled.channelId,
       userId: scheduled.userId,
       mentions: mentions.ids.length ? JSON.stringify(mentions.ids) : null,
