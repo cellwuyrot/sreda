@@ -1,3 +1,4 @@
+import { sanitizeVpnHealth } from "@/lib/vpnNodeHealth";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { findNodeByToken } from "@/lib/serverMesh";
@@ -107,6 +108,9 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => null)) as { report?: unknown } | null;
   const report = sanitizeReport(body?.report);
+  if (node.kind === "VPN" && body?.report && typeof body.report === "object" && !Array.isArray(body.report)) {
+    Object.assign(report, sanitizeVpnHealth(body.report as Record<string, unknown>));
+  }
 
   /* VPN-TRANSPORT: параметры интерфейса узла приходят отдельным полем, а не
      внутри отчёта. Отчёт целиком показывается в панели как диагностика, а этим
