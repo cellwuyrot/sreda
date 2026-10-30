@@ -29,7 +29,8 @@ export async function POST(req: Request) {
   const banned = await checkBan(session.user.id);
   if (banned) return banned;
 
-  const { content, channelId, scheduledAt } = await req.json();
+  const { content, channelId, scheduledAt, previewSuppressed } = await req.json();
+  if (previewSuppressed !== undefined && typeof previewSuppressed !== "boolean") return NextResponse.json({ error: "Invalid preview preference" }, { status: 400 });
   if (!content?.trim() || !channelId || !scheduledAt) {
     return NextResponse.json({ error: "content, channelId, scheduledAt required" }, { status: 400 });
   }
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
   }
 
   const msg = await prisma.scheduledMessage.create({
-    data: { content: content.trim().slice(0, 4000), channelId, userId: session.user.id, scheduledAt: schedDate },
+    data: { previewSuppressed: previewSuppressed === true, content: content.trim().slice(0, 4000), channelId, userId: session.user.id, scheduledAt: schedDate },
   });
 
   return NextResponse.json(msg, { status: 201 });

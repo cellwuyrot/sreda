@@ -7,7 +7,7 @@ import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
 import Input from "@/components/ui/Input";
 import VpnNodeHealth from "@/components/admin/VpnNodeHealth";
-import InfoTooltip from "@/components/ui/InfoTooltip";
+import InfoTooltip from "@/components/admin/AdminHelp";
 
 /**
  * SERVER-MESH: связка главного сервера с дочерними узлами.
@@ -320,7 +320,7 @@ export default function AdminServersPage() {
         {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</p>}
 
         {freshToken && (
-          <div className="rounded-xl border border-amber-400/40 bg-amber-400/[0.07] p-4">
+          <div className="admin-card rounded-xl border border-amber-400/40 bg-amber-400/[0.07] p-4">
             <p className="text-sm font-semibold text-amber-600 dark:text-amber-300">
               Токен агента для «{freshToken.name}»
             </p>
@@ -342,7 +342,7 @@ export default function AdminServersPage() {
         )}
 
         {/* ── NODE-KEY: добавление VPN-узла по ключу ── */}
-        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+        <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
             Добавить узел по ключу{" "}
             <InfoTooltip
@@ -376,7 +376,7 @@ export default function AdminServersPage() {
               type="button"
               onClick={() => void importNodeKey()}
               disabled={importing || !nodeKey.trim()}
-              className="rounded-lg bg-neutral-900 dark:bg-white px-3 py-2 text-sm font-medium text-white dark:text-neutral-900 disabled:opacity-50"
+              className="admin-primary rounded-lg bg-neutral-900 dark:bg-white px-3 py-2 text-sm font-medium text-white dark:text-neutral-900 disabled:opacity-50"
             >
               {importing ? "Добавляю…" : "Добавить узел"}
             </button>
@@ -384,7 +384,7 @@ export default function AdminServersPage() {
         </section>
 
         {/* ── Главный сервер ── */}
-        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+        <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Главный сервер</h2>
           {loading ? (
             <p className="mt-2 text-xs text-neutral-400">Загрузка…</p>
@@ -412,7 +412,7 @@ export default function AdminServersPage() {
         </section>
 
         {/* ── Дочерние узлы ── */}
-        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+        <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
             Дочерние узлы {children.length > 0 && <span className="text-neutral-400">· {children.length}</span>}
           </h2>
@@ -600,7 +600,7 @@ export default function AdminServersPage() {
         </section>
 
         {/* ── Файлы: где лежат и перенос ── */}
-        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+        <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
             Файлы{" "}
             <InfoTooltip
@@ -655,7 +655,7 @@ export default function AdminServersPage() {
         </section>
 
         {/* ── Добавление ── */}
-        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+        <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
             Добавить узел{" "}
             <InfoTooltip
@@ -719,7 +719,7 @@ export default function AdminServersPage() {
             type="button"
             onClick={create}
             disabled={creating || !form.name.trim()}
-            className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:text-neutral-950"
+            className="admin-primary mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:text-neutral-950"
           >
             {creating ? "Добавление…" : "Добавить"}
           </button>

@@ -295,7 +295,7 @@ function BlacklistPanel() {
       </p>
 
       {/* Форма добавления */}
-      <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/10 dark:bg-white/5">
+      <div className="admin-card rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/10 dark:bg-white/5">
         <div className="flex gap-2">
           <input
             value={input}
@@ -307,7 +307,7 @@ function BlacklistPanel() {
           <button
             onClick={add}
             disabled={saving || !input.trim()}
-            className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+            className="admin-primary rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
           >
             {saving ? "…" : "Добавить"}
           </button>
@@ -324,13 +324,13 @@ function BlacklistPanel() {
       {/* Список */}
       {loading && <p className="text-sm text-neutral-400">Загрузка…</p>}
       {!loading && entries.length === 0 && (
-        <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-400 dark:border-white/10">
+        <p className="admin-card rounded-xl border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-400 dark:border-white/10">
           Чёрный список пуст
         </p>
       )}
       <div className="space-y-2">
         {entries.map((e) => (
-          <div key={e.id} className="flex items-start gap-3 rounded-xl border border-neutral-200 px-3.5 py-2.5 dark:border-white/10">
+          <div key={e.id} className="flex items-start gap-3 admin-card rounded-xl border border-neutral-200 px-3.5 py-2.5 dark:border-white/10">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-neutral-900 dark:text-white">{e.address}</p>
               {e.note && <p className="text-xs text-neutral-500 dark:text-gray-400">{e.note}</p>}
@@ -408,7 +408,7 @@ function FoldersPanel({ onFolderSelect }: { onFolderSelect: (f: MailFolder | nul
   };
 
   const FolderForm = (
-    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/10 dark:bg-white/5 space-y-2">
+    <div className="admin-card rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-white/10 dark:bg-white/5 space-y-2">
       <p className="text-xs font-semibold text-neutral-700 dark:text-gray-300">{editing ? "Редактирование папки" : "Новая папка"}</p>
       <div className="flex gap-2">
         {/* Иконка */}
@@ -461,7 +461,7 @@ function FoldersPanel({ onFolderSelect }: { onFolderSelect: (f: MailFolder | nul
           Отмена
         </button>
         <button onClick={save} disabled={saving || !form.name.trim()}
-          className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500">
+          className="admin-primary rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500">
           {saving ? "Сохранение…" : "Сохранить"}
         </button>
       </div>
@@ -476,7 +476,7 @@ function FoldersPanel({ onFolderSelect }: { onFolderSelect: (f: MailFolder | nul
           чтобы применить её фильтр к текущему ящику.
         </p>
         <button onClick={startCreate}
-          className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500">
+          className="admin-primary flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500">
           <Icon path={<><path d="M12 5v14" /><path d="M5 12h14" /></>} />
           Новая
         </button>
@@ -486,7 +486,7 @@ function FoldersPanel({ onFolderSelect }: { onFolderSelect: (f: MailFolder | nul
 
       {loading && <p className="text-sm text-neutral-400">Загрузка…</p>}
       {!loading && folders.length === 0 && !creating && (
-        <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-400 dark:border-white/10">
+        <p className="admin-card rounded-xl border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-400 dark:border-white/10">
           Папок пока нет
         </p>
       )}
@@ -595,7 +595,7 @@ function VerificationCodesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
+      <div className="admin-card rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-neutral-900 dark:text-white">noreply@trioz.ru</p>
@@ -643,13 +643,13 @@ function VerificationCodesPanel() {
       {loading ? (
         <p className="text-sm text-neutral-400">Загрузка кодов…</p>
       ) : rows.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400 dark:border-white/10">Кодов пока нет</p>
+        <p className="admin-card rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400 dark:border-white/10">Кодов пока нет</p>
       ) : (
         <div className="space-y-2">
           {rows.map((row) => {
             const status = statusLabel(row);
             return (
-              <div key={row.id} className="rounded-xl border border-neutral-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-neutral-950/20">
+              <div key={row.id} className="admin-card rounded-xl border border-neutral-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-neutral-950/20">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-base font-bold tracking-[0.2em] text-neutral-900 dark:text-white">{row.code}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.cls}`}>{status.text}</span>
@@ -972,7 +972,7 @@ export default function AdminMailPage() {
           {/* Левая колонка: ящики + навигация */}
           <div className="space-y-3">
             {/* Переключатель разделов */}
-            <div className="flex rounded-xl border border-neutral-200 bg-white p-1 dark:border-white/10 dark:bg-neutral-900">
+            <div className="flex admin-card rounded-xl border border-neutral-200 bg-white p-1 dark:border-white/10 dark:bg-neutral-900">
               {SIDE_TABS.map((st) => (
                 <button
                   key={st.id}
@@ -1015,7 +1015,7 @@ export default function AdminMailPage() {
           </div>
 
           {/* Правая колонка */}
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+          <div className="admin-card rounded-2xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
 
             {/* ══ ЧС ══ */}
             {sideTab === "blacklist" && <BlacklistPanel />}
@@ -1052,7 +1052,7 @@ export default function AdminMailPage() {
                       </button>
                       <button
                         onClick={() => showCompose ? setShowCompose(false) : openComposer()}
-                        className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                        className="admin-primary flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 dark:bg-cyan-600 dark:hover:bg-cyan-500"
                       >
                         <Icon path={<><path d="M12 5v14" /><path d="M5 12h14" /></>} />
                         Написать
@@ -1165,13 +1165,13 @@ export default function AdminMailPage() {
                     {loadingRows && <p className="text-sm text-neutral-400">Загрузка писем…</p>}
 
                     {!loadingRows && rows.length === 0 && (
-                      <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400 dark:border-white/10 dark:text-gray-500">
+                      <p className="admin-card rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400 dark:border-white/10 dark:text-gray-500">
                         {query ? "Ничего не найдено" : tab === "archive" ? "В архиве пусто" : tab === "trash" ? "Корзина пуста" : "Писем пока нет"}
                       </p>
                     )}
 
                     {rows.map((m) => (
-                      <div key={m.id} className={`rounded-xl border border-neutral-200 dark:border-white/10 overflow-hidden ${m.direction === "incoming" && !m.readAt ? "bg-violet-50/40 dark:bg-cyan-500/5" : ""}`}>
+                      <div key={m.id} className={`admin-card rounded-xl border border-neutral-200 dark:border-white/10 overflow-hidden ${m.direction === "incoming" && !m.readAt ? "bg-violet-50/40 dark:bg-cyan-500/5" : ""}`}>
                         {/* Строка письма — клик разворачивает/сворачивает */}
                         <button
                           type="button"
@@ -1258,7 +1258,7 @@ export default function AdminMailPage() {
                       <button
                         onClick={() => { void load("append"); }}
                         disabled={loadingMore}
-                        className="w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-xs font-medium text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
+                        className="w-full admin-card rounded-xl border border-neutral-200 px-4 py-2.5 text-xs font-medium text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:text-gray-300 dark:hover:border-cyan-500/50 dark:hover:text-cyan-400"
                       >
                         {loadingMore ? "Загрузка…" : `Показать ещё (осталось ${total - rows.length})`}
                       </button>

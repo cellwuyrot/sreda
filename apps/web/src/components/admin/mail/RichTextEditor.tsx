@@ -86,7 +86,7 @@ export function RichTextEditor({ html, onChange }: { html: string; onChange: (ht
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-white/10 dark:bg-neutral-950/40">
+    <div className="overflow-hidden admin-card rounded-xl border border-neutral-200 bg-white dark:border-white/10 dark:bg-neutral-950/40">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-200 bg-neutral-50 p-2 dark:border-white/10 dark:bg-white/[0.025]">
         <ToolbarButton label="B" title="Жирный" onAction={() => execCommand("bold")} />
         <ToolbarButton label="I" title="Курсив" onAction={() => execCommand("italic")} />

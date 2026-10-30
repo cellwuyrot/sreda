@@ -145,10 +145,10 @@ function EditModal({
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5"
+        className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold text-white">Редактировать услугу</h3>
+        <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Редактировать услугу</h3>
 
         {/* Icon upload */}
         <div>
@@ -172,7 +172,7 @@ function EditModal({
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
-                className="w-full px-3 py-2 bg-white/10 hover:bg-white/15 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+                className="w-full px-3 py-2 bg-white/10 hover:bg-white/15 text-neutral-900 dark:text-white text-sm rounded-lg transition-colors disabled:opacity-50"
               >
                 {uploading ? "Загрузка..." : "Загрузить изображение"}
               </button>
@@ -193,7 +193,7 @@ function EditModal({
                 }}
                 placeholder="🔧"
                 maxLength={8}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-cyan-500"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-neutral-900 dark:text-white text-sm focus:outline-none focus:border-cyan-500"
               />
             </div>
           </div>
@@ -207,7 +207,7 @@ function EditModal({
             type="text"
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-neutral-900 dark:text-white focus:outline-none focus:border-cyan-500"
           />
         </div>
 
@@ -218,7 +218,7 @@ function EditModal({
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             rows={3}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 resize-none"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-neutral-900 dark:text-white focus:outline-none focus:border-cyan-500 resize-none"
           />
         </div>
 
@@ -229,7 +229,7 @@ function EditModal({
             type="number"
             value={form.order}
             onChange={(e) => setForm((f) => ({ ...f, order: parseInt(e.target.value) || 0 }))}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-neutral-900 dark:text-white focus:outline-none focus:border-cyan-500"
           />
         </div>
 
@@ -237,14 +237,14 @@ function EditModal({
         <div className="flex gap-3 pt-2">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-lg text-sm transition-colors"
+            className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/15 text-neutral-900 dark:text-white rounded-lg text-sm transition-colors"
           >
             Отмена
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            className="admin-primary flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-neutral-900 dark:text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
           >
             {saving ? "Сохранение..." : "Сохранить"}
           </button>
@@ -337,7 +337,7 @@ export default function AdminServicesPage() {
               </svg>
               Админ-панель
             </Link>
-            <h1 className="text-2xl font-bold text-white">Управление услугами</h1>
+            <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Управление услугами</h1>
             <p className="text-gray-500 text-sm mt-1">
               {active.length} активных · {inactive.length} отключённых
             </p>
@@ -356,7 +356,7 @@ export default function AdminServicesPage() {
               exit={{ opacity: 0, y: -10 }}
               className="glass-card p-6 mb-8"
             >
-              <h3 className="text-lg font-bold text-white mb-4">Новая услуга</h3>
+              <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-4">Новая услуга</h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
@@ -425,7 +425,7 @@ export default function AdminServicesPage() {
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-white">{service.title}</span>
+                  <span className="font-medium text-neutral-900 dark:text-white">{service.title}</span>
                   <span className="text-xs text-gray-600">#{service.order}</span>
                   {!service.active && (
                     <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">
@@ -441,7 +441,7 @@ export default function AdminServicesPage() {
                 {/* Edit button */}
                 <button
                   onClick={() => setEditingService(service)}
-                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-neutral-900 dark:text-white transition-colors"
                   title="Редактировать"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -453,7 +453,7 @@ export default function AdminServicesPage() {
                 {/* BUSINESS-PAY: документы услуги */}
                 <button
                   onClick={() => setDocsService(service)}
-                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-neutral-900 dark:text-white transition-colors"
                   title="Документы услуги"
                   aria-label={`Документы услуги: ${service.title}`}
                 >
@@ -467,7 +467,7 @@ export default function AdminServicesPage() {
                 {/* Stages editor */}
                 <button
                   onClick={() => setStagesService(service)}
-                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-neutral-900 dark:text-white transition-colors"
                   title="Этапы работы"
                   aria-label={`Этапы работы: ${service.title}`}
                 >

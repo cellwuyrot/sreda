@@ -98,6 +98,7 @@ export interface DMReaction {
 }
 
 export interface Message {
+  previewSuppressed?: boolean;
   id: string;
   content: string;
   clientMessageId?: string | null;

@@ -298,7 +298,7 @@ export function MailComposer({ mailboxes, templates, replyTo, defaultMailbox, on
               <h3 className="text-base font-semibold text-neutral-900 dark:text-white">Подтверждение отправки</h3>
               <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">Проверьте получателей и тему перед отправкой.</p>
             </div>
-            <div className="space-y-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300">
+            <div className="space-y-2 admin-card rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300">
               <div><b className="text-neutral-900 dark:text-white">От:</b> {fromName ? `${fromName} <${currentAddress}>` : currentAddress}</div>
               <div><b className="text-neutral-900 dark:text-white">Кому:</b> {to.join(", ") || "—"}</div>
               {cc.length > 0 && <div><b className="text-neutral-900 dark:text-white">CC:</b> {cc.join(", ")}</div>}
