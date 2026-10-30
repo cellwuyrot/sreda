@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "enabled": true,
+  "packages": [
+    {"package": "com.vkontakte.android", "label": "ВКонтакте"},
+    {"package": "ru.oneme.app", "label": "MAX"},
+    {"package": "com.yandex.browser", "label": "Яндекс Браузер"},
+    {"package": "ru.yandex.searchplugin", "label": "Яндекс"},
+    {"package": "ru.yandex.yandexmaps", "label": "Яндекс Карты"},
+    {"package": "ru.yandex.yandexnavi", "label": "Яндекс Навигатор"}
+  ]
+}

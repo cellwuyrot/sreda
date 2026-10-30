@@ -129,6 +129,7 @@ export default function PremiumMark({ isPremium, onClick, size = 44, asToggle = 
       aria-pressed={switchMode ? tunnel.on : undefined}
     >
       TZ
+      {tunnel.error && <span role="status" className="sr-only">{tunnel.error}</span>}
       {/* Точка состояния: без неё включённый и выключенный VPN выглядят одинаково. */}
       {tunnel.available && (tunnel.on || tunnel.pending) && (
         <span

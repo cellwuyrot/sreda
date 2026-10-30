@@ -39,8 +39,6 @@
       CHANGE_NETWORK_STATE / CHANGE_WIFI_STATE — некоторые версии AmneziaWG-Go
       используют их для управления маршрутами.
     -->
-    <uses-permission android:name="android.permission.BIND_VPN_SERVICE"
-        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
@@ -49,6 +47,8 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
+
+    <!-- VPN_POLICY_QUERIES -->
 
     <application
         android:name=".ConnectApp"
@@ -90,18 +90,15 @@
           для foreground-сервисов. «specialUse» — это тип для VPN и подобных
           сервисов, не попадающих в стандартные категории (camera/microphone/etc).
         -->
-        <service
-            android:name=".AmneziaVpnService"
-            android:exported="false"
-            android:permission="android.permission.BIND_VPN_SERVICE"
+        <!-- Controller foreground service; the library owns the actual TUN VpnService. -->
+        <service android:name=".AmneziaVpnService" android:exported="false"
             android:foregroundServiceType="specialUse">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-            <!-- Android 14+ requires a <property> declaring the use case. -->
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="VPN tunnel via AmneziaWG" />
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User initiated encrypted AmneziaWG VPN connection" />
+        </service>
+        <service android:name="org.amnezia.awg.backend.AbstractBackend$VpnService"
+            android:exported="false" android:permission="android.permission.BIND_VPN_SERVICE">
+            <meta-data android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON" android:value="false" />
         </service>
 
         <activity

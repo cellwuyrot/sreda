@@ -1,12 +1,15 @@
 "use client";
+import { isAndroidShell } from "@/lib/shell";
 import { useCallback, useEffect, useState } from "react";
 import { businessPriceLabel, parseBusinessOffers, type BusinessOffer, type BusinessSubscriptionKind } from "@/lib/businessSubscriptions";
 export default function BusinessSubscriptionActions({ kind, active = false, compact = false }: { kind: BusinessSubscriptionKind; active?: boolean; compact?: boolean }) {
+  const [android, setAndroid] = useState(false);
   const [provisional, setProvisional] = useState<string | null>(null);
   const [offer, setOffer] = useState<BusinessOffer | null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt(n => n + 1), []);
   useEffect(() => {
+    if (isAndroidShell()) { setAndroid(true); setLoading(false); return; }
     const controller = new AbortController(); let alive = true;
     const timeout = window.setTimeout(() => controller.abort(), 15000);
     setLoading(true); setError(false);
@@ -17,6 +20,7 @@ export default function BusinessSubscriptionActions({ kind, active = false, comp
       .finally(() => { window.clearTimeout(timeout); if (alive) setLoading(false); });
     return () => { alive = false; window.clearTimeout(timeout); controller.abort(); };
   }, [kind, attempt]);
+  if (android) return <p className="text-sm opacity-75">{active ? "Доступ действует для вашего аккаунта." : "В этой Android-версии доступны ранее подключённые подписки аккаунта. Покупки внутри приложения не поддерживаются."}</p>;
   if (loading) return <p role="status" className="text-sm opacity-75">Проверяем предложения Business…</p>;
   if (error) return <div className="space-y-2 text-sm"><p role="status">Не удалось загрузить условия подписки. Это не меняет ваш действующий доступ.</p><button type="button" onClick={retry} className="min-h-11 rounded-lg border border-current px-3 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Повторить загрузку</button></div>;
   const trustNote = provisional ? <p role="status" className="text-sm">Доверительное подключение до {new Date(provisional).toLocaleString("ru-RU")}. По этой заявке оплата ещё не подтверждена.</p> : null;
