@@ -191,6 +191,18 @@ describe("POST /api/dm/[id] — закрытая отправка в делов�
     expect((await post({ content: "по заявке" })).status).toBe(200);
   });
 
+  it.each([true, false])("persists preview selection on ordinary message create: %s", async previewSuppressed => {
+    mockGetServerSession.mockResolvedValue({user:{id:"client-1",role:"USER"}} as never);
+    prismaMock.directConversation.findUnique.mockResolvedValue(conversation("PERSONAL"));
+    expect((await post({content:"https://external.example/post",previewSuppressed})).status).toBe(200);
+    expect(prismaMock.directMessage.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({previewSuppressed})}));
+  });
+  it("rejects a nonboolean preview flag without creating a message", async () => {
+    mockGetServerSession.mockResolvedValue({user:{id:"client-1",role:"USER"}} as never);
+    prismaMock.directConversation.findUnique.mockResolvedValue(conversation("PERSONAL"));
+    expect((await post({content:"https://external.example",previewSuppressed:"false"})).status).toBe(400);
+    expect(prismaMock.directMessage.create).not.toHaveBeenCalled();
+  });
   it("открытый деловой разговор клиенту не мешает", async () => {
     mockGetServerSession.mockResolvedValue({ user: { id: "client-1", role: "USER" } } as never);
     prismaMock.directConversation.findUnique.mockResolvedValue(conversation("BUSINESS", { locked: false }));

@@ -23,6 +23,7 @@ import { CHAT_ATTACHMENT_ACCEPT } from "@/lib/attachmentTypes";
 import { ShieldIcon, XIcon } from "@/components/ui/ConnectIcons";
 
 interface DMMessageComposerProps {
+  previewControl?: React.ReactNode;
   personal?: boolean;
   sendOnEnter?: boolean;
   attachmentsAllowed?: boolean;
@@ -246,6 +247,7 @@ export default function DMMessageComposer(props: DMMessageComposerProps) {
               </div>
             </div>
           )}
+          {props.previewControl}
           <form
             onSubmit={onSend}
             onDragOver={onDragOver}

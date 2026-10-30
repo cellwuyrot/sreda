@@ -16,11 +16,15 @@ import { motion } from "framer-motion";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 import Spinner from "@/components/ui/Spinner";
 import type { Message } from "./messageTypes";
+import MessageLinkPreview from "./MessageLinkPreview";
+import {firstLink} from "@/lib/linkPreviewPolicy";
 import { renderContent } from "./messageFormat";
 import { XIcon, ChatIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { MentionPopupList, useMentions, type MentionUser } from "@/components/ui/MentionPopup";
 
 interface ThreadPanelProps {
+  previewControl?: React.ReactNode;
+  linkPreviews?: boolean;
   /* Свои эмодзи сообщества. Без этой карты `:name:` в ветке остался бы просто
      текстом — в самой ленте картинка, а в обсуждении того же сообщения нет. */
   emoji?: Map<string, string>;
@@ -42,7 +46,7 @@ interface ThreadPanelProps {
 
 const EDGE = 12; // минимальный отступ окна от краёв экрана
 
-export default function ThreadPanel({ rootMessage, replies, anchor, input, loading, sending, error, emoji, mentionUsers, members, searchMembers, onInputChange, onSend, onClose }: ThreadPanelProps) {
+export default function ThreadPanel({ previewControl, linkPreviews = true, rootMessage, replies, anchor, input, loading, sending, error, emoji, mentionUsers, members, searchMembers, onInputChange, onSend, onClose }: ThreadPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -146,6 +150,7 @@ export default function ThreadPanel({ rootMessage, replies, anchor, input, loadi
                 <time className="text-[10px] text-neutral-400">{new Date(rootMessage.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time>
               </div>
               <div className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">{renderContent(rootMessage.content, { emoji, mentionUsers })}</div>
+              {linkPreviews && !rootMessage.deleted && firstLink(rootMessage.content) && <MessageLinkPreview scope="channel" messageId={rootMessage.id} url={firstLink(rootMessage.content)!} suppressed={rootMessage.previewSuppressed} />}
             </div>
           </div>
         </div>
@@ -173,6 +178,7 @@ export default function ThreadPanel({ rootMessage, replies, anchor, input, loadi
                       <time className="text-[10px] text-neutral-400">{new Date(reply.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time>
                     </div>
                     <div className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">{renderContent(reply.content, { emoji, mentionUsers })}</div>
+              {linkPreviews && !reply.deleted && firstLink(reply.content) && <MessageLinkPreview scope="channel" messageId={reply.id} url={firstLink(reply.content)!} suppressed={reply.previewSuppressed} />}
                   </div>
                 </article>
               ))}
@@ -181,6 +187,7 @@ export default function ThreadPanel({ rootMessage, replies, anchor, input, loadi
         </div>
 
         <footer className="shrink-0 border-t border-[var(--cn-border)] p-2.5">
+          {previewControl}
           <div className="relative flex items-end gap-2">
             {mentions.open && (
               <MentionPopupList

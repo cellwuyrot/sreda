@@ -26,7 +26,7 @@ export default function VpnNodeHealth({
   return (
     <section
       aria-label="Диагностика сети VPN"
-      className="mt-3 rounded-xl border border-neutral-200 p-3 text-xs dark:border-white/15"
+      className="mt-3 admin-card rounded-xl border border-neutral-200 p-3 text-xs dark:border-white/15"
     >
       <div className="flex items-center gap-2 font-medium">
         <span>

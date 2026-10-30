@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { LRUCache } from "lru-cache";
 import { rateLimit } from "@/lib/rateLimit";
 import { externalFetch } from "@/lib/externalFetch";
+import { safeBrandColor } from "@/lib/linkPreviewPolicy";
 import { safeUrl } from "@/lib/urlSafety"; // FIX-OGIMG
 
 /**
@@ -41,6 +42,8 @@ export interface LinkPreview {
   description: string;
   image: string | null;
   siteName: string;
+  themeColor: string | null;
+  favicon: string | null;
 }
 
 /* FIX-OGIMG: проверка адреса переехала в lib/urlSafety — по тем же правилам
@@ -157,7 +160,13 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const icon = /<link\b[^>]*rel=["\'][^"\']*\bicon\b[^"\']*["\'][^>]*>/i.exec(html)?.[0];
+  const iconHref = icon ? /href=["\']([^"\']+)["\']/i.exec(icon)?.[1] : null;
+  let favicon: string | null = null;
+  try { const u = safeUrl(new URL(iconHref || "/favicon.ico", finalUrl).toString()); if (u) favicon = `/api/link-preview/image?url=${encodeURIComponent(u.toString())}`; } catch { /* no icon */ }
   const preview: LinkPreview = {
+    themeColor: safeBrandColor(metaContent(html, "theme-color")),
+    favicon,
     url: finalUrl.toString(),
     title: (metaContent(html, "og:title") || (titleTag?.[1] ? decodeEntities(titleTag[1]).trim() : "")).slice(0, 200),
     description: (metaContent(html, "og:description") || metaContent(html, "description")).slice(0, 300),

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
 import Input from "@/components/ui/Input";
-import InfoTooltip from "@/components/ui/InfoTooltip";
+import InfoTooltip from "@/components/admin/AdminHelp";
 
 /**
  * GAMES-CATALOG: админ-панель раздела «Игры».
@@ -277,7 +277,7 @@ export default function AdminGamesPage() {
   const partner = games.filter((g) => g.kind === "PARTNER");
 
   const row = (game: Game) => (
-    <div key={game.id} className="flex flex-wrap items-start gap-3 rounded-xl border border-neutral-200 p-3 dark:border-white/10">
+    <div key={game.id} className="flex flex-wrap items-start gap-3 admin-card rounded-xl border border-neutral-200 p-3 dark:border-white/10">
       <Cover src={game.cover} title={game.title} />
       <div className="min-w-[200px] flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -372,7 +372,7 @@ export default function AdminGamesPage() {
         ) : (
           <>
             {/* ── Свои игры ── */}
-            <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
                 Свои игры{" "}
                 <InfoTooltip
@@ -406,7 +406,7 @@ export default function AdminGamesPage() {
                   type="button"
                   onClick={createOwn}
                   disabled={creating === "own" || !ownForm.title.trim()}
-                  className="mt-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+                  className="admin-primary mt-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
                 >
                   {creating === "own" ? "Добавление…" : "Добавить"}
                 </button>
@@ -414,7 +414,7 @@ export default function AdminGamesPage() {
             </section>
 
             {/* ── Партнёрские игры ── */}
-            <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
                 Партнёрские игры{" "}
                 <InfoTooltip
@@ -446,7 +446,7 @@ export default function AdminGamesPage() {
                     type="button"
                     onClick={createPartner}
                     disabled={creating === "partner" || !partnerForm.apiBaseUrl.trim() || partnerForm.apiKey.trim().length < 8}
-                    className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+                    className="admin-primary rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
                   >
                     {creating === "partner" ? "Подключение…" : "Подключить"}
                   </button>
@@ -532,7 +532,7 @@ export default function AdminGamesPage() {
                   const ok = await patch(editing.id, body, "Карточка сохранена");
                   if (ok) { setEditing(null); setNewKey(""); }
                 }}
-                className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
+                className="admin-primary rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:text-neutral-950 dark:hover:bg-cyan-400"
               >
                 Сохранить
               </button>

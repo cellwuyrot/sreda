@@ -204,7 +204,8 @@ export async function POST(req: NextRequest) {
 	const banned = await checkBan(session.user.id);
 	if (banned) return banned;
 
-	const { content, channelId, attachments, replyToId, replyQuote, threadId } = await req.json();
+	const { content, channelId, attachments, replyToId, replyQuote, threadId, previewSuppressed } = await req.json();
+	if (previewSuppressed !== undefined && typeof previewSuppressed !== "boolean") return NextResponse.json({ error: "Invalid preview preference" }, { status: 400 });
 	const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
 	if ((!content || !content.trim()) && !hasAttachments) {
 		return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -354,6 +355,7 @@ export async function POST(req: NextRequest) {
 	const message = await prisma.message.create({
 		data: {
 			content: sanitizedContent,
+            previewSuppressed: previewSuppressed === true,
 			channelId,
 			userId: session.user.id,
 			attachments: hasAttachments ? JSON.stringify(attachments) : null,
