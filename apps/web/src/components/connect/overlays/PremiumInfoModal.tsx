@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
-import { deviceKeyPair } from "@/lib/wgIdentity"; // FIX-KEYSTICK
+import { vpnEnrollmentKeys, waitForAndroidPeer } from "@/lib/vpnEnrollment";
 import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
-import { isDesktop, getDesktopApi, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
+import { isDesktop, type DesktopVpnState } from "@/lib/desktop"; // APP-ONLY // NETLINK // VPN-ONECLICK
+import { getVpnBridge } from "@/lib/vpnBridge";
 import { isAndroidShell } from "@/lib/shell"; // VPN-ANDROID
 import { daysLeftLabel } from "@/lib/connectionUsage";
 import { useLinkMetrics } from "@/lib/useLinkMetrics"; // FIX-LINKSTATS
@@ -231,7 +232,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   /* VPN-ONECLICK: снимок состояния туннеля при открытии окна (он мог быть поднят
      до загрузки страницы) и подписка на живые изменения. */
   useEffect(() => {
-    const bridge = getDesktopApi()?.vpn;
+    const bridge = getVpnBridge();
     if (!bridge) return;
     setCanTunnel(true);
     let alive = true;
@@ -261,7 +262,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     ): Promise<{ config: string; peer: VpnPeerState } | null> => {
       /* FIX-KEYSTICK: тот же ключ устройства, что и у выключателя в панели. Иначе
        два места выдавали разные ключи и вытесняли друг друга на узле. */
-      const pair = deviceKeyPair();
+      const pair = await vpnEnrollmentKeys();
       const res = await fetch("/api/vpn/me", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -305,16 +306,17 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      профиль живёт ровно до того, как уедет в туннель. */
   const connect = useCallback(
     async (mode: VpnRouting, nodeId?: string) => {
-      const bridge = getDesktopApi()?.vpn;
+      const bridge = getVpnBridge();
       if (!bridge) return;
       setBusy(true);
       try {
         const enrolled = await enroll(mode, nodeId);
         if (!enrolled) return;
+        await waitForAndroidPeer();
         const st = await bridge.up(enrolled.config);
         setTunnel(st);
-      } catch {
-        setError("Не удалось поднять туннель в приложении");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Не удалось поднять туннель в приложении");
       } finally {
         setBusy(false);
       }
@@ -323,7 +325,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
   );
 
   const disconnectTunnel = useCallback(async () => {
-    const bridge = getDesktopApi()?.vpn;
+    const bridge = getVpnBridge();
     if (!bridge) return;
     setBusy(true);
     try {
@@ -396,7 +398,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       setSelectedNodeId(nodeId);
       await refresh();
       const wasUp = tunnel?.state === "on" || tunnel?.state === "connecting";
-      if (getDesktopApi()?.vpn && wasUp) {
+      if (getVpnBridge() && wasUp) {
         await connect(routing, nodeId);
       }
     } catch {
@@ -751,12 +753,12 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             <>
               <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
                 {androidShell
-                  ? "WireGuard на Android"
+                  ? "Обновите Android-приложение"
                   : "Включение — в приложении"}
               </strong>
               <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
                 {androidShell
-                  ? "Скачайте профиль и откройте его приложением WireGuard — соединение поднимается там."
+                  ? "Для встроенного VPN нужна новая версия TrioZ Connect и актуальный Android System WebView. Экспорт профиля из Android-приложения отключён."
                   : desktopShell
                     ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
                     : "Выберите сервер и создайте профиль ниже. Импортируйте его в AmneziaVPN: сам браузер VPN не включает."}
@@ -765,6 +767,13 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
+        {androidShell && canTunnel && (
+          <p className="mt-3 text-xs leading-relaxed text-neutral-500 dark:text-white/60">
+            Встроенный AmneziaWG. Допуск проверяется локально по списку пакетов этой сборки.
+            Установка запрещённого пакета остановит VPN. Активный статус подтверждает рукопожатие,
+            но не гарантирует доступность каждого сайта. После отключения возможен обычный выход в сеть.
+          </p>
+        )}
         {shownError && (
           <p className="mt-4 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">
             {shownError}
@@ -972,7 +981,7 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
         {/* Альтернативный клиент использует ровно тот же готовый профиль и peer.
             Здесь нет лимитов, отдельного ключа или второй VPN-логики — меняется
             только контейнер выдачи: vpn:// и QR. */}
-        {state?.entitled && state.serviceEnabled && (
+        {state?.entitled && state.serviceEnabled && !androidShell && (
           <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
             <p className="text-xs font-medium text-neutral-800 dark:text-white/80">
               AmneziaVPN

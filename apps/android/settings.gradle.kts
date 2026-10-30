@@ -11,8 +11,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // VPN-ANDROID: AmneziaWG Android library publish через JitPack.
-        maven { url = uri("https://jitpack.io") }
+
     }
 }
 
