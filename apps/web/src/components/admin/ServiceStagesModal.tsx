@@ -29,7 +29,7 @@ import { MAX_STAGES, MAX_STAGE_TITLE, type OrderStage } from "@/lib/orderStages"
  * необратимая операция здесь. Поэтому она спрашивает подтверждение.
  *
  * Оформление собрано из уже существующих классов страницы услуг
- * (bg-neutral-900 / border-white/10 / bg-cyan-500): новых цветов не вводится.
+ * (bg-white dark:bg-neutral-900 / border-white/10 / bg-cyan-500): новых цветов не вводится.
  */
 
 /** Строка редактора: у нового этапа идентификатора ещё нет. */
@@ -173,11 +173,11 @@ export default function ServiceStagesModal({
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-5"
+        className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <h3 className="text-lg font-bold text-white">Этапы работы</h3>
+          <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Этапы работы</h3>
           <p className="text-sm text-gray-500 mt-0.5">{serviceTitle}</p>
         </div>
 
@@ -193,14 +193,14 @@ export default function ServiceStagesModal({
                   value={stage.title}
                   maxLength={MAX_STAGE_TITLE}
                   onChange={(e) => rename(i, e.target.value)}
-                  className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                  className="min-w-0 flex-1 bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg px-3 py-2 text-neutral-900 dark:text-white text-sm focus:outline-none focus:border-cyan-500"
                 />
                 <button
                   type="button"
                   onClick={() => move(i, -1)}
                   disabled={i === 0}
                   aria-label="Выше"
-                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-sm transition-colors disabled:opacity-30"
+                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-neutral-900 dark:text-white text-sm transition-colors disabled:opacity-30"
                 >
                   ↑
                 </button>
@@ -209,7 +209,7 @@ export default function ServiceStagesModal({
                   onClick={() => move(i, 1)}
                   disabled={i === stages.length - 1}
                   aria-label="Ниже"
-                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-sm transition-colors disabled:opacity-30"
+                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-neutral-900 dark:text-white text-sm transition-colors disabled:opacity-30"
                 >
                   ↓
                 </button>
@@ -217,7 +217,7 @@ export default function ServiceStagesModal({
                   type="button"
                   onClick={() => remove(i)}
                   aria-label="Удалить этап"
-                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-neutral-900 dark:text-white transition-colors"
                 >
                   <TrashIcon size={16} />
                 </button>
@@ -230,7 +230,7 @@ export default function ServiceStagesModal({
           <button
             type="button"
             onClick={add}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 text-white text-sm rounded-lg transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 text-neutral-900 dark:text-white text-sm rounded-lg transition-colors"
           >
             <PlusIcon size={16} />
             Добавить этап
@@ -244,14 +244,14 @@ export default function ServiceStagesModal({
             type="button"
             onClick={() => void reset()}
             disabled={saving || loading || !custom}
-            className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-lg text-sm transition-colors disabled:opacity-40"
+            className="px-4 py-2 bg-white/10 hover:bg-white/15 text-neutral-900 dark:text-white rounded-lg text-sm transition-colors disabled:opacity-40"
           >
             По умолчанию
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-lg text-sm transition-colors"
+            className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/15 text-neutral-900 dark:text-white rounded-lg text-sm transition-colors"
           >
             Отмена
           </button>
@@ -259,7 +259,7 @@ export default function ServiceStagesModal({
             type="button"
             onClick={() => void save()}
             disabled={saving || loading}
-            className="flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            className="flex-1 px-4 py-2 admin-primary text-neutral-900 dark:text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
           >
             {saving ? "Сохранение..." : "Сохранить"}
           </button>

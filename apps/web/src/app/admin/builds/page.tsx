@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
-import InfoTooltip from "@/components/ui/InfoTooltip";
+import InfoTooltip from "@/components/admin/AdminHelp";
 import { BUILD_TARGET_LABEL, type BuildTarget } from "@/lib/builds";
 
 /**
@@ -192,7 +192,7 @@ export default function AdminBuildsPage() {
           </p>
         )}
 
-        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+        <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Собрать</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {(Object.keys(BUILD_TARGET_LABEL) as BuildTarget[]).map((target) => (
@@ -201,7 +201,7 @@ export default function AdminBuildsPage() {
                 type="button"
                 disabled={busy}
                 onClick={() => void start(target)}
-                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:text-neutral-950"
+                className="admin-primary rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:text-neutral-950"
               >
                 {BUILD_TARGET_LABEL[target]}
               </button>
@@ -212,7 +212,7 @@ export default function AdminBuildsPage() {
           </p>
         </section>
 
-        <section className="rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
+        <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Последние сборки</h2>
           {loading ? (
             <p className="mt-2 text-xs text-neutral-400">Загрузка…</p>

@@ -154,7 +154,7 @@ export default function EmailWhitelistPanel() {
             onKeyDown={(e) => { if (e.key === "Enter" && domain.trim() && !busy) void add(); }}
             placeholder="domain.ru"
             maxLength={100}
-            className="min-w-[180px] flex-1 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
+            className="min-w-[180px] flex-1 admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
           />
           <input
             value={note}
@@ -162,12 +162,12 @@ export default function EmailWhitelistPanel() {
             onKeyDown={(e) => { if (e.key === "Enter" && domain.trim() && !busy) void add(); }}
             placeholder="Примечание — чей это сервис"
             maxLength={80}
-            className="min-w-[180px] flex-1 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
+            className="min-w-[180px] flex-1 admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
           />
           <button
             onClick={() => void add()}
             disabled={busy || !domain.trim()}
-            className="rounded-xl bg-violet-500 dark:bg-cyan-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-600 dark:hover:bg-cyan-600 disabled:opacity-50"
+            className="admin-primary rounded-xl bg-violet-500 dark:bg-cyan-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-600 dark:hover:bg-cyan-600 disabled:opacity-50"
           >
             Добавить
           </button>
@@ -177,7 +177,7 @@ export default function EmailWhitelistPanel() {
           value={query}
           onChange={(e) => { setQuery(e.target.value); setPage(1); }}
           placeholder="Поиск по домену или примечанию"
-          className="mb-3 w-full rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
+          className="mb-3 w-full admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-500 dark:focus:border-cyan-400"
         />
 
         {error && (
@@ -185,7 +185,7 @@ export default function EmailWhitelistPanel() {
         )}
 
         {/* Таблица: до десяти строк на страницу. */}
-        <div className="overflow-hidden rounded-xl border border-neutral-200 dark:border-white/10">
+        <div className="overflow-hidden admin-card rounded-xl border border-neutral-200 dark:border-white/10">
           {rows.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-neutral-400">
               {data ? "Ничего не найдено" : "Загрузка…"}
@@ -216,7 +216,7 @@ export default function EmailWhitelistPanel() {
                         const saved = await patch({ id: row.id, domain: editing.domain, note: editing.note });
                         if (saved) setEditing(null);
                       }}
-                      className="rounded-lg bg-violet-500 dark:bg-cyan-500 px-3 py-1 text-xs font-medium text-white"
+                      className="admin-primary rounded-lg bg-violet-500 dark:bg-cyan-500 px-3 py-1 text-xs font-medium text-white"
                     >
                       Сохранить
                     </button>

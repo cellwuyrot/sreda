@@ -8,6 +8,7 @@ datasource db {
 }
 
 model User {
+  linkPreviewPreferences ChatLinkPreviewHidden[]
   contactAddress String? @db.VarChar(500)
   tzProjectSubscriptions TzIdProjectSubscription[]
   tzProjectNotifications TzIdProjectNotification[]
@@ -406,6 +407,7 @@ model ChannelMember {
 }
 
 model Message {
+  previewSuppressed Boolean @default(false)
   id            String        @id @default(cuid())
   content       String
   userId        String
@@ -587,6 +589,7 @@ model DirectMessageReaction {
 }
 
 model DirectMessage {
+  previewSuppressed Boolean @default(false)
   replyQuote String?
   clientMessageId String? @db.VarChar(80)
   reactions DirectMessageReaction[]
@@ -1357,6 +1360,7 @@ model MessageRead {
 }
 
 model ScheduledMessage {
+  previewSuppressed Boolean @default(false)
   id          String   @id @default(cuid())
   content     String
   userId      String
@@ -2924,4 +2928,14 @@ model MonitorSample {
  payload String @db.Text
  @@index([nodeId, sampledAt])
   @@index([receivedAt])
+}
+
+/// Personal hides do not change another person's message. No URL/plaintext is stored here.
+model ChatLinkPreviewHidden {
+  userId String
+  scope String @db.VarChar(10)
+  messageId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@id([userId, scope, messageId])
 }

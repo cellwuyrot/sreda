@@ -60,7 +60,10 @@ import { notifyExternal } from "@/lib/appNotify"; // ANDROID-NOTIFY
    самый узкий — и архив в канале было просто не выбрать в диалоге файлов. */
 import { CHAT_ATTACHMENT_ACCEPT } from "@/lib/attachmentTypes";
 import UserContextMenu from "./UserContextMenu";
-import LinkPreviewCard, { firstLink } from "./LinkPreviewCard";
+import { firstLink } from "./LinkPreviewCard";
+import MessageLinkPreview, {notifyPreviewState, type PreviewEvent} from "./MessageLinkPreview";
+import LinkPreviewDraft from "./LinkPreviewDraft";
+import {useLinkPreviewDraft} from "@/hooks/useLinkPreviewDraft";
 // MODERATION: ранги берём из общего модуля — здесь была своя копия карты, и в
 // неё успел затесаться ключ SITE_ADMIN, который к групповой роли отношения не
 // имеет и потому никогда не срабатывал.
@@ -550,7 +553,7 @@ const MessageRow = memo(function MessageRow({
                         весь экран. */}
                     {prefs.linkPreviews && msg.content && !msg.deleted && (() => {
                       const link = firstLink(msg.content);
-                      return link ? <LinkPreviewCard url={link} /> : null;
+                      return link ? <MessageLinkPreview scope="channel" messageId={msg.id} url={link} suppressed={msg.previewSuppressed} /> : null;
                     })()}
                   </>
                 )}
@@ -805,6 +808,8 @@ export default function MessageArea({
   // Keep an unsent draft per channel. Drafts are silent and local to this
   // browser; a successful send removes them.
   const channelDraftKey = `tz-chat-draft:channel:${channelId}`;
+  const previewDraft = useLinkPreviewDraft(newMessage, `${channelDraftKey}:${currentUserId}`);
+  const threadPreviewDraft = useLinkPreviewDraft(threadInput, activeThread ? `tz-chat-draft:thread:${activeThread.id}:${currentUserId}` : null);
   useEffect(() => {
     setNewMessage(localStorage.getItem(channelDraftKey) ?? "");
     /* MOBILE-UI: на таче не фокусируем композер автоматически — иначе при
@@ -1659,6 +1664,15 @@ export default function MessageArea({
       }
     });
 
+    socket.on("link-preview-state", (detail: PreviewEvent) => {
+      notifyPreviewState(detail);
+      if(detail.scope === "channel" && typeof detail.suppressed === "boolean") {
+        const apply = (prev: Message[]) => prev.map(m => m.id === detail.id ? {...m, previewSuppressed: detail.suppressed} : m);
+        setMessages(apply); setThreadMessages(apply);
+        setActiveThread(m => m?.id === detail.id ? {...m, previewSuppressed: detail.suppressed} : m);
+      }
+    });
+
     socket.on("message-edited", (msg: Message) => {
       setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
       setThreadMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
@@ -1953,7 +1967,7 @@ export default function MessageArea({
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, channelId, threadId: activeThread.id }),
+        body: JSON.stringify({ content, channelId, threadId: activeThread.id, previewSuppressed: threadPreviewDraft.suppressed }),
       });
       const msg = await res.json();
       if (!res.ok) throw new Error(msg.error || "Не удалось отправить ответ");
@@ -1963,6 +1977,7 @@ export default function MessageArea({
         setMessages((prev) => prev.map((m) => m.id === activeThread.id ? { ...m, threadCount: (m.threadCount || 0) + 1, _count: { ...m._count, threadReplies: (m._count?.threadReplies || 0) + 1 } } : m));
       }
       setThreadInput("");
+      threadPreviewDraft.clear();
       localStorage.removeItem(`tz-chat-draft:thread:${activeThread.id}`);
     } catch (error) {
       setThreadError(error instanceof Error ? error.message : "Не удалось отправить ответ");
@@ -1981,11 +1996,13 @@ export default function MessageArea({
     if (!newMessage.trim() || !scheduleDate || !scheduleTime) return;
     const dt = new Date(`${scheduleDate}T${scheduleTime}`);
     if (dt.getTime() <= Date.now()) { setErrorToast("Время должно быть в будущем"); setTimeout(() => setErrorToast(null), 3500); return; }
-    await fetch("/api/messages/scheduled", {
+    const result = await fetch("/api/messages/scheduled", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: newMessage, channelId, scheduledAt: dt.toISOString() }),
+      body: JSON.stringify({ content: newMessage, channelId, scheduledAt: dt.toISOString(), previewSuppressed: previewDraft.suppressed }),
     });
+    if (!result.ok) { setErrorToast("Не удалось запланировать сообщение. Черновик сохранён."); return; }
+    previewDraft.clear();
     updateChannelDraft("");
     setShowSchedule(false);
     loadScheduled();
@@ -2066,6 +2083,7 @@ export default function MessageArea({
         setTimeout(() => setErrorToast(null), 3500);
       } else {
         const real = await res.json();
+        previewDraft.clear();
         setMessages((prev) => prev.map((mm) => (mm.id === optimisticId ? { ...real } : mm)));
       }
     } catch {
@@ -2494,7 +2512,7 @@ export default function MessageArea({
 
     const content = newMessage;
     const attachments = pendingAttachments.length > 0 ? pendingAttachments : null;
-    const body: Record<string, unknown> = { content, channelId, attachments };
+    const body: Record<string, unknown> = { content, channelId, attachments, previewSuppressed: previewDraft.suppressed };
     if (replyTo) { body.replyToId = replyTo.id; if (replyTo.quote) body.replyQuote = replyTo.quote; }
     // ID не передаются: сервер всегда вычисляет их заново из content.
 
@@ -2508,6 +2526,7 @@ export default function MessageArea({
     const optimisticMsg: Message = {
       id: optimisticId,
       content,
+      previewSuppressed: previewDraft.suppressed,
       createdAt: new Date().toISOString(),
       edited: false,
       deleted: false,
@@ -3363,6 +3382,8 @@ export default function MessageArea({
               {recordingVoice ? (
                 <VoiceRecorder onRecorded={handleVoiceRecorded} />
               ) : (
+                <>
+                <LinkPreviewDraft url={chatPrefs.linkPreviews ? previewDraft.url : null} suppressed={previewDraft.suppressed} onChange={previewDraft.setSuppressed} />
                 <form onSubmit={sendMessage} onDragOver={(e) => { e.preventDefault(); if (Array.from(e.dataTransfer?.types ?? []).includes("Files")) setIsDragOver(true); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false); }} onDrop={handleDrop} className={`flex flex-col rounded-2xl border transition-colors px-2 py-1.5 focus-within:ring-2 focus-within:ring-violet-400/20 dark:focus-within:ring-cyan-400/20 focus-within:border-violet-400 dark:focus-within:border-cyan-400 ${isDragOver ? "bg-violet-50 dark:bg-cyan-900/10 border-violet-300 dark:border-cyan-700" : "border-[var(--cn-border)] bg-[var(--cn-card)]"}`}>
                   {/* MOBILE-FIX: вложения — отдельным рядом над строкой ввода. Раньше
                       этот блок стоял в одной flex-строке с кнопками и textarea и
@@ -3533,6 +3554,7 @@ export default function MessageArea({
                   )}
                   </div>
                 </form>
+                </>
               )}
             </div>
           </div>
@@ -3548,6 +3570,7 @@ export default function MessageArea({
       <AnimatePresence>
         {activeThread && (
           <ThreadPanel
+            linkPreviews={chatPrefs.linkPreviews}
             emoji={emojiMap}
             mentionUsers={mentionUserMap}
             members={channelMembers}
@@ -3555,6 +3578,7 @@ export default function MessageArea({
             rootMessage={activeThread}
             anchor={threadAnchor}
             replies={threadMessages}
+            previewControl={<LinkPreviewDraft url={chatPrefs.linkPreviews ? threadPreviewDraft.url : null} suppressed={threadPreviewDraft.suppressed} onChange={threadPreviewDraft.setSuppressed} />}
             input={threadInput}
             loading={threadLoading}
             sending={threadSending}

@@ -120,18 +120,18 @@ export default function ServiceDocumentsModal({ serviceId, serviceTitle, onClose
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.96, y: 12 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border border-white/10 bg-neutral-900 p-5"
+        className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-5"
       >
         <div className="flex items-start gap-3 mb-1">
           <div className="min-w-0 flex-1">
-            <h3 className="text-lg font-semibold text-white">Документы услуги</h3>
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">Документы услуги</h3>
             <p className="text-xs text-gray-400 truncate">{serviceTitle}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Закрыть"
-            className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
+            className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-neutral-900 dark:text-white"
           >
             ✕
           </button>
@@ -152,7 +152,7 @@ export default function ServiceDocumentsModal({ serviceId, serviceTitle, onClose
             {documents.map((d) => (
               <div
                 key={d.id}
-                className="flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10"
+                className="flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-neutral-200 dark:border-white/10"
               >
                 <a
                   href={d.url}
@@ -160,7 +160,7 @@ export default function ServiceDocumentsModal({ serviceId, serviceTitle, onClose
                   rel="noreferrer"
                   className="min-w-0 flex-1 hover:underline"
                 >
-                  <span className="block text-sm text-white truncate">{d.name}</span>
+                  <span className="block text-sm text-neutral-900 dark:text-white truncate">{d.name}</span>
                   <span className="block text-[11px] text-gray-500">{formatSize(d.size)}</span>
                 </a>
                 <button
@@ -182,7 +182,7 @@ export default function ServiceDocumentsModal({ serviceId, serviceTitle, onClose
           type="button"
           disabled={busy || documents.length >= MAX_DOCUMENTS}
           onClick={() => fileRef.current?.click()}
-          className="mt-4 w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mt-4 w-full py-2.5 rounded-xl admin-primary text-black text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {busy ? "Загрузка…" : "Добавить документ"}
         </button>

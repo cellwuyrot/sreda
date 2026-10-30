@@ -11,6 +11,8 @@ import { motion } from "framer-motion";
 import VoicePlayer from "@/components/ui/VoicePlayer";
 import VideoPlayer from "@/components/ui/VideoPlayer";
 import VideoNotePlayer from "@/components/ui/VideoNotePlayer";
+import MessageLinkPreview from "@/components/connect/MessageLinkPreview";
+import {firstLink} from "@/lib/linkPreviewPolicy";
 import MessageBody from "@/components/connect/MessageBody";
 import MessageHoverToolbar from "@/components/connect/MessageHoverToolbar";
 /* HOVER-GRACE: запас времени на перевод мыши с текста на кнопки бара. */
@@ -344,6 +346,7 @@ export default function DMMessageList(props: DMMessageListProps) {
                         картинка: она перерисовывается с нуля, и это видно как
                         мигание. Заодно во время правки сообщения его картинки
                         были не видны — а правят как раз подпись к ним. */}
+                    {!secure && !msg._encrypted && !msg.deleted && prefs.linkPreviews && firstLink(msg.content || "") && <MessageLinkPreview scope="dm" messageId={msg.id} url={firstLink(msg.content || "")!} suppressed={msg.previewSuppressed} />}
                     {secure && msg.attachments && <p className="text-sm mt-2">Защищённое вложение: просмотр пока недоступен.</p>}
                     {(!secure ? parseAttachments(msg.attachments) : []).map((att: Attachment, i) => (
                           att.isVoice ? (
