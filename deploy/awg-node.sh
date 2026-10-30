@@ -108,13 +108,8 @@ purge_wireguard() {
     info "конфиги /etc/wireguard отложены в сторону"
   fi
 
-  # Правила, оставленные PostUp прежнего интерфейса. Без этого NAT ссылается на
-  # исчезнувшую подсеть и мешает читать вывод iptables при разборе проблем.
-  if [ -n "${ETH:-}" ]; then
-    while iptables -t nat -C POSTROUTING -s "$SUBNET.0/24" -o "$ETH" -j MASQUERADE 2>/dev/null; do
-      iptables -t nat -D POSTROUTING -s "$SUBNET.0/24" -o "$ETH" -j MASQUERADE
-    done
-  fi
+  # Do not delete shared-subnet NAT: a live awg0 may still need it.
+  # Local network reconciliation below restores only missing VPN rules.
   info "готово"
 }
 
@@ -241,6 +236,11 @@ fi
 # ---------------------------------------------------------------------------
 # 1. Обычный WireGuard — вон
 # ---------------------------------------------------------------------------
+NODE_BIN="$(command -v node || true)"
+[ -n "$NODE_BIN" ] || die "node >=20 не найден в PATH"
+"$NODE_BIN" -e 'if(Number(process.versions.node.split(".")[0])<20)process.exit(1)' || die "нужен Node >=20"
+[ -f "$REPO/apps/vpn/src/network-cli.mjs" ] || die "обновите apps/vpn и deploy в репозитории"
+[ -f "$REPO/deploy/awg-network-repair.sh" ] || die "не найден awg-network-repair.sh"
 purge_wireguard
 
 # ---------------------------------------------------------------------------
@@ -291,7 +291,6 @@ install_awg() {
     info "собраны amneziawg-go и amneziawg-tools"
   fi
 
-  apt-get install -y -qq iptables-persistent >/dev/null 2>&1 || true
   command -v awg >/dev/null 2>&1 || die "инструмент awg не найден после установки"
 }
 
@@ -418,16 +417,16 @@ H3 = $H3
 H4 = $H4
 # Приватный ключ хранится отдельным файлом с правами 600, а не внутри конфига.
 PostUp = awg set %i private-key $KEY_PATH
-PostUp = iptables -t nat -A POSTROUTING -s $SUBNET.0/24 -o $ETH -j MASQUERADE
-PostUp = iptables -A FORWARD -i %i -o $ETH -j ACCEPT
-PostUp = iptables -A FORWARD -i $ETH -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-PostUp = iptables -t mangle -A FORWARD -i %i -o $ETH -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
-PostUp = iptables -t mangle -A FORWARD -i $ETH -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
-PostDown = iptables -t nat -D POSTROUTING -s $SUBNET.0/24 -o $ETH -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -o $ETH -j ACCEPT
-PostDown = iptables -D FORWARD -i $ETH -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-PostDown = iptables -t mangle -D FORWARD -i %i -o $ETH -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
-PostDown = iptables -t mangle -D FORWARD -i $ETH -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp = iptables -t nat -C POSTROUTING -s $SUBNET.0/24 -o $ETH -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s $SUBNET.0/24 -o $ETH -j MASQUERADE
+PostUp = iptables -C FORWARD -i %i -o $ETH -j ACCEPT 2>/dev/null || iptables -A FORWARD -i %i -o $ETH -j ACCEPT
+PostUp = iptables -C FORWARD -i $ETH -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -A FORWARD -i $ETH -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PostUp = iptables -t mangle -C FORWARD -i %i -o $ETH -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -A FORWARD -i %i -o $ETH -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp = iptables -t mangle -C FORWARD -i $ETH -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -A FORWARD -i $ETH -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = iptables -t nat -D POSTROUTING -s $SUBNET.0/24 -o $ETH -j MASQUERADE 2>/dev/null || true
+PostDown = iptables -D FORWARD -i %i -o $ETH -j ACCEPT 2>/dev/null || true
+PostDown = iptables -D FORWARD -i $ETH -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+PostDown = iptables -t mangle -D FORWARD -i %i -o $ETH -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+PostDown = iptables -t mangle -D FORWARD -i $ETH -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
 EOF
 chmod 600 "$CONF"
 
@@ -480,9 +479,7 @@ systemctl enable "awg-quick@$IFACE" >/dev/null 2>&1 || true
 # ---------------------------------------------------------------------------
 iptables -C INPUT -p udp --dport "$PORT" -j ACCEPT 2>/dev/null \
   || iptables -I INPUT 1 -p udp --dport "$PORT" -j ACCEPT
-if command -v netfilter-persistent >/dev/null 2>&1; then
-  netfilter-persistent save >/dev/null 2>&1 || true
-fi
+# Do not persist Docker's dynamic tables. systemd + agent reconcile VPN rules.
 
 # ---------------------------------------------------------------------------
 # 9. Токен агента
@@ -513,7 +510,7 @@ NODE_BIN="$(command -v node || true)"
 [ -n "$NODE_BIN" ] || die "node не найден в PATH"
 
 systemctl stop trioz-vpn-agent >/dev/null 2>&1 || true
-rm -rf /etc/systemd/system/trioz-vpn-agent.service.d
+# Preserve administrator drop-ins; only our own network override is reconciled.
 cat > "$UNIT" <<EOF
 [Unit]
 Description=TrioZ VPN agent (AmneziaWG)
@@ -559,7 +556,9 @@ EOF
 chmod 600 "$UNIT"
 systemctl daemon-reload
 systemctl reset-failed trioz-vpn-agent >/dev/null 2>&1 || true
-systemctl enable --now trioz-vpn-agent >/dev/null 2>&1
+systemctl enable trioz-vpn-agent >/dev/null
+# Also repairs a live interface where PostUp was skipped on a repeated install.
+NODE_BIN="$NODE_BIN" bash "$REPO/deploy/awg-network-repair.sh" "--iface=$IFACE" "--port=$PORT" --apply
 sleep 6
 if journalctl -u trioz-vpn-agent --since '-30s' --no-pager | grep -q '401'; then
   info "агент получил 401: узел в панели ещё не создан — это нормально до вставки ключа"

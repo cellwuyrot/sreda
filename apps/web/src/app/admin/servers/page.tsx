@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Spinner from "@/components/ui/Spinner";
 import Input from "@/components/ui/Input";
+import VpnNodeHealth from "@/components/admin/VpnNodeHealth";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 
 /**
@@ -135,8 +136,11 @@ export default function AdminServersPage() {
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.push("/connect");
   }, [session, status, router]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const loadInFlight = useRef(false);
+  const load = useCallback(async (quiet = false) => {
+    if (loadInFlight.current) return;
+    loadInFlight.current = true;
+    if (!quiet) setLoading(true);
     try {
       const res = await fetch("/api/admin/servers");
       if (!res.ok) throw new Error("Не удалось загрузить список серверов");
@@ -146,6 +150,7 @@ export default function AdminServersPage() {
       /* Картина по файлам грузится отдельно и молча: это справка, и её
          недоступность не должна мешать управлять узлами. */
       try {
+        if (quiet) return;
         const stats = await fetch("/api/admin/storage");
         setFiles(stats.ok ? await stats.json() : null);
       } catch {
@@ -154,6 +159,7 @@ export default function AdminServersPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
     } finally {
+      loadInFlight.current = false;
       setLoading(false);
     }
   }, []);
@@ -161,6 +167,19 @@ export default function AdminServersPage() {
   useEffect(() => {
     if (session?.user?.role === "ADMIN") void load();
   }, [session, load]);
+
+  useEffect(() => {
+    if (session?.user?.role !== "ADMIN") return;
+    const refresh = () => { if (document.visibilityState === "visible") void load(true); };
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [session?.user?.role, load]);
 
   const create = async () => {
     if (!form.name.trim()) { setError("Укажите название узла"); return; }
@@ -444,6 +463,7 @@ export default function AdminServersPage() {
                       </p>
                     </>
                   )}
+                  {node.kind === "VPN" && <VpnNodeHealth report={node.report} online={node.status === "online"} />}
                   {/* STORAGE-PRIORITY: у узла хранения показываем, готов ли он принимать файлы. */}
                   {node.kind === "STORAGE" && (
                     <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
@@ -465,7 +485,7 @@ export default function AdminServersPage() {
                   {node.note && <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">{node.note}</p>}
                   {node.report && Object.keys(node.report).length > 0 && (
                     <p className="mt-1 text-[10px] text-neutral-400">
-                      {Object.entries(node.report).map(([k, v]) => `${k}: ${v}`).join(" · ")}
+                      {Object.entries(node.report).filter(([k]) => !k.startsWith("vpn")).map(([k, v]) => `${k}: ${v}`).join(" · ")}
                     </p>
                   )}
                   <div className="mt-2 flex flex-wrap gap-3 text-xs">
