@@ -1,3 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <path d="M128 22l30 66 72 8-54 49 15 71-63-36-63 36 15-71-54-49 72-8z" fill="#FFC53D" stroke="#15181B" stroke-width="12" stroke-linejoin="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs>
+<radialGradient id="gold" cx=".32" cy=".23" r=".84"><stop stop-color="#fff3a8"/><stop offset=".32" stop-color="#ffdb50"/><stop offset=".73" stop-color="#ffb722"/><stop offset="1" stop-color="#ed8216"/></radialGradient>
+<radialGradient id="pink" cx=".32" cy=".2" r=".9"><stop stop-color="#ffb4bf"/><stop offset=".3" stop-color="#ff6b85"/><stop offset=".72" stop-color="#ef315b"/><stop offset="1" stop-color="#b91a49"/></radialGradient>
+<linearGradient id="mouth" x2="0" y2="1"><stop stop-color="#633923"/><stop offset="1" stop-color="#3b201b"/></linearGradient>
+<linearGradient id="blue" x2=".8" y2="1"><stop stop-color="#b5f5ff"/><stop offset=".46" stop-color="#57caff"/><stop offset="1" stop-color="#2584ef"/></linearGradient>
+<linearGradient id="flame" x2=".6" y2="1"><stop stop-color="#ffc85b"/><stop offset=".45" stop-color="#ff8b3e"/><stop offset="1" stop-color="#f34743"/></linearGradient>
+<linearGradient id="hand" x2=".9" y2="1"><stop stop-color="#ffe7b4"/><stop offset=".5" stop-color="#ffc776"/><stop offset="1" stop-color="#e89542"/></linearGradient>
+<filter id="soft"><feGaussianBlur stdDeviation="4"/></filter></defs><path d="M128 24L157 84L224 95L176 142L186 210L128 178L68 210L79 142L30 95L97 84Z" fill="url(#gold)"/><path d="M128 46L108 96L63 103" fill="none" stroke="#fff4bb" stroke-width="9" stroke-linecap="round"/><ellipse cx="105" cy="126" rx="7" ry="10" fill="#9a6224"/><ellipse cx="151" cy="126" rx="7" ry="10" fill="#9a6224"/><path d="M112 149q16 13 32 0" stroke="#9a6224" stroke-width="6" fill="none" stroke-linecap="round"/></svg>

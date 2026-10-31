@@ -1460,8 +1460,8 @@ html[data-tz-group="on"] .tz-skin-chat {
   right: 0;
   left: auto;
   max-width: min(320px, calc(100vw - 24px));
-  max-height: min(330px, 60vh);
-  overflow-y: auto;
+  max-height: calc(100dvh - 24px);
+  overflow: visible;
   overscroll-behavior: contain;
 }
 .tz-dm-peer .tz-react-pop {
@@ -1620,3 +1620,62 @@ html[data-tz-still] *::after {
 .system-admin-content a:is([href="/admin"],[href="/editor"]){display:none}.system-admin-content>a{margin-right:12px}
 .admin-help-button{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid currentColor;font-size:11px;color:var(--admin-muted,#7c8999);background:transparent}
 .admin-help-popover{position:fixed;z-index:99999;display:block;max-height:140px;overflow:auto;padding:12px 14px;border:1px solid var(--card-border);border-radius:10px;background:var(--card-bg);color:var(--foreground);font-size:12px;font-weight:400;line-height:1.6;box-shadow:0 8px 25px #0002;pointer-events:auto}
+
+/* REACTIONS-V2: local SVG artwork, one picker and one reaction shell. */
+.tz-modern-reaction {
+  min-width: 54px; min-height: 38px; padding: 5px 10px; gap: 6px;
+  border-radius: 999px; border: 1px solid var(--cn-border, #d7dfeb);
+  background: var(--cn-accent-dim, #f2f4f8); color: #637088;
+  font-size: 12px; font-weight: 500; cursor: default;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+button.tz-modern-reaction { cursor: pointer; }
+button.tz-modern-reaction:hover { background: #ede9f7; border-color: #c0acdF; }
+.tz-modern-reaction.is-selected { color: #7745c8; background: #f0eaff; border-color: #aa88eb; }
+button.tz-modern-reaction:active { transform: scale(.96); }
+button.tz-modern-reaction:focus-visible { outline: 2px solid #9866ed; outline-offset: 2px; }
+.dark .tz-modern-reaction { color: #b4c1d1; background: #1a2531; border-color: #304052; }
+.dark button.tz-modern-reaction:hover { background: #233442; border-color: #4b6979; }
+.dark .tz-modern-reaction.is-selected { color: #9aebee; background: #19383f; border-color: #51cbd6; }
+.dark button.tz-modern-reaction:focus-visible { outline-color: #60d9e2; }
+.tz-emoji-picker {
+  width: 304px; max-width: calc(100vw - 24px); border: 1px solid var(--cn-border, #d7dfeb);
+  background: var(--cn-sidebar, #fff); color: var(--cn-text, #26354a);
+  border-radius: 18px; padding: 14px; box-shadow: 0 16px 48px #11182726;
+  display: flex; flex-direction: column; max-height: calc(100dvh - 24px); overflow: hidden;
+}
+.dark .tz-emoji-picker { color: #e4ecf5; box-shadow: 0 16px 48px #0005; }
+.tz-emoji-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.tz-emoji-picker-heading > span { font-size: 10px; color: var(--cn-muted, #637088); letter-spacing: .06em; }
+.tz-emoji-search { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; padding: 0 10px; border: 1px solid var(--cn-border, #d7dfeb); border-radius: 11px; color: var(--cn-muted, #637088); }
+.tz-emoji-search:focus-within { outline: 2px solid #9866ed; outline-offset: 1px; }
+.dark .tz-emoji-search:focus-within { outline-color: #60d9e2; }
+.tz-emoji-search input { min-width: 0; width: 100%; min-height: 40px; background: transparent; color: var(--cn-text, #26354a); font-size: 13px; border: 0; outline: none; box-shadow: none; padding: 0; }
+.tz-emoji-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.tz-emoji-tabs button { width: auto; height: auto; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 5px 9px; border-radius: 9px; font-size: 11px; color: var(--cn-muted, #637088); border: 1px solid transparent; }
+.tz-emoji-tabs button[aria-pressed="true"] { color: #7745c8; background: #f0eaff; }
+.dark .tz-emoji-tabs button[aria-pressed="true"] { color: #8ce5eb; background: #19383f; }
+.tz-emoji-picker-results { min-height: 0; max-height: min(320px, 45dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.tz-emoji-picker-compact .tz-emoji-picker-results { min-height: 0; max-height: min(240px, 40dvh); }
+.tz-emoji-picker-results h3 { margin: 10px 2px 8px; color: var(--cn-muted, #637088); font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+.tz-emoji-choice-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.tz-emoji-choice-grid button {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px;
+  border: 1px solid transparent; border-radius: 11px; background: #f2f4f8; padding: 2px;
+  transition: background-color 140ms ease, transform 140ms ease; line-height: 1;
+}
+.dark .tz-emoji-choice-grid button { background: #1b2835; }
+.tz-emoji-choice-grid button:hover { background: #ede5ff; }
+.dark .tz-emoji-choice-grid button:hover { background: #23444b; }
+.tz-emoji-choice-grid button:active { transform: scale(.94); }
+.tz-emoji-choice-grid button:focus-visible, .tz-emoji-tabs button:focus-visible, .tz-emoji-clear:focus-visible { outline: 2px solid #9866ed; outline-offset: -2px; }
+.dark .tz-emoji-choice-grid button:focus-visible, .dark .tz-emoji-tabs button:focus-visible, .dark .tz-emoji-clear:focus-visible { outline-color: #60d9e2; }
+.tz-emoji-empty { padding: 22px 6px; font-size: 12px; line-height: 1.6; color: var(--cn-muted, #637088); }
+.tz-emoji-clear { width: auto; height: auto; flex-shrink: 0; min-height: 36px; font-size: 11px; padding: 8px 2px 0; color: var(--cn-muted, #637088); }
+@media (pointer: coarse) { .tz-modern-reaction, .tz-emoji-tabs button, .tz-emoji-clear { width: auto; height: auto; flex-shrink: 0; min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) {
+  .tz-modern-reaction, .tz-emoji-choice-grid button { transition: none; }
+  button.tz-modern-reaction:active, .tz-emoji-choice-grid button:active { transform: none; }
+}
+
+.tz-emoji-search input::placeholder { color: var(--cn-muted, #637088); opacity: 1; }

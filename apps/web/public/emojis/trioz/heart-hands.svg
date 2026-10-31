@@ -1,11 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <path d="M128 152C92 126 78 104 78 84 78 64 92 50 110 50c9 0 15 5 18 11 3-6 9-11 18-11 18 0 32 14 32 34 0 20-14 42-50 68z" fill="#F2445A" stroke="#15181B" stroke-width="12" stroke-linejoin="round"/>
-  <g transform="rotate(34 84 186)">
-    <rect x="52" y="134" width="64" height="112" rx="30" fill="#F0B32E" stroke="#15181B" stroke-width="12"/>
-    <path d="M68 168v52M100 168v52" stroke="#15181B" stroke-width="9" stroke-linecap="round"/>
-  </g>
-  <g transform="rotate(-34 172 186)">
-    <rect x="140" y="134" width="64" height="112" rx="30" fill="#F0B32E" stroke="#15181B" stroke-width="12"/>
-    <path d="M156 168v52M188 168v52" stroke="#15181B" stroke-width="9" stroke-linecap="round"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs>
+<radialGradient id="gold" cx=".32" cy=".23" r=".84"><stop stop-color="#fff3a8"/><stop offset=".32" stop-color="#ffdb50"/><stop offset=".73" stop-color="#ffb722"/><stop offset="1" stop-color="#ed8216"/></radialGradient>
+<radialGradient id="pink" cx=".32" cy=".2" r=".9"><stop stop-color="#ffb4bf"/><stop offset=".3" stop-color="#ff6b85"/><stop offset=".72" stop-color="#ef315b"/><stop offset="1" stop-color="#b91a49"/></radialGradient>
+<linearGradient id="mouth" x2="0" y2="1"><stop stop-color="#633923"/><stop offset="1" stop-color="#3b201b"/></linearGradient>
+<linearGradient id="blue" x2=".8" y2="1"><stop stop-color="#b5f5ff"/><stop offset=".46" stop-color="#57caff"/><stop offset="1" stop-color="#2584ef"/></linearGradient>
+<linearGradient id="flame" x2=".6" y2="1"><stop stop-color="#ffc85b"/><stop offset=".45" stop-color="#ff8b3e"/><stop offset="1" stop-color="#f34743"/></linearGradient>
+<linearGradient id="hand" x2=".9" y2="1"><stop stop-color="#ffe7b4"/><stop offset=".5" stop-color="#ffc776"/><stop offset="1" stop-color="#e89542"/></linearGradient>
+<filter id="soft"><feGaussianBlur stdDeviation="4"/></filter></defs><path d="M113 196L60 161C33 139 34 113 47 106C62 97 78 115 91 126L76 88C69 66 85 56 99 71L127 107L151 71C165 56 183 66 176 88L164 123C182 106 194 100 206 110C220 124 209 146 190 163L141 196Z" fill="url(#hand)"/><path transform="translate(128 145) scale(1.09)" d="M0 23C-13 13-28 2-28-12C-28-31-8-36 0-20C8-36 28-31 28-12C28 2 13 13 0 23Z" fill="url(#pink)"/><path d="M51 177l44 27-13 29-46-28ZM205 177l-44 27 13 29 46-28Z" fill="url(#blue)"/></svg>

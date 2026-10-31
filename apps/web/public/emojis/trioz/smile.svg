@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <circle cx="128" cy="128" r="100" fill="#FFC53D" stroke="#15181B" stroke-width="12"/>
-  <circle cx="97" cy="110" r="15" fill="#15181B"/>
-  <circle cx="159" cy="110" r="15" fill="#15181B"/>
-  <path d="M84 150q44 46 88 0" fill="none" stroke="#15181B" stroke-width="18" stroke-linecap="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs>
+<radialGradient id="gold" cx=".32" cy=".23" r=".84"><stop stop-color="#fff3a8"/><stop offset=".32" stop-color="#ffdb50"/><stop offset=".73" stop-color="#ffb722"/><stop offset="1" stop-color="#ed8216"/></radialGradient>
+<radialGradient id="pink" cx=".32" cy=".2" r=".9"><stop stop-color="#ffb4bf"/><stop offset=".3" stop-color="#ff6b85"/><stop offset=".72" stop-color="#ef315b"/><stop offset="1" stop-color="#b91a49"/></radialGradient>
+<linearGradient id="mouth" x2="0" y2="1"><stop stop-color="#633923"/><stop offset="1" stop-color="#3b201b"/></linearGradient>
+<linearGradient id="blue" x2=".8" y2="1"><stop stop-color="#b5f5ff"/><stop offset=".46" stop-color="#57caff"/><stop offset="1" stop-color="#2584ef"/></linearGradient>
+<linearGradient id="flame" x2=".6" y2="1"><stop stop-color="#ffc85b"/><stop offset=".45" stop-color="#ff8b3e"/><stop offset="1" stop-color="#f34743"/></linearGradient>
+<linearGradient id="hand" x2=".9" y2="1"><stop stop-color="#ffe7b4"/><stop offset=".5" stop-color="#ffc776"/><stop offset="1" stop-color="#e89542"/></linearGradient>
+<filter id="soft"><feGaussianBlur stdDeviation="4"/></filter></defs><ellipse cx="128" cy="223" rx="65" ry="8" fill="#1a1020" opacity=".13" filter="url(#soft)"/><circle cx="128" cy="120" r="91" fill="url(#gold)"/><ellipse cx="98" cy="57" rx="33" ry="13" fill="white" opacity=".19" transform="rotate(-23 98 57)"/><ellipse cx="72" cy="142" rx="18" ry="10" fill="#ff8a65" opacity=".34"/><ellipse cx="184" cy="142" rx="18" ry="10" fill="#ff8a65" opacity=".34"/><ellipse cx="94" cy="110" rx="10" ry="16" fill="#663c24"/><ellipse cx="91" cy="104" rx="3" ry="5" fill="#fff9e4" opacity=".8"/><ellipse cx="162" cy="110" rx="10" ry="16" fill="#663c24"/><ellipse cx="159" cy="104" rx="3" ry="5" fill="#fff9e4" opacity=".8"/><path d="M88 148 Q128 188 168 148 Q162 188 128 188 Q94 187 88 148" fill="url(#mouth)"/><path d="M94 153 Q128 169 162 153 Q158 167 128 169 Q99 167 94 153" fill="#fff8ed"/></svg>
