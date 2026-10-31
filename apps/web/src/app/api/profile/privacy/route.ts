@@ -9,7 +9,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true },
+    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true, showOnline: true },
   });
 
   return NextResponse.json(user);
@@ -42,6 +42,13 @@ export async function PATCH(req: Request) {
     data.privacyEmail = body.privacyEmail;
   }
 
+  if (body.showOnline !== undefined) {
+    if (typeof body.showOnline !== "boolean") {
+      return NextResponse.json({ error: "Invalid showOnline option" }, { status: 400 });
+    }
+    data.showOnline = body.showOnline;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No data to update" }, { status: 400 });
   }
@@ -49,7 +56,7 @@ export async function PATCH(req: Request) {
   const updated = await prisma.user.update({
     where: { id: session.user.id },
     data,
-    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true },
+    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true, showOnline: true },
   });
 
   return NextResponse.json(updated);

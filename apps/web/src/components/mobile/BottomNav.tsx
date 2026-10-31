@@ -86,7 +86,7 @@ export default function BottomNav() {
               transition-colors duration-200 active:scale-95
               ${isActive
                 ? "text-accent"
-                : "text-neutral-400 dark:text-neutral-500"
+                : "text-neutral-600 dark:text-neutral-400"
               }`}
           >
             {tab.icon}

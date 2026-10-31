@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -124,8 +125,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
     return NextResponse.json({ error: `Вложений не больше ${MAX_WALL_ATTACHMENTS}` }, { status: 400 });
   }
 
-  const post = await prisma.wallPost.create({
+  // Optional client request UUID: retries after a lost response must not create a second post.
+  // Deterministic ID is scoped to the authenticated author; no schema migration needed.
+  if (raw.clientRequestId !== undefined && (typeof raw.clientRequestId !== "string" || !/^[0-9a-f-]{36}$/i.test(raw.clientRequestId))) {
+    return NextResponse.json({ error: "Неверный идентификатор публикации" }, { status: 400 });
+  }
+  const requestPostId = typeof raw.clientRequestId === "string"
+    ? `wr_${createHash("sha256").update(`${session.user.id}:${raw.clientRequestId}`).digest("hex")}` : undefined;
+  const viewer = { userId: session.user.id, isOwner: true, canModerate: false };
+  const retryResponse = async () => {
+    if (!requestPostId) return null;
+    const existing = await prisma.wallPost.findUnique({ where: { id: requestPostId }, include: POST_INCLUDE });
+    if (!existing) return null;
+    if (existing.deleted || existing.content !== content || existing.title !== (title || null) || existing.cover !== cover || existing.attachments !== (attachments.length ? JSON.stringify(attachments) : null)) {
+      return NextResponse.json({ error: "Этот запрос уже обработан с другим содержимым. Обновите страницу перед новой публикацией." }, { status: 409 });
+    }
+    return NextResponse.json(serializeWallPost(existing as unknown as WallPostRow, viewer), { status: 200 });
+  };
+  const retried = await retryResponse();
+  if (retried) return retried;
+  let post;
+  try {
+    post = await prisma.wallPost.create({
     data: {
+      ...(requestPostId ? { id: requestPostId } : {}),
       authorId: session.user.id,
       title: title || null,
       content,
@@ -133,11 +156,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
       attachments: attachments.length ? JSON.stringify(attachments) : null,
     },
     include: POST_INCLUDE,
-  });
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") {
+      const duplicate = await retryResponse();
+      if (duplicate) return duplicate;
+    }
+    throw error;
+  }
 
   /* Подписчики узнают о новой записи — иначе подписка ничего не даёт и стена
      остаётся местом, куда надо ходить самому. Рассылка пачкой: при тысяче
      подписчиков поодиночные записи в базу — тысяча запросов на одну кнопку. */
+  try {
   const followers = await prisma.follow.findMany({
     where: { followingId: session.user.id },
     select: { followerId: true },
@@ -155,6 +186,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
       entityId: post.id,
     });
   }
+
+  } catch (error) { console.error("Wall post saved; follower notification failed", error); }
 
   return NextResponse.json(
     serializeWallPost(post as unknown as WallPostRow, {

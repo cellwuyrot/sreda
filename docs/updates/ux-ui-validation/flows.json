@@ -1,0 +1,66 @@
+[
+  {
+    "name": "status label focuses its input",
+    "passed": true
+  },
+  {
+    "name": "status failure 403",
+    "passed": true
+  },
+  {
+    "name": "status failure 500",
+    "passed": true
+  },
+  {
+    "name": "status failure network",
+    "passed": true
+  },
+  {
+    "name": "status successful PATCH persists after reload",
+    "passed": true
+  },
+  {
+    "name": "clear failure does not erase the draft",
+    "passed": true
+  },
+  {
+    "name": "bio draft survives reload and successful save clears dirty state",
+    "passed": true
+  },
+  {
+    "name": "privacy atomic failure 403",
+    "passed": true
+  },
+  {
+    "name": "privacy atomic failure 500",
+    "passed": true
+  },
+  {
+    "name": "privacy atomic failure network",
+    "passed": true
+  },
+  {
+    "name": "privacy success updates all fields in one request",
+    "passed": true
+  },
+  {
+    "name": "own profile links and direct edit entry",
+    "passed": true
+  },
+  {
+    "name": "wall HTTP500 preserves text and shows retry",
+    "passed": true
+  },
+  {
+    "name": "wall draft survives reload and retry after lost response creates once",
+    "passed": true
+  },
+  {
+    "name": "profile main touch targets are at least 44px high",
+    "passed": true
+  },
+  {
+    "name": "external links visible on other profile",
+    "passed": true
+  }
+]
