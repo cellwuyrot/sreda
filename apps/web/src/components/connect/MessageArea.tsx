@@ -53,7 +53,8 @@ import { uploadWithProgress } from "@/lib/uploadWithProgress"; // FIX-UPLOAD
 import { NewsIcon, ChatIcon, LockIcon, ThreadIcon, CheckIcon, DoubleCheckIcon, XIcon, ClockIcon, MapPinIcon } from "@/components/ui/ConnectIcons";
 import { EditIcon } from "@/components/ui/ConnectIconsExtra"; // FIX-ICONS
 import { useMentions, MentionPopupList, useRoleTagMentions, TagPopupList } from "@/components/ui/MentionPopup"; // FIX-TAGMENTION
-import { TriozEmoji, TriozEmojiButton } from "@/components/ui/TriozEmoji";
+import { TriozEmojiButton } from "@/components/ui/TriozEmoji";
+import ReactionPill from "@/components/ui/ReactionPill";
 import { type GroupEmojiItem } from "./EmojiPicker";
 import { notifyExternal } from "@/lib/appNotify"; // ANDROID-NOTIFY
 /* FIX-FORMATS: один список типов на клиент и сервер: раньше здесь был свой,
@@ -567,27 +568,9 @@ const MessageRow = memo(function MessageRow({
                       if (r.userId === currentUserId) acc[r.emoji].userReacted = true;
                       return acc;
                     }, {})).map(([emoji, data]) => (
-                      <button
-                        key={emoji}
+                      <ReactionPill key={emoji} emoji={emoji} count={data.count} selected={data.userReacted}
                         onClick={() => toggleReaction(msg.id, emoji)}
-                        /* FIX-EMOJI: выравнивание живёт в tz-reaction-pill, а не здесь.
-                           `text-xs` давал line-height 16px вокруг глифа 20px — холст не
-                           помещался в строку и срезался сверху и снизу. Размер текста
-                           задаём без line-height (`text-[12px]`), высоту считает глиф. */
-                        className={`tz-reaction-pill px-2 py-1 rounded-full text-[12px] border transition-colors ${
-                          data.userReacted
-                            ? "bg-violet-50 dark:bg-cyan-400/10 border-violet-200 dark:border-cyan-400/30 text-accent"
-                            : "bg-[var(--cn-accent-dim)] border-[var(--cn-border)] text-neutral-500 hover:bg-[var(--cn-hover)]"
-                        }`}
-                      >
-                        {/* Реакция может быть своим эмодзи сообщества: в базе она
-                            лежит строкой «:имя:», а рисуется картинкой набора. */}
-                        {customEmojiName(emoji) && groupEmoji.get(customEmojiName(emoji)!)
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          ? <img src={groupEmoji.get(customEmojiName(emoji)!)} alt={emoji} title={emoji} width={20} height={20} loading="lazy" decoding="async" style={{ width: 20, height: 20 }} className="tz-emoji" draggable={false} />
-                          : <TriozEmoji emoji={emoji} size={20} />}
-                        <span className="tz-reaction-count">{data.count}</span>
-                      </button>
+                        imageUrl={customEmojiName(emoji) ? groupEmoji.get(customEmojiName(emoji)!) : undefined} />
                     ))}
                   </div>
                 )}

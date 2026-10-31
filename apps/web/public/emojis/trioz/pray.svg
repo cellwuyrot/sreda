@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <path d="M120 34q-16-16-30 6L44 140q-18 28 8 46 20 14 68 14z" fill="#F0B32E" stroke="#15181B" stroke-width="12" stroke-linejoin="round"/>
-  <path d="M136 34q16-16 30 6l46 100q18 28-8 46-20 14-68 14z" fill="#F0B32E" stroke="#15181B" stroke-width="12" stroke-linejoin="round"/>
-  <path d="M100 70L74 128M156 70l26 58" stroke="#15181B" stroke-width="10" stroke-linecap="round"/>
-  <rect x="60" y="196" width="136" height="40" rx="20" fill="#4AA8FF" stroke="#15181B" stroke-width="12"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs>
+<radialGradient id="gold" cx=".32" cy=".23" r=".84"><stop stop-color="#fff3a8"/><stop offset=".32" stop-color="#ffdb50"/><stop offset=".73" stop-color="#ffb722"/><stop offset="1" stop-color="#ed8216"/></radialGradient>
+<radialGradient id="pink" cx=".32" cy=".2" r=".9"><stop stop-color="#ffb4bf"/><stop offset=".3" stop-color="#ff6b85"/><stop offset=".72" stop-color="#ef315b"/><stop offset="1" stop-color="#b91a49"/></radialGradient>
+<linearGradient id="mouth" x2="0" y2="1"><stop stop-color="#633923"/><stop offset="1" stop-color="#3b201b"/></linearGradient>
+<linearGradient id="blue" x2=".8" y2="1"><stop stop-color="#b5f5ff"/><stop offset=".46" stop-color="#57caff"/><stop offset="1" stop-color="#2584ef"/></linearGradient>
+<linearGradient id="flame" x2=".6" y2="1"><stop stop-color="#ffc85b"/><stop offset=".45" stop-color="#ff8b3e"/><stop offset="1" stop-color="#f34743"/></linearGradient>
+<linearGradient id="hand" x2=".9" y2="1"><stop stop-color="#ffe7b4"/><stop offset=".5" stop-color="#ffc776"/><stop offset="1" stop-color="#e89542"/></linearGradient>
+<filter id="soft"><feGaussianBlur stdDeviation="4"/></filter></defs><path d="M126 49C116 35 104 42 103 59L96 116C90 138 73 152 61 169L95 207C115 192 126 165 128 137L130 70Z" fill="url(#hand)"/><path d="M130 49C140 35 152 42 153 59L160 116C166 138 183 152 195 169L161 207C141 192 130 165 128 137L126 70Z" fill="url(#hand)"/><path d="M128 58v92" stroke="#d69851" stroke-width="5" stroke-linecap="round"/><path d="M38 181l29-26 47 51-30 28ZM218 181l-29-26-47 51 30 28Z" fill="url(#blue)"/><path d="M74 45l-12-13M182 45l12-13M128 26V13" stroke="#f0c35e" stroke-width="7" stroke-linecap="round"/></svg>
