@@ -247,9 +247,9 @@ export default function ConnectProfileSettings({
 
         <SettingsGroup>
           <SettingsRow label="Статус">
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
               {([["online", "В сети", "bg-green-500"], ["away", "Нет на месте", "bg-yellow-500"], ["dnd", "Не беспокоить", "bg-red-500"], ["invisible", "Невидимка", "bg-neutral-400"]] as const).map(([key, label, color]) => (
-                <button key={key} onClick={async () => { const prev = statusType; setStatusType(key); setStatusLoading(true); try { const res = await fetch("/api/profile/status", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ statusType: key }) }); if (!res.ok) { const d = await res.json().catch(() => ({} as { error?: string })); setStatusType(prev); setError(d.error ?? "Не удалось сохранить статус"); } else { setError(null); } } catch { setStatusType(prev); setError("Ошибка сети"); } setStatusLoading(false); }} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${statusType === key ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400" : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300"}`}>
+                <button key={key} onClick={async () => { const prev = statusType; setStatusType(key); setStatusLoading(true); try { const res = await fetch("/api/profile/status", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ statusType: key }) }); if (!res.ok) { const d = await res.json().catch(() => ({} as { error?: string })); setStatusType(prev); setError(d.error ?? "Не удалось сохранить статус"); } else { setError(null); } } catch { setStatusType(prev); setError("Ошибка сети"); } setStatusLoading(false); }} disabled={statusLoading} aria-pressed={statusType === key} className={`min-h-[44px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${statusType === key ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400" : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300"}`}>
                   <span className={`w-2 h-2 rounded-full ${color}`} />
                   {label}
                 </button>
@@ -264,7 +264,7 @@ export default function ConnectProfileSettings({
                 onChange={(e) => setCustomStatus(e.target.value)}
                 placeholder="Кастомный статус..."
                 maxLength={80}
-                className="flex-1 px-3 py-1.5 bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900 dark:text-white"
+                className="min-w-0 w-full flex-1 px-3 py-1.5 bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900 dark:text-white"
               />
               <button
                 onClick={async () => { setStatusLoading(true); try { const res = await fetch("/api/profile/status", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customStatus: customStatus.trim() || null }) }); if (!res.ok) { const d = await res.json().catch(() => ({} as { error?: string })); setError(d.error ?? "Не удалось сохранить статус"); } else { setError(null); setSuccessToast("Статус сохранён"); setTimeout(() => setSuccessToast(null), 2000); } } catch { setError("Ошибка сети"); } setStatusLoading(false); }}
@@ -296,7 +296,7 @@ export default function ConnectProfileSettings({
                   }
                 } catch { setError("Ошибка сети"); }
               }}
-              className="px-3 py-1.5 bg-neutral-50 dark:bg-white dark:text-neutral-900 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900"
+              className="min-h-[44px] max-w-full w-full px-3 py-1.5 bg-neutral-50 dark:bg-white dark:text-neutral-900 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900"
             >
               <option value="" className="bg-white text-neutral-900">Не выбран</option>
               {CITY_NAMES.map((c) => (

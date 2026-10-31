@@ -1,5 +1,7 @@
 "use client";
 
+import { useModalFocus } from "@/hooks/useModalFocus";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { DownloadIcon, FileIcon, XIcon } from "@/components/ui/ConnectIcons";
@@ -193,6 +195,7 @@ export default function DocsPanel({ channelId, channelName }: DocsPanelProps) {
 
 function FileViewer({ file, onClose, onDownload }: { file: WFile; onClose: () => void; onDownload: () => void }) {
   const ext = extOf(file.name);
+  const modalRef = useModalFocus(onClose);
   let content: React.ReactNode;
   if (OFFICE_EXT.includes(ext)) {
     /* FIX-DOCS: раньше здесь был просмотрщик Microsoft
@@ -231,7 +234,7 @@ function FileViewer({ file, onClose, onDownload }: { file: WFile; onClose: () =>
     );
   }
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/70" onClick={onClose}>
+    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Предпросмотр: ${file.name}`} className="fixed inset-0 z-50 flex flex-col bg-black/70" onClick={onClose}>
       <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-secondary,#1a1d27)] text-[var(--text-primary,#e6e6e6)]" onClick={(e) => e.stopPropagation()}>
         <span className="font-medium truncate">{file.name}</span>
         <div className="flex items-center gap-2">

@@ -1,0 +1,15 @@
+{
+  "lint": "passed",
+  "testFiles": 215,
+  "testsPassed": 2813,
+  "testsFailed": 0,
+  "productionBuild": "passed",
+  "typescript": "passed in production build",
+  "profileScenarios": 16,
+  "groupScenarios": 10,
+  "layoutCases": 80,
+  "layoutOverflowCases": 0,
+  "axeSettingsProfileDark": 0,
+  "axeSettingsProfileLight": 0,
+  "scope": "Local production build, Chromium, synthetic USER/MEMBER. See ux-ui-user-interface.md for limits."
+}

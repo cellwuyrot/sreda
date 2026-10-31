@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useId } from "react";
 import { ModuleSettingsButton } from "@/components/connect/ModuleSettingsModal"; // FIX-QAGEAR
 import { QuestionIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { renderContent } from "./messageFormat"; // FIX-LINKS: кликабельные ссылки в вопросах и ответах
 
+
+import ModalBackdrop from "./ModalBackdrop";
+import { checkedJson } from "@/lib/clientResponse";
 
 /* ─── Types ─── */
 interface QAAuthor { id: string; name: string; username?: string; avatar: string | null }
@@ -45,31 +48,34 @@ interface QAPanelProps {
 export default function QAPanel({ channelId, channelName, currentUserId, canModerate, onBack }: QAPanelProps) {
   const [threads, setThreads] = useState<QAThreadListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const requestSeq = useRef(0);
+  const listKey = useRef("");
   const [sort, setSort] = useState<"new" | "top">("new");
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "resolved">("all");
   const [showAsk, setShowAsk] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [perms, setPerms] = useState<QAPermissions>({ canAsk: true, canAnswer: true, canModerate: false });
 
-  const fetchThreads = useCallback(() => {
-    setLoading(true);
-    fetch(`/api/qa?channelId=${channelId}&sort=${sort}&status=${statusFilter}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setThreads(Array.isArray(d.threads) ? d.threads : []);
-        if (d.permissions) {
-          setPerms({
-            canAsk: d.permissions.canAsk !== false,
-            canAnswer: d.permissions.canAnswer !== false,
-            canModerate: d.permissions.canModerate === true,
-          });
-        }
-      })
-      .catch(() => setThreads([]))
-      .finally(() => setLoading(false));
+  const fetchThreads = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    const key = `${channelId}:${sort}:${statusFilter}`;
+    // A different filter/channel must not show the previous list as its result.
+    if (key !== listKey.current) { setThreads([]); setLoaded(false); listKey.current = key; }
+    setLoading(true); setLoadError("");
+    try {
+      const d = await checkedJson<{ threads: QAThreadListItem[]; permissions?: QAPermissions }>(await fetch(`/api/qa?channelId=${channelId}&sort=${sort}&status=${statusFilter}`), "Не удалось загрузить вопросы");
+      if (!Array.isArray(d.threads)) throw new Error("Некорректный ответ сервера");
+      if (seq !== requestSeq.current) return;
+      setThreads(d.threads); setLoaded(true);
+      if (d.permissions) setPerms(d.permissions);
+    } catch {
+      if (seq === requestSeq.current) setLoadError("Не удалось загрузить вопросы. Это не означает, что вопросов нет.");
+    } finally { if (seq === requestSeq.current) setLoading(false); }
   }, [channelId, sort, statusFilter]);
 
-  useEffect(() => { fetchThreads(); }, [fetchThreads]);
+  useEffect(() => { void fetchThreads(); return () => { ++requestSeq.current; }; }, [fetchThreads]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -86,7 +92,7 @@ export default function QAPanel({ channelId, channelName, currentUserId, canMode
             остальных модулях; доступны модерации. */}
         {canModerate && <ModuleSettingsButton channelId={channelId} onSaved={fetchThreads} />}
         {perms.canAsk && (
-          <button onClick={() => setShowAsk(true)} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white transition-colors">
+          <button onClick={() => setShowAsk(true)} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-neutral-950 min-h-[44px] transition-colors">
             Задать вопрос
           </button>
         )}
@@ -94,23 +100,28 @@ export default function QAPanel({ channelId, channelName, currentUserId, canMode
 
       {/* Controls */}
       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-b border-neutral-100 dark:border-white/5 text-xs">
-        <select value={sort} onChange={(e) => setSort(e.target.value as "new" | "top")} className="bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
+        <select aria-label="Сортировка вопросов" value={sort} onChange={(e) => setSort(e.target.value as "new" | "top")} className="min-h-[44px] min-w-0 bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
           <option value="new">Новые</option>
           <option value="top">Популярные</option>
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "all" | "open" | "resolved")} className="bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
+        <select aria-label="Статус вопросов" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "all" | "open" | "resolved")} className="min-h-[44px] min-w-0 bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
           <option value="all">Все</option>
           <option value="open">Открытые</option>
           <option value="resolved">Решённые</option>
         </select>
-        <span className="ml-auto text-neutral-400">{threads.length} вопрос(ов)</span>
+        <span className="ml-auto text-neutral-400">{loaded ? `${threads.length} вопрос(ов)${loadError ? " · данные не обновлены" : ""}` : "Количество неизвестно"}</span>
       </div>
 
       {/* Accordion list */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {loading ? (
+        {loadError && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
+          <p>{loadError}</p>
+          {loaded && <p className="mt-1">Показаны последние загруженные данные.</p>}
+          <button type="button" disabled={loading} onClick={() => void fetchThreads()} className="mt-3 min-h-[44px] rounded-lg bg-violet-700 px-4 text-white dark:bg-cyan-400 dark:text-neutral-950">Повторить загрузку</button>
+        </div>}
+        {loading && !loaded ? (
           <p className="text-center text-sm text-neutral-400 py-8">Загрузка…</p>
-        ) : threads.length === 0 ? (
+        ) : loaded && threads.length === 0 && !loadError ? (
           <p className="text-center text-sm text-neutral-400 py-8">
             {perms.canAsk ? "Пока нет вопросов. Будьте первым!" : "Пока нет вопросов."}
           </p>
@@ -292,7 +303,7 @@ function QACard({ thread, open, onToggle, currentUserId, canModerate, canAnswer,
               />
               {answerError && <p className="text-xs text-red-500 mt-1">{answerError}</p>}
               <div className="flex justify-end mt-2">
-                <button onClick={postAnswer} disabled={posting || !answerBody.trim()} className="px-4 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white disabled:opacity-50">
+                <button onClick={postAnswer} disabled={posting || !answerBody.trim()} className="px-4 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-neutral-950 min-h-[44px] disabled:opacity-50">
                   {posting ? "…" : "Ответить"}
                 </button>
               </div>
@@ -315,6 +326,14 @@ function QAAskModal({ channelId, onClose, onCreated }: { channelId: string; onCl
   const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const titleId = useId();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const close = () => {
+    // Keep the draft in this mounted form; Escape asks before discarding it.
+    if (saving) return;
+    if (title.trim() || body.trim() || tags.trim()) { setConfirmDiscard(true); return; }
+    onClose();
+  };
 
   const submit = async () => {
     if (!title.trim() || !body.trim()) { setError("Заполните заголовок и текст"); return; }
@@ -332,20 +351,25 @@ function QAAskModal({ channelId, onClose, onCreated }: { channelId: string; onCl
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg bg-white dark:bg-neutral-900 rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">Новый вопрос</h3>
-        {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Заголовок вопроса" maxLength={200} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Подробно опишите вопрос…" rows={6} maxLength={8000} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400 resize-none" />
-        <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Теги через запятую (необязательно)" maxLength={200} className="w-full mb-4 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
+    <ModalBackdrop onClose={close} maxWidth="max-w-lg" labelledBy={titleId}>
+      <div>
+        <h3 id={titleId} className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">Новый вопрос</h3>
+        {confirmDiscard && <div role="alert" className="mb-3 rounded-lg border border-amber-500 p-3 text-sm">
+          <p>Удалить несохранённый текст вопроса?</p>
+          <button type="button" onClick={() => setConfirmDiscard(false)} className="min-h-[44px] px-3">Продолжить редактирование</button>
+          <button type="button" onClick={onClose} className="min-h-[44px] px-3 text-red-700 dark:text-red-300">Удалить черновик и закрыть</button>
+        </div>}
+        {error && <p role="alert" className="text-xs text-red-500 mb-2">{error}</p>}
+        <input aria-label="Заголовок вопроса" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Заголовок вопроса" maxLength={200} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
+        <textarea aria-label="Текст вопроса" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Подробно опишите вопрос…" rows={6} maxLength={8000} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400 resize-none" />
+        <input aria-label="Теги" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Теги через запятую (необязательно)" maxLength={200} className="w-full mb-4 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
         <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800">Отмена</button>
-          <button onClick={submit} disabled={saving || !title.trim() || !body.trim()} className="px-4 py-2 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white disabled:opacity-50">
+          <button disabled={saving} onClick={close} className="min-h-[44px] px-4 py-2 rounded-lg text-sm text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800">Отмена</button>
+          <button onClick={submit} disabled={saving || !title.trim() || !body.trim()} className="px-4 py-2 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-neutral-950 min-h-[44px] disabled:opacity-50">
             {saving ? "…" : "Опубликовать"}
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

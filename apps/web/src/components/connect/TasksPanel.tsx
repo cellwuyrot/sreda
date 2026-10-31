@@ -1,5 +1,7 @@
 "use client";
 
+import { useModalFocus } from "@/hooks/useModalFocus";
+
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import PanelResizer from "./PanelResizer";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
@@ -715,6 +717,7 @@ function TaskCloseModal({ task, onCancel, onConfirm }: {
   onCancel: () => void;
   onConfirm: (stage: string) => void;
 }) {
+  const modalRef = useModalFocus(() => { if (!saving) onCancel(); });
   const [stage, setStage] = useState("done");
   const [saving, setSaving] = useState(false);
 
@@ -725,7 +728,7 @@ function TaskCloseModal({ task, onCancel, onConfirm }: {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onCancel} role="dialog" aria-modal="true" aria-label="Подтверждение закрытия задачи">
+    <div ref={modalRef} tabIndex={-1} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onCancel} role="dialog" aria-modal="true" aria-label="Подтверждение закрытия задачи">
       <div className="w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-1">Закрыть задачу #{task.number}?</h3>
         <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-4">
@@ -795,8 +798,9 @@ function TaskDetailsModal({ task, currentUserId, canModerate, members, onClose, 
   onDelete: (taskId: string) => Promise<void>;
   onOpenTask: (taskId: string) => void;
 }) {
+  const modalRef = useModalFocus(onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 lg:hidden" onClick={onClose}>
+    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Подробности задачи" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 lg:hidden" onClick={onClose}>
       <div className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <TaskDetailsContent
           task={task}
@@ -1489,8 +1493,10 @@ function TaskAddModal({ channelId, members, onClose, onCreated }: {
     setSaving(false);
   };
 
+  const modalRef = useModalFocus(requestClose);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={requestClose}>
+    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Новая задача" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={requestClose}>
       <div className="relative w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">Новая задача</h3>
         {error && <p className="text-xs text-red-500 mb-2">{error}</p>}

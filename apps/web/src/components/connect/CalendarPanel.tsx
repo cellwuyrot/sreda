@@ -1,5 +1,7 @@
 "use client";
 
+import { useModalFocus } from "@/hooks/useModalFocus";
+
 import { useState, useEffect, useCallback } from "react";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { CalendarIcon, EditIcon, TrashIcon } from "@/components/ui/ConnectIconsExtra";
@@ -239,6 +241,7 @@ function EventForm({ channelId, editing, defaultDay, canManage, onClose, onDelet
   onDelete: (event: CalEvent) => Promise<void>;
   onSaved: (ev: CalEvent, isNew: boolean) => void;
 }) {
+  const modalRef = useModalFocus(onClose);
   const base = editing ? new Date(editing.start) : (defaultDay || new Date());
   const [title, setTitle] = useState(editing?.title || "");
   const [description, setDescription] = useState(editing?.description || "");
@@ -274,15 +277,15 @@ function EventForm({ channelId, editing, defaultDay, canManage, onClose, onDelet
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl bg-[var(--bg-secondary,#1a1d27)] p-5 m-4" onClick={(e) => e.stopPropagation()}>
+    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={editing ? "Событие" : "Новое событие"} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
+      <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-xl bg-[var(--bg-secondary,#1a1d27)] p-5 m-4" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold mb-4">
           {editing ? (canManage ? "Изменить событие" : "Событие") : "Новое событие"}
         </h3>
         <div className="space-y-3">
-          <input disabled={!canManage} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название события" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none focus:border-[var(--accent,#3b82f6)] disabled:opacity-80" autoFocus={canManage} />
+          <input disabled={!canManage} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название события" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none focus:border-[var(--accent,#3b82f6)] disabled:opacity-80" />
           <div className="flex gap-2">
-            <input disabled={!canManage} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="flex-1 px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />
+            <input disabled={!canManage} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="min-w-0 flex-1 px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />
             {!allDay && <input disabled={!canManage} type="time" value={time} onChange={(e) => setTime(e.target.value)} className="px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />}
           </div>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
