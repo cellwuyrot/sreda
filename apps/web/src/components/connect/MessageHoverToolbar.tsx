@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { sendMessageToBoard } from "@/lib/boardBridge";
 import BoardPickerModal, { type BoardSelection } from "@/components/connect/BoardPickerModal";
-import { TriozEmojiGrid, type GroupEmojiOption } from "@/components/ui/TriozEmoji";
+import { EmojiPopover, TriozEmojiGrid, type GroupEmojiOption } from "@/components/ui/TriozEmoji";
 
 export type ToolbarAttachment = { url: string; name?: string; mime?: string };
 
@@ -199,9 +199,8 @@ export default function MessageHoverToolbar({
     return () => row.classList.remove("tz-cv-show");
   }, [reactionOpen]);
 
-  // Примерная высота поповера с сеткой реакций (5 рядов по 44px + заголовок,
-  // отступы и рамка). Используется для оценки нехватки места до открытия.
-  const REACTION_POPOVER_HEIGHT = 330;
+  // Search + tabs + bounded scrolling grid; prefer the side with more space.
+  const REACTION_POPOVER_HEIGHT = 430;
 
   const toggleReactions = () => {
     setReactionOpen((open) => {
@@ -304,7 +303,7 @@ export default function MessageHoverToolbar({
           <button type="button" onClick={toggleReactions} title="Добавить реакцию" aria-label="Добавить реакцию">
             {I.smile}
           </button>
-          {reactionOpen && <div className={`tz-react-pop absolute z-50 rounded-xl border border-[var(--cn-border)] bg-[var(--cn-sidebar)] p-1.5 shadow-xl ${reactionUp ? "bottom-full mb-1" : "top-full mt-1"}`}><TriozEmojiGrid compact groupEmojis={groupEmojis} onSelect={(emoji) => { onReact(emoji); setReactionOpen(false); }}/></div>}
+          {reactionOpen && <EmojiPopover className={`tz-react-pop absolute z-50 ${reactionUp ? "bottom-full mb-1" : "top-full mt-1"}`}><TriozEmojiGrid compact groupEmojis={groupEmojis} onClose={() => { setReactionOpen(false); reactionWrapRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Добавить реакцию"]')?.focus(); }} onSelect={(emoji) => { onReact(emoji); setReactionOpen(false); }}/></EmojiPopover>}
         </div>
       )}
       {contentText.trim().length > 0 && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { TriozEmoji } from "@/components/ui/TriozEmoji";
 
 const EMOJI_CATEGORIES: { label: string; emojis: string[] }[] = [
   {
@@ -126,7 +127,7 @@ export default function EmojiPicker({ onSelect, onClose, groupEmojis }: EmojiPic
                   onClick={() => { onSelect(emoji); onClose(); }}
                   className="w-8 h-8 text-lg hover:bg-[var(--cn-hover)] rounded-lg flex items-center justify-center transition-colors"
                 >
-                  {emoji}
+                  <TriozEmoji emoji={emoji} size={26} />
                 </button>
               ))}
         </div>
