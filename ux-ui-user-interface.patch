@@ -1,0 +1,1736 @@
+diff --git a/apps/web/src/app/api/profile/privacy/route.test.ts b/apps/web/src/app/api/profile/privacy/route.test.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/app/api/profile/privacy/route.test.ts
+@@ -0,0 +1,18 @@
++import {beforeEach,expect,it,vi} from "vitest";
++import {prismaMock,row} from "@/test/prismaMock";
++vi.mock('@/lib/prisma',()=>({default:prismaMock}));
++vi.mock('next-auth',()=>({getServerSession:vi.fn()}));
++vi.mock('@/lib/auth',()=>({authOptions:{}}));
++import {getServerSession} from 'next-auth';
++import {PATCH,GET} from './route';
++const request=(body:unknown)=>new Request('http://localhost/api/profile/privacy',{method:'PATCH',body:JSON.stringify(body)});
++beforeEach(()=>vi.mocked(getServerSession).mockResolvedValue(row({user:{id:'u'}})));
++it('atomically saves master switch and privacy fields in one update',async()=>{
++ const data={showOnline:false,privacyOnline:'nobody',privacyFriends:'friends',privacyEmail:false};
++ prismaMock.user.update.mockResolvedValue(row(data));
++ const response=await PATCH(request(data));expect(response.status).toBe(200);expect(await response.json()).toEqual(data);
++ expect(prismaMock.user.update).toHaveBeenCalledTimes(1);expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({where:{id:'u'},data}));
++});
++it.each([{privacyOnline:'bad'},{showOnline:'false'},{}])('rejects invalid settings before any update',async data=>{expect((await PATCH(request(data))).status).toBe(400);expect(prismaMock.user.update).not.toHaveBeenCalled();});
++it('requires authentication',async()=>{vi.mocked(getServerSession).mockResolvedValue(null);expect((await PATCH(request({showOnline:false}))).status).toBe(401);expect((await GET()).status).toBe(401);});
++it('does not return success after database failure',async()=>{prismaMock.user.update.mockRejectedValue(new Error('offline'));await expect(PATCH(request({showOnline:false}))).rejects.toThrow('offline');});
+diff --git a/apps/web/src/app/api/profile/privacy/route.ts b/apps/web/src/app/api/profile/privacy/route.ts
+--- a/apps/web/src/app/api/profile/privacy/route.ts
++++ b/apps/web/src/app/api/profile/privacy/route.ts
+@@ -9,7 +9,7 @@
+ 
+   const user = await prisma.user.findUnique({
+     where: { id: session.user.id },
+-    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true },
++    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true, showOnline: true },
+   });
+ 
+   return NextResponse.json(user);
+@@ -42,6 +42,13 @@
+     data.privacyEmail = body.privacyEmail;
+   }
+ 
++  if (body.showOnline !== undefined) {
++    if (typeof body.showOnline !== "boolean") {
++      return NextResponse.json({ error: "Invalid showOnline option" }, { status: 400 });
++    }
++    data.showOnline = body.showOnline;
++  }
++
+   if (Object.keys(data).length === 0) {
+     return NextResponse.json({ error: "No data to update" }, { status: 400 });
+   }
+@@ -49,7 +56,7 @@
+   const updated = await prisma.user.update({
+     where: { id: session.user.id },
+     data,
+-    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true },
++    select: { privacyOnline: true, privacyFriends: true, privacyEmail: true, showOnline: true },
+   });
+ 
+   return NextResponse.json(updated);
+diff --git a/apps/web/src/app/api/profile/status/route.test.ts b/apps/web/src/app/api/profile/status/route.test.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/app/api/profile/status/route.test.ts
+@@ -0,0 +1,11 @@
++import {beforeEach,expect,it,vi} from 'vitest';
++import {prismaMock,row} from '@/test/prismaMock';
++vi.mock('@/lib/prisma',()=>({default:prismaMock}));vi.mock('next-auth',()=>({getServerSession:vi.fn()}));vi.mock('@/lib/auth',()=>({authOptions:{}}));vi.mock('@/lib/socketEmit',()=>({getIO:()=>null}));
++import {getServerSession} from 'next-auth';import {PATCH,PUT} from './route';
++const req=(body:unknown)=>new Request('http://localhost/api/profile/status',{method:'PATCH',body:JSON.stringify(body)});
++beforeEach(()=>{vi.mocked(getServerSession).mockResolvedValue(row({user:{id:'u'}}));prismaMock.user.update.mockResolvedValue(row({customStatus:null,statusEmoji:null}));});
++it('supports profile PATCH including emoji',async()=>{prismaMock.user.update.mockResolvedValue(row({customStatus:'Ready',statusEmoji:'🚀'}));expect((await PATCH(req({customStatus:' Ready ',statusEmoji:'🚀'}))).status).toBe(200);expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({data:{customStatus:'Ready',statusEmoji:'🚀'}}));});
++it('clears only when confirmed by the server',async()=>{await PATCH(req({customStatus:null,statusEmoji:null}));expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({data:{customStatus:null,statusEmoji:null}}));});
++it.each([{customStatus:123},{statusEmoji:{}},{}])('rejects invalid payload',async b=>expect((await PATCH(req(b))).status).toBe(400));
++it('preserves existing presence PUT',async()=>{expect((await PUT(req({statusType:'away'}))).status).toBe(200);expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({data:{statusType:'away'}}));});
++it('requires authentication',async()=>{vi.mocked(getServerSession).mockResolvedValue(null);expect((await PATCH(req({customStatus:'x'}))).status).toBe(401);});
+diff --git a/apps/web/src/app/api/profile/status/route.ts b/apps/web/src/app/api/profile/status/route.ts
+--- a/apps/web/src/app/api/profile/status/route.ts
++++ b/apps/web/src/app/api/profile/status/route.ts
+@@ -30,3 +30,26 @@
+ 
+   return NextResponse.json({ ok: true });
+ }
++
++/** Profile editor uses PATCH; presence controls continue to use PUT. */
++export async function PATCH(req: Request) {
++  const session = await getServerSession(authOptions);
++  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
++  const body = await req.json().catch(() => null);
++  if (!body || typeof body !== "object") return NextResponse.json({ error: "Неверный запрос" }, { status: 400 });
++  const data: { customStatus?: string | null; statusEmoji?: string | null } = {};
++  for (const [key, limit] of [["customStatus", 100], ["statusEmoji", 10]] as const) {
++    if (body[key] === undefined) continue;
++    if (body[key] !== null && typeof body[key] !== "string") {
++      return NextResponse.json({ error: "Неверный формат статуса" }, { status: 400 });
++    }
++    data[key] = body[key]?.trim().slice(0, limit) || null;
++  }
++  if (!Object.keys(data).length) return NextResponse.json({ error: "Нет данных" }, { status: 400 });
++  const updated = await prisma.user.update({
++    where: { id: session.user.id }, data,
++    select: { customStatus: true, statusEmoji: true },
++  });
++  getIO()?.emit("user-status-changed", { userId: session.user.id, ...updated });
++  return NextResponse.json(updated);
++}
+diff --git a/apps/web/src/app/api/wall/[userId]/retry.test.ts b/apps/web/src/app/api/wall/[userId]/retry.test.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/app/api/wall/[userId]/retry.test.ts
+@@ -0,0 +1,11 @@
++import{beforeEach,expect,it,vi}from'vitest';import{NextRequest}from'next/server';import{createHash}from'node:crypto';import{prismaMock,row}from'@/test/prismaMock';
++vi.mock('@/lib/prisma',()=>({default:prismaMock}));vi.mock('next-auth',()=>({getServerSession:vi.fn()}));vi.mock('@/lib/auth',()=>({authOptions:{}}));vi.mock('@/lib/banCheck',()=>({checkBan:async()=>null}));vi.mock('@/lib/rateLimit',()=>({rateLimit:async()=>null}));vi.mock('@/lib/createNotification',()=>({createNotificationsBulk:vi.fn()}));vi.mock('@/lib/wallPost',async importOriginal=>({...await importOriginal<object>(),serializeWallPost:(p:unknown)=>p}));
++import{getServerSession}from'next-auth';import{POST}from'./route';import{createNotificationsBulk}from'@/lib/createNotification';
++const clientRequestId='ca86f007-67fe-455a-8be5-df4b9e73f303';const id='wr_'+createHash('sha256').update('u:'+clientRequestId).digest('hex');const saved={id,authorId:'u',title:null,content:'test',cover:null,attachments:null,deleted:false};
++const req=(body:unknown)=>new NextRequest('http://localhost/api/wall/u',{method:'POST',body:JSON.stringify(body)});const params={params:Promise.resolve({userId:'u'})};
++beforeEach(()=>{vi.mocked(getServerSession).mockResolvedValue(row({user:{id:'u'}}));prismaMock.follow.findMany.mockResolvedValue([]);prismaMock.wallPost.findUnique.mockResolvedValue(null);prismaMock.wallPost.create.mockResolvedValue(row(saved));});
++it('creates once and returns existing post on retry',async()=>{const first=await POST(req({content:'test',clientRequestId}),params);expect(first.status).toBe(201);expect(prismaMock.wallPost.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({id})}));prismaMock.wallPost.findUnique.mockResolvedValue(row(saved));expect((await POST(req({content:'test',clientRequestId}),params)).status).toBe(200);expect(prismaMock.wallPost.create).toHaveBeenCalledTimes(1);});
++it('resolves concurrent duplicate insert to the existing post',async()=>{prismaMock.wallPost.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(row(saved));prismaMock.wallPost.create.mockRejectedValue({code:'P2002'});expect((await POST(req({content:'test',clientRequestId}),params)).status).toBe(200);});
++it('rejects a reused request ID with a different payload',async()=>{prismaMock.wallPost.findUnique.mockResolvedValue(row(saved));expect((await POST(req({content:'different',clientRequestId}),params)).status).toBe(409);expect(prismaMock.wallPost.create).not.toHaveBeenCalled();});
++it('does not claim failure when the post is saved but notification fails',async()=>{prismaMock.follow.findMany.mockResolvedValue(row([{followerId:'f'}]));vi.mocked(createNotificationsBulk).mockRejectedValueOnce(new Error('notification offline'));const log=vi.spyOn(console,'error').mockImplementation(()=>{});expect((await POST(req({content:'test',clientRequestId}),params)).status).toBe(201);log.mockRestore();});
++it('rejects posting on another wall',async()=>expect((await POST(req({content:'test',clientRequestId}),{params:Promise.resolve({userId:'other'})})).status).toBe(403));
+diff --git a/apps/web/src/app/api/wall/[userId]/route.ts b/apps/web/src/app/api/wall/[userId]/route.ts
+--- a/apps/web/src/app/api/wall/[userId]/route.ts
++++ b/apps/web/src/app/api/wall/[userId]/route.ts
+@@ -1,3 +1,4 @@
++import { createHash } from "node:crypto";
+ import { NextRequest, NextResponse } from "next/server";
+ import { getServerSession } from "next-auth";
+ import { authOptions } from "@/lib/auth";
+@@ -124,8 +125,30 @@
+     return NextResponse.json({ error: `Вложений не больше ${MAX_WALL_ATTACHMENTS}` }, { status: 400 });
+   }
+ 
+-  const post = await prisma.wallPost.create({
++  // Optional client request UUID: retries after a lost response must not create a second post.
++  // Deterministic ID is scoped to the authenticated author; no schema migration needed.
++  if (raw.clientRequestId !== undefined && (typeof raw.clientRequestId !== "string" || !/^[0-9a-f-]{36}$/i.test(raw.clientRequestId))) {
++    return NextResponse.json({ error: "Неверный идентификатор публикации" }, { status: 400 });
++  }
++  const requestPostId = typeof raw.clientRequestId === "string"
++    ? `wr_${createHash("sha256").update(`${session.user.id}:${raw.clientRequestId}`).digest("hex")}` : undefined;
++  const viewer = { userId: session.user.id, isOwner: true, canModerate: false };
++  const retryResponse = async () => {
++    if (!requestPostId) return null;
++    const existing = await prisma.wallPost.findUnique({ where: { id: requestPostId }, include: POST_INCLUDE });
++    if (!existing) return null;
++    if (existing.deleted || existing.content !== content || existing.title !== (title || null) || existing.cover !== cover || existing.attachments !== (attachments.length ? JSON.stringify(attachments) : null)) {
++      return NextResponse.json({ error: "Этот запрос уже обработан с другим содержимым. Обновите страницу перед новой публикацией." }, { status: 409 });
++    }
++    return NextResponse.json(serializeWallPost(existing as unknown as WallPostRow, viewer), { status: 200 });
++  };
++  const retried = await retryResponse();
++  if (retried) return retried;
++  let post;
++  try {
++    post = await prisma.wallPost.create({
+     data: {
++      ...(requestPostId ? { id: requestPostId } : {}),
+       authorId: session.user.id,
+       title: title || null,
+       content,
+@@ -133,11 +156,19 @@
+       attachments: attachments.length ? JSON.stringify(attachments) : null,
+     },
+     include: POST_INCLUDE,
+-  });
++    });
++  } catch (error) {
++    if ((error as { code?: string }).code === "P2002") {
++      const duplicate = await retryResponse();
++      if (duplicate) return duplicate;
++    }
++    throw error;
++  }
+ 
+   /* Подписчики узнают о новой записи — иначе подписка ничего не даёт и стена
+      остаётся местом, куда надо ходить самому. Рассылка пачкой: при тысяче
+      подписчиков поодиночные записи в базу — тысяча запросов на одну кнопку. */
++  try {
+   const followers = await prisma.follow.findMany({
+     where: { followingId: session.user.id },
+     select: { followerId: true },
+@@ -156,6 +187,8 @@
+     });
+   }
+ 
++  } catch (error) { console.error("Wall post saved; follower notification failed", error); }
++
+   return NextResponse.json(
+     serializeWallPost(post as unknown as WallPostRow, {
+       userId: session.user.id,
+diff --git a/apps/web/src/app/settings/page.tsx b/apps/web/src/app/settings/page.tsx
+--- a/apps/web/src/app/settings/page.tsx
++++ b/apps/web/src/app/settings/page.tsx
+@@ -2,9 +2,11 @@
+ 
+ import { useSession, signOut } from "next-auth/react";
+ import { confirmDialog } from "@/components/ui/ConfirmDialog";
++import { checkedJson } from "@/lib/clientResponse";
++import { useSessionDraft, useUnsavedWarning } from "@/hooks/useDraftProtection";
+ import Spinner from "@/components/ui/Spinner";
+ import { useRouter } from "next/navigation";
+-import { useEffect, useState, useRef, useCallback } from "react";
++import { useEffect, useState, useRef, useCallback, useId, Children, isValidElement, cloneElement } from "react";
+ import { motion } from "framer-motion";
+ import Link from "next/link";
+ import { useTheme } from "@/components/Providers";
+@@ -216,7 +218,7 @@
+ 
+   return (
+     <div className="space-y-3">
+-      <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+         <div>
+           <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+             Динамики / наушники
+@@ -391,7 +393,7 @@
+             step={1}
+             value={micGainDb}
+             onChange={(e) => setMicGain(Number(e.target.value))}
+-            className="flex-1 accent-violet-600 dark:accent-cyan-500"
++            className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500"
+             aria-label="Усиление микрофона в децибелах"
+           />
+           <button
+@@ -457,14 +459,35 @@
+   );
+ }
+ 
++function findFieldControl(nodes: React.ReactNode): React.ReactElement<{ id?: string; children?: React.ReactNode }> | undefined {
++  for (const child of Children.toArray(nodes)) {
++    if (!isValidElement<{ id?: string; children?: React.ReactNode }>(child)) continue;
++    if (child.type === Input || (typeof child.type === "string" && ["input", "textarea", "select"].includes(child.type))) return child;
++    const nested = findFieldControl(child.props.children);
++    if (nested) return nested;
++  }
++}
++
++function bindFieldControl(nodes: React.ReactNode, target: React.ReactElement<{ id?: string }>, id: string): React.ReactNode {
++  return Children.map(nodes, child => {
++    if (!isValidElement<{ id?: string; children?: React.ReactNode }>(child)) return child;
++    // Children.toArray may change keys; props retain the original identity.
++    if (child.type === target.type && child.props === target.props) return cloneElement(child, { id });
++    return child.props.children ? cloneElement(child, { children: bindFieldControl(child.props.children, target, id) }) : child;
++  });
++}
++
+ function Field({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
++  const fieldId = useId();
++  const control = findFieldControl(children);
++  const id = control?.props.id || fieldId;
+   return (
+-    <div className="space-y-1.5">
+-      <label className="flex items-center gap-1.5 text-sm text-neutral-500 dark:text-gray-400">
++    <div className="space-y-1.5 min-w-0">
++      <label htmlFor={control ? id : undefined} className="flex items-center gap-1.5 text-sm text-neutral-600 dark:text-gray-300">
+         {label}
+         {info && <InfoTooltip text={info} />}
+       </label>
+-      {children}
++      {control ? bindFieldControl(children, control, id) : children}
+     </div>
+   );
+ }
+@@ -505,7 +528,7 @@
+     <button
+       type="submit"
+       disabled={loading}
+-      className="px-5 py-2 bg-violet-600 dark:bg-cyan-600 hover:bg-violet-500 dark:hover:bg-cyan-500 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
++      className="min-h-[44px] px-5 py-2 bg-violet-600 dark:bg-cyan-400 hover:bg-violet-700 dark:hover:bg-cyan-300 text-white dark:text-neutral-950 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+     >
+       {loading ? "Сохранение..." : label}
+     </button>
+@@ -518,9 +541,13 @@
+       type="button"
+       onClick={onChange}
+       aria-label={label}
+-      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}
++      role="switch"
++      aria-checked={checked}
++      className="relative flex min-h-[44px] w-11 shrink-0 items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+     >
+-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
++      <span aria-hidden="true" className={`relative block h-6 w-11 rounded-full transition-colors ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}>
++        <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
++      </span>
+     </button>
+   );
+ }
+@@ -528,13 +555,14 @@
+ function Toast({ message, type }: { message: string; type: "success" | "error" }) {
+   return (
+     <motion.div
++      role={type === "error" ? "alert" : "status"}
+       initial={{ opacity: 0, y: 20 }}
+       animate={{ opacity: 1, y: 0 }}
+       exit={{ opacity: 0, y: 20 }}
+-      className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg ${
++      className={`fixed bottom-24 right-3 left-3 sm:left-auto sm:right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg ${
+         type === "success"
+-          ? "bg-green-500 text-white"
+-          : "bg-red-500 text-white"
++          ? "bg-green-800 text-white"
++          : "bg-red-800 text-white"
+       }`}
+     >
+       {message}
+@@ -638,6 +666,16 @@
+   const [notifyForm, setNotifyForm] = useState({ notifySound: true, notifyPush: true });
+   const [showOnline, setShowOnline] = useState(true);
+   const [deletePassword, setDeletePassword] = useState("");
++
++  const bioDirty = !!profile && bioForm !== (profile.bio || "");
++  const statusDirty = !!profile && (statusForm.customStatus !== (profile.customStatus || "") || statusForm.statusEmoji !== (profile.statusEmoji || ""));
++  const privacyDirty = !!profile && (showOnline !== profile.showOnline || privacyForm.privacyOnline !== profile.privacyOnline || privacyForm.privacyFriends !== profile.privacyFriends || privacyForm.privacyEmail !== profile.privacyEmail);
++  const linksDirty = !!profile && JSON.stringify(linksForm) !== JSON.stringify({ telegram: "", vk: "", github: "", website: "", ...JSON.parse(profile.socialLinks || "{}") });
++  const nameDirty = !!profile && (nameForm.name !== profile.name || nameForm.username !== profile.username);
++  const notifyDirty = !!profile && (notifyForm.notifySound !== profile.notifySound || notifyForm.notifyPush !== profile.notifyPush);
++  const hasUnsaved = bioDirty || statusDirty || privacyDirty || linksDirty || nameDirty || notifyDirty;
++  const bioDraftStored = useSessionDraft({ storageKey: profile ? `trioz:bio-draft:${profile.id}` : null, value: bioForm, dirty: bioDirty, onRestore: (value) => { if (typeof value === "string") setBioForm(value.slice(0, 200)); } });
++  useUnsavedWarning(hasUnsaved);
+ 
+   // Loading states
+   const [savingProfile, setSavingProfile] = useState(false);
+@@ -862,7 +900,7 @@
+   const handleSaveBio = async (e: React.FormEvent) => {
+     e.preventDefault();
+     setSavingBio(true);
+-    try { await patchProfile({ bio: bioForm || null }); showToast("Био обновлено!", "success"); }
++    try { await patchProfile({ bio: bioForm || null }); setProfile((p) => p ? { ...p, bio: bioForm || null } : p); showToast("Био обновлено!", "success"); }
+     catch (err) { showToast((err as Error).message, "error"); }
+     finally { setSavingBio(false); }
+   };
+@@ -872,9 +910,11 @@
+     e.preventDefault();
+     setSavingStatus(true);
+     try {
+-      await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(statusForm) });
++      const saved = await checkedJson<{ customStatus: string | null; statusEmoji: string | null }>(await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(statusForm) }));
++      setStatusForm({ customStatus: saved.customStatus || "", statusEmoji: saved.statusEmoji || "" });
++      setProfile((p) => p ? { ...p, ...saved } : p);
+       showToast("Статус обновлён!", "success");
+-    } catch { showToast("Ошибка", "error"); }
++    } catch (err) { showToast(err instanceof Error ? err.message : "Ошибка сети. Статус не сохранён.", "error"); }
+     finally { setSavingStatus(false); }
+   };
+ 
+@@ -885,6 +925,7 @@
+     try {
+       const hasLinks = Object.values(linksForm).some(Boolean);
+       await patchProfile({ socialLinks: hasLinks ? linksForm : null });
++      setProfile((p) => p ? { ...p, socialLinks: hasLinks ? JSON.stringify(linksForm) : null } : p);
+       showToast("Ссылки обновлены!", "success");
+     } catch (err) { showToast((err as Error).message, "error"); }
+     finally { setSavingLinks(false); }
+@@ -895,11 +936,10 @@
+     e.preventDefault();
+     setSavingPrivacy(true);
+     try {
+-      await fetch("/api/profile/privacy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(privacyForm) });
+-      await patchProfile({ showOnline });
+-      setProfile((p) => p ? { ...p, showOnline } : p);
++      const saved = await checkedJson<typeof privacyForm & { showOnline: boolean }>(await fetch("/api/profile/privacy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...privacyForm, showOnline }) }));
++      setProfile((p) => p ? { ...p, ...saved } : p);
+       showToast("Настройки конфиденциальности сохранены!", "success");
+-    } catch { showToast("Ошибка", "error"); }
++    } catch (err) { showToast(err instanceof Error ? err.message : "Ошибка сети. Изменения не сохранены.", "error"); }
+     finally { setSavingPrivacy(false); }
+   };
+ 
+@@ -915,6 +955,7 @@
+       /* Кэш и событие — чтобы звук и системные уведомления начали слушаться
+          сразу, не дожидаясь следующей загрузки страницы. */
+       cacheNotifyPrefs(notifyForm);
++      setProfile((p) => p ? { ...p, ...notifyForm } : p);
+       showToast("Настройки уведомлений сохранены!", "success");
+     } catch { showToast("Ошибка", "error"); }
+     finally { setSavingNotify(false); }
+@@ -1253,7 +1294,7 @@
+                 ].map((stat) => (
+                   <div key={stat.label} className="bg-neutral-100 dark:bg-white/5 rounded-lg py-2 text-center">
+                     <p className="text-sm font-bold leading-none text-neutral-900 dark:text-white">{stat.value}</p>
+-                    <p className="text-[10px] text-neutral-500 dark:text-gray-500 mt-1">{stat.label}</p>
++                    <p className="text-[10px] text-neutral-600 dark:text-gray-300 mt-1">{stat.label}</p>
+                   </div>
+                 ))}
+               </div>
+@@ -1269,7 +1310,7 @@
+                     placeholder="Расскажите немного о себе..."
+                     className="w-full bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:border-violet-500 dark:focus:border-cyan-500 text-sm transition-colors resize-none"
+                   />
+-                  <p className="text-xs text-neutral-400">{bioForm.length}/200</p>
++                  <p className="text-xs text-neutral-600 dark:text-gray-300">{bioForm.length}/200</p>
+                 </Field>
+                 <SaveButton loading={savingBio} />
+               </form>
+@@ -1291,7 +1332,16 @@
+                 </div>
+                 <div className="flex gap-2">
+                   <SaveButton loading={savingStatus} />
+-                  <button type="button" onClick={async () => { setSavingStatus(true); setStatusForm({ customStatus: "", statusEmoji: "" }); await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customStatus: null, statusEmoji: null }) }); setSavingStatus(false); showToast("Статус очищен", "success"); }} className="px-4 py-2 bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-gray-400 rounded-xl text-sm hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors">
++                  <button type="button" disabled={savingStatus} onClick={async () => {
++                    setSavingStatus(true);
++                    try {
++                      const saved = await checkedJson<{ customStatus: string | null; statusEmoji: string | null }>(await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customStatus: null, statusEmoji: null }) }));
++                      setStatusForm({ customStatus: "", statusEmoji: "" });
++                      setProfile((p) => p ? { ...p, ...saved } : p);
++                      showToast("Статус очищен", "success");
++                    } catch (err) { showToast(err instanceof Error ? err.message : "Ошибка сети. Статус не очищен.", "error"); }
++                    finally { setSavingStatus(false); }
++                  }} className="px-4 py-2 bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-gray-400 rounded-xl text-sm hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors">
+                     Очистить
+                   </button>
+                 </div>
+@@ -1479,7 +1529,7 @@
+                         : "Ползунки запоминаются, но применяются только в голосовом канале: вне него микрофон не захвачен."}
+                   </p>
+                 )}
+-                <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                   <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                     Пресет
+                     <InfoTooltip text="«Тепло» — поднимает низ и мягко убирает верх. «Радио» — срезает низ и выводит вперёд середину. «Чёткость» — добавляет 3.5 кГц, от этого разборчивее согласные. «Глубина» — усиливает 80 Гц. Стоит подвинуть любой ползунок, и пресет станет «Свои настройки»." />
+@@ -1511,7 +1561,7 @@
+                         value={voice.eqGains[i] ?? 0}
+                         disabled={!effectivePremium}
+                         onChange={(e) => voice.setEqBandGain(i, Number(e.target.value))}
+-                        className="flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
++                        className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
+                         aria-label={`Полоса ${band.label}`}
+                       />
+                       <span className="w-14 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400 tabular-nums">
+@@ -1519,7 +1569,7 @@
+                       </span>
+                     </div>
+                   ))}
+-                  <div className="flex items-center justify-between gap-3 pt-0.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
+                     <span className="flex items-center gap-1.5 text-[11px] text-neutral-400">
+                       {EQ_PRESET_LABELS[voice.eqPreset]}
+                       <InfoTooltip text="Каждая полоса меняется от −12 до +12 дБ. Ноль на всех полосах — сигнал идёт как есть." />
+@@ -1568,7 +1618,7 @@
+                       value={Math.round(voice.monitorVolume * 100)}
+                       disabled={!effectivePremium}
+                       onChange={(e) => voice.setMonitorVolume(Number(e.target.value) / 100)}
+-                      className="flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
++                      className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
+                       aria-label="Громкость монитора"
+                     />
+                     <span className="w-14 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400 tabular-nums">
+@@ -1595,7 +1645,7 @@
+             >
+               {effectivePremium ? (
+                 <div className="space-y-3">
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <div>
+                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                         Включить буфер повтора
+@@ -1604,7 +1654,7 @@
+                     </div>
+                     <Toggle checked={voice.replayEnabled} onChange={() => voice.setReplayEnabled(!voice.replayEnabled)} label="Буфер повтора" />
+                   </div>
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <div>
+                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                         Бинд в приложении
+@@ -1619,7 +1669,7 @@
+                   </div>
+                   {/* Длительность буфера. Минимально: строка, ползунок, значение —
+                       пояснение спрятано в «(?)», чтобы не разводить текст. */}
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                       Длительность
+                       <InfoTooltip text="Сколько последних секунд держать в буфере: от 30 секунд до 3 минут. Буфер живёт в памяти вкладки, поэтому длинный отрезок занимает больше памяти. Новое значение применится при следующем входе в голосовой канал." />
+@@ -1632,7 +1682,7 @@
+                         step={15}
+                         value={voice.replaySeconds}
+                         onChange={(e) => voice.setReplaySeconds(Number(e.target.value))}
+-                        className="flex-1 accent-violet-600 dark:accent-cyan-500"
++                        className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500"
+                         aria-label="Длительность буфера повтора"
+                       />
+                       <span className="w-14 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400">
+@@ -1644,7 +1694,7 @@
+                   </div>
+                   {isDesktop ? (
+                     <>
+-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                         <div>
+                           <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                             Глобальный бинд (десктоп)
+@@ -1657,7 +1707,7 @@
+                           onClear={() => void saveShortcut({ replayShortcut: "" })}
+                         />
+                       </div>
+-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                         <div className="min-w-0">
+                           <p className="text-sm text-neutral-900 dark:text-white font-medium">Папка для сохранения</p>
+                           <p className="text-xs text-neutral-400 mt-0.5 truncate">
+@@ -1694,7 +1744,7 @@
+             >
+               {isDesktop ? (
+                 <div className="space-y-3">
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <div>
+                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                         Выключить / включить микрофон
+@@ -1707,7 +1757,7 @@
+                       onClear={() => void saveShortcut({ toggleMuteShortcut: "" })}
+                     />
+                   </div>
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <div>
+                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
+                         Рация (короткая передача)
+@@ -1741,7 +1791,7 @@
+             >
+               {isDesktop ? (
+                 <div className="space-y-3">
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <div className="text-sm font-medium">Включить оверлей</div>
+                     <button
+                       type="button"
+@@ -1753,7 +1803,7 @@
+                       <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${desktopCfg?.overlayEnabled ? "left-[22px]" : "left-0.5"}`} />
+                     </button>
+                   </div>
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <div className="flex items-center gap-1.5 text-sm font-medium">
+                       Расположение
+                       <InfoTooltip text="С какой стороны экрана показывать оверлей." />
+@@ -1772,7 +1822,7 @@
+                       ))}
+                     </div>
+                   </div>
+-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
++                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                     <div className="flex items-center gap-1.5 text-sm font-medium">
+                       Демонстрация экрана в оверлее
+                       <InfoTooltip text="Показывать превью активной демонстрации экрана внутри оверлея." />
+@@ -1991,7 +2041,7 @@
+   const activeLabel = CATEGORIES.flatMap((g) => g.items).find((i) => i.id === activeCat)?.label ?? "Настройки";
+ 
+   return (
+-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 pt-20 max-md:pt-4 pb-12 px-4 max-md:px-3">
++    <div className="settings-page min-h-screen bg-neutral-50 dark:bg-neutral-950 pt-20 max-md:pt-4 pb-12 px-4 max-md:px-3">
+       <div className="max-w-5xl mx-auto md:flex md:gap-6">
+ 
+         {/* ── Sidebar (list of categories) ── */}
+@@ -2064,6 +2114,11 @@
+         </main>
+       </div>
+ 
++      {hasUnsaved && (
++        <div role="status" className="sticky bottom-20 mt-4 rounded-xl border border-violet-300 bg-white px-4 py-3 text-sm text-neutral-700 shadow-lg dark:border-cyan-800 dark:bg-neutral-900 dark:text-gray-200">
++          Есть несохранённые изменения. Нажмите «Сохранить» в изменённом блоке. {bioDirty && (bioDraftStored ? "Черновик «О себе» сохранён в этой вкладке." : "Черновик «О себе» пока только в памяти. Не закрывайте страницу.")}
++        </div>
++      )}
+       {toast && <Toast message={toast.message} type={toast.type} />}
+     </div>
+   );
+diff --git a/apps/web/src/components/connect/CalendarPanel.tsx b/apps/web/src/components/connect/CalendarPanel.tsx
+--- a/apps/web/src/components/connect/CalendarPanel.tsx
++++ b/apps/web/src/components/connect/CalendarPanel.tsx
+@@ -1,4 +1,6 @@
+ "use client";
++
++import { useModalFocus } from "@/hooks/useModalFocus";
+ 
+ import { useState, useEffect, useCallback } from "react";
+ import { confirmDialog } from "@/components/ui/ConfirmDialog";
+@@ -239,6 +241,7 @@
+   onDelete: (event: CalEvent) => Promise<void>;
+   onSaved: (ev: CalEvent, isNew: boolean) => void;
+ }) {
++  const modalRef = useModalFocus(onClose);
+   const base = editing ? new Date(editing.start) : (defaultDay || new Date());
+   const [title, setTitle] = useState(editing?.title || "");
+   const [description, setDescription] = useState(editing?.description || "");
+@@ -274,15 +277,15 @@
+   };
+ 
+   return (
+-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+-      <div className="w-full max-w-md rounded-xl bg-[var(--bg-secondary,#1a1d27)] p-5 m-4" onClick={(e) => e.stopPropagation()}>
++    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={editing ? "Событие" : "Новое событие"} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
++      <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-xl bg-[var(--bg-secondary,#1a1d27)] p-5 m-4" onClick={(e) => e.stopPropagation()}>
+         <h3 className="text-lg font-semibold mb-4">
+           {editing ? (canManage ? "Изменить событие" : "Событие") : "Новое событие"}
+         </h3>
+         <div className="space-y-3">
+-          <input disabled={!canManage} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название события" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none focus:border-[var(--accent,#3b82f6)] disabled:opacity-80" autoFocus={canManage} />
++          <input disabled={!canManage} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название события" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none focus:border-[var(--accent,#3b82f6)] disabled:opacity-80" />
+           <div className="flex gap-2">
+-            <input disabled={!canManage} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="flex-1 px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />
++            <input disabled={!canManage} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="min-w-0 flex-1 px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />
+             {!allDay && <input disabled={!canManage} type="time" value={time} onChange={(e) => setTime(e.target.value)} className="px-3 py-2 rounded-lg bg-[var(--bg-primary,#0f1117)] border border-[var(--border,#222)] outline-none disabled:opacity-80" />}
+           </div>
+           <label className="flex items-center gap-2 text-sm cursor-pointer">
+diff --git a/apps/web/src/components/connect/DocsPanel.tsx b/apps/web/src/components/connect/DocsPanel.tsx
+--- a/apps/web/src/components/connect/DocsPanel.tsx
++++ b/apps/web/src/components/connect/DocsPanel.tsx
+@@ -1,4 +1,6 @@
+ "use client";
++
++import { useModalFocus } from "@/hooks/useModalFocus";
+ 
+ import { useState, useEffect, useCallback, useRef } from "react";
+ import { confirmDialog } from "@/components/ui/ConfirmDialog";
+@@ -193,6 +195,7 @@
+ 
+ function FileViewer({ file, onClose, onDownload }: { file: WFile; onClose: () => void; onDownload: () => void }) {
+   const ext = extOf(file.name);
++  const modalRef = useModalFocus(onClose);
+   let content: React.ReactNode;
+   if (OFFICE_EXT.includes(ext)) {
+     /* FIX-DOCS: раньше здесь был просмотрщик Microsoft
+@@ -231,7 +234,7 @@
+     );
+   }
+   return (
+-    <div className="fixed inset-0 z-50 flex flex-col bg-black/70" onClick={onClose}>
++    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Предпросмотр: ${file.name}`} className="fixed inset-0 z-50 flex flex-col bg-black/70" onClick={onClose}>
+       <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-secondary,#1a1d27)] text-[var(--text-primary,#e6e6e6)]" onClick={(e) => e.stopPropagation()}>
+         <span className="font-medium truncate">{file.name}</span>
+         <div className="flex items-center gap-2">
+diff --git a/apps/web/src/components/connect/ModalBackdrop.tsx b/apps/web/src/components/connect/ModalBackdrop.tsx
+--- a/apps/web/src/components/connect/ModalBackdrop.tsx
++++ b/apps/web/src/components/connect/ModalBackdrop.tsx
+@@ -1,53 +1,18 @@
+ "use client";
+ 
+ import { motion } from "framer-motion";
+-import { useEffect, useRef } from "react";
++import { useModalFocus } from "@/hooks/useModalFocus";
+ 
+ interface ModalBackdropProps {
+   onClose: () => void;
+   children: React.ReactNode;
+   maxWidth?: string;
++  labelledBy?: string;
++  ariaLabel?: string;
+ }
+ 
+-export default function ModalBackdrop({ onClose, children, maxWidth = "max-w-sm" }: ModalBackdropProps) {
+-  const contentRef = useRef<HTMLDivElement>(null);
+-
+-  // A parent often passes an inline onClose. Updating it must not refocus
+-  // the dialog on every keystroke.
+-  const onCloseRef = useRef(onClose);
+-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+-
+-  useEffect(() => {
+-    const previousFocus = document.activeElement as HTMLElement | null;
+-    const handleKeyDown = (e: KeyboardEvent) => {
+-      if (e.key === "Escape") onCloseRef.current();
+-      if (e.key === "Tab" && contentRef.current) {
+-        const focusable = contentRef.current.querySelectorAll<HTMLElement>(
+-          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+-        );
+-        if (focusable.length === 0) return;
+-        const first = focusable[0];
+-        const last = focusable[focusable.length - 1];
+-        if (e.shiftKey && document.activeElement === first) {
+-          e.preventDefault();
+-          last.focus();
+-        } else if (!e.shiftKey && document.activeElement === last) {
+-          e.preventDefault();
+-          first.focus();
+-        }
+-      }
+-    };
+-    document.addEventListener("keydown", handleKeyDown);
+-    const content = contentRef.current;
+-    // React's autoFocus has already run. Never steal focus from that field.
+-    if (content && !content.contains(document.activeElement)) {
+-      content.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled), button:not(:disabled)")?.focus();
+-    }
+-    return () => {
+-      document.removeEventListener("keydown", handleKeyDown);
+-      if (previousFocus?.isConnected) previousFocus.focus();
+-    };
+-  }, []);
++export default function ModalBackdrop({ onClose, children, maxWidth = "max-w-sm", labelledBy, ariaLabel }: ModalBackdropProps) {
++  const contentRef = useModalFocus(onClose);
+ 
+   return (
+     <motion.div
+@@ -58,9 +23,12 @@
+       onClick={onClose}
+       role="dialog"
+       aria-modal="true"
++      aria-labelledby={labelledBy}
++      aria-label={ariaLabel}
+     >
+       <motion.div
+         ref={contentRef}
++        tabIndex={-1}
+         initial={{ scale: 0.9, opacity: 0 }}
+         animate={{ scale: 1, opacity: 1 }}
+         exit={{ scale: 0.9, opacity: 0 }}
+diff --git a/apps/web/src/components/connect/QAPanel.tsx b/apps/web/src/components/connect/QAPanel.tsx
+--- a/apps/web/src/components/connect/QAPanel.tsx
++++ b/apps/web/src/components/connect/QAPanel.tsx
+@@ -1,10 +1,13 @@
+ "use client";
+ 
+-import { useState, useCallback, useEffect } from "react";
++import { useState, useCallback, useEffect, useRef, useId } from "react";
+ import { ModuleSettingsButton } from "@/components/connect/ModuleSettingsModal"; // FIX-QAGEAR
+ import { QuestionIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
+ import { renderContent } from "./messageFormat"; // FIX-LINKS: кликабельные ссылки в вопросах и ответах
+ 
++
++import ModalBackdrop from "./ModalBackdrop";
++import { checkedJson } from "@/lib/clientResponse";
+ 
+ /* ─── Types ─── */
+ interface QAAuthor { id: string; name: string; username?: string; avatar: string | null }
+@@ -45,31 +48,34 @@
+ export default function QAPanel({ channelId, channelName, currentUserId, canModerate, onBack }: QAPanelProps) {
+   const [threads, setThreads] = useState<QAThreadListItem[]>([]);
+   const [loading, setLoading] = useState(true);
++  const [loadError, setLoadError] = useState("");
++  const [loaded, setLoaded] = useState(false);
++  const requestSeq = useRef(0);
++  const listKey = useRef("");
+   const [sort, setSort] = useState<"new" | "top">("new");
+   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "resolved">("all");
+   const [showAsk, setShowAsk] = useState(false);
+   const [openId, setOpenId] = useState<string | null>(null);
+   const [perms, setPerms] = useState<QAPermissions>({ canAsk: true, canAnswer: true, canModerate: false });
+ 
+-  const fetchThreads = useCallback(() => {
+-    setLoading(true);
+-    fetch(`/api/qa?channelId=${channelId}&sort=${sort}&status=${statusFilter}`)
+-      .then((r) => r.json())
+-      .then((d) => {
+-        setThreads(Array.isArray(d.threads) ? d.threads : []);
+-        if (d.permissions) {
+-          setPerms({
+-            canAsk: d.permissions.canAsk !== false,
+-            canAnswer: d.permissions.canAnswer !== false,
+-            canModerate: d.permissions.canModerate === true,
+-          });
+-        }
+-      })
+-      .catch(() => setThreads([]))
+-      .finally(() => setLoading(false));
++  const fetchThreads = useCallback(async () => {
++    const seq = ++requestSeq.current;
++    const key = `${channelId}:${sort}:${statusFilter}`;
++    // A different filter/channel must not show the previous list as its result.
++    if (key !== listKey.current) { setThreads([]); setLoaded(false); listKey.current = key; }
++    setLoading(true); setLoadError("");
++    try {
++      const d = await checkedJson<{ threads: QAThreadListItem[]; permissions?: QAPermissions }>(await fetch(`/api/qa?channelId=${channelId}&sort=${sort}&status=${statusFilter}`), "Не удалось загрузить вопросы");
++      if (!Array.isArray(d.threads)) throw new Error("Некорректный ответ сервера");
++      if (seq !== requestSeq.current) return;
++      setThreads(d.threads); setLoaded(true);
++      if (d.permissions) setPerms(d.permissions);
++    } catch {
++      if (seq === requestSeq.current) setLoadError("Не удалось загрузить вопросы. Это не означает, что вопросов нет.");
++    } finally { if (seq === requestSeq.current) setLoading(false); }
+   }, [channelId, sort, statusFilter]);
+ 
+-  useEffect(() => { fetchThreads(); }, [fetchThreads]);
++  useEffect(() => { void fetchThreads(); return () => { ++requestSeq.current; }; }, [fetchThreads]);
+ 
+   return (
+     <div className="flex flex-col h-full overflow-hidden">
+@@ -86,7 +92,7 @@
+             остальных модулях; доступны модерации. */}
+         {canModerate && <ModuleSettingsButton channelId={channelId} onSaved={fetchThreads} />}
+         {perms.canAsk && (
+-          <button onClick={() => setShowAsk(true)} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white transition-colors">
++          <button onClick={() => setShowAsk(true)} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-neutral-950 min-h-[44px] transition-colors">
+             Задать вопрос
+           </button>
+         )}
+@@ -94,23 +100,28 @@
+ 
+       {/* Controls */}
+       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-b border-neutral-100 dark:border-white/5 text-xs">
+-        <select value={sort} onChange={(e) => setSort(e.target.value as "new" | "top")} className="bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
++        <select aria-label="Сортировка вопросов" value={sort} onChange={(e) => setSort(e.target.value as "new" | "top")} className="min-h-[44px] min-w-0 bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
+           <option value="new">Новые</option>
+           <option value="top">Популярные</option>
+         </select>
+-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "all" | "open" | "resolved")} className="bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
++        <select aria-label="Статус вопросов" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "all" | "open" | "resolved")} className="min-h-[44px] min-w-0 bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1 text-neutral-700 dark:text-neutral-200">
+           <option value="all">Все</option>
+           <option value="open">Открытые</option>
+           <option value="resolved">Решённые</option>
+         </select>
+-        <span className="ml-auto text-neutral-400">{threads.length} вопрос(ов)</span>
++        <span className="ml-auto text-neutral-400">{loaded ? `${threads.length} вопрос(ов)${loadError ? " · данные не обновлены" : ""}` : "Количество неизвестно"}</span>
+       </div>
+ 
+       {/* Accordion list */}
+       <div className="flex-1 overflow-y-auto p-3 space-y-2">
+-        {loading ? (
++        {loadError && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
++          <p>{loadError}</p>
++          {loaded && <p className="mt-1">Показаны последние загруженные данные.</p>}
++          <button type="button" disabled={loading} onClick={() => void fetchThreads()} className="mt-3 min-h-[44px] rounded-lg bg-violet-700 px-4 text-white dark:bg-cyan-400 dark:text-neutral-950">Повторить загрузку</button>
++        </div>}
++        {loading && !loaded ? (
+           <p className="text-center text-sm text-neutral-400 py-8">Загрузка…</p>
+-        ) : threads.length === 0 ? (
++        ) : loaded && threads.length === 0 && !loadError ? (
+           <p className="text-center text-sm text-neutral-400 py-8">
+             {perms.canAsk ? "Пока нет вопросов. Будьте первым!" : "Пока нет вопросов."}
+           </p>
+@@ -292,7 +303,7 @@
+               />
+               {answerError && <p className="text-xs text-red-500 mt-1">{answerError}</p>}
+               <div className="flex justify-end mt-2">
+-                <button onClick={postAnswer} disabled={posting || !answerBody.trim()} className="px-4 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white disabled:opacity-50">
++                <button onClick={postAnswer} disabled={posting || !answerBody.trim()} className="px-4 py-1.5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-neutral-950 min-h-[44px] disabled:opacity-50">
+                   {posting ? "…" : "Ответить"}
+                 </button>
+               </div>
+@@ -315,6 +326,14 @@
+   const [tags, setTags] = useState("");
+   const [saving, setSaving] = useState(false);
+   const [error, setError] = useState("");
++  const titleId = useId();
++  const [confirmDiscard, setConfirmDiscard] = useState(false);
++  const close = () => {
++    // Keep the draft in this mounted form; Escape asks before discarding it.
++    if (saving) return;
++    if (title.trim() || body.trim() || tags.trim()) { setConfirmDiscard(true); return; }
++    onClose();
++  };
+ 
+   const submit = async () => {
+     if (!title.trim() || !body.trim()) { setError("Заполните заголовок и текст"); return; }
+@@ -332,20 +351,25 @@
+   };
+ 
+   return (
+-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+-      <div className="w-full max-w-lg bg-white dark:bg-neutral-900 rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">Новый вопрос</h3>
+-        {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Заголовок вопроса" maxLength={200} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
+-        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Подробно опишите вопрос…" rows={6} maxLength={8000} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400 resize-none" />
+-        <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Теги через запятую (необязательно)" maxLength={200} className="w-full mb-4 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
++    <ModalBackdrop onClose={close} maxWidth="max-w-lg" labelledBy={titleId}>
++      <div>
++        <h3 id={titleId} className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">Новый вопрос</h3>
++        {confirmDiscard && <div role="alert" className="mb-3 rounded-lg border border-amber-500 p-3 text-sm">
++          <p>Удалить несохранённый текст вопроса?</p>
++          <button type="button" onClick={() => setConfirmDiscard(false)} className="min-h-[44px] px-3">Продолжить редактирование</button>
++          <button type="button" onClick={onClose} className="min-h-[44px] px-3 text-red-700 dark:text-red-300">Удалить черновик и закрыть</button>
++        </div>}
++        {error && <p role="alert" className="text-xs text-red-500 mb-2">{error}</p>}
++        <input aria-label="Заголовок вопроса" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Заголовок вопроса" maxLength={200} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
++        <textarea aria-label="Текст вопроса" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Подробно опишите вопрос…" rows={6} maxLength={8000} className="w-full mb-3 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400 resize-none" />
++        <input aria-label="Теги" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Теги через запятую (необязательно)" maxLength={200} className="w-full mb-4 px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm outline-none focus:ring-2 ring-violet-500 dark:ring-cyan-400" />
+         <div className="flex gap-2 justify-end">
+-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800">Отмена</button>
+-          <button onClick={submit} disabled={saving || !title.trim() || !body.trim()} className="px-4 py-2 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white disabled:opacity-50">
++          <button disabled={saving} onClick={close} className="min-h-[44px] px-4 py-2 rounded-lg text-sm text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800">Отмена</button>
++          <button onClick={submit} disabled={saving || !title.trim() || !body.trim()} className="px-4 py-2 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-neutral-950 min-h-[44px] disabled:opacity-50">
+             {saving ? "…" : "Опубликовать"}
+           </button>
+         </div>
+       </div>
+-    </div>
++    </ModalBackdrop>
+   );
+ }
+diff --git a/apps/web/src/components/connect/QAPanel.ux.test.tsx b/apps/web/src/components/connect/QAPanel.ux.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/components/connect/QAPanel.ux.test.tsx
+@@ -0,0 +1,20 @@
++import React from 'react';
++import {afterEach,beforeEach,expect,it,vi} from 'vitest';
++import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
++vi.mock('@/components/connect/ModuleSettingsModal',()=>({ModuleSettingsButton:()=>null}));
++vi.mock('./messageFormat',()=>({renderContent:(text:string)=>text}));
++import QAPanel from './QAPanel';
++const props={channelId:'qa',channelName:'Вопросы и ответы',currentUserId:'u',canModerate:false};
++beforeEach(()=>vi.stubGlobal('fetch',vi.fn()));afterEach(()=>{cleanup();vi.unstubAllGlobals()});
++it.each([403,500])('does not claim empty state on HTTP %s and allows retry',async status=>{
++ vi.mocked(fetch).mockResolvedValueOnce(new Response('{"error":"offline"}',{status})).mockResolvedValueOnce(new Response('{"threads":[]}'));
++ render(<QAPanel {...props}/>);await screen.findByRole('alert');expect(screen.queryByText('Пока нет вопросов. Будьте первым!')).not.toBeInTheDocument();
++ fireEvent.click(screen.getByRole('button',{name:'Повторить загрузку'}));await screen.findByText('Пока нет вопросов. Будьте первым!');
++});
++it('reports network error without a fictional zero count',async()=>{vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'));render(<QAPanel {...props}/>);await screen.findByRole('alert');expect(screen.getByText('Количество неизвестно')).toBeInTheDocument();});
++it('labels the dialog, puts focus inside, closes on Escape and returns focus',async()=>{
++ vi.mocked(fetch).mockResolvedValue(new Response('{"threads":[]}'));render(<QAPanel {...props}/>);await screen.findByText('Пока нет вопросов. Будьте первым!');
++ const trigger=screen.getByRole('button',{name:'Задать вопрос'});trigger.focus();fireEvent.click(trigger);
++ expect(screen.getByRole('dialog',{name:'Новый вопрос'})).toBeInTheDocument();expect(screen.getByLabelText('Заголовок вопроса')).toHaveFocus();
++ fireEvent.keyDown(document,{key:'Escape'});await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());expect(trigger).toHaveFocus();
++});
+diff --git a/apps/web/src/components/connect/TasksPanel.tsx b/apps/web/src/components/connect/TasksPanel.tsx
+--- a/apps/web/src/components/connect/TasksPanel.tsx
++++ b/apps/web/src/components/connect/TasksPanel.tsx
+@@ -1,4 +1,6 @@
+ "use client";
++
++import { useModalFocus } from "@/hooks/useModalFocus";
+ 
+ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+ import PanelResizer from "./PanelResizer";
+@@ -715,6 +717,7 @@
+   onCancel: () => void;
+   onConfirm: (stage: string) => void;
+ }) {
++  const modalRef = useModalFocus(() => { if (!saving) onCancel(); });
+   const [stage, setStage] = useState("done");
+   const [saving, setSaving] = useState(false);
+ 
+@@ -725,7 +728,7 @@
+   };
+ 
+   return (
+-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onCancel} role="dialog" aria-modal="true" aria-label="Подтверждение закрытия задачи">
++    <div ref={modalRef} tabIndex={-1} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onCancel} role="dialog" aria-modal="true" aria-label="Подтверждение закрытия задачи">
+       <div className="w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+         <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-1">Закрыть задачу #{task.number}?</h3>
+         <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-4">
+@@ -795,8 +798,9 @@
+   onDelete: (taskId: string) => Promise<void>;
+   onOpenTask: (taskId: string) => void;
+ }) {
++  const modalRef = useModalFocus(onClose);
+   return (
+-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 lg:hidden" onClick={onClose}>
++    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Подробности задачи" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 lg:hidden" onClick={onClose}>
+       <div className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl" onClick={(e) => e.stopPropagation()}>
+         <TaskDetailsContent
+           task={task}
+@@ -1489,8 +1493,10 @@
+     setSaving(false);
+   };
+ 
++  const modalRef = useModalFocus(requestClose);
++
+   return (
+-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={requestClose}>
++    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Новая задача" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={requestClose}>
+       <div className="relative w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+         <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">Новая задача</h3>
+         {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+diff --git a/apps/web/src/components/mobile/BottomNav.tsx b/apps/web/src/components/mobile/BottomNav.tsx
+--- a/apps/web/src/components/mobile/BottomNav.tsx
++++ b/apps/web/src/components/mobile/BottomNav.tsx
+@@ -86,7 +86,7 @@
+               transition-colors duration-200 active:scale-95
+               ${isActive
+                 ? "text-accent"
+-                : "text-neutral-400 dark:text-neutral-500"
++                : "text-neutral-600 dark:text-neutral-400"
+               }`}
+           >
+             {tab.icon}
+diff --git a/apps/web/src/components/profile/ChatShowcase.tsx b/apps/web/src/components/profile/ChatShowcase.tsx
+--- a/apps/web/src/components/profile/ChatShowcase.tsx
++++ b/apps/web/src/components/profile/ChatShowcase.tsx
+@@ -148,9 +148,9 @@
+                   {prefs.showAvatars && <Avatar author={m.author} show={!grouped} />}
+                   <div className="min-w-0 flex-1">
+                     {m.reply && (
+-                      <div className="inline-flex items-center gap-1.5 text-[12px] text-neutral-500 dark:text-gray-400 mb-1 border-l-2 border-violet-400 dark:border-cyan-400 pl-2 pr-2 py-0.5 rounded-r-md bg-violet-50/60 dark:bg-cyan-400/[0.06] max-w-fit">
++                      <div className="inline-flex items-center gap-1.5 text-[12px] text-neutral-500 dark:text-gray-400 mb-1 border-l-2 border-violet-400 dark:border-cyan-400 pl-2 pr-2 py-0.5 rounded-r-md bg-violet-50/60 dark:bg-cyan-400/[0.06] max-w-full">
+                         <span className="font-semibold text-violet-600 dark:text-cyan-300">{m.reply.name}:</span>
+-                        <span className="truncate max-w-[240px]">{m.reply.text}</span>
++                        <span className="min-w-0 truncate max-w-[240px]">{m.reply.text}</span>
+                       </div>
+                     )}
+ 
+diff --git a/apps/web/src/components/profile/ConnectProfileSettings.tsx b/apps/web/src/components/profile/ConnectProfileSettings.tsx
+--- a/apps/web/src/components/profile/ConnectProfileSettings.tsx
++++ b/apps/web/src/components/profile/ConnectProfileSettings.tsx
+@@ -247,9 +247,9 @@
+ 
+         <SettingsGroup>
+           <SettingsRow label="Статус">
+-            <div className="flex flex-wrap justify-end gap-2">
++            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+               {([["online", "В сети", "bg-green-500"], ["away", "Нет на месте", "bg-yellow-500"], ["dnd", "Не беспокоить", "bg-red-500"], ["invisible", "Невидимка", "bg-neutral-400"]] as const).map(([key, label, color]) => (
+-                <button key={key} onClick={async () => { const prev = statusType; setStatusType(key); setStatusLoading(true); try { const res = await fetch("/api/profile/status", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ statusType: key }) }); if (!res.ok) { const d = await res.json().catch(() => ({} as { error?: string })); setStatusType(prev); setError(d.error ?? "Не удалось сохранить статус"); } else { setError(null); } } catch { setStatusType(prev); setError("Ошибка сети"); } setStatusLoading(false); }} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${statusType === key ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400" : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300"}`}>
++                <button key={key} onClick={async () => { const prev = statusType; setStatusType(key); setStatusLoading(true); try { const res = await fetch("/api/profile/status", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ statusType: key }) }); if (!res.ok) { const d = await res.json().catch(() => ({} as { error?: string })); setStatusType(prev); setError(d.error ?? "Не удалось сохранить статус"); } else { setError(null); } } catch { setStatusType(prev); setError("Ошибка сети"); } setStatusLoading(false); }} disabled={statusLoading} aria-pressed={statusType === key} className={`min-h-[44px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${statusType === key ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400" : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300"}`}>
+                   <span className={`w-2 h-2 rounded-full ${color}`} />
+                   {label}
+                 </button>
+@@ -264,7 +264,7 @@
+                 onChange={(e) => setCustomStatus(e.target.value)}
+                 placeholder="Кастомный статус..."
+                 maxLength={80}
+-                className="flex-1 px-3 py-1.5 bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900 dark:text-white"
++                className="min-w-0 w-full flex-1 px-3 py-1.5 bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900 dark:text-white"
+               />
+               <button
+                 onClick={async () => { setStatusLoading(true); try { const res = await fetch("/api/profile/status", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customStatus: customStatus.trim() || null }) }); if (!res.ok) { const d = await res.json().catch(() => ({} as { error?: string })); setError(d.error ?? "Не удалось сохранить статус"); } else { setError(null); setSuccessToast("Статус сохранён"); setTimeout(() => setSuccessToast(null), 2000); } } catch { setError("Ошибка сети"); } setStatusLoading(false); }}
+@@ -296,7 +296,7 @@
+                   }
+                 } catch { setError("Ошибка сети"); }
+               }}
+-              className="px-3 py-1.5 bg-neutral-50 dark:bg-white dark:text-neutral-900 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900"
++              className="min-h-[44px] max-w-full w-full px-3 py-1.5 bg-neutral-50 dark:bg-white dark:text-neutral-900 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900"
+             >
+               <option value="" className="bg-white text-neutral-900">Не выбран</option>
+               {CITY_NAMES.map((c) => (
+diff --git a/apps/web/src/components/profile/ProfilePage.tsx b/apps/web/src/components/profile/ProfilePage.tsx
+--- a/apps/web/src/components/profile/ProfilePage.tsx
++++ b/apps/web/src/components/profile/ProfilePage.tsx
+@@ -2,6 +2,10 @@
+ 
+ import { useCallback, useEffect, useRef, useState } from "react";
+ import Link from "next/link";
++import { checkedJson } from "@/lib/clientResponse";
++import { profileLinks } from "@/lib/profileLinks";
++import { useSessionDraft, useUnsavedWarning } from "@/hooks/useDraftProtection";
++import { confirmDialog } from "@/components/ui/ConfirmDialog";
+ import { useRouter } from "next/navigation";
+ import { useSession } from "next-auth/react";
+ import GlowAvatar from "@/components/ui/GlowAvatar";
+@@ -86,6 +90,7 @@
+   avatar: string | null;
+   role: string;
+   bio: string | null;
++  socialLinks?: string | Record<string, string> | null;
+   customStatus: string | null;
+   statusEmoji: string | null;
+   avatarGlowEnabled: boolean;
+@@ -324,6 +329,8 @@
+   const [draftTitle, setDraftTitle] = useState("");
+   const [draft, setDraft] = useState("");
+   const [sending, setSending] = useState(false);
++  const [postError, setPostError] = useState<string | null>(null);
++  const [submission, setSubmission] = useState<{ requestId: string; payload: string } | null>(null);
+   const [busy, setBusy] = useState(false);
+ 
+   /* FIX-WALLMEDIA: материал грузится СРАЗУ при выборе, а в запись уходят уже
+@@ -333,6 +340,19 @@
+   const [media, setMedia] = useState<WallMedia[]>([]);
+   const [uploading, setUploading] = useState(false);
+   const [uploadError, setUploadError] = useState<string | null>(null);
++  const wallDraft = { title: draftTitle, content: draft, media, submission };
++  const draftDirty = !!(draftTitle || draft || media.length);
++  const wallDraftStored = useSessionDraft({
++    storageKey: head?.isSelf ? `trioz:wall-draft:${head.id}` : null,
++    value: wallDraft, dirty: draftDirty,
++    onRestore: (value) => {
++      if (!value || typeof value.title !== "string" || typeof value.content !== "string") return;
++      setDraftTitle(value.title.slice(0, 200)); setDraft(value.content.slice(0, 20000));
++      if (value.submission && typeof value.submission.requestId === "string" && typeof value.submission.payload === "string") setSubmission(value.submission);
++      if (Array.isArray(value.media)) setMedia(value.media.slice(0, 10).filter((m) => m && typeof m.url === "string" && typeof m.name === "string"));
++    },
++  });
++  useUnsavedWarning(draftDirty);
+   const photoInputRef = useRef<HTMLInputElement | null>(null);
+   const videoInputRef = useRef<HTMLInputElement | null>(null);
+   const docInputRef = useRef<HTMLInputElement | null>(null);
+@@ -474,19 +494,24 @@
+     const content = draft.trim();
+     /* FIX-WALLMEDIA: запись только из материала, без текста, тоже имеет смысл. */
+     if (!content && media.length === 0) return;
+-    setSending(true);
++    setSending(true); setPostError(null);
++    const payload = JSON.stringify({ content, title: draftTitle.trim() || undefined, attachments: media.length ? media : undefined });
++    const clientRequestId = submission?.payload === payload ? submission.requestId : crypto.randomUUID();
++    setSubmission({ requestId: clientRequestId, payload });
+     try {
+       const res = await fetch(`/api/wall/${head.id}`, {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           content,
++          clientRequestId,
+           title: draftTitle.trim() || undefined,
+           /* cover намеренно не заполняем: иначе первое фото показывалось бы дважды. */
+           attachments: media.length > 0 ? media : undefined,
+         }),
+       });
+-      if (!res.ok) return;
++      await checkedJson(res, "Не удалось опубликовать запись. Текст и вложения сохранены.");
++      setSubmission(null);
+       setDraft("");
+       setDraftTitle("");
+       setMedia([]);
+@@ -494,13 +519,15 @@
+       /* Перечитываем первую страницу, а не вставляем запись в начало списка:
+          на странице есть закреплённые, и порядок знает только сервер. */
+       await loadWall(head.id, 1);
++    } catch (err) {
++      setPostError(err instanceof Error ? `${err.message} Текст и вложения не удалены.` : "Ошибка сети. Текст и вложения не удалены.");
+     } finally {
+       setSending(false);
+     }
+   }
+ 
+   async function removePost(id: string) {
+-    if (!head) return;
++    if (!head || !(await confirmDialog({ title: "Удалить запись?", message: "Запись будет удалена со стены.", confirmText: "Удалить", danger: true }))) return;
+     const res = await fetch(`/api/wall/posts/${id}`, { method: "DELETE" });
+     if (res.ok) await loadWall(head.id, postPage);
+   }
+@@ -558,11 +585,11 @@
+               <div className="flex flex-wrap items-center gap-2 max-sm:w-full sm:justify-end">
+                 <button
+                   type="button"
+-                  onClick={() => router.push("/settings")}
++                  onClick={() => router.push("/settings?section=profile")}
+                   className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5 max-sm:flex-1"
+                 >
+                   <GearIcon size={16} style={{ color: "inherit" }} />
+-                  Управление TZ ID
++                  Редактировать профиль
+                 </button>
+               </div>
+             )}
+@@ -617,6 +644,13 @@
+             </div>
+           )}
+ 
++          {profileLinks(head.socialLinks).length > 0 && (
++            <div className="mt-3 flex flex-wrap gap-2" aria-label="Ссылки профиля">
++              {profileLinks(head.socialLinks).map((link) => <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer nofollow" title={link.domain} className="inline-flex min-h-[44px] max-w-full items-center gap-1 rounded-xl border border-neutral-300 px-3 text-sm text-violet-700 dark:border-cyan-900 dark:text-cyan-300"><span className="truncate">↗ {link.label} · {link.domain}</span></a>)}
++            </div>
++          )}
++          {head.isSelf && <Link href="/settings?section=account" className="mt-2 inline-flex min-h-[44px] items-center text-sm text-neutral-600 underline dark:text-gray-300">Управление TZ ID</Link>}
++
+           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+             <span className="flex items-center gap-1.5 text-neutral-600 dark:text-gray-300">
+               <NewsIcon size={16} style={{ color: "inherit" }} />
+@@ -625,7 +659,7 @@
+             <button
+               type="button"
+               onClick={() => switchTab("followers")}
+-              className="flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
++              className="min-h-[44px] flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
+             >
+               <UsersIcon size={16} style={{ color: "inherit" }} />
+               {followers} подписчиков
+@@ -633,7 +667,7 @@
+             <button
+               type="button"
+               onClick={() => switchTab("following")}
+-              className="flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
++              className="min-h-[44px] flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
+             >
+               <FriendsIcon size={16} style={{ color: "inherit" }} />
+               {following} подписок
+@@ -765,13 +799,15 @@
+                 }}
+               />
+ 
++              {postError && <div role="alert" className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100"><strong>Запись не опубликована</strong><p className="mt-1">{postError}</p></div>}
++              {draftDirty && <p role="status" className="mt-2 text-xs text-neutral-600 dark:text-gray-300">{wallDraftStored ? "Черновик сохранён в этой вкладке." : "Черновик пока только в памяти. Не закрывайте страницу."}</p>}
+               <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                 <div className="flex flex-wrap items-center gap-2">
+                   <button
+                     type="button"
+                     onClick={() => photoInputRef.current?.click()}
+                     disabled={uploading || media.length >= 10}
+-                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
++                    className="min-h-[44px] flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                   >
+                     <NewsIcon size={13} style={{ color: "inherit" }} />
+                     Фото
+@@ -780,7 +816,7 @@
+                     type="button"
+                     onClick={() => videoInputRef.current?.click()}
+                     disabled={uploading || media.length >= 10}
+-                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
++                    className="min-h-[44px] flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                   >
+                     <FilmIcon size={13} style={{ color: "inherit" }} />
+                     Видео
+@@ -789,7 +825,7 @@
+                     type="button"
+                     onClick={() => docInputRef.current?.click()}
+                     disabled={uploading || media.length >= 10}
+-                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
++                    className="min-h-[44px] flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                   >
+                     <BookOpenIcon size={13} />
+                     Документ
+@@ -800,9 +836,9 @@
+                   type="button"
+                   onClick={submitPost}
+                   disabled={sending || uploading || (!draft.trim() && media.length === 0)}
+-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors"
++                  className="min-h-[44px] px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+                 >
+-                  {sending ? "Публикация…" : "Опубликовать"}
++                  {sending ? "Публикация…" : postError ? "Повторить публикацию" : "Опубликовать"}
+                 </button>
+               </div>
+             </Card>
+@@ -841,7 +877,7 @@
+                   {/* FIX-WALLMEDIA: фото, видео и документы записи. */}
+                   <WallMediaView items={post.attachments} />
+ 
+-                  <div className="mt-2 flex items-center gap-4 text-xs text-neutral-500 dark:text-gray-400">
++                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-neutral-500 dark:text-gray-400">
+                     <span className="flex items-center gap-1">
+                       <MessagesIcon size={13} style={{ color: "inherit" }} />
+                       {post.commentCount}
+@@ -851,13 +887,13 @@
+                       {post.views}
+                     </span>
+                     {post.canEdit && (
+-                      <button type="button" onClick={() => togglePin(post)} className="flex items-center gap-1 hover:text-indigo-500">
++                      <button type="button" onClick={() => togglePin(post)} className="min-h-[44px] min-w-[44px] px-1 flex items-center gap-1 hover:text-indigo-500">
+                         <PinIcon size={13} />
+                         {post.pinned ? "Открепить" : "Закрепить"}
+                       </button>
+                     )}
+                     {post.canDelete && (
+-                      <button type="button" onClick={() => removePost(post.id)} className="flex items-center gap-1 hover:text-red-500">
++                      <button type="button" onClick={() => removePost(post.id)} className="min-h-[44px] min-w-[44px] px-1 flex items-center gap-1 hover:text-red-500">
+                         <TrashIcon size={13} />
+                         Удалить
+                       </button>
+diff --git a/apps/web/src/components/settings/SettingsUI.tsx b/apps/web/src/components/settings/SettingsUI.tsx
+--- a/apps/web/src/components/settings/SettingsUI.tsx
++++ b/apps/web/src/components/settings/SettingsUI.tsx
+@@ -19,12 +19,12 @@
+ 
+ export function SettingsRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+   return (
+-    <div className="flex items-center justify-between gap-3 py-1.5">
++    <div className="flex min-w-0 flex-col items-stretch gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
+       <span className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+         {label}
+         {hint && <InfoTooltip text={hint} />}
+       </span>
+-      <div className="flex-shrink-0">{children}</div>
++      <div className="min-w-0 max-w-full sm:max-w-[70%]">{children}</div>
+     </div>
+   );
+ }
+@@ -42,7 +42,9 @@
+         <button
+           key={String(opt.value)}
+           onClick={() => onChange(opt.value)}
+-          className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${
++          type="button"
++          aria-pressed={value === opt.value}
++          className={`min-h-[44px] px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${
+             value === opt.value
+               ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400"
+               : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300"
+@@ -58,16 +60,17 @@
+ export function SettingsSwitch({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
+   return (
+     <button
++      type="button"
+       onClick={onChange}
+       aria-label={label}
++      role="switch"
++      aria-checked={checked}
+       aria-pressed={checked}
+-      className={`relative w-10 h-5.5 rounded-full transition-colors ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}
+-      style={{ height: 22 }}
++      className="relative flex min-h-[44px] min-w-[44px] items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+     >
+-      <span
+-        className="absolute top-0.5 left-0.5 w-[18px] h-[18px] bg-white rounded-full shadow transition-transform"
+-        style={{ transform: checked ? "translateX(18px)" : "none" }}
+-      />
++      <span aria-hidden="true" className={`relative block h-[22px] w-10 rounded-full transition-colors ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}>
++        <span className="absolute top-0.5 left-0.5 w-[18px] h-[18px] bg-white rounded-full shadow transition-transform" style={{ transform: checked ? "translateX(18px)" : "none" }} />
++      </span>
+     </button>
+   );
+ }
+@@ -79,7 +82,7 @@
+   onChange: (v: number) => void;
+ }) {
+   return (
+-    <div className="flex items-center gap-2 w-40">
++    <div className="flex min-w-0 max-w-full items-center gap-2 w-40">
+       <input
+         id={id}
+         type="range"
+@@ -88,7 +91,7 @@
+         step={step}
+         value={value}
+         onChange={(e) => onChange(+e.target.value)}
+-        className="flex-1 accent-violet-500 dark:accent-cyan-500"
++        className="min-w-0 flex-1 accent-violet-500 dark:accent-cyan-500"
+       />
+       <span className="w-12 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400">
+         {value}{unit}
+@@ -106,7 +109,7 @@
+   children: React.ReactNode;
+ }) {
+   return (
+-    <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl p-6 space-y-4">
++    <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl p-4 sm:p-6 min-w-0 space-y-4">
+       <div>
+         <h2 className="flex items-center gap-1.5 text-base font-semibold text-neutral-900 dark:text-white">
+           {title}
+@@ -140,12 +143,14 @@
+   onChange: (id: T) => void;
+ }) {
+   return (
+-    <div className="flex gap-1.5 border-b border-neutral-200 dark:border-white/10">
++    <div className="flex max-w-full flex-wrap gap-1.5 border-b border-neutral-200 dark:border-white/10">
+       {tabs.map((t) => (
+         <button
+           key={t.id}
+           onClick={() => onChange(t.id)}
+-          className={`px-3 py-1.5 text-xs font-medium -mb-px border-b-2 transition-colors ${
++          type="button"
++          aria-pressed={value === t.id}
++          className={`min-h-[44px] px-3 py-1.5 text-xs font-medium -mb-px border-b-2 transition-colors ${
+             value === t.id
+               ? "border-violet-500 dark:border-cyan-400 text-violet-600 dark:text-cyan-400"
+               : "border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+diff --git a/apps/web/src/components/ui/ConfirmDialog.tsx b/apps/web/src/components/ui/ConfirmDialog.tsx
+--- a/apps/web/src/components/ui/ConfirmDialog.tsx
++++ b/apps/web/src/components/ui/ConfirmDialog.tsx
+@@ -19,7 +19,8 @@
+  * native dialog so behaviour is never lost.
+  */
+ 
+-import { useCallback, useEffect, useRef, useState } from "react";
++import { useModalFocus } from "@/hooks/useModalFocus";
++import { useCallback, useEffect, useState } from "react";
+ 
+ export interface ConfirmOptions {
+   title?: string;
+@@ -78,7 +79,7 @@
+ 
+ export function ConfirmDialogHost() {
+   const [queue, setQueue] = useState<DialogRequest[]>([]);
+-  const confirmBtnRef = useRef<HTMLButtonElement>(null);
++
+   const current = queue[0] ?? null;
+ 
+   useEffect(() => {
+@@ -96,25 +97,7 @@
+     });
+   }, []);
+ 
+-  useEffect(() => {
+-    if (!current) return;
+-    // Focus the primary action for keyboard users.
+-    const t = requestAnimationFrame(() => confirmBtnRef.current?.focus());
+-    const onKey = (e: KeyboardEvent) => {
+-      if (e.key === "Escape") {
+-        e.preventDefault();
+-        settle(current.kind === "alert");
+-      } else if (e.key === "Enter") {
+-        e.preventDefault();
+-        settle(true);
+-      }
+-    };
+-    window.addEventListener("keydown", onKey);
+-    return () => {
+-      cancelAnimationFrame(t);
+-      window.removeEventListener("keydown", onKey);
+-    };
+-  }, [current, settle]);
++  const modalRef = useModalFocus(() => settle(current?.kind === "alert"), !!current, current?.id);
+ 
+   if (!current) return null;
+ 
+@@ -124,6 +107,8 @@
+ 
+   return (
+     <div
++      ref={modalRef}
++      tabIndex={-1}
+       className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+       role="dialog"
+       aria-modal="true"
+@@ -159,11 +144,10 @@
+             </button>
+           )}
+           <button
+-            ref={confirmBtnRef}
+             type="button"
+             onClick={() => settle(true)}
+             className={`min-h-[44px] px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-0 ${
+-              opts.danger ? "bg-red-500 focus:ring-red-400/40" : "bg-violet-500 dark:bg-cyan-600 focus:ring-violet-400/40 dark:focus:ring-cyan-400/40"
++              opts.danger ? "bg-red-700 focus:ring-red-400/40" : "bg-violet-700 dark:bg-cyan-800 focus:ring-violet-400/40 dark:focus:ring-cyan-400/40"
+             }`}
+           >
+             {confirmText}
+diff --git a/apps/web/src/components/ui/InfoTooltip.test.tsx b/apps/web/src/components/ui/InfoTooltip.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/components/ui/InfoTooltip.test.tsx
+@@ -0,0 +1,3 @@
++import React from'react';import{afterEach,expect,it}from'vitest';import{cleanup,fireEvent,render,screen}from'@testing-library/react';import InfoTooltip from'./InfoTooltip';
++afterEach(cleanup);
++it('does not mount an overflowing hidden box; supports keyboard and Escape',()=>{render(<InfoTooltip text="Help"/>);expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();const trigger=screen.getByRole('button',{name:'Подробнее'});fireEvent.focus(trigger);expect(screen.getByRole('tooltip')).toHaveTextContent('Help');expect(trigger).toHaveAttribute('aria-describedby',screen.getByRole('tooltip').id);fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()});
+diff --git a/apps/web/src/components/ui/InfoTooltip.tsx b/apps/web/src/components/ui/InfoTooltip.tsx
+--- a/apps/web/src/components/ui/InfoTooltip.tsx
++++ b/apps/web/src/components/ui/InfoTooltip.tsx
+@@ -1,47 +1,42 @@
+ "use client";
+ 
+-import { useId } from "react";
++import { useId, useRef, useState, useEffect, useCallback } from "react";
++import { createPortal } from "react-dom";
+ import { QuestionIcon } from "@/components/ui/ConnectIcons";
+ 
+-/**
+- * Компактная подсказка «?»: маленькая иконка вопроса, которая при наведении
+- * (или фокусе с клавиатуры) показывает всплывающее пояснение. Используется в
+- * настройках, чтобы вынести описательный текст из интерфейса и оставить только
+- * сами элементы управления — информация доступна по требованию.
+- */
+-export default function InfoTooltip({
+-  text,
+-  side = "top",
+-  className = "",
+-}: {
+-  text: string;
+-  /** С какой стороны от иконки раскрывать подсказку. */
+-  side?: "top" | "bottom";
+-  className?: string;
++/** Viewport-clamped tooltip. A hidden absolute box must not widen the document. */
++export default function InfoTooltip({ text, side = "top", className = "" }: {
++  text: string; side?: "top" | "bottom"; className?: string;
+ }) {
+   const id = useId();
+-  const pos =
+-    side === "bottom"
+-      ? "top-full mt-2 after:bottom-full after:border-b-neutral-900 dark:after:border-b-neutral-800"
+-      : "bottom-full mb-2 after:top-full after:border-t-neutral-900 dark:after:border-t-neutral-800";
++  const button = useRef<HTMLButtonElement>(null);
++  const [open, setOpen] = useState(false);
++  const [pos, setPos] = useState({ left: 8, top: 8, below: true });
++  const position = useCallback(() => {
++    const r = button.current?.getBoundingClientRect();
++    if (!r) return;
++    const width = Math.min(288, window.innerWidth - 16);
++    const below = side === "bottom" || r.top < 130;
++    setPos({ left: Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8)), top: below ? r.bottom + 8 : r.top - 8, below });
++  }, [side]);
++  useEffect(() => {
++    if (!open) return;
++    position();
++    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); setOpen(false); } };
++    window.addEventListener("resize", position);
++    window.addEventListener("scroll", position, true);
++    document.addEventListener("keydown", close, true);
++    return () => { window.removeEventListener("resize", position); window.removeEventListener("scroll", position, true); document.removeEventListener("keydown", close, true); };
++  }, [open, position]);
+   return (
+-    <span className={`group relative inline-flex align-middle ${className}`}>
+-      <button
+-        type="button"
+-        aria-describedby={id}
+-        aria-label="Подробнее"
+-        onClick={(e) => e.preventDefault()}
+-        className="inline-flex items-center justify-center w-4 h-4 rounded-full text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 transition-colors cursor-help"
+-      >
++    <span className={`inline-flex shrink-0 align-middle ${className}`} onMouseEnter={() => { position(); setOpen(true); }} onMouseLeave={() => setOpen(false)}>
++      <button ref={button} type="button" aria-describedby={open ? id : undefined} aria-label="Подробнее" aria-expanded={open}
++        onFocus={() => { position(); setOpen(true); }} onBlur={() => setOpen(false)}
++        onClick={(event) => { event.preventDefault(); position(); setOpen(true); }}
++        className="inline-flex items-center justify-center w-5 h-5 rounded-full text-neutral-600 dark:text-gray-300 hover:text-violet-700 dark:hover:text-cyan-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 cursor-help">
+         <QuestionIcon size={14} />
+       </button>
+-      <span
+-        id={id}
+-        role="tooltip"
+-        className={`pointer-events-none absolute left-1/2 z-50 w-56 -translate-x-1/2 rounded-lg bg-neutral-900 dark:bg-neutral-800 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg ring-1 ring-white/10 opacity-0 invisible transition-all duration-150 group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible after:absolute after:left-1/2 after:-translate-x-1/2 after:border-4 after:border-transparent ${pos}`}
+-      >
+-        {text}
+-      </span>
++      {open && createPortal(<span id={id} role="tooltip" style={{ position: "fixed", left: pos.left, top: pos.top, transform: pos.below ? undefined : "translateY(-100%)", width: "min(288px, calc(100vw - 16px))", maxHeight: "40vh", overflowY: "auto" }} className="z-[100] rounded-lg bg-neutral-900 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg ring-1 ring-white/20">{text}</span>, document.body)}
+     </span>
+   );
+ }
+diff --git a/apps/web/src/hooks/useDraftProtection.test.tsx b/apps/web/src/hooks/useDraftProtection.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/hooks/useDraftProtection.test.tsx
+@@ -0,0 +1,5 @@
++import React,{useState} from 'react';import{afterEach,expect,it}from'vitest';import{cleanup,fireEvent,render,screen,waitFor}from'@testing-library/react';import{useSessionDraft}from'./useDraftProtection';
++function Form({user='a'}:{user?:string}){const[value,setValue]=useState('server');useSessionDraft({storageKey:`draft:${user}`,value,dirty:value!=='server',onRestore:setValue});return <input aria-label="bio" value={value} onChange={e=>setValue(e.target.value)}/>}
++afterEach(()=>{cleanup();sessionStorage.clear()});
++it('restores the user draft after remount, clears it when saved',async()=>{const a=render(<Form/>);fireEvent.change(screen.getByLabelText('bio'),{target:{value:'draft'}});expect(sessionStorage.getItem('draft:a')).toBe('"draft"');a.unmount();render(<Form/>);await waitFor(()=>expect(screen.getByLabelText('bio')).toHaveValue('draft'));fireEvent.change(screen.getByLabelText('bio'),{target:{value:'server'}});expect(sessionStorage.getItem('draft:a')).toBeNull();});
++it('does not restore another account draft',()=>{sessionStorage.setItem('draft:a','"private"');render(<Form user="b"/>);expect(screen.getByLabelText('bio')).toHaveValue('server')});
+diff --git a/apps/web/src/hooks/useDraftProtection.ts b/apps/web/src/hooks/useDraftProtection.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/hooks/useDraftProtection.ts
+@@ -0,0 +1,39 @@
++"use client";
++
++import { useEffect, useRef, useState } from "react";
++
++/** Session-scoped, per-user draft. Never store passwords, tokens or E2EE keys. */
++export function useSessionDraft<T>({ storageKey, value, dirty, onRestore }: {
++  storageKey: string | null; value: T; dirty: boolean; onRestore: (value: T) => void;
++}) {
++  const restore = useRef(onRestore);
++  useEffect(() => { restore.current = onRestore; }, [onRestore]);
++  const [stored, setStored] = useState(false);
++  const [readyKey, setReadyKey] = useState<string | null>(null);
++  useEffect(() => {
++    if (!storageKey) return;
++    try {
++      const raw = sessionStorage.getItem(storageKey);
++      if (raw) restore.current(JSON.parse(raw) as T);
++    } catch { /* Storage may be blocked; leave the in-memory form intact. */ }
++    setReadyKey(storageKey);
++  }, [storageKey]);
++  useEffect(() => {
++    if (!storageKey || readyKey !== storageKey) return;
++    try {
++      if (dirty) sessionStorage.setItem(storageKey, JSON.stringify(value));
++      else sessionStorage.removeItem(storageKey);
++      setStored(dirty);
++    } catch { setStored(false); /* Quota/blocked storage must not break editing. */ }
++  }, [storageKey, readyKey, value, dirty]);
++  return stored;
++}
++
++export function useUnsavedWarning(dirty: boolean) {
++  useEffect(() => {
++    if (!dirty) return;
++    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
++    window.addEventListener("beforeunload", warn);
++    return () => window.removeEventListener("beforeunload", warn);
++  }, [dirty]);
++}
+diff --git a/apps/web/src/hooks/useModalFocus.test.tsx b/apps/web/src/hooks/useModalFocus.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/hooks/useModalFocus.test.tsx
+@@ -0,0 +1,6 @@
++import React,{useState}from'react';import{afterEach,expect,it}from'vitest';import{cleanup,fireEvent,render,screen}from'@testing-library/react';import{useModalFocus}from'./useModalFocus';
++function Dialog({close,children}:{close:()=>void;children?:React.ReactNode}){const ref=useModalFocus(close);return <div ref={ref} role="dialog" tabIndex={-1}><input aria-label="first"/><input type="file" hidden aria-label="hidden"/><button>last</button>{children}</div>}
++function App(){const[open,setOpen]=useState(false);return <><button onClick={()=>setOpen(true)}>open</button>{open&&<Dialog close={()=>setOpen(false)}/>}</>}
++afterEach(cleanup);
++it('keeps Tab and Shift+Tab inside, excludes hidden controls, restores focus',()=>{render(<App/>);const trigger=screen.getByText('open');trigger.focus();fireEvent.click(trigger);expect(screen.getByLabelText('first')).toHaveFocus();fireEvent.keyDown(document,{key:'Tab',shiftKey:true});expect(screen.getByText('last')).toHaveFocus();fireEvent.keyDown(document,{key:'Tab'});expect(screen.getByLabelText('first')).toHaveFocus();fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(trigger).toHaveFocus();});
++it('recovers focus that escaped onto the background',()=>{render(<App/>);fireEvent.click(screen.getByText('open'));screen.getByText('open').focus();fireEvent.keyDown(document,{key:'Tab'});expect(screen.getByLabelText('first')).toHaveFocus()});
+diff --git a/apps/web/src/hooks/useModalFocus.ts b/apps/web/src/hooks/useModalFocus.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/hooks/useModalFocus.ts
+@@ -0,0 +1,38 @@
++"use client";
++
++import { useEffect, useRef } from "react";
++const stack: symbol[] = [];
++
++/** Shared keyboard lifecycle for both standard and full-screen dialogs. */
++export function useModalFocus(onClose: () => void, enabled = true, instance?: string | number) {
++  const ref = useRef<HTMLDivElement>(null);
++  const close = useRef(onClose);
++  useEffect(() => { close.current = onClose; }, [onClose]);
++  useEffect(() => {
++    if (!enabled || !ref.current) return;
++    const token = Symbol("dialog"); stack.push(token);
++    const previous = document.activeElement as HTMLElement | null;
++    const controls = () => Array.from(ref.current?.querySelectorAll<HTMLElement>(
++      'button:not(:disabled), a[href], input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), iframe, [tabindex]:not([tabindex="-1"])'
++    ) ?? []).filter(el => !el.closest("[hidden]") && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden");
++    const onKey = (event: KeyboardEvent) => {
++      if (stack[stack.length - 1] !== token || !ref.current) return;
++      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close.current(); }
++      if (event.key !== "Tab") return;
++      const list = controls(), first = list[0], last = list[list.length - 1];
++      if (!first) { event.preventDefault(); ref.current.focus(); }
++      else if (!ref.current.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
++      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
++      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
++    };
++    document.addEventListener("keydown", onKey);
++    if (!ref.current.contains(document.activeElement)) (controls()[0] ?? ref.current).focus();
++    return () => {
++      document.removeEventListener("keydown", onKey);
++      const wasTop = stack[stack.length - 1] === token;
++      const index = stack.indexOf(token); if (index >= 0) stack.splice(index, 1);
++      if (wasTop && previous?.isConnected) previous.focus();
++    };
++  }, [enabled, instance]);
++  return ref;
++}
+diff --git a/apps/web/src/lib/clientResponse.test.ts b/apps/web/src/lib/clientResponse.test.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/lib/clientResponse.test.ts
+@@ -0,0 +1,8 @@
++import { expect, it } from "vitest";
++import { checkedJson } from "./clientResponse";
++it.each([403, 500])("rejects HTTP %s with API message", async status => {
++  await expect(checkedJson(new Response('{"error":"Не сохранено"}', {status}))).rejects.toThrow("Не сохранено");
++});
++it("handles a non-JSON proxy error", async()=>{await expect(checkedJson(new Response('bad gateway',{status:502}),"Сбой сервера")).rejects.toThrow("Сбой сервера");});
++it("rejects an incomplete success response",async()=>{await expect(checkedJson(new Response('',{status:200}))).rejects.toThrow("неполный ответ");});
++it("returns only confirmed JSON", async()=>expect(await checkedJson(new Response('{"ok":true}'))).toEqual({ok:true}));
+diff --git a/apps/web/src/lib/clientResponse.ts b/apps/web/src/lib/clientResponse.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/lib/clientResponse.ts
+@@ -0,0 +1,9 @@
++/** fetch does not reject HTTP errors. Never announce success before checking it. */
++export async function checkedJson<T = Record<string, unknown>>(response: Response, fallback = "Не удалось сохранить изменения"): Promise<T> {
++  const data = await response.json().catch(() => null);
++  if (!response.ok) {
++    throw new Error(typeof data?.error === "string" ? data.error : fallback);
++  }
++  if (data === null) throw new Error("Сервер вернул неполный ответ. Проверьте результат перед повтором.");
++  return data as T;
++}
+diff --git a/apps/web/src/lib/profileLinks.test.ts b/apps/web/src/lib/profileLinks.test.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/lib/profileLinks.test.ts
+@@ -0,0 +1,5 @@
++import {expect,it} from "vitest";
++import {profileLinks} from "./profileLinks";
++it("renders external projects as well as TrioZ",()=>expect(profileLinks(JSON.stringify({website:'https://example.org/a',github:'https://github.com/example'})).map(x=>x.domain)).toEqual(['example.org','github.com']));
++it.each(['javascript:alert(1)','data:text/html,test','file:///a','https://user:password@example.org'])('blocks unsafe link %s', website=>expect(profileLinks({website})).toEqual([]));
++it.each([null,'{',[],{website:''}])('ignores missing or malformed links',raw=>expect(profileLinks(raw)).toEqual([]));
+diff --git a/apps/web/src/lib/profileLinks.ts b/apps/web/src/lib/profileLinks.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/lib/profileLinks.ts
+@@ -0,0 +1,18 @@
++/** Public profile links: allow only explicit HTTP(S), without embedded credentials. */
++export function profileLinks(raw: unknown): { label: string; href: string; domain: string }[] {
++  let links: Record<string, unknown>;
++  try {
++    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
++    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
++    links = parsed;
++  } catch { return []; }
++  return Object.entries({ website: "Мой сайт", github: "GitHub", telegram: "Telegram", vk: "VK" }).flatMap(([key, label]) => {
++    const value = links[key];
++    if (typeof value !== "string") return [];
++    try {
++      const url = new URL(value.trim());
++      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return [];
++      return [{ label, href: url.href, domain: url.hostname }];
++    } catch { return []; }
++  });
++}
+diff --git a/scripts/qa/seed-ux-ui.cjs b/scripts/qa/seed-ux-ui.cjs
+new file mode 100644
+--- /dev/null
++++ b/scripts/qa/seed-ux-ui.cjs
+@@ -0,0 +1,26 @@
++const {PrismaClient}=require('@prisma/client');
++const {encode}=require('next-auth/jwt');
++const fs=require('fs');
++if (process.env.UX_ALLOW_TEST_SEED !== '1' || !/(test|audit|ux)/i.test(new URL(process.env.DATABASE_URL || 'http://missing').pathname) || !process.env.NEXTAUTH_SECRET) {
++ throw new Error('Use a dedicated test/audit/ux database, NEXTAUTH_SECRET and UX_ALLOW_TEST_SEED=1. Never seed a production database.');
++}
++const p=new PrismaClient();
++(async()=>{
++ for(const [id,name,username,premium] of [['ux-owner','Елена Администратор','ux_owner',true],['ux-user','Алексей Пользователь','ux_alex',false],['ux-peer','Мария Коллега','ux_maria',false]]) await p.user.upsert({where:{id},update:{},create:{id,name,username,email:username+'@example.invalid',password:'not-a-login-hash',emailVerified:true,isPremium:premium,bio:'Занимаюсь дизайном и разработкой. Участник сообщества TrioZ.',customStatus:'Работаю над новым проектом',socialLinks:JSON.stringify({website:'https://example.org',github:'https://github.com/example'})}});
++ await p.group.upsert({where:{id:'ux-group'},update:{},create:{id:'ux-group',name:'Команда проекта',description:'Обсуждаем обновления, делимся материалами и планируем работу.',rules:'Уважайте друг друга. Не публикуйте личные данные.',ownerId:'ux-owner',sectionsEnabled:true}});
++ for(const id of ['ux-owner','ux-user','ux-peer']) await p.groupMember.upsert({where:{userId_groupId:{userId:id,groupId:'ux-group'}},update:{},create:{userId:id,groupId:'ux-group',role:id==='ux-owner'?'OWNER':'MEMBER',rulesAccepted:true}});
++ const types=[['TEXT','общий-чат'],['NEWS','Новости'],['VOICE','Общая комната'],['QA','Вопросы и ответы'],['DOCS','Документы'],['CALENDAR','Календарь'],['WIKI','База знаний'],['TASKS','Задачи'],['CANVAS','Рабочий холст'],['COMMUNITY','Участники'],['APPEALS','Обращения']];
++ for(let i=0;i<types.length;i++){const [type,name]=types[i],id='ux-'+type.toLowerCase();await p.channel.upsert({where:{id},update:{},create:{id,type,name,groupId:'ux-group',sortOrder:i}}); for(const userId of ['ux-user','ux-peer','ux-owner'])await p.channelMember.upsert({where:{userId_channelId:{userId,channelId:id}},update:{},create:{userId,channelId:id}});}
++ await p.channel.upsert({where:{id:'ux-admin'},update:{},create:{id:'ux-admin',name:'Только администрация',groupId:'ux-group',readAccess:'ADMIN'}});
++ for(let i=0;i<18;i++)await p.message.upsert({where:{id:'ux-msg-'+i},update:{},create:{id:'ux-msg-'+i,channelId:'ux-text',userId:i%2?'ux-user':'ux-peer',content:i===17?'Как вам новый интерфейс? Давайте обсудим предложения по улучшению.':i===16?'Проверим длинное сообщение и переносы: https://example.org/very-long-address-without-spaces-for-interface-testing?section=design-and-development':`Обсуждение проекта, сообщение ${i+1}. Подготовили материалы к следующей встрече.`,createdAt:new Date(Date.now()-(18-i)*60000)}});
++ await p.message.upsert({where:{id:'ux-news-post'},update:{},create:{id:'ux-news-post',channelId:'ux-news',userId:'ux-owner',title:'Новый этап развития проекта',content:'Обновили интерфейс и подготовили план ближайших встреч. Делитесь мнением в комментариях.'}});
++ await p.channelTask.upsert({where:{id:'ux-task'},update:{},create:{id:'ux-task',channelId:'ux-tasks',creatorId:'ux-peer',assigneeId:'ux-user',number:1,title:'Проверить новый интерфейс на телефоне',description:'Открыть все разделы и записать замечания.',priority:'high'}});
++ await p.wikiArticle.upsert({where:{id:'ux-wiki-article'},update:{},create:{id:'ux-wiki-article',channelId:'ux-wiki',title:'Как устроена работа команды',slug:'team-guide',content:'<p>Обсуждения ведём в общем чате. Материалы храним в документах.</p>',updatedById:'ux-owner'}});
++ await p.calendarEvent.upsert({where:{id:'ux-event'},update:{},create:{id:'ux-event',channelId:'ux-calendar',authorId:'ux-peer',title:'Обсуждение обновлений',start:new Date(Date.now()+3600000),end:new Date(Date.now()+7200000),description:'Встреча команды в голосовой комнате'}});
++ for(const authorId of ['ux-user','ux-peer'])await p.wallPost.upsert({where:{id:'ux-wall-'+authorId},update:{},create:{id:'ux-wall-'+authorId,authorId,title:'Немного о работе над проектом',content:'Сегодня обсуждаем новые функции и собираем обратную связь. Спасибо всем участникам!'}});
++ await p.qAThread.upsert({where:{id:'ux-qa-question'},update:{},create:{id:'ux-qa-question',channelId:'ux-qa',authorId:'ux-peer',title:'Где найти материалы встречи?',body:'В каком разделе материалы встречи?'}});
++ await p.reaction.upsert({where:{userId_messageId_emoji:{userId:'ux-peer',messageId:'ux-msg-17',emoji:'❤️'}},update:{},create:{userId:'ux-peer',messageId:'ux-msg-17',emoji:'❤️'}});
++ const s=await p.userSession.create({data:{userId:'ux-user',token:require('crypto').randomUUID(),expiresAt:new Date(Date.now()+86400000),userAgent:'UX audit local browser'}});
++ const token=await encode({secret:process.env.NEXTAUTH_SECRET,token:{id:'ux-user',sub:'ux-user',sid:s.id,pwdAt:null,role:'USER',username:'ux_alex',name:'Алексей Пользователь',email:'ux_alex@example.invalid',isPremium:false,banned:false},maxAge:86400});
++ fs.writeFileSync(process.env.UX_AUTH_FILE||'/tmp/trioz-ux-auth.json',JSON.stringify({token}),{mode:0o600}); console.log('Synthetic group with 11 channel types, 3 users, ordinary MEMBER session ready');
++})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>p.$disconnect());
+diff --git a/scripts/qa/ux-ui-group.cjs b/scripts/qa/ux-ui-group.cjs
+new file mode 100644
+--- /dev/null
++++ b/scripts/qa/ux-ui-group.cjs
+@@ -0,0 +1,14 @@
++const{chromium}=require('playwright');const fs=require('fs'),assert=require('assert/strict');const results=[],root=process.env.UX_RESULT_DIR||'ux-ui-results';
++fs.mkdirSync(root+'/shots',{recursive:true});
++(async()=>{const b=await chromium.launch({...(process.env.CHROMIUM_PATH ? {executablePath:process.env.CHROMIUM_PATH} : {}),args:['--no-sandbox','--disable-dev-shm-usage']});const c=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,bypassCSP:true,reducedMotion:'reduce'});await c.addCookies([{name:'next-auth.session-token',value:JSON.parse(fs.readFileSync(process.env.UX_AUTH_FILE||'/tmp/trioz-ux-auth.json')).token,url:(process.env.UX_BASE_URL||'http://localhost:3100')}]);await c.addInitScript(()=>{localStorage.setItem('trioz-theme','dark');sessionStorage.setItem('tz-connect-splash','1')});const p=await c.newPage();p.setDefaultTimeout(45000);const v=t=>p.getByText(t,{exact:true}).filter({visible:true}).first();const test=async(name,fn)=>{try{await fn();results.push({name,passed:true});console.log('PASS',name)}catch(e){results.push({name,passed:false,error:e.message.slice(0,450)});console.log('FAIL',name,e.message.slice(0,450))}fs.writeFileSync(root+'/group.json',JSON.stringify(results,null,2));};const drawer=async()=>{await p.getByRole('button',{name:'Открыть каналы',exact:true}).filter({visible:true}).first().click()};const nav=t=>p.locator('aside.cn-sidebar').filter({visible:true}).getByText(t,{exact:true}).first();const select=async(name)=>{await drawer();await nav(name).click();await p.waitForTimeout(400)};const snap=async name=>{await p.addStyleTag({content:'nextjs-portal{display:none!important}'});await p.screenshot({path:root+'/shots/'+name+'.png'})};
++await p.goto((process.env.UX_BASE_URL||'http://localhost:3100')+'/connect',{timeout:180000});await v('Команда проекта').click();await p.getByPlaceholder('Сообщение',{exact:true}).filter({visible:true}).waitFor({timeout:120000});await p.waitForTimeout(600);
++await test('ordinary member does not see admin channel',async()=>{await drawer();assert.equal(await nav('Только администрация').count(),0);await nav('общий-чат').click();});
++await test('group message and draft continue to work',async()=>{const input=p.getByPlaceholder('Сообщение',{exact:true}).filter({visible:true});const message='UX regression message '+Date.now();await input.fill(message);await input.press('Enter');await v(message).waitFor();await input.fill('UX group draft');await select('Вопросы и ответы');await select('общий-чат');assert.equal(await input.inputValue(),'UX group draft');await input.fill('');});
++await test('existing reaction can still be toggled',async()=>{const reaction=p.getByRole('button',{name:/Любовь/}).filter({visible:true}).first();await reaction.waitFor();const before=await reaction.getAttribute('aria-pressed');await reaction.click();for(let i=0;i<30&&await reaction.getAttribute('aria-pressed')===before;i++)await p.waitForTimeout(100);assert.notEqual(await reaction.getAttribute('aria-pressed'),before);});
++await select('Вопросы и ответы');await v('Где найти материалы встречи?').waitFor();
++for(const status of [403,500,'network'])await test('QA failure '+status+' does not masquerade as empty; retry works',async()=>{await select('общий-чат');await p.route('**/api/qa?**',r=>status==='network'?r.abort():r.fulfill({status,contentType:'application/json',body:'{"error":"offline"}'}));await select('Вопросы и ответы');await p.getByRole('button',{name:'Повторить загрузку',exact:true}).waitFor();assert.equal(await p.getByText('Пока нет вопросов. Будьте первым!',{exact:true}).count(),0);assert.equal(await p.getByText('Количество неизвестно',{exact:true}).count(),1);await snap('group-error');await p.unroute('**/api/qa?**');await p.getByRole('button',{name:'Повторить загрузку',exact:true}).click();await v('Где найти материалы встречи?').waitFor();});
++await test('QA keyboard focus, Tab cycle, Escape and trigger restore',async()=>{const trigger=p.getByRole('button',{name:'Задать вопрос',exact:true});await trigger.focus();await trigger.click();const dialog=p.getByRole('dialog',{name:'Новый вопрос'});await dialog.waitFor();assert.equal(await p.getByLabel('Заголовок вопроса').evaluate(e=>document.activeElement===e),true);await p.keyboard.press('Shift+Tab');assert.equal(await p.getByRole('button',{name:'Отмена',exact:true}).evaluate(e=>e===document.activeElement),true);await p.keyboard.press('Tab');assert.equal(await p.getByLabel('Заголовок вопроса').evaluate(e=>e===document.activeElement),true);await p.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});assert.equal(await trigger.evaluate(e=>e===document.activeElement),true)});
++await test('QA does not discard a draft on Escape',async()=>{await p.getByRole('button',{name:'Задать вопрос',exact:true}).click();await p.getByLabel('Заголовок вопроса').fill('Несохранённый вопрос');await p.keyboard.press('Escape');await p.getByText('Удалить несохранённый текст вопроса?',{exact:true}).waitFor();await p.getByRole('button',{name:'Продолжить редактирование',exact:true}).click();assert.equal(await p.getByLabel('Заголовок вопроса').inputValue(),'Несохранённый вопрос');await p.keyboard.press('Escape');await p.getByRole('button',{name:'Удалить черновик и закрыть',exact:true}).click();});
++await test('calendar modal uses the same keyboard lifecycle',async()=>{await select('Календарь');await p.getByRole('button',{name:/Обсуждение обновлений/}).filter({visible:true}).first().click();const d=p.getByRole('dialog',{name:'Событие',exact:true});await d.waitFor();assert.equal(await d.evaluate(e=>e.contains(document.activeElement)),true);await p.keyboard.press('Escape');await d.waitFor({state:'hidden'});});
++await test('task details modal closes with Escape',async()=>{await select('Задачи');await v('Проверить новый интерфейс на телефоне').click();const d=p.getByRole('dialog',{name:'Подробности задачи'});await d.waitFor();assert.equal(await d.evaluate(e=>e.contains(document.activeElement)),true);await p.keyboard.press('Escape');await d.waitFor({state:'hidden'});});
++await c.close();await b.close();console.log('TOTAL',results.length,'FAILED',results.filter(x=>!x.passed).length);process.exit(results.some(x=>!x.passed)?1:0)})().catch(e=>{console.error(e);process.exit(1)});
+diff --git a/scripts/qa/ux-ui-layout.cjs b/scripts/qa/ux-ui-layout.cjs
+new file mode 100644
+--- /dev/null
++++ b/scripts/qa/ux-ui-layout.cjs
+@@ -0,0 +1,2 @@
++const{chromium}=require('playwright');const fs=require('fs');const output=process.env.UX_RESULT_DIR||'ux-ui-results';fs.mkdirSync(output+'/shots',{recursive:true});
++(async()=>{const b=await chromium.launch({...(process.env.CHROMIUM_PATH ? {executablePath:process.env.CHROMIUM_PATH} : {}),args:['--no-sandbox','--disable-dev-shm-usage']});const results=[];for(const width of [320,390,768,1440])for(const theme of ['dark','light']){const c=await b.newContext({viewport:{width,height:900},bypassCSP:true,reducedMotion:'reduce'});await c.addCookies([{name:'next-auth.session-token',value:JSON.parse(fs.readFileSync(process.env.UX_AUTH_FILE||'/tmp/trioz-ux-auth.json')).token,url:(process.env.UX_BASE_URL||'http://localhost:3100')}]);await c.addInitScript(t=>localStorage.setItem('trioz-theme',t),theme);const p=await c.newPage();p.on('dialog',d=>d.accept());for(const cat of ['account','security','applications','profile','privacy','voice','connect','notifications','appearance','premium']){await p.goto((process.env.UX_BASE_URL||'http://localhost:3100')+'/settings?section='+cat,{timeout:180000});await p.getByRole('heading',{name:'Настройки',exact:true,includeHidden:true}).waitFor({state:'attached',timeout:120000});await p.waitForTimeout(400);const data=await p.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,over:[...document.querySelectorAll('main *')].filter(e=>{const r=e.getBoundingClientRect();return r.width&&r.right>innerWidth+1}).slice(-8).map(e=>({tag:e.tagName,text:e.textContent.slice(0,40),cls:e.className,right:e.getBoundingClientRect().right}))}));results.push({width,theme,cat,...data});if(data.scroll>width)console.log('OVERFLOW',JSON.stringify(results.at(-1)));if(width===390&&cat==='profile'){await p.addScriptTag({path:require.resolve('axe-core/axe.min.js')});const axe=await p.evaluate(async()=>{const r=await window.axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});return r.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({html:n.html,summary:n.failureSummary}))}))});fs.writeFileSync(output+'/axe-'+theme+'.json',JSON.stringify(axe,null,2));console.log('AXE',theme,axe.map(a=>[a.id,a.nodes.length]));}fs.writeFileSync(output+'/layout.json',JSON.stringify(results,null,2));}await c.close();}await b.close();console.log('DONE',results.length)})().catch(e=>{console.error(e);process.exit(1)});
+diff --git a/scripts/qa/ux-ui-profile.cjs b/scripts/qa/ux-ui-profile.cjs
+new file mode 100644
+--- /dev/null
++++ b/scripts/qa/ux-ui-profile.cjs
+@@ -0,0 +1,19 @@
++const {chromium}=require('playwright');const fs=require('fs');const assert=require('assert/strict');const root=process.env.UX_RESULT_DIR||'ux-ui-results';const results=[];
++fs.mkdirSync(root+'/shots',{recursive:true});
++(async()=>{const b=await chromium.launch({...(process.env.CHROMIUM_PATH ? {executablePath:process.env.CHROMIUM_PATH} : {}),args:['--no-sandbox','--disable-dev-shm-usage']});const c=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,bypassCSP:true,reducedMotion:'reduce'});await c.addCookies([{name:'next-auth.session-token',value:JSON.parse(fs.readFileSync(process.env.UX_AUTH_FILE||'/tmp/trioz-ux-auth.json')).token,url:(process.env.UX_BASE_URL||'http://localhost:3100')}]);await c.addInitScript(()=>{localStorage.setItem('trioz-theme','dark');sessionStorage.setItem('tz-connect-splash','1')});const p=await c.newPage();p.on('dialog',d=>d.accept());p.setDefaultTimeout(45000);const go=async(path,placeholder)=>{await p.goto((process.env.UX_BASE_URL||'http://localhost:3100')+path,{timeout:180000});if(placeholder)await p.getByPlaceholder(placeholder,{exact:true}).waitFor({state:'visible',timeout:120000});else await p.getByRole('heading',{name:'Настройки',exact:true,includeHidden:true}).waitFor({state:'attached'});await p.waitForTimeout(400);};const test=async(name,fn)=>{try{await fn();results.push({name,passed:true});console.log('PASS',name)}catch(e){results.push({name,passed:false,error:e.message.slice(0,450)});console.log('FAIL',name,e.message.slice(0,450))}fs.writeFileSync(root+'/flows.json',JSON.stringify(results,null,2));};const snap=async(name)=>{await p.addStyleTag({content:'nextjs-portal{display:none!important}'});await p.screenshot({path:root+'/shots/'+name+'.png',fullPage:true})};const api=async()=>await(await c.request.get((process.env.UX_BASE_URL||'http://localhost:3100')+'/api/profile')).json();
++await go('/settings?section=profile','Чем занимаетесь?');
++await test('status label focuses its input',async()=>{await p.getByText('Текст статуса',{exact:true}).click();assert.equal(await p.getByLabel('Текст статуса',{exact:true}).evaluate(e=>e===document.activeElement),true)});
++for(const mode of [403,500,'network'])await test('status failure '+mode,async()=>{await p.getByPlaceholder('Чем занимаетесь?').fill('UX failure '+mode);await p.route('**/api/profile/status',r=>mode==='network'?r.abort():r.fulfill({status:mode,contentType:'application/json',body:'{"error":"Статус не сохранён"}'}));await p.getByPlaceholder('Чем занимаетесь?').locator('xpath=ancestor::form').getByRole('button',{name:'Сохранить',exact:true}).click();await p.locator('[role=alert]:not(#__next-route-announcer__)').filter({visible:true}).first().waitFor();assert(!/Статус обновлён!/.test(await p.locator('body').innerText()));assert.equal(await p.getByPlaceholder('Чем занимаетесь?').inputValue(),'UX failure '+mode);await p.unroute('**/api/profile/status')});
++await test('status successful PATCH persists after reload',async()=>{await p.getByPlaceholder('Чем занимаетесь?').fill('UX сохранённый статус');await p.getByPlaceholder('Чем занимаетесь?').locator('xpath=ancestor::form').getByRole('button',{name:'Сохранить',exact:true}).click();await p.getByText('Статус обновлён!',{exact:true}).waitFor();assert.equal((await api()).customStatus,'UX сохранённый статус');await p.reload();await p.getByPlaceholder('Чем занимаетесь?').waitFor();assert.equal(await p.getByPlaceholder('Чем занимаетесь?').inputValue(),'UX сохранённый статус')});
++await test('clear failure does not erase the draft',async()=>{await p.route('**/api/profile/status',r=>r.fulfill({status:500,body:'{}',contentType:'application/json'}));await p.getByRole('button',{name:'Очистить',exact:true}).click();await p.locator('[role=alert]:not(#__next-route-announcer__)').filter({visible:true}).first().waitFor();assert.equal(await p.getByPlaceholder('Чем занимаетесь?').inputValue(),'UX сохранённый статус');await p.unroute('**/api/profile/status')});
++await test('bio draft survives reload and successful save clears dirty state',async()=>{await p.getByPlaceholder('Расскажите немного о себе...').fill('UX восстановленный черновик');await p.waitForTimeout(200);await p.reload();await p.getByPlaceholder('Расскажите немного о себе...').waitFor();assert.equal(await p.getByPlaceholder('Расскажите немного о себе...').inputValue(),'UX восстановленный черновик');await p.getByPlaceholder('Расскажите немного о себе...').locator('xpath=ancestor::form').getByRole('button',{name:'Сохранить',exact:true}).click();await p.getByText('Био обновлено!',{exact:true}).waitFor();assert.equal((await api()).bio,'UX восстановленный черновик');assert.equal(await p.evaluate(()=>sessionStorage.getItem('trioz:bio-draft:ux-user')),null)});
++await go('/settings?section=privacy');await p.getByRole('heading',{name:'Конфиденциальность',exact:true}).waitFor();const original=await api();await p.locator('main select').first().selectOption('nobody');
++for(const mode of [403,500,'network'])await test('privacy atomic failure '+mode,async()=>{let second=0;await p.route('**/api/profile',r=>{if(r.request().method()==='PATCH')second++;r.continue()});await p.route('**/api/profile/privacy',r=>mode==='network'?r.abort():r.fulfill({status:mode,contentType:'application/json',body:'{"error":"Приватность не сохранена"}'}));await p.getByRole('button',{name:'Сохранить',exact:true}).click();await p.locator('[role=alert]:not(#__next-route-announcer__)').filter({visible:true}).first().waitFor();assert.equal(second,0);assert.equal((await api()).privacyOnline,original.privacyOnline);assert.equal(await p.locator('main select').first().inputValue(),'nobody');assert(!/конфиденциальности сохранены!/.test(await p.locator('body').innerText()));await snap('privacy-error');await p.unroute('**/api/profile/privacy');await p.unroute('**/api/profile')});
++await test('privacy success updates all fields in one request',async()=>{await p.getByRole('switch',{name:'Отображать онлайн'}).click();let writes=[];const listen=r=>{if(r.method()==='PATCH'&&r.url().includes('/api/profile'))writes.push(r.url())};p.on('request',listen);await p.getByRole('button',{name:'Сохранить',exact:true}).click();await p.getByText('Настройки конфиденциальности сохранены!',{exact:true}).waitFor();p.off('request',listen);assert.equal(writes.length,1);assert(writes[0].endsWith('/privacy'));assert.equal((await api()).privacyOnline,'nobody');await p.reload();await p.getByRole('switch',{name:'Отображать онлайн'}).waitFor();assert.equal(await p.locator('main select').first().inputValue(),'nobody')});
++await go('/profile','Что у вас нового?');
++await test('own profile links and direct edit entry',async()=>{assert.equal(await p.locator('a[href="https://example.org/"]').count(),1);await p.getByRole('button',{name:'Редактировать профиль',exact:true}).click();await p.getByPlaceholder('Чем занимаетесь?').waitFor();assert(p.url().endsWith('/settings?section=profile'));await go('/profile','Что у вас нового?')});
++await test('wall HTTP500 preserves text and shows retry',async()=>{await p.getByPlaceholder('Что у вас нового?').fill('UX проверка ошибки стены');await p.route('**/api/wall/ux-user',r=>r.request().method()==='POST'?r.fulfill({status:500,contentType:'application/json',body:'{"error":"Тестовый отказ"}'}):r.continue());await p.getByRole('button',{name:'Опубликовать',exact:true}).click();await p.locator('[role=alert]:not(#__next-route-announcer__)').filter({visible:true}).first().waitFor();assert.equal(await p.getByPlaceholder('Что у вас нового?').inputValue(),'UX проверка ошибки стены');await p.getByRole('button',{name:'Повторить публикацию',exact:true}).waitFor();await snap('profile-error');await p.unroute('**/api/wall/ux-user')});
++await test('wall draft survives reload and retry after lost response creates once',async()=>{await p.reload();await p.getByPlaceholder('Что у вас нового?').waitFor();assert.equal(await p.getByPlaceholder('Что у вас нового?').inputValue(),'UX проверка ошибки стены');let first=true,requestBody;await p.route('**/api/wall/ux-user',async r=>{if(r.request().method()!=='POST'||!first)return r.continue();first=false;requestBody=r.request().postDataJSON();const response=await r.fetch();assert.equal(response.status(),201);await r.abort();});await p.getByRole('button',{name:'Опубликовать',exact:true}).click();await p.locator('[role=alert]:not(#__next-route-announcer__)').filter({visible:true}).first().waitFor();await p.getByRole('button',{name:'Повторить публикацию',exact:true}).click();await p.waitForFunction(()=>document.querySelector('textarea[placeholder="Что у вас нового?"]')?.value==='');const posts=await(await c.request.get((process.env.UX_BASE_URL||'http://localhost:3100')+'/api/wall/ux-user')).json();assert.equal(posts.posts.filter(x=>x.content==='UX проверка ошибки стены').length,1);assert(requestBody.clientRequestId);await p.unroute('**/api/wall/ux-user')});
++await test('profile main touch targets are at least 44px high',async()=>{for(const name of ['Фото','Видео','Документ','Опубликовать']){const r=await p.getByRole('button',{name,exact:true}).boundingBox();assert(r.height>=44,`${name}: ${r.height}`)}for(const name of ['Закрепить','Удалить'])for(const button of await p.getByRole('button',{name,exact:true}).all()){assert((await button.boundingBox()).height>=44)}});
++await test('external links visible on other profile',async()=>{await p.goto((process.env.UX_BASE_URL||'http://localhost:3100')+'/profile/ux_maria');await p.locator('a[href="https://example.org/"]').waitFor();assert.equal(await p.locator('a[href="https://github.com/example"]').getAttribute('rel'),'noopener noreferrer nofollow')});
++await c.close();await b.close();console.log('TOTAL',results.length,'FAILED',results.filter(x=>!x.passed).length);process.exit(results.some(x=>!x.passed)?1:0)})().catch(e=>{console.error(e);process.exit(1)});

@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { checkedJson } from "@/lib/clientResponse";
+import { profileLinks } from "@/lib/profileLinks";
+import { useSessionDraft, useUnsavedWarning } from "@/hooks/useDraftProtection";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import GlowAvatar from "@/components/ui/GlowAvatar";
@@ -86,6 +90,7 @@ interface ProfileHead {
   avatar: string | null;
   role: string;
   bio: string | null;
+  socialLinks?: string | Record<string, string> | null;
   customStatus: string | null;
   statusEmoji: string | null;
   avatarGlowEnabled: boolean;
@@ -324,6 +329,8 @@ export default function ProfilePage({ username }: { username?: string }) {
   const [draftTitle, setDraftTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [submission, setSubmission] = useState<{ requestId: string; payload: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   /* FIX-WALLMEDIA: материал грузится СРАЗУ при выборе, а в запись уходят уже
@@ -333,6 +340,19 @@ export default function ProfilePage({ username }: { username?: string }) {
   const [media, setMedia] = useState<WallMedia[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const wallDraft = { title: draftTitle, content: draft, media, submission };
+  const draftDirty = !!(draftTitle || draft || media.length);
+  const wallDraftStored = useSessionDraft({
+    storageKey: head?.isSelf ? `trioz:wall-draft:${head.id}` : null,
+    value: wallDraft, dirty: draftDirty,
+    onRestore: (value) => {
+      if (!value || typeof value.title !== "string" || typeof value.content !== "string") return;
+      setDraftTitle(value.title.slice(0, 200)); setDraft(value.content.slice(0, 20000));
+      if (value.submission && typeof value.submission.requestId === "string" && typeof value.submission.payload === "string") setSubmission(value.submission);
+      if (Array.isArray(value.media)) setMedia(value.media.slice(0, 10).filter((m) => m && typeof m.url === "string" && typeof m.name === "string"));
+    },
+  });
+  useUnsavedWarning(draftDirty);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const docInputRef = useRef<HTMLInputElement | null>(null);
@@ -474,19 +494,24 @@ export default function ProfilePage({ username }: { username?: string }) {
     const content = draft.trim();
     /* FIX-WALLMEDIA: запись только из материала, без текста, тоже имеет смысл. */
     if (!content && media.length === 0) return;
-    setSending(true);
+    setSending(true); setPostError(null);
+    const payload = JSON.stringify({ content, title: draftTitle.trim() || undefined, attachments: media.length ? media : undefined });
+    const clientRequestId = submission?.payload === payload ? submission.requestId : crypto.randomUUID();
+    setSubmission({ requestId: clientRequestId, payload });
     try {
       const res = await fetch(`/api/wall/${head.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content,
+          clientRequestId,
           title: draftTitle.trim() || undefined,
           /* cover намеренно не заполняем: иначе первое фото показывалось бы дважды. */
           attachments: media.length > 0 ? media : undefined,
         }),
       });
-      if (!res.ok) return;
+      await checkedJson(res, "Не удалось опубликовать запись. Текст и вложения сохранены.");
+      setSubmission(null);
       setDraft("");
       setDraftTitle("");
       setMedia([]);
@@ -494,13 +519,15 @@ export default function ProfilePage({ username }: { username?: string }) {
       /* Перечитываем первую страницу, а не вставляем запись в начало списка:
          на странице есть закреплённые, и порядок знает только сервер. */
       await loadWall(head.id, 1);
+    } catch (err) {
+      setPostError(err instanceof Error ? `${err.message} Текст и вложения не удалены.` : "Ошибка сети. Текст и вложения не удалены.");
     } finally {
       setSending(false);
     }
   }
 
   async function removePost(id: string) {
-    if (!head) return;
+    if (!head || !(await confirmDialog({ title: "Удалить запись?", message: "Запись будет удалена со стены.", confirmText: "Удалить", danger: true }))) return;
     const res = await fetch(`/api/wall/posts/${id}`, { method: "DELETE" });
     if (res.ok) await loadWall(head.id, postPage);
   }
@@ -558,11 +585,11 @@ export default function ProfilePage({ username }: { username?: string }) {
               <div className="flex flex-wrap items-center gap-2 max-sm:w-full sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => router.push("/settings")}
+                  onClick={() => router.push("/settings?section=profile")}
                   className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5 max-sm:flex-1"
                 >
                   <GearIcon size={16} style={{ color: "inherit" }} />
-                  Управление TZ ID
+                  Редактировать профиль
                 </button>
               </div>
             )}
@@ -617,6 +644,13 @@ export default function ProfilePage({ username }: { username?: string }) {
             </div>
           )}
 
+          {profileLinks(head.socialLinks).length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2" aria-label="Ссылки профиля">
+              {profileLinks(head.socialLinks).map((link) => <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer nofollow" title={link.domain} className="inline-flex min-h-[44px] max-w-full items-center gap-1 rounded-xl border border-neutral-300 px-3 text-sm text-violet-700 dark:border-cyan-900 dark:text-cyan-300"><span className="truncate">↗ {link.label} · {link.domain}</span></a>)}
+            </div>
+          )}
+          {head.isSelf && <Link href="/settings?section=account" className="mt-2 inline-flex min-h-[44px] items-center text-sm text-neutral-600 underline dark:text-gray-300">Управление TZ ID</Link>}
+
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
             <span className="flex items-center gap-1.5 text-neutral-600 dark:text-gray-300">
               <NewsIcon size={16} style={{ color: "inherit" }} />
@@ -625,7 +659,7 @@ export default function ProfilePage({ username }: { username?: string }) {
             <button
               type="button"
               onClick={() => switchTab("followers")}
-              className="flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
+              className="min-h-[44px] flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
             >
               <UsersIcon size={16} style={{ color: "inherit" }} />
               {followers} подписчиков
@@ -633,7 +667,7 @@ export default function ProfilePage({ username }: { username?: string }) {
             <button
               type="button"
               onClick={() => switchTab("following")}
-              className="flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
+              className="min-h-[44px] flex items-center gap-1.5 text-neutral-600 dark:text-gray-300 hover:text-indigo-500"
             >
               <FriendsIcon size={16} style={{ color: "inherit" }} />
               {following} подписок
@@ -765,13 +799,15 @@ export default function ProfilePage({ username }: { username?: string }) {
                 }}
               />
 
+              {postError && <div role="alert" className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100"><strong>Запись не опубликована</strong><p className="mt-1">{postError}</p></div>}
+              {draftDirty && <p role="status" className="mt-2 text-xs text-neutral-600 dark:text-gray-300">{wallDraftStored ? "Черновик сохранён в этой вкладке." : "Черновик пока только в памяти. Не закрывайте страницу."}</p>}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => photoInputRef.current?.click()}
                     disabled={uploading || media.length >= 10}
-                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                    className="min-h-[44px] flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
                   >
                     <NewsIcon size={13} style={{ color: "inherit" }} />
                     Фото
@@ -780,7 +816,7 @@ export default function ProfilePage({ username }: { username?: string }) {
                     type="button"
                     onClick={() => videoInputRef.current?.click()}
                     disabled={uploading || media.length >= 10}
-                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                    className="min-h-[44px] flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
                   >
                     <FilmIcon size={13} style={{ color: "inherit" }} />
                     Видео
@@ -789,7 +825,7 @@ export default function ProfilePage({ username }: { username?: string }) {
                     type="button"
                     onClick={() => docInputRef.current?.click()}
                     disabled={uploading || media.length >= 10}
-                    className="flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
+                    className="min-h-[44px] flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-xs text-neutral-600 dark:text-gray-300 hover:border-indigo-400 disabled:opacity-40 transition-colors"
                   >
                     <BookOpenIcon size={13} />
                     Документ
@@ -800,9 +836,9 @@ export default function ProfilePage({ username }: { username?: string }) {
                   type="button"
                   onClick={submitPost}
                   disabled={sending || uploading || (!draft.trim() && media.length === 0)}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+                  className="min-h-[44px] px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors"
                 >
-                  {sending ? "Публикация…" : "Опубликовать"}
+                  {sending ? "Публикация…" : postError ? "Повторить публикацию" : "Опубликовать"}
                 </button>
               </div>
             </Card>
@@ -841,7 +877,7 @@ export default function ProfilePage({ username }: { username?: string }) {
                   {/* FIX-WALLMEDIA: фото, видео и документы записи. */}
                   <WallMediaView items={post.attachments} />
 
-                  <div className="mt-2 flex items-center gap-4 text-xs text-neutral-500 dark:text-gray-400">
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-neutral-500 dark:text-gray-400">
                     <span className="flex items-center gap-1">
                       <MessagesIcon size={13} style={{ color: "inherit" }} />
                       {post.commentCount}
@@ -851,13 +887,13 @@ export default function ProfilePage({ username }: { username?: string }) {
                       {post.views}
                     </span>
                     {post.canEdit && (
-                      <button type="button" onClick={() => togglePin(post)} className="flex items-center gap-1 hover:text-indigo-500">
+                      <button type="button" onClick={() => togglePin(post)} className="min-h-[44px] min-w-[44px] px-1 flex items-center gap-1 hover:text-indigo-500">
                         <PinIcon size={13} />
                         {post.pinned ? "Открепить" : "Закрепить"}
                       </button>
                     )}
                     {post.canDelete && (
-                      <button type="button" onClick={() => removePost(post.id)} className="flex items-center gap-1 hover:text-red-500">
+                      <button type="button" onClick={() => removePost(post.id)} className="min-h-[44px] min-w-[44px] px-1 flex items-center gap-1 hover:text-red-500">
                         <TrashIcon size={13} />
                         Удалить
                       </button>

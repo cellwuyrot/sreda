@@ -1,0 +1,42 @@
+[
+  {
+    "name": "ordinary member does not see admin channel",
+    "passed": true
+  },
+  {
+    "name": "group message and draft continue to work",
+    "passed": true
+  },
+  {
+    "name": "existing reaction can still be toggled",
+    "passed": true
+  },
+  {
+    "name": "QA failure 403 does not masquerade as empty; retry works",
+    "passed": true
+  },
+  {
+    "name": "QA failure 500 does not masquerade as empty; retry works",
+    "passed": true
+  },
+  {
+    "name": "QA failure network does not masquerade as empty; retry works",
+    "passed": true
+  },
+  {
+    "name": "QA keyboard focus, Tab cycle, Escape and trigger restore",
+    "passed": true
+  },
+  {
+    "name": "QA does not discard a draft on Escape",
+    "passed": true
+  },
+  {
+    "name": "calendar modal uses the same keyboard lifecycle",
+    "passed": true
+  },
+  {
+    "name": "task details modal closes with Escape",
+    "passed": true
+  }
+]

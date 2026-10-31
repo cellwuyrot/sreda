@@ -1,53 +1,18 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { useModalFocus } from "@/hooks/useModalFocus";
 
 interface ModalBackdropProps {
   onClose: () => void;
   children: React.ReactNode;
   maxWidth?: string;
+  labelledBy?: string;
+  ariaLabel?: string;
 }
 
-export default function ModalBackdrop({ onClose, children, maxWidth = "max-w-sm" }: ModalBackdropProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  // A parent often passes an inline onClose. Updating it must not refocus
-  // the dialog on every keystroke.
-  const onCloseRef = useRef(onClose);
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
-
-  useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
-      if (e.key === "Tab" && contentRef.current) {
-        const focusable = contentRef.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    const content = contentRef.current;
-    // React's autoFocus has already run. Never steal focus from that field.
-    if (content && !content.contains(document.activeElement)) {
-      content.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled), button:not(:disabled)")?.focus();
-    }
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      if (previousFocus?.isConnected) previousFocus.focus();
-    };
-  }, []);
+export default function ModalBackdrop({ onClose, children, maxWidth = "max-w-sm", labelledBy, ariaLabel }: ModalBackdropProps) {
+  const contentRef = useModalFocus(onClose);
 
   return (
     <motion.div
@@ -58,9 +23,12 @@ export default function ModalBackdrop({ onClose, children, maxWidth = "max-w-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={labelledBy}
+      aria-label={ariaLabel}
     >
       <motion.div
         ref={contentRef}
+        tabIndex={-1}
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}

@@ -1,0 +1,11 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+import {prismaMock,row} from '@/test/prismaMock';
+vi.mock('@/lib/prisma',()=>({default:prismaMock}));vi.mock('next-auth',()=>({getServerSession:vi.fn()}));vi.mock('@/lib/auth',()=>({authOptions:{}}));vi.mock('@/lib/socketEmit',()=>({getIO:()=>null}));
+import {getServerSession} from 'next-auth';import {PATCH,PUT} from './route';
+const req=(body:unknown)=>new Request('http://localhost/api/profile/status',{method:'PATCH',body:JSON.stringify(body)});
+beforeEach(()=>{vi.mocked(getServerSession).mockResolvedValue(row({user:{id:'u'}}));prismaMock.user.update.mockResolvedValue(row({customStatus:null,statusEmoji:null}));});
+it('supports profile PATCH including emoji',async()=>{prismaMock.user.update.mockResolvedValue(row({customStatus:'Ready',statusEmoji:'🚀'}));expect((await PATCH(req({customStatus:' Ready ',statusEmoji:'🚀'}))).status).toBe(200);expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({data:{customStatus:'Ready',statusEmoji:'🚀'}}));});
+it('clears only when confirmed by the server',async()=>{await PATCH(req({customStatus:null,statusEmoji:null}));expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({data:{customStatus:null,statusEmoji:null}}));});
+it.each([{customStatus:123},{statusEmoji:{}},{}])('rejects invalid payload',async b=>expect((await PATCH(req(b))).status).toBe(400));
+it('preserves existing presence PUT',async()=>{expect((await PUT(req({statusType:'away'}))).status).toBe(200);expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({data:{statusType:'away'}}));});
+it('requires authentication',async()=>{vi.mocked(getServerSession).mockResolvedValue(null);expect((await PATCH(req({customStatus:'x'}))).status).toBe(401);});

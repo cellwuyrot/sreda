@@ -2,9 +2,11 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
+import { checkedJson } from "@/lib/clientResponse";
+import { useSessionDraft, useUnsavedWarning } from "@/hooks/useDraftProtection";
 import Spinner from "@/components/ui/Spinner";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useId, Children, isValidElement, cloneElement } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useTheme } from "@/components/Providers";
@@ -216,7 +218,7 @@ function AudioDeviceTest() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
         <div>
           <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
             Динамики / наушники
@@ -391,7 +393,7 @@ function AudioDeviceSelect() {
             step={1}
             value={micGainDb}
             onChange={(e) => setMicGain(Number(e.target.value))}
-            className="flex-1 accent-violet-600 dark:accent-cyan-500"
+            className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500"
             aria-label="Усиление микрофона в децибелах"
           />
           <button
@@ -457,14 +459,35 @@ function Section({ title, subtitle, info, dense, children }: { title: string; su
   );
 }
 
+function findFieldControl(nodes: React.ReactNode): React.ReactElement<{ id?: string; children?: React.ReactNode }> | undefined {
+  for (const child of Children.toArray(nodes)) {
+    if (!isValidElement<{ id?: string; children?: React.ReactNode }>(child)) continue;
+    if (child.type === Input || (typeof child.type === "string" && ["input", "textarea", "select"].includes(child.type))) return child;
+    const nested = findFieldControl(child.props.children);
+    if (nested) return nested;
+  }
+}
+
+function bindFieldControl(nodes: React.ReactNode, target: React.ReactElement<{ id?: string }>, id: string): React.ReactNode {
+  return Children.map(nodes, child => {
+    if (!isValidElement<{ id?: string; children?: React.ReactNode }>(child)) return child;
+    // Children.toArray may change keys; props retain the original identity.
+    if (child.type === target.type && child.props === target.props) return cloneElement(child, { id });
+    return child.props.children ? cloneElement(child, { children: bindFieldControl(child.props.children, target, id) }) : child;
+  });
+}
+
 function Field({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
+  const fieldId = useId();
+  const control = findFieldControl(children);
+  const id = control?.props.id || fieldId;
   return (
-    <div className="space-y-1.5">
-      <label className="flex items-center gap-1.5 text-sm text-neutral-500 dark:text-gray-400">
+    <div className="space-y-1.5 min-w-0">
+      <label htmlFor={control ? id : undefined} className="flex items-center gap-1.5 text-sm text-neutral-600 dark:text-gray-300">
         {label}
         {info && <InfoTooltip text={info} />}
       </label>
-      {children}
+      {control ? bindFieldControl(children, control, id) : children}
     </div>
   );
 }
@@ -505,7 +528,7 @@ function SaveButton({ loading, label = "Сохранить" }: { loading: boolea
     <button
       type="submit"
       disabled={loading}
-      className="px-5 py-2 bg-violet-600 dark:bg-cyan-600 hover:bg-violet-500 dark:hover:bg-cyan-500 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+      className="min-h-[44px] px-5 py-2 bg-violet-600 dark:bg-cyan-400 hover:bg-violet-700 dark:hover:bg-cyan-300 text-white dark:text-neutral-950 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
     >
       {loading ? "Сохранение..." : label}
     </button>
@@ -518,9 +541,13 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
       type="button"
       onClick={onChange}
       aria-label={label}
-      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}
+      role="switch"
+      aria-checked={checked}
+      className="relative flex min-h-[44px] w-11 shrink-0 items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
     >
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
+      <span aria-hidden="true" className={`relative block h-6 w-11 rounded-full transition-colors ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}>
+        <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
+      </span>
     </button>
   );
 }
@@ -528,13 +555,14 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
 function Toast({ message, type }: { message: string; type: "success" | "error" }) {
   return (
     <motion.div
+      role={type === "error" ? "alert" : "status"}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
-      className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg ${
+      className={`fixed bottom-24 right-3 left-3 sm:left-auto sm:right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg ${
         type === "success"
-          ? "bg-green-500 text-white"
-          : "bg-red-500 text-white"
+          ? "bg-green-800 text-white"
+          : "bg-red-800 text-white"
       }`}
     >
       {message}
@@ -638,6 +666,16 @@ export default function SettingsPage() {
   const [notifyForm, setNotifyForm] = useState({ notifySound: true, notifyPush: true });
   const [showOnline, setShowOnline] = useState(true);
   const [deletePassword, setDeletePassword] = useState("");
+
+  const bioDirty = !!profile && bioForm !== (profile.bio || "");
+  const statusDirty = !!profile && (statusForm.customStatus !== (profile.customStatus || "") || statusForm.statusEmoji !== (profile.statusEmoji || ""));
+  const privacyDirty = !!profile && (showOnline !== profile.showOnline || privacyForm.privacyOnline !== profile.privacyOnline || privacyForm.privacyFriends !== profile.privacyFriends || privacyForm.privacyEmail !== profile.privacyEmail);
+  const linksDirty = !!profile && JSON.stringify(linksForm) !== JSON.stringify({ telegram: "", vk: "", github: "", website: "", ...JSON.parse(profile.socialLinks || "{}") });
+  const nameDirty = !!profile && (nameForm.name !== profile.name || nameForm.username !== profile.username);
+  const notifyDirty = !!profile && (notifyForm.notifySound !== profile.notifySound || notifyForm.notifyPush !== profile.notifyPush);
+  const hasUnsaved = bioDirty || statusDirty || privacyDirty || linksDirty || nameDirty || notifyDirty;
+  const bioDraftStored = useSessionDraft({ storageKey: profile ? `trioz:bio-draft:${profile.id}` : null, value: bioForm, dirty: bioDirty, onRestore: (value) => { if (typeof value === "string") setBioForm(value.slice(0, 200)); } });
+  useUnsavedWarning(hasUnsaved);
 
   // Loading states
   const [savingProfile, setSavingProfile] = useState(false);
@@ -862,7 +900,7 @@ export default function SettingsPage() {
   const handleSaveBio = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingBio(true);
-    try { await patchProfile({ bio: bioForm || null }); showToast("Био обновлено!", "success"); }
+    try { await patchProfile({ bio: bioForm || null }); setProfile((p) => p ? { ...p, bio: bioForm || null } : p); showToast("Био обновлено!", "success"); }
     catch (err) { showToast((err as Error).message, "error"); }
     finally { setSavingBio(false); }
   };
@@ -872,9 +910,11 @@ export default function SettingsPage() {
     e.preventDefault();
     setSavingStatus(true);
     try {
-      await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(statusForm) });
+      const saved = await checkedJson<{ customStatus: string | null; statusEmoji: string | null }>(await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(statusForm) }));
+      setStatusForm({ customStatus: saved.customStatus || "", statusEmoji: saved.statusEmoji || "" });
+      setProfile((p) => p ? { ...p, ...saved } : p);
       showToast("Статус обновлён!", "success");
-    } catch { showToast("Ошибка", "error"); }
+    } catch (err) { showToast(err instanceof Error ? err.message : "Ошибка сети. Статус не сохранён.", "error"); }
     finally { setSavingStatus(false); }
   };
 
@@ -885,6 +925,7 @@ export default function SettingsPage() {
     try {
       const hasLinks = Object.values(linksForm).some(Boolean);
       await patchProfile({ socialLinks: hasLinks ? linksForm : null });
+      setProfile((p) => p ? { ...p, socialLinks: hasLinks ? JSON.stringify(linksForm) : null } : p);
       showToast("Ссылки обновлены!", "success");
     } catch (err) { showToast((err as Error).message, "error"); }
     finally { setSavingLinks(false); }
@@ -895,11 +936,10 @@ export default function SettingsPage() {
     e.preventDefault();
     setSavingPrivacy(true);
     try {
-      await fetch("/api/profile/privacy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(privacyForm) });
-      await patchProfile({ showOnline });
-      setProfile((p) => p ? { ...p, showOnline } : p);
+      const saved = await checkedJson<typeof privacyForm & { showOnline: boolean }>(await fetch("/api/profile/privacy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...privacyForm, showOnline }) }));
+      setProfile((p) => p ? { ...p, ...saved } : p);
       showToast("Настройки конфиденциальности сохранены!", "success");
-    } catch { showToast("Ошибка", "error"); }
+    } catch (err) { showToast(err instanceof Error ? err.message : "Ошибка сети. Изменения не сохранены.", "error"); }
     finally { setSavingPrivacy(false); }
   };
 
@@ -915,6 +955,7 @@ export default function SettingsPage() {
       /* Кэш и событие — чтобы звук и системные уведомления начали слушаться
          сразу, не дожидаясь следующей загрузки страницы. */
       cacheNotifyPrefs(notifyForm);
+      setProfile((p) => p ? { ...p, ...notifyForm } : p);
       showToast("Настройки уведомлений сохранены!", "success");
     } catch { showToast("Ошибка", "error"); }
     finally { setSavingNotify(false); }
@@ -1253,7 +1294,7 @@ export default function SettingsPage() {
                 ].map((stat) => (
                   <div key={stat.label} className="bg-neutral-100 dark:bg-white/5 rounded-lg py-2 text-center">
                     <p className="text-sm font-bold leading-none text-neutral-900 dark:text-white">{stat.value}</p>
-                    <p className="text-[10px] text-neutral-500 dark:text-gray-500 mt-1">{stat.label}</p>
+                    <p className="text-[10px] text-neutral-600 dark:text-gray-300 mt-1">{stat.label}</p>
                   </div>
                 ))}
               </div>
@@ -1269,7 +1310,7 @@ export default function SettingsPage() {
                     placeholder="Расскажите немного о себе..."
                     className="w-full bg-neutral-50 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:border-violet-500 dark:focus:border-cyan-500 text-sm transition-colors resize-none"
                   />
-                  <p className="text-xs text-neutral-400">{bioForm.length}/200</p>
+                  <p className="text-xs text-neutral-600 dark:text-gray-300">{bioForm.length}/200</p>
                 </Field>
                 <SaveButton loading={savingBio} />
               </form>
@@ -1291,7 +1332,16 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex gap-2">
                   <SaveButton loading={savingStatus} />
-                  <button type="button" onClick={async () => { setSavingStatus(true); setStatusForm({ customStatus: "", statusEmoji: "" }); await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customStatus: null, statusEmoji: null }) }); setSavingStatus(false); showToast("Статус очищен", "success"); }} className="px-4 py-2 bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-gray-400 rounded-xl text-sm hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors">
+                  <button type="button" disabled={savingStatus} onClick={async () => {
+                    setSavingStatus(true);
+                    try {
+                      const saved = await checkedJson<{ customStatus: string | null; statusEmoji: string | null }>(await fetch("/api/profile/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customStatus: null, statusEmoji: null }) }));
+                      setStatusForm({ customStatus: "", statusEmoji: "" });
+                      setProfile((p) => p ? { ...p, ...saved } : p);
+                      showToast("Статус очищен", "success");
+                    } catch (err) { showToast(err instanceof Error ? err.message : "Ошибка сети. Статус не очищен.", "error"); }
+                    finally { setSavingStatus(false); }
+                  }} className="px-4 py-2 bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-gray-400 rounded-xl text-sm hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors">
                     Очистить
                   </button>
                 </div>
@@ -1479,7 +1529,7 @@ export default function SettingsPage() {
                         : "Ползунки запоминаются, но применяются только в голосовом канале: вне него микрофон не захвачен."}
                   </p>
                 )}
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                   <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                     Пресет
                     <InfoTooltip text="«Тепло» — поднимает низ и мягко убирает верх. «Радио» — срезает низ и выводит вперёд середину. «Чёткость» — добавляет 3.5 кГц, от этого разборчивее согласные. «Глубина» — усиливает 80 Гц. Стоит подвинуть любой ползунок, и пресет станет «Свои настройки»." />
@@ -1511,7 +1561,7 @@ export default function SettingsPage() {
                         value={voice.eqGains[i] ?? 0}
                         disabled={!effectivePremium}
                         onChange={(e) => voice.setEqBandGain(i, Number(e.target.value))}
-                        className="flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
+                        className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
                         aria-label={`Полоса ${band.label}`}
                       />
                       <span className="w-14 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400 tabular-nums">
@@ -1519,7 +1569,7 @@ export default function SettingsPage() {
                       </span>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between gap-3 pt-0.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
                     <span className="flex items-center gap-1.5 text-[11px] text-neutral-400">
                       {EQ_PRESET_LABELS[voice.eqPreset]}
                       <InfoTooltip text="Каждая полоса меняется от −12 до +12 дБ. Ноль на всех полосах — сигнал идёт как есть." />
@@ -1568,7 +1618,7 @@ export default function SettingsPage() {
                       value={Math.round(voice.monitorVolume * 100)}
                       disabled={!effectivePremium}
                       onChange={(e) => voice.setMonitorVolume(Number(e.target.value) / 100)}
-                      className="flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
+                      className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500 disabled:cursor-not-allowed"
                       aria-label="Громкость монитора"
                     />
                     <span className="w-14 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400 tabular-nums">
@@ -1595,7 +1645,7 @@ export default function SettingsPage() {
             >
               {effectivePremium ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <div>
                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                         Включить буфер повтора
@@ -1604,7 +1654,7 @@ export default function SettingsPage() {
                     </div>
                     <Toggle checked={voice.replayEnabled} onChange={() => voice.setReplayEnabled(!voice.replayEnabled)} label="Буфер повтора" />
                   </div>
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <div>
                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                         Бинд в приложении
@@ -1619,7 +1669,7 @@ export default function SettingsPage() {
                   </div>
                   {/* Длительность буфера. Минимально: строка, ползунок, значение —
                       пояснение спрятано в «(?)», чтобы не разводить текст. */}
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                       Длительность
                       <InfoTooltip text="Сколько последних секунд держать в буфере: от 30 секунд до 3 минут. Буфер живёт в памяти вкладки, поэтому длинный отрезок занимает больше памяти. Новое значение применится при следующем входе в голосовой канал." />
@@ -1632,7 +1682,7 @@ export default function SettingsPage() {
                         step={15}
                         value={voice.replaySeconds}
                         onChange={(e) => voice.setReplaySeconds(Number(e.target.value))}
-                        className="flex-1 accent-violet-600 dark:accent-cyan-500"
+                        className="min-w-0 w-full flex-1 accent-violet-600 dark:accent-cyan-500"
                         aria-label="Длительность буфера повтора"
                       />
                       <span className="w-14 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400">
@@ -1644,7 +1694,7 @@ export default function SettingsPage() {
                   </div>
                   {isDesktop ? (
                     <>
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                         <div>
                           <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                             Глобальный бинд (десктоп)
@@ -1657,7 +1707,7 @@ export default function SettingsPage() {
                           onClear={() => void saveShortcut({ replayShortcut: "" })}
                         />
                       </div>
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                         <div className="min-w-0">
                           <p className="text-sm text-neutral-900 dark:text-white font-medium">Папка для сохранения</p>
                           <p className="text-xs text-neutral-400 mt-0.5 truncate">
@@ -1694,7 +1744,7 @@ export default function SettingsPage() {
             >
               {isDesktop ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <div>
                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                         Выключить / включить микрофон
@@ -1707,7 +1757,7 @@ export default function SettingsPage() {
                       onClear={() => void saveShortcut({ toggleMuteShortcut: "" })}
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <div>
                       <p className="flex items-center gap-1.5 text-sm text-neutral-900 dark:text-white font-medium">
                         Рация (короткая передача)
@@ -1741,7 +1791,7 @@ export default function SettingsPage() {
             >
               {isDesktop ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <div className="text-sm font-medium">Включить оверлей</div>
                     <button
                       type="button"
@@ -1753,7 +1803,7 @@ export default function SettingsPage() {
                       <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${desktopCfg?.overlayEnabled ? "left-[22px]" : "left-0.5"}`} />
                     </button>
                   </div>
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <div className="flex items-center gap-1.5 text-sm font-medium">
                       Расположение
                       <InfoTooltip text="С какой стороны экрана показывать оверлей." />
@@ -1772,7 +1822,7 @@ export default function SettingsPage() {
                       ))}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 px-3.5 py-2.5">
                     <div className="flex items-center gap-1.5 text-sm font-medium">
                       Демонстрация экрана в оверлее
                       <InfoTooltip text="Показывать превью активной демонстрации экрана внутри оверлея." />
@@ -1991,7 +2041,7 @@ export default function SettingsPage() {
   const activeLabel = CATEGORIES.flatMap((g) => g.items).find((i) => i.id === activeCat)?.label ?? "Настройки";
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 pt-20 max-md:pt-4 pb-12 px-4 max-md:px-3">
+    <div className="settings-page min-h-screen bg-neutral-50 dark:bg-neutral-950 pt-20 max-md:pt-4 pb-12 px-4 max-md:px-3">
       <div className="max-w-5xl mx-auto md:flex md:gap-6">
 
         {/* ── Sidebar (list of categories) ── */}
@@ -2064,6 +2114,11 @@ export default function SettingsPage() {
         </main>
       </div>
 
+      {hasUnsaved && (
+        <div role="status" className="sticky bottom-20 mt-4 rounded-xl border border-violet-300 bg-white px-4 py-3 text-sm text-neutral-700 shadow-lg dark:border-cyan-800 dark:bg-neutral-900 dark:text-gray-200">
+          Есть несохранённые изменения. Нажмите «Сохранить» в изменённом блоке. {bioDirty && (bioDraftStored ? "Черновик «О себе» сохранён в этой вкладке." : "Черновик «О себе» пока только в памяти. Не закрывайте страницу.")}
+        </div>
+      )}
       {toast && <Toast message={toast.message} type={toast.type} />}
     </div>
   );

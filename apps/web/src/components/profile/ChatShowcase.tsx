@@ -148,9 +148,9 @@ export default function ChatShowcase() {
                   {prefs.showAvatars && <Avatar author={m.author} show={!grouped} />}
                   <div className="min-w-0 flex-1">
                     {m.reply && (
-                      <div className="inline-flex items-center gap-1.5 text-[12px] text-neutral-500 dark:text-gray-400 mb-1 border-l-2 border-violet-400 dark:border-cyan-400 pl-2 pr-2 py-0.5 rounded-r-md bg-violet-50/60 dark:bg-cyan-400/[0.06] max-w-fit">
+                      <div className="inline-flex items-center gap-1.5 text-[12px] text-neutral-500 dark:text-gray-400 mb-1 border-l-2 border-violet-400 dark:border-cyan-400 pl-2 pr-2 py-0.5 rounded-r-md bg-violet-50/60 dark:bg-cyan-400/[0.06] max-w-full">
                         <span className="font-semibold text-violet-600 dark:text-cyan-300">{m.reply.name}:</span>
-                        <span className="truncate max-w-[240px]">{m.reply.text}</span>
+                        <span className="min-w-0 truncate max-w-[240px]">{m.reply.text}</span>
                       </div>
                     )}
 

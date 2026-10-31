@@ -1,0 +1,5 @@
+import React,{useState} from 'react';import{afterEach,expect,it}from'vitest';import{cleanup,fireEvent,render,screen,waitFor}from'@testing-library/react';import{useSessionDraft}from'./useDraftProtection';
+function Form({user='a'}:{user?:string}){const[value,setValue]=useState('server');useSessionDraft({storageKey:`draft:${user}`,value,dirty:value!=='server',onRestore:setValue});return <input aria-label="bio" value={value} onChange={e=>setValue(e.target.value)}/>}
+afterEach(()=>{cleanup();sessionStorage.clear()});
+it('restores the user draft after remount, clears it when saved',async()=>{const a=render(<Form/>);fireEvent.change(screen.getByLabelText('bio'),{target:{value:'draft'}});expect(sessionStorage.getItem('draft:a')).toBe('"draft"');a.unmount();render(<Form/>);await waitFor(()=>expect(screen.getByLabelText('bio')).toHaveValue('draft'));fireEvent.change(screen.getByLabelText('bio'),{target:{value:'server'}});expect(sessionStorage.getItem('draft:a')).toBeNull();});
+it('does not restore another account draft',()=>{sessionStorage.setItem('draft:a','"private"');render(<Form user="b"/>);expect(screen.getByLabelText('bio')).toHaveValue('server')});

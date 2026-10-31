@@ -1,0 +1,26 @@
+const {PrismaClient}=require('@prisma/client');
+const {encode}=require('next-auth/jwt');
+const fs=require('fs');
+if (process.env.UX_ALLOW_TEST_SEED !== '1' || !/(test|audit|ux)/i.test(new URL(process.env.DATABASE_URL || 'http://missing').pathname) || !process.env.NEXTAUTH_SECRET) {
+ throw new Error('Use a dedicated test/audit/ux database, NEXTAUTH_SECRET and UX_ALLOW_TEST_SEED=1. Never seed a production database.');
+}
+const p=new PrismaClient();
+(async()=>{
+ for(const [id,name,username,premium] of [['ux-owner','Елена Администратор','ux_owner',true],['ux-user','Алексей Пользователь','ux_alex',false],['ux-peer','Мария Коллега','ux_maria',false]]) await p.user.upsert({where:{id},update:{},create:{id,name,username,email:username+'@example.invalid',password:'not-a-login-hash',emailVerified:true,isPremium:premium,bio:'Занимаюсь дизайном и разработкой. Участник сообщества TrioZ.',customStatus:'Работаю над новым проектом',socialLinks:JSON.stringify({website:'https://example.org',github:'https://github.com/example'})}});
+ await p.group.upsert({where:{id:'ux-group'},update:{},create:{id:'ux-group',name:'Команда проекта',description:'Обсуждаем обновления, делимся материалами и планируем работу.',rules:'Уважайте друг друга. Не публикуйте личные данные.',ownerId:'ux-owner',sectionsEnabled:true}});
+ for(const id of ['ux-owner','ux-user','ux-peer']) await p.groupMember.upsert({where:{userId_groupId:{userId:id,groupId:'ux-group'}},update:{},create:{userId:id,groupId:'ux-group',role:id==='ux-owner'?'OWNER':'MEMBER',rulesAccepted:true}});
+ const types=[['TEXT','общий-чат'],['NEWS','Новости'],['VOICE','Общая комната'],['QA','Вопросы и ответы'],['DOCS','Документы'],['CALENDAR','Календарь'],['WIKI','База знаний'],['TASKS','Задачи'],['CANVAS','Рабочий холст'],['COMMUNITY','Участники'],['APPEALS','Обращения']];
+ for(let i=0;i<types.length;i++){const [type,name]=types[i],id='ux-'+type.toLowerCase();await p.channel.upsert({where:{id},update:{},create:{id,type,name,groupId:'ux-group',sortOrder:i}}); for(const userId of ['ux-user','ux-peer','ux-owner'])await p.channelMember.upsert({where:{userId_channelId:{userId,channelId:id}},update:{},create:{userId,channelId:id}});}
+ await p.channel.upsert({where:{id:'ux-admin'},update:{},create:{id:'ux-admin',name:'Только администрация',groupId:'ux-group',readAccess:'ADMIN'}});
+ for(let i=0;i<18;i++)await p.message.upsert({where:{id:'ux-msg-'+i},update:{},create:{id:'ux-msg-'+i,channelId:'ux-text',userId:i%2?'ux-user':'ux-peer',content:i===17?'Как вам новый интерфейс? Давайте обсудим предложения по улучшению.':i===16?'Проверим длинное сообщение и переносы: https://example.org/very-long-address-without-spaces-for-interface-testing?section=design-and-development':`Обсуждение проекта, сообщение ${i+1}. Подготовили материалы к следующей встрече.`,createdAt:new Date(Date.now()-(18-i)*60000)}});
+ await p.message.upsert({where:{id:'ux-news-post'},update:{},create:{id:'ux-news-post',channelId:'ux-news',userId:'ux-owner',title:'Новый этап развития проекта',content:'Обновили интерфейс и подготовили план ближайших встреч. Делитесь мнением в комментариях.'}});
+ await p.channelTask.upsert({where:{id:'ux-task'},update:{},create:{id:'ux-task',channelId:'ux-tasks',creatorId:'ux-peer',assigneeId:'ux-user',number:1,title:'Проверить новый интерфейс на телефоне',description:'Открыть все разделы и записать замечания.',priority:'high'}});
+ await p.wikiArticle.upsert({where:{id:'ux-wiki-article'},update:{},create:{id:'ux-wiki-article',channelId:'ux-wiki',title:'Как устроена работа команды',slug:'team-guide',content:'<p>Обсуждения ведём в общем чате. Материалы храним в документах.</p>',updatedById:'ux-owner'}});
+ await p.calendarEvent.upsert({where:{id:'ux-event'},update:{},create:{id:'ux-event',channelId:'ux-calendar',authorId:'ux-peer',title:'Обсуждение обновлений',start:new Date(Date.now()+3600000),end:new Date(Date.now()+7200000),description:'Встреча команды в голосовой комнате'}});
+ for(const authorId of ['ux-user','ux-peer'])await p.wallPost.upsert({where:{id:'ux-wall-'+authorId},update:{},create:{id:'ux-wall-'+authorId,authorId,title:'Немного о работе над проектом',content:'Сегодня обсуждаем новые функции и собираем обратную связь. Спасибо всем участникам!'}});
+ await p.qAThread.upsert({where:{id:'ux-qa-question'},update:{},create:{id:'ux-qa-question',channelId:'ux-qa',authorId:'ux-peer',title:'Где найти материалы встречи?',body:'В каком разделе материалы встречи?'}});
+ await p.reaction.upsert({where:{userId_messageId_emoji:{userId:'ux-peer',messageId:'ux-msg-17',emoji:'❤️'}},update:{},create:{userId:'ux-peer',messageId:'ux-msg-17',emoji:'❤️'}});
+ const s=await p.userSession.create({data:{userId:'ux-user',token:require('crypto').randomUUID(),expiresAt:new Date(Date.now()+86400000),userAgent:'UX audit local browser'}});
+ const token=await encode({secret:process.env.NEXTAUTH_SECRET,token:{id:'ux-user',sub:'ux-user',sid:s.id,pwdAt:null,role:'USER',username:'ux_alex',name:'Алексей Пользователь',email:'ux_alex@example.invalid',isPremium:false,banned:false},maxAge:86400});
+ fs.writeFileSync(process.env.UX_AUTH_FILE||'/tmp/trioz-ux-auth.json',JSON.stringify({token}),{mode:0o600}); console.log('Synthetic group with 11 channel types, 3 users, ordinary MEMBER session ready');
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>p.$disconnect());

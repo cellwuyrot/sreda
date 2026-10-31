@@ -30,3 +30,26 @@ export async function PUT(req: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+/** Profile editor uses PATCH; presence controls continue to use PUT. */
+export async function PATCH(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") return NextResponse.json({ error: "Неверный запрос" }, { status: 400 });
+  const data: { customStatus?: string | null; statusEmoji?: string | null } = {};
+  for (const [key, limit] of [["customStatus", 100], ["statusEmoji", 10]] as const) {
+    if (body[key] === undefined) continue;
+    if (body[key] !== null && typeof body[key] !== "string") {
+      return NextResponse.json({ error: "Неверный формат статуса" }, { status: 400 });
+    }
+    data[key] = body[key]?.trim().slice(0, limit) || null;
+  }
+  if (!Object.keys(data).length) return NextResponse.json({ error: "Нет данных" }, { status: 400 });
+  const updated = await prisma.user.update({
+    where: { id: session.user.id }, data,
+    select: { customStatus: true, statusEmoji: true },
+  });
+  getIO()?.emit("user-status-changed", { userId: session.user.id, ...updated });
+  return NextResponse.json(updated);
+}
