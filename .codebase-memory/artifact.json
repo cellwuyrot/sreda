@@ -1,12 +1,12 @@
 {
     "schema_version": 2,
-    "commit": "a60d68c627b2c73ca1948cc99af50b348a1e7b19",
-    "indexed_at": "2026-10-31T11:28:00Z",
+    "commit": "fa95a7e3dbb94a73ee962578d2b8c4a4857ff833",
+    "indexed_at": "2026-10-31T14:00:21Z",
     "project": "trioz",
-    "nodes": 15720,
-    "edges": 49553,
-    "original_size": 31588352,
-    "compressed_size": 7128705,
+    "nodes": 15873,
+    "edges": 50513,
+    "original_size": 31916032,
+    "compressed_size": 7190667,
     "compression_level": 9,
     "reconcile_basis": "git-clean-head"
 }
