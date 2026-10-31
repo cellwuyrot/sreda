@@ -19,7 +19,8 @@
  * native dialog so behaviour is never lost.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useModalFocus } from "@/hooks/useModalFocus";
+import { useCallback, useEffect, useState } from "react";
 
 export interface ConfirmOptions {
   title?: string;
@@ -78,7 +79,7 @@ export function alertDialog(opts: string | ConfirmOptions): Promise<void> {
 
 export function ConfirmDialogHost() {
   const [queue, setQueue] = useState<DialogRequest[]>([]);
-  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+
   const current = queue[0] ?? null;
 
   useEffect(() => {
@@ -96,25 +97,7 @@ export function ConfirmDialogHost() {
     });
   }, []);
 
-  useEffect(() => {
-    if (!current) return;
-    // Focus the primary action for keyboard users.
-    const t = requestAnimationFrame(() => confirmBtnRef.current?.focus());
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        settle(current.kind === "alert");
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        settle(true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      cancelAnimationFrame(t);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [current, settle]);
+  const modalRef = useModalFocus(() => settle(current?.kind === "alert"), !!current, current?.id);
 
   if (!current) return null;
 
@@ -124,6 +107,8 @@ export function ConfirmDialogHost() {
 
   return (
     <div
+      ref={modalRef}
+      tabIndex={-1}
       className="fixed inset-0 z-[200] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
@@ -159,11 +144,10 @@ export function ConfirmDialogHost() {
             </button>
           )}
           <button
-            ref={confirmBtnRef}
             type="button"
             onClick={() => settle(true)}
             className={`min-h-[44px] px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-0 ${
-              opts.danger ? "bg-red-500 focus:ring-red-400/40" : "bg-violet-500 dark:bg-cyan-600 focus:ring-violet-400/40 dark:focus:ring-cyan-400/40"
+              opts.danger ? "bg-red-700 focus:ring-red-400/40" : "bg-violet-700 dark:bg-cyan-800 focus:ring-violet-400/40 dark:focus:ring-cyan-400/40"
             }`}
           >
             {confirmText}

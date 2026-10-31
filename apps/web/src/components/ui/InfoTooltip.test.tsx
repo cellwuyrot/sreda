@@ -1,0 +1,3 @@
+import React from'react';import{afterEach,expect,it}from'vitest';import{cleanup,fireEvent,render,screen}from'@testing-library/react';import InfoTooltip from'./InfoTooltip';
+afterEach(cleanup);
+it('does not mount an overflowing hidden box; supports keyboard and Escape',()=>{render(<InfoTooltip text="Help"/>);expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();const trigger=screen.getByRole('button',{name:'Подробнее'});fireEvent.focus(trigger);expect(screen.getByRole('tooltip')).toHaveTextContent('Help');expect(trigger).toHaveAttribute('aria-describedby',screen.getByRole('tooltip').id);fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()});

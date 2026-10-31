@@ -19,12 +19,12 @@ import InfoTooltip from "@/components/ui/InfoTooltip";
 
 export function SettingsRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
+    <div className="flex min-w-0 flex-col items-stretch gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
       <span className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
         {label}
         {hint && <InfoTooltip text={hint} />}
       </span>
-      <div className="flex-shrink-0">{children}</div>
+      <div className="min-w-0 max-w-full sm:max-w-[70%]">{children}</div>
     </div>
   );
 }
@@ -42,7 +42,9 @@ export function SettingsChoice<T extends string | number>({
         <button
           key={String(opt.value)}
           onClick={() => onChange(opt.value)}
-          className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${
+          type="button"
+          aria-pressed={value === opt.value}
+          className={`min-h-[44px] px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${
             value === opt.value
               ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400"
               : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300"
@@ -58,16 +60,17 @@ export function SettingsChoice<T extends string | number>({
 export function SettingsSwitch({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return (
     <button
+      type="button"
       onClick={onChange}
       aria-label={label}
+      role="switch"
+      aria-checked={checked}
       aria-pressed={checked}
-      className={`relative w-10 h-5.5 rounded-full transition-colors ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}
-      style={{ height: 22 }}
+      className="relative flex min-h-[44px] min-w-[44px] items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
     >
-      <span
-        className="absolute top-0.5 left-0.5 w-[18px] h-[18px] bg-white rounded-full shadow transition-transform"
-        style={{ transform: checked ? "translateX(18px)" : "none" }}
-      />
+      <span aria-hidden="true" className={`relative block h-[22px] w-10 rounded-full transition-colors ${checked ? "bg-violet-600 dark:bg-cyan-600" : "bg-neutral-300 dark:bg-neutral-600"}`}>
+        <span className="absolute top-0.5 left-0.5 w-[18px] h-[18px] bg-white rounded-full shadow transition-transform" style={{ transform: checked ? "translateX(18px)" : "none" }} />
+      </span>
     </button>
   );
 }
@@ -79,7 +82,7 @@ export function SettingsSlider({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-2 w-40">
+    <div className="flex min-w-0 max-w-full items-center gap-2 w-40">
       <input
         id={id}
         type="range"
@@ -88,7 +91,7 @@ export function SettingsSlider({
         step={step}
         value={value}
         onChange={(e) => onChange(+e.target.value)}
-        className="flex-1 accent-violet-500 dark:accent-cyan-500"
+        className="min-w-0 flex-1 accent-violet-500 dark:accent-cyan-500"
       />
       <span className="w-12 text-right text-[11px] font-mono text-violet-500 dark:text-cyan-400">
         {value}{unit}
@@ -106,7 +109,7 @@ export function SettingsCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl p-6 space-y-4">
+    <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-2xl p-4 sm:p-6 min-w-0 space-y-4">
       <div>
         <h2 className="flex items-center gap-1.5 text-base font-semibold text-neutral-900 dark:text-white">
           {title}
@@ -140,12 +143,14 @@ export function SettingsTabs<T extends string>({
   onChange: (id: T) => void;
 }) {
   return (
-    <div className="flex gap-1.5 border-b border-neutral-200 dark:border-white/10">
+    <div className="flex max-w-full flex-wrap gap-1.5 border-b border-neutral-200 dark:border-white/10">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`px-3 py-1.5 text-xs font-medium -mb-px border-b-2 transition-colors ${
+          type="button"
+          aria-pressed={value === t.id}
+          className={`min-h-[44px] px-3 py-1.5 text-xs font-medium -mb-px border-b-2 transition-colors ${
             value === t.id
               ? "border-violet-500 dark:border-cyan-400 text-violet-600 dark:text-cyan-400"
               : "border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
