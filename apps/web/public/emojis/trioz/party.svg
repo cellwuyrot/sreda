@@ -1,9 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <path d="M34 224L100 82l78 74z" fill="#EDEFF2" stroke="#15181B" stroke-width="12" stroke-linejoin="round"/>
-  <path d="M62 164l50 46M84 116l58 54" stroke="#F2445A" stroke-width="14" stroke-linecap="round"/>
-  <circle cx="170" cy="44" r="16" fill="#F2445A"/>
-  <circle cx="224" cy="94" r="14" fill="#4AA8FF"/>
-  <circle cx="128" cy="30" r="12" fill="#3FBF6A"/>
-  <circle cx="226" cy="32" r="12" fill="#9B7BDD"/>
-  <circle cx="212" cy="164" r="13" fill="#FFC53D"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs>
+<radialGradient id="gold" cx=".32" cy=".23" r=".84"><stop stop-color="#fff3a8"/><stop offset=".32" stop-color="#ffdb50"/><stop offset=".73" stop-color="#ffb722"/><stop offset="1" stop-color="#ed8216"/></radialGradient>
+<radialGradient id="pink" cx=".32" cy=".2" r=".9"><stop stop-color="#ffb4bf"/><stop offset=".3" stop-color="#ff6b85"/><stop offset=".72" stop-color="#ef315b"/><stop offset="1" stop-color="#b91a49"/></radialGradient>
+<linearGradient id="mouth" x2="0" y2="1"><stop stop-color="#633923"/><stop offset="1" stop-color="#3b201b"/></linearGradient>
+<linearGradient id="blue" x2=".8" y2="1"><stop stop-color="#b5f5ff"/><stop offset=".46" stop-color="#57caff"/><stop offset="1" stop-color="#2584ef"/></linearGradient>
+<linearGradient id="flame" x2=".6" y2="1"><stop stop-color="#ffc85b"/><stop offset=".45" stop-color="#ff8b3e"/><stop offset="1" stop-color="#f34743"/></linearGradient>
+<linearGradient id="hand" x2=".9" y2="1"><stop stop-color="#ffe7b4"/><stop offset=".5" stop-color="#ffc776"/><stop offset="1" stop-color="#e89542"/></linearGradient>
+<filter id="soft"><feGaussianBlur stdDeviation="4"/></filter></defs><path d="M42 218L88 72L185 173Z" fill="url(#gold)"/><path d="M63 154l46 48M77 112l66 77" stroke="#ec6c92" stroke-width="17"/><ellipse cx="137" cy="122" rx="69" ry="28" transform="rotate(46 137 122)" fill="url(#pink)"/><ellipse cx="137" cy="122" rx="54" ry="15" transform="rotate(46 137 122)" fill="#783c68"/><path d="M135 69Q158 35 186 57M174 111Q219 110 219 77M110 53q-14-23-2-34" stroke="#67dce5" stroke-width="11" fill="none" stroke-linecap="round"/><path d="M180 29l16 9M218 141l13 8M54 48l15 14" stroke="#f0b947" stroke-width="10" stroke-linecap="round"/><circle cx="209" cy="35" r="8" fill="#f68ea9"/><circle cx="68" cy="95" r="6" fill="#91a3ff"/></svg>

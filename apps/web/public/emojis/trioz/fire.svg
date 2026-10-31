@@ -1,4 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <path d="M128 20c-16 42-44 58-62 88-18 30-14 70 16 92 18 13 46 18 46 18s28-5 46-18c30-22 34-62 16-92-18-30-46-46-62-88z" fill="#FF8A3D" stroke="#15181B" stroke-width="12" stroke-linejoin="round"/>
-  <path d="M128 112c-10 24-26 34-26 58 0 22 14 34 26 34s26-12 26-34c0-24-16-34-26-58z" fill="#FFC53D"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs>
+<radialGradient id="gold" cx=".32" cy=".23" r=".84"><stop stop-color="#fff3a8"/><stop offset=".32" stop-color="#ffdb50"/><stop offset=".73" stop-color="#ffb722"/><stop offset="1" stop-color="#ed8216"/></radialGradient>
+<radialGradient id="pink" cx=".32" cy=".2" r=".9"><stop stop-color="#ffb4bf"/><stop offset=".3" stop-color="#ff6b85"/><stop offset=".72" stop-color="#ef315b"/><stop offset="1" stop-color="#b91a49"/></radialGradient>
+<linearGradient id="mouth" x2="0" y2="1"><stop stop-color="#633923"/><stop offset="1" stop-color="#3b201b"/></linearGradient>
+<linearGradient id="blue" x2=".8" y2="1"><stop stop-color="#b5f5ff"/><stop offset=".46" stop-color="#57caff"/><stop offset="1" stop-color="#2584ef"/></linearGradient>
+<linearGradient id="flame" x2=".6" y2="1"><stop stop-color="#ffc85b"/><stop offset=".45" stop-color="#ff8b3e"/><stop offset="1" stop-color="#f34743"/></linearGradient>
+<linearGradient id="hand" x2=".9" y2="1"><stop stop-color="#ffe7b4"/><stop offset=".5" stop-color="#ffc776"/><stop offset="1" stop-color="#e89542"/></linearGradient>
+<filter id="soft"><feGaussianBlur stdDeviation="4"/></filter></defs><path d="M135 23C143 78 194 84 199 141C207 187 174 223 128 225C79 225 48 192 56 150C61 120 79 107 84 84C91 106 100 110 106 120C123 94 105 69 135 23Z" fill="url(#flame)"/><path d="M133 121C133 155 161 158 161 184C161 205 145 218 126 218C103 218 87 200 94 178C100 160 115 152 133 121Z" fill="url(#gold)"/><path d="M78 152q-8 27 7 43" stroke="#ffd2a8" opacity=".65" stroke-width="9" fill="none" stroke-linecap="round"/></svg>

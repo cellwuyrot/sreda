@@ -19,7 +19,7 @@
 
 import { useState } from "react";
 import GlowAvatar from "@/components/ui/GlowAvatar";
-import { TriozEmoji } from "@/components/ui/TriozEmoji";
+import ReactionPill from "@/components/ui/ReactionPill";
 import { ChatIcon, ClockIcon, PinIcon, UsersIcon } from "@/components/ui/ConnectIcons";
 import {
   formatPostDate,
@@ -46,19 +46,7 @@ export function NewsReactions({ reactions, size = 16 }: { reactions: NewsReactio
   return (
     <div className="tz-reaction-row">
       {reactions.map((reaction) => (
-        <span
-          key={reaction.emoji}
-          /* FIX-EMOJI: третье место с той же пилюлей. Выравнивание общее
-             (tz-reaction-pill), чтобы лента новостей и чат выглядели одинаково. */
-          className={`tz-reaction-pill rounded-full border px-2 py-1 text-[12px] ${
-            reaction.mine
-              ? "border-violet-200 bg-violet-50 text-accent dark:border-cyan-400/30 dark:bg-cyan-400/10"
-              : "border-[var(--cn-border)] bg-neutral-50 text-neutral-500 dark:bg-white/5 dark:text-neutral-400"
-          }`}
-        >
-          <TriozEmoji emoji={reaction.emoji} size={size} />
-          <span className="tz-reaction-count">{reaction.count}</span>
-        </span>
+        <ReactionPill key={reaction.emoji} emoji={reaction.emoji} count={reaction.count} selected={reaction.mine} size={size} />
       ))}
     </div>
   );

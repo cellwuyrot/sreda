@@ -13,7 +13,7 @@
  * пересоздание.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, fireEvent, within } from "@testing-library/react";
 import DMMessageList from "@/components/dm/DMMessageList";
 import type { Message } from "@/components/dm/dmTypes";
 
@@ -106,5 +106,28 @@ describe("FIX-EDITBLINK: правка сообщения не пересозда
     expect(container.querySelector('img[src="/uploads/messages/a.webp"]')).toBeTruthy();
     // И поле ввода на месте — значит это действительно режим правки.
     expect(container.querySelector("input")).toBeTruthy();
+  });
+});
+
+
+describe("REACTIONS-V2: existing DM data and permissions", () => {
+  it("keeps stored counts and toggles the exact existing Unicode value", () => {
+    const base = props(null), toggle = vi.fn();
+    const reactions = [
+      { id: "r1", emoji: "❤️", userId: "u1", user: { id: "u1", name: "Я" } },
+      { id: "r2", emoji: "❤️", userId: "u2", user: { id: "u2", name: "Мария" } },
+    ];
+    const { container, rerender } = render(<DMMessageList {...base} messages={[{ ...MSG, reactions }]} onToggleReaction={toggle} />);
+    const own = within(container).getByRole("button", { name: "Любовь: 2, ваша реакция" });
+    expect(own).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(own); expect(toggle).toHaveBeenCalledWith("m1", "❤️");
+    rerender(<DMMessageList {...base} messages={[{ ...MSG, reactions: reactions.slice(1) }]} onToggleReaction={toggle} />);
+    expect(within(container).getByRole("button", { name: "Любовь: 1" })).toHaveAttribute("aria-pressed", "false");
+  });
+  it("does not expose reaction controls when personal capabilities forbid them", () => {
+    const base = props(null);
+    const { container } = render(<DMMessageList {...base} personal capabilities={{ reactions: false } as NonNullable<typeof base.capabilities>}
+      messages={[{ ...MSG, reactions: [{ id: "r1", emoji: "🔥", userId: "u1" }] }]} />);
+    expect(container.querySelector(".tz-modern-reaction")).toBeNull();
   });
 });

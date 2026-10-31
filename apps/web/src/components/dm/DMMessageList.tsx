@@ -19,7 +19,7 @@ import MessageHoverToolbar from "@/components/connect/MessageHoverToolbar";
 import { useHoverToolbar } from "@/components/connect/useHoverToolbar";
 /* FIX-IMGMENU: правый клик и долгое нажатие на картинке — тот же компонент, что и в каналах. */
 import ImageContextMenu, { useImageContextMenu } from "@/components/ui/ImageContextMenu";
-import { TriozEmoji } from "@/components/ui/TriozEmoji";
+import ReactionPill from "@/components/ui/ReactionPill";
 // FIX-ICONS: единый стиль иконок — фирменные SVG вместо PNG (/icons/*) и глифов ✓✕💬
 import { PinIcon, ThreadIcon, ShieldIcon, XIcon, CheckIcon, DoubleCheckIcon, ClockIcon, ResendIcon, ChatIcon, VaultIcon } from "@/components/ui/ConnectIcons";
 // Leaflet touches `window` — load client-only
@@ -177,24 +177,8 @@ export default function DMMessageList(props: DMMessageListProps) {
     return (
       <div className="tz-reaction-row mt-1">
         {Object.entries(grouped).map(([emoji, info]) => (
-          <button
-            key={emoji}
-            onClick={() => onToggleReaction(msg.id, emoji)}
-            title={info.users.join(", ")}
-            /* FIX-EMOJI: тот же случай, что и в каналах — глиф 20px внутри строки 16px.
-               Выравнивание вынесено в tz-reaction-pill, чтобы три места с реакциями
-               не расходились при следующей правке. */
-            className={`tz-reaction-pill min-h-11 min-w-11 px-2 py-1 rounded-full text-[12px] transition-colors ${
-              info.userReacted
-                ? "bg-violet-500/20 dark:bg-cyan-400/20 border border-violet-400 dark:border-cyan-400"
-                : "bg-black/5 dark:bg-white/10 border border-transparent hover:bg-black/10 dark:hover:bg-white/15"
-            }`}
-          >
-            <TriozEmoji emoji={emoji} size={20} />
-            <span className={`tz-reaction-count ${info.userReacted ? "text-violet-600 dark:text-cyan-300" : "text-neutral-500 dark:text-gray-400"}`}>
-              {info.count}
-            </span>
-          </button>
+          <ReactionPill key={emoji} emoji={emoji} count={info.count} selected={info.userReacted}
+            onClick={() => onToggleReaction(msg.id, emoji)} title={info.users.join(", ")} />
         ))}
       </div>
     );
