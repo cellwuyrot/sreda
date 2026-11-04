@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.trioz.connect.VpnProfileTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-04T15:14:07" hostname="7051b49e-f37" time="0.384">
+  <properties/>
+  <testcase name="refusesTwoPrivateKeys" classname="ru.trioz.connect.VpnProfileTest" time="0.071"/>
+  <testcase name="refusesPerAppBypass" classname="ru.trioz.connect.VpnProfileTest" time="0.06"/>
+  <testcase name="refusesShellHook" classname="ru.trioz.connect.VpnProfileTest" time="0.055"/>
+  <testcase name="nativeKeyReplacesPlaceholder" classname="ru.trioz.connect.VpnProfileTest" time="0.074"/>
+  <testcase name="refusesOversizedInput" classname="ru.trioz.connect.VpnProfileTest" time="0.045"/>
+  <testcase name="refusesMissingEndpoint" classname="ru.trioz.connect.VpnProfileTest" time="0.035"/>
+  <testcase name="preservesAmneziaParameters" classname="ru.trioz.connect.VpnProfileTest" time="0.04"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

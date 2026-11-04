@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.trioz.connect.nativeui.NativeMessagesTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-04T15:14:15" hostname="7051b49e-f37" time="0.452">
+  <properties/>
+  <testcase name="nullCursorMeansEnd" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.07"/>
+  <testcase name="textValidationMatchesFreeAndPremiumLimits" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.063"/>
+  <testcase name="ordinaryTextAndNullAreHandled" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.063"/>
+  <testcase name="pausedIsNotAnOrdinaryEmptyHistory" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.067"/>
+  <testcase name="malformedPageIsRejected" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.044"/>
+  <testcase name="mergeKeepsOrderAndNewerCopy" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.048"/>
+  <testcase name="deletedAndEncryptedTextNeverRendered" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.046"/>
+  <testcase name="cursorAndIdAreEncoded" classname="ru.trioz.connect.nativeui.NativeMessagesTest" time="0.047"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
