@@ -1682,3 +1682,8 @@ button.tz-modern-reaction:focus-visible { outline: 2px solid #9866ed; outline-of
 
 /* В Android вход в VPN перенесён в настройки; на сайте остаётся прежним. */
 .tz-android [data-android-hide="true"] { display: none !important; }
+
+/* Android-only header title; the web mobile header keeps its existing layout. */
+.tz-android-header-title { display: none; }
+.tz-android .tz-android-header-title { display: block; }
+.tz-android .tz-community-list-heading { display: none; }

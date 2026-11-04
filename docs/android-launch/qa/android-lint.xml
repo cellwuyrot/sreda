@@ -1,0 +1,432 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.10.1">
+
+    <issue
+        id="AndroidGradlePluginVersion"
+        severity="Warning"
+        message="A newer version of Gradle than 8.11.1 is available: 8.14.6"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Android Gradle Plugin Version"
+        explanation="This detector looks for usage of the Android Gradle Plugin where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/gradle/wrapper/gradle-wrapper.properties"
+            line="3"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of androidx.compose:compose-bom than 2025.05.01 is available: 2026.09.00"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    debugImplementation(platform(&quot;androidx.compose:compose-bom:2025.05.01&quot;))"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="194"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of androidx.activity:activity-compose than 1.10.1 is available: 1.13.0"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    debugImplementation(&quot;androidx.activity:activity-compose:1.10.1&quot;)"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="196"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of androidx.webkit:webkit than 1.14.0 is available: 1.18.0"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    implementation(&quot;androidx.webkit:webkit:1.14.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="214"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of androidx.core:core-ktx than 1.13.1 is available: 1.19.1"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    implementation(&quot;androidx.core:core-ktx:1.13.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="219"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of androidx.appcompat:appcompat than 1.7.0 is available: 1.8.0"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    implementation(&quot;androidx.appcompat:appcompat:1.7.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="221"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of androidx.activity:activity-ktx than 1.9.3 is available: 1.13.0"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    implementation(&quot;androidx.activity:activity-ktx:1.9.3&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="222"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of androidx.core:core-splashscreen than 1.0.1 is available: 1.2.0"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    implementation(&quot;androidx.core:core-splashscreen:1.0.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="223"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        severity="Warning"
+        message="A newer version of com.google.android.material:material than 1.12.0 is available: 1.14.0"
+        category="Correctness"
+        priority="4"
+        summary="Obsolete Gradle Dependency"
+        explanation="This detector looks for usages of libraries where the version you are using is not the current stable release. Using older versions is fine, and there are cases where you deliberately want to stick with an older version. However, you may simply not be aware that a more recent version is available, and that is what this lint check helps find."
+        errorLine1="    implementation(&quot;com.google.android.material:material:1.12.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/build.gradle.kts"
+            line="224"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        severity="Warning"
+        message="Unnecessary; `SDK_INT` is never &lt; 26"
+        category="Performance"
+        priority="6"
+        summary="Obsolete SDK_INT Version Check"
+        explanation="This check flags version checks that are not necessary, because the `minSdkVersion` (or surrounding known API level) is already at least as high as the version checked for.&#xA;&#xA;Similarly, it also looks for resources in `-vNN` folders, such as `values-v14` where the version qualifier is less than or equal to the `minSdkVersion`, where the contents should be merged into the best folder."
+        errorLine1="            if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.O) return"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/NotificationBridge.kt"
+            line="58"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        severity="Warning"
+        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 26. Merge all the resources in this folder into `mipmap-anydpi`."
+        category="Performance"
+        priority="6"
+        summary="Obsolete SDK_INT Version Check"
+        explanation="This check flags version checks that are not necessary, because the `minSdkVersion` (or surrounding known API level) is already at least as high as the version checked for.&#xA;&#xA;Similarly, it also looks for resources in `-vNN` folders, such as `values-v14` where the version qualifier is less than or equal to the `minSdkVersion`, where the contents should be merged into the best folder.">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/res/mipmap-anydpi-v26"/>
+    </issue>
+
+    <issue
+        id="Overdraw"
+        severity="Warning"
+        message="Possible overdraw: Root element paints background `@color/brand_background` with a theme that also paints a background (inferred theme is `@style/Theme.Connect`)"
+        category="Performance"
+        priority="3"
+        summary="Overdraw: Painting regions more than once"
+        explanation="If you set a background drawable on a root view, then you should use a custom theme where the theme background is null. Otherwise, the theme background will be painted first, only to have your custom background completely cover it; this is called &quot;overdraw&quot;.&#xA;&#xA;NOTE: This detector relies on figuring out which layouts are associated with which activities based on scanning the Java code, and it&apos;s currently doing that using an inexact pattern matching algorithm. Therefore, it can incorrectly conclude which activity the layout is associated with and then wrongly complain that a background-theme is hidden.&#xA;&#xA;If you want your custom background on multiple pages, then you should consider making a custom theme with your custom background and just using that theme instead of a root element background.&#xA;&#xA;Of course it&apos;s possible that your custom drawable is translucent and you want it to be mixed with the background. However, you will get better performance if you pre-mix the background with your drawable and use that resulting image or color as a custom theme background instead."
+        errorLine1="    android:background=&quot;@color/brand_background&quot;>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/res/layout/activity_main.xml"
+            line="6"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        severity="Warning"
+        message="The resource `R.color.white` appears to be unused"
+        category="Performance"
+        priority="3"
+        summary="Unused resources"
+        explanation="Unused resources make applications larger and slow down builds.&#xA;&#xA;&#xA;The unused resource check can ignore tests. If you want to include resources that are only referenced from tests, consider packaging them in a test source set instead.&#xA;&#xA;You can include test sources in the unused resource check by setting the system property lint.unused-resources.include-tests =true, and to exclude them (usually for performance reasons), use lint.unused-resources.exclude-tests =true.&#xA;,"
+        errorLine1="    &lt;color name=&quot;white&quot;>#FFFFFFFF&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/res/values/colors.xml"
+            line="6"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        severity="Warning"
+        message="The resource `R.color.black` appears to be unused"
+        category="Performance"
+        priority="3"
+        summary="Unused resources"
+        explanation="Unused resources make applications larger and slow down builds.&#xA;&#xA;&#xA;The unused resource check can ignore tests. If you want to include resources that are only referenced from tests, consider packaging them in a test source set instead.&#xA;&#xA;You can include test sources in the unused resource check by setting the system property lint.unused-resources.include-tests =true, and to exclude them (usually for performance reasons), use lint.unused-resources.exclude-tests =true.&#xA;,"
+        errorLine1="    &lt;color name=&quot;black&quot;>#FF000000&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/res/values/colors.xml"
+            line="7"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toUri` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="        val target = Uri.parse(url)"
+        errorLine2="                     ~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/Config.kt"
+            line="68"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toUri` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="        val base = Uri.parse(appUrl)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/Config.kt"
+            line="69"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toUri` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="            val target = Uri.parse(url)"
+        errorLine2="                         ~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/Config.kt"
+            line="78"
+            column="26"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toUri` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="            val base = Uri.parse(appUrl)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/Config.kt"
+            line="81"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toUri` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="            if (isExternal(url)) false else !isAllowedPath(Uri.parse(url).path)"
+        errorLine2="                                                           ~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/Config.kt"
+            line="93"
+            column="60"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toColorInt` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="            setBackgroundColor(Color.parseColor(&quot;#12121C&quot;))"
+        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/IncomingCallActivity.kt"
+            line="59"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toColorInt` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="            setTextColor(Color.parseColor(&quot;#9AA4B2&quot;))"
+        errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/IncomingCallActivity.kt"
+            line="66"
+            column="26"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="                prefs.edit().putInt(&quot;policy-version&quot;, admission.version).apply(); proceed()"
+        errorLine2="                ~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/MainActivity.kt"
+            line="162"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toUri` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="            val request = DownloadManager.Request(Uri.parse(url)).apply {"
+        errorLine2="                                                  ~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/MainActivity.kt"
+            line="421"
+            column="51"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `String.toUri` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))"
+        errorLine2="                                                     ~~~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/MainActivity.kt"
+            line="439"
+            column="54"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="        setContent { NativePreview(prefs.getString(&quot;theme&quot;, &quot;dark&quot;) ?: &quot;dark&quot;) { prefs.edit().putString(&quot;theme&quot;, it).apply() } }"
+        errorLine2="                                                                                 ~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/debug/java/ru/trioz/connect/nativeui/NativePreviewActivity.kt"
+            line="36"
+            column="82"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)"
+        errorLine2="        ^">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/PushTokens.kt"
+            line="23"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        severity="Warning"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        category="Productivity"
+        priority="6"
+        summary="Use KTX extension function"
+        explanation="The Android KTX libraries decorates the Android platform SDK as well as various libraries with more convenient extension functions available from Kotlin, allowing you to use default parameters, named parameters, and more."
+        errorLine1="        check(prefs.edit().putString(&quot;encrypted&quot;, Base64.encodeToString(encrypted, Base64.NO_WRAP)).commit())"
+        errorLine2="              ~~~~~~~~~~~~">
+        <location
+            file="/data/work/sreda-main/apps/android/app/src/main/java/ru/trioz/connect/VpnKeyStore.kt"
+            line="39"
+            column="15"/>
+    </issue>
+
+</issues>

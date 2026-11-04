@@ -50,6 +50,7 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
           )}
 
         </div>
+        <span className="tz-android-header-title text-base font-semibold text-neutral-900 dark:text-white">Сообщества</span>
         <div className="ml-auto flex items-center">
           {onOpenSearch && (
             <button
@@ -82,7 +83,7 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pt-5">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">Ваши сообщества</h2>
+        <h2 className="tz-community-list-heading mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">Ваши сообщества</h2>
         {groups.length === 0 ? (
           <div className="text-center py-12">
             <span className="mb-4 flex justify-center"><ChatIcon size={48} tone="inactive" /></span>
@@ -106,8 +107,8 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
               </div>
               <div className="min-w-0 flex-1">
                 <div className="font-medium text-neutral-900 dark:text-white text-sm truncate">{g.name}</div>
-                {g.description && <p className="text-[11px] text-neutral-400 truncate">{g.description}</p>}
-                <div className="text-[10px] text-neutral-400 mt-0.5">
+                {g.description && <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{g.description}</p>}
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                   {g._count.members} участников &middot; {g._count.channels} каналов
                 </div>
               </div>

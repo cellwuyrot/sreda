@@ -207,9 +207,40 @@ export default function AdminBuildsPage() {
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-neutral-500 dark:text-gray-400">
-            Собирается ветка main. Android — 3–7 минут, Windows — 5–15 минут при первой сборке.
+          <p className="mt-3 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">
+            Собирается ветка main. Успешная сборка автоматически заменяет файлы на сайте. Отменить можно только задачу в очереди, до начала работы агента.
           </p>
+        </section>
+
+        <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Android · подготовка и выпуск</h2>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">Подпись, уведомления и короткая инструкция — перед запуском сборки.</p>
+            </div>
+            <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] text-neutral-600 dark:bg-white/10 dark:text-gray-300">Настройка на сервере</span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg bg-neutral-50 p-3 dark:bg-white/5">
+              <h3 className="text-xs font-semibold text-neutral-800 dark:text-gray-100">Подпись APK и AAB</h3>
+              <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">На машине агента укажите TRIOZ_ANDROID_CONFIG_DIR с keystore.properties и существующим ключом. Новая подпись не обновит установленную версию.</p>
+            </div>
+            <div className="rounded-lg bg-neutral-50 p-3 dark:bg-white/5">
+              <h3 className="text-xs font-semibold text-neutral-800 dark:text-gray-100">Firebase и уведомления</h3>
+              <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-gray-400">Для push нужен google-services.json на сервере сборки и отдельно FCM_PROJECT_ID, FCM_CLIENT_EMAIL, FCM_PRIVATE_KEY на веб-сервере. Без Firebase APK собирается, но push не работает.</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-amber-700 dark:text-amber-400">Секреты пока нельзя добавить через эту страницу; не отправляйте приватный ключ в чат и не добавляйте его в APK или репозиторий. Состояние конфигурации агента здесь не проверяется.</p>
+          <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">Важно: текущая релизная сборка Android использует прежнюю WebView-оболочку. Новый нативный интерфейс пока доступен только как отдельное debug-превью и не готов к публикации.</p>
+          <details className="mt-4 border-t border-neutral-200 pt-3 dark:border-white/10">
+            <summary className="cursor-pointer text-sm font-medium text-violet-600 dark:text-cyan-400">Как выпустить или обновить Android</summary>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-xs leading-relaxed text-neutral-600 dark:text-gray-300">
+              <li>Сохраните прежний package ID и ключ подписи. Перед обновлением увеличьте versionCode в apps/android/app/build.gradle.kts.</li>
+              <li>Подготовьте отдельный клон и агента сборки, Android SDK, подпись и при необходимости Firebase. Разместите обновлённый код в ветке main.</li>
+              <li>Нажмите «Android», дождитесь результата и проверьте журнал. APK и AAB публикуются автоматически; перед выпуском обязательно проверьте сборку на устройстве.</li>
+            </ol>
+            <p className="mt-3 text-xs text-neutral-500 dark:text-gray-400">Полные команды и проверки: docs/android-release.md в проекте. Для тестового APK используйте Gradle assembleDebug отдельно, не публичный агент.</p>
+          </details>
         </section>
 
         <section className="admin-card rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 p-4">
@@ -265,7 +296,7 @@ export default function AdminBuildsPage() {
                     >
                       {openId === job.id ? "Скрыть журнал" : "Журнал"}
                     </button>
-                    {(job.status === "QUEUED" || job.status === "RUNNING") && (
+                    {job.status === "QUEUED" && (
                       <button
                         type="button"
                         disabled={busy}
