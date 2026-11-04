@@ -24,6 +24,7 @@ describe("global search pagination",()=>{
   render(<GlobalSearchModal onClose={()=>{}}/>);
   fireEvent.change(screen.getByPlaceholderText("Сообщение, задача, участник, статья..."),{target:{value:"needle"}});
   expect((await screen.findByRole("alert")).textContent).toContain("Не удалось выполнить поиск");
+  expect(screen.queryByText("Ничего не найдено")).toBeNull();
  });
  it("ignores a previous query response even if the transport resolves after abort",async()=>{
   let resolveOld:(value:unknown)=>void=()=>{};
