@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { tzIdSameOrigin } from "@/lib/tzIdOrigin";
 import { isBuildTarget, isTerminal, normalizeRef, queueRefusal, staleJobs } from "@/lib/builds";
 
 /**
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  if (!tzIdSameOrigin(req)) return NextResponse.json({ error: "Недопустимый источник запроса" }, { status: 403 });
   const body = (await req.json().catch(() => null)) as { target?: unknown; ref?: unknown } | null;
 
   if (!isBuildTarget(body?.target)) {
@@ -134,6 +136,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  if (!tzIdSameOrigin(req)) return NextResponse.json({ error: "Недопустимый источник запроса" }, { status: 403 });
   const body = (await req.json().catch(() => null)) as { id?: unknown; action?: unknown } | null;
   const id = typeof body?.id === "string" ? body.id : "";
   if (!id) return NextResponse.json({ error: "Не указана сборка" }, { status: 400 });
@@ -145,14 +148,17 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Сборка уже завершена" }, { status: 409 });
   }
 
-  /* Отмена ждущей задачи — мгновенная. Отмена ИДУЩЕЙ помечает её отменённой, но
-     процесс на агенте продолжает работать до конца: убивать сборку на середине
-     нечем — у нас нет обратного канала к агенту, связь односторонняя. Агент
-     увидит отмену при следующем обращении и просто выбросит результат. */
-  const updated = await prisma.buildJob.update({
-    where: { id },
+  // A running script can publish before the agent observes cancellation. Only
+  // cancel queued work, atomically: the agent may claim it concurrently.
+  const result = await prisma.buildJob.updateMany({
+    where: { id, status: "QUEUED" },
     data: { status: "CANCELED", finishedAt: new Date(), error: "Отменена администратором" },
   });
+  if (result.count !== 1) {
+    return NextResponse.json({ error: "Сборка уже запущена. Её безопасная отмена пока недоступна: результат может быть опубликован." }, { status: 409 });
+  }
+  const updated = await prisma.buildJob.findUnique({ where: { id } });
+  if (!updated) return NextResponse.json({ error: "Сборка не найдена" }, { status: 404 });
 
   return NextResponse.json({ job: publicJob(updated) });
 }

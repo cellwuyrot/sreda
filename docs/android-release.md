@@ -139,7 +139,7 @@ Builder должен работать в **отдельном клоне**, не
 /защищённый/каталог/android/google-services.json   # если нужен push
 ```
 
-В `keystore.properties` указан абсолютный путь к JKS. Пользователь builder должен иметь доступ только к своим конфигам. В окружении службы builder задать `TRIOZ_ANDROID_CONFIG_DIR=/защищённый/каталог/android`, сохранить существующие `TRIOZ_BUILD_REPO` и `TRIOZ_ARTIFACT_DIR`, перезапустить builder с обновлённым окружением. Скрипт `apps/builder/scripts/build-android.sh` копирует конфиги после очистки; без ключа release не выпускается. Явный `TRIOZ_ANDROID_DEBUG=1` допускается только в тестовом окружении с отдельным каталогом артефактов, чтобы не заменить публичный APK debug-версией. AAB создаётся как `connect.aab`, APK — существующим механизмом `connect.apk`.
+В `keystore.properties` указан абсолютный путь к JKS. Пользователь builder должен иметь доступ только к своим конфигам. В окружении службы builder задать `TRIOZ_ANDROID_CONFIG_DIR=/защищённый/каталог/android`, сохранить существующие `TRIOZ_BUILD_REPO` и `TRIOZ_ARTIFACT_DIR`, перезапустить builder с обновлённым окружением. Скрипт `apps/builder/scripts/build-android.sh` копирует конфиги после очистки; без ключа release не выпускается. Публичный агент отклоняет `TRIOZ_ANDROID_DEBUG=1`: тестовый APK собирайте отдельно командой `assembleDebug`, вне публичного хранилища. Это защищает `connect.apk` от случайной замены debug-сборкой. AAB создаётся как `connect.aab`, APK — существующим механизмом `connect.apk`.
 
 ## 5. Firebase: только если нужны push-уведомления
 

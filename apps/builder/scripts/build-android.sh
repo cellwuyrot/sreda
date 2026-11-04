@@ -27,7 +27,7 @@
 #
 # Подпись и Firebase: TRIOZ_ANDROID_CONFIG_DIR вне клона сборки.
 # Release требует ключ подписи; без него сборка завершается ошибкой.
-# Debug допустим только явно: TRIOZ_ANDROID_DEBUG=1, не для публикации.
+# Публичный агент собирает только release; debug собирается вручную вне него.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -35,6 +35,13 @@ REF="${TRIOZ_REF:-main}"
 REPO="${TRIOZ_BUILD_REPO:?не задан каталог сборки}"
 OUT="${TRIOZ_ARTIFACT_DIR:?не задано хранилище загрузок}"
 APK_NAME="${TRIOZ_APK_NAME:-connect.apk}"
+
+# This agent publishes to the public download directory. Never allow a debug
+# package to overwrite a release (or to appear as a production job).
+if [[ "${TRIOZ_ANDROID_DEBUG:-0}" = "1" ]]; then
+  echo "ERROR: debug builds are not supported by the public builder. Build them locally with assembleDebug."
+  exit 1
+fi
 
 echo "── Сборка Android: ветка $REF"
 
@@ -67,6 +74,15 @@ git clean -fdx apps/android
 echo "── Код: $(git rev-parse --short HEAD)"
 
 cd apps/android
+ANDROID_ROOT="$(pwd -P)"
+# The disposable checkout must not retain copies of credentials after this run.
+COPIED_KEYSTORE=0
+COPIED_FIREBASE=0
+cleanup_android_config() {
+  [[ "$COPIED_KEYSTORE" != 1 ]] || rm -f -- "$ANDROID_ROOT/app/keystore.properties"
+  [[ "$COPIED_FIREBASE" != 1 ]] || rm -f -- "$ANDROID_ROOT/app/google-services.json"
+}
+trap cleanup_android_config EXIT
 
 VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1 || true)
 [[ -n "$VERSION" ]] && echo "TRIOZ_VERSION=$VERSION"
@@ -76,19 +92,18 @@ chmod +x ./gradlew 2>/dev/null || true
 CONFIG_DIR="${TRIOZ_ANDROID_CONFIG_DIR:-}"
 if [[ -n "$CONFIG_DIR" ]]; then
   [[ "$CONFIG_DIR" = /* && -d "$CONFIG_DIR" ]] || { echo "ERROR: TRIOZ_ANDROID_CONFIG_DIR must be an absolute directory"; exit 1; }
-  for file in keystore.properties google-services.json; do
-    [[ ! -f "$CONFIG_DIR/$file" ]] || install -m 0600 "$CONFIG_DIR/$file" "app/$file"
-  done
+  if [[ -f "$CONFIG_DIR/keystore.properties" ]]; then
+    COPIED_KEYSTORE=1
+    install -m 0600 "$CONFIG_DIR/keystore.properties" app/keystore.properties
+  fi
+  if [[ -f "$CONFIG_DIR/google-services.json" ]]; then
+    COPIED_FIREBASE=1
+    install -m 0600 "$CONFIG_DIR/google-services.json" app/google-services.json
+  fi
 fi
-if [[ "${TRIOZ_ANDROID_DEBUG:-0}" = "1" ]]; then
-  echo "TEST BUILD ONLY: debug package, not a production release"
-  TASK="assembleDebug"
-  APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
-else
-  [[ -f app/keystore.properties ]] || { echo "ERROR: production upload key is required; set TRIOZ_ANDROID_CONFIG_DIR"; exit 1; }
-  TASK="assembleRelease bundleRelease"
-  APK_PATH="app/build/outputs/apk/release/app-release.apk"
-fi
+[[ -f app/keystore.properties ]] || { echo "ERROR: production upload key is required; set TRIOZ_ANDROID_CONFIG_DIR"; exit 1; }
+TASK="assembleRelease bundleRelease"
+APK_PATH="app/build/outputs/apk/release/app-release.apk"
 
 # nice/ionice: сборка идёт на машине, которая обслуживает людей, и не должна
 # отбирать у них процессор и диск.

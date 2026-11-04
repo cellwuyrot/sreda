@@ -4,6 +4,7 @@ import groovy.json.JsonSlurper
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 // ── PUSH: подключение службы доставки уведомлений ───────────────────────────
@@ -110,7 +111,7 @@ android {
            У debug и release манифесты свои и по умолчанию не заданы, поэтому
            здесь замены не происходит: manifest merger сливает push-манифест с
            основным, как и задумано. */
-        sourceSets["debug"].manifest.srcFile("src/push/AndroidManifest.xml")
+        sourceSets["debug"].manifest.srcFile(layout.buildDirectory.file("generated/push-debug/AndroidManifest.xml"))
         sourceSets["release"].manifest.srcFile("src/push/AndroidManifest.xml")
     }
 
@@ -168,6 +169,7 @@ android {
     buildFeatures {
         buildConfig = true
         viewBinding = true
+        compose = true
     }
 }
 
@@ -175,6 +177,12 @@ android {
 tasks.named("preBuild") { dependsOn(syncLauncherIcon) }
 
 dependencies {
+    // Native migration work is isolated in the debug source set.
+    debugImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
+    debugImplementation("androidx.compose.material3:material3")
+    debugImplementation("androidx.activity:activity-compose:1.10.1")
+    debugImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     /* PUSH: доставка уведомлений в закрытое приложение.
 
        FIX-BOOT: раньше зависимость стояла всегда с пометкой «безвредна без файла
@@ -200,6 +208,19 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.google.android.material:material:1.12.0")
 }
+
+// Preserve the debug native preview when the optional push manifest is enabled.
+val generateDebugPushManifest = tasks.register("generateDebugPushManifest") {
+    val src = file("src/push/AndroidManifest.xml")
+    val dst = layout.buildDirectory.file("generated/push-debug/AndroidManifest.xml")
+    inputs.file(src); outputs.file(dst)
+    doLast {
+        val activity = """<activity android:name=".nativeui.NativePreviewActivity" android:exported="true" />"""
+        dst.get().asFile.apply { parentFile.mkdirs(); writeText(src.readText().replace("</application>", activity + "</application>")) }
+    }
+}
+tasks.named("preBuild") { dependsOn(generateDebugPushManifest) }
+tasks.configureEach { if (name.contains("Manifest") && name != "generateDebugPushManifest") dependsOn(generateDebugPushManifest) }
 
 // One source of truth: exact package queries AND runtime policy are generated together.
 val generateVpnPolicy = tasks.register("generateVpnPolicy") {
