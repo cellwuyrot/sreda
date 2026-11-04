@@ -204,6 +204,8 @@ export default function DMConversationList({
   const [closedFolders, setClosedFolders] = useState<string[]>([]);
   /* DM-MOBILE-FOLDERS: active folder pill on mobile. null = show all. */
   const [mobileFolderFilter, setMobileFolderFilter] = useState<string | null>(null);
+  const [mobileSearch, setMobileSearch] = useState("");
+  const [mobileUnreadOnly, setMobileUnreadOnly] = useState(false);
   const [sectionMenu, setSectionMenu] = useState<{ x: number; y: number } | null>(null);
   const [folderMenu, setFolderMenu] = useState<{ folderId: string; x: number; y: number } | null>(null);
   const [draft, setDraft] = useState<
@@ -498,8 +500,8 @@ export default function DMConversationList({
             const isVault = conv.other.id === currentUserId;
             const favorite = !isVault && isFavorite(conv.id);
             return (
+              <div key={conv.id} className="flex items-center max-md:border-b max-md:border-neutral-200 max-md:dark:border-white/5">
               <button
-                key={conv.id}
                 onClick={() => onSelect(conv.id)}
                 onContextMenu={(e) => {
                   if (isVault) return;
@@ -507,7 +509,7 @@ export default function DMConversationList({
                   e.stopPropagation();
                   setMenu({ convId: conv.id, x: e.clientX, y: e.clientY });
                 }}
-                className={`w-full text-left p-3 flex items-center gap-3 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors ${
+                className={`w-full min-w-0 text-left p-3 max-md:min-h-[68px] flex items-center gap-3 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors ${
                   selectedConv === conv.id
                     ? "bg-[var(--cn-accent-dim)] border-l-2 border-[var(--cn-accent)]"
                     : ""
@@ -592,6 +594,8 @@ export default function DMConversationList({
                   )}
                 </div>
               </button>
+              {!isVault && <button type="button" aria-label={`Действия: ${conv.other.name}`} className="md:hidden shrink-0 w-11 h-11 text-neutral-400" onClick={(e) => { const r=e.currentTarget.getBoundingClientRect(); setMenu({convId:conv.id,x:r.left,y:Math.min(r.bottom, window.innerHeight - 180)}); }}>⋯</button>}
+              </div>
             );
   };
 
@@ -612,10 +616,11 @@ export default function DMConversationList({
         }}
         className="p-3 border-b border-neutral-200 dark:border-white/5 flex items-center justify-between"
       >
-        <h2 className="font-bold text-neutral-900 dark:text-white text-sm">
+        <h2 className="font-bold text-neutral-900 dark:text-white text-sm max-md:text-xl">
           {showArchived ? `${title} · архив` : title}
         </h2>
         <div className="flex items-center gap-1">
+        <button type="button" className="md:hidden min-w-[44px] min-h-[44px] text-neutral-400" aria-label="Папки диалогов" onClick={(e) => { const r=e.currentTarget.getBoundingClientRect(); setMenu(null); setFolderMenu(null); setSectionMenu({x:r.left,y:r.bottom}); }}>⋯</button>
         {/* ARCHIVE: переключатель архива. Появляется только когда архив не пуст:
             кнопка, открывающая гарантированно пустой список, — шум в заголовке. */}
         {(archived.length > 0 || showArchived) && (
@@ -660,6 +665,13 @@ export default function DMConversationList({
         )}
         </div>
       </div>
+      <div className="md:hidden px-3 pt-3 space-y-2">
+        <input type="search" aria-label="Поиск диалогов" placeholder="Найти диалог" value={mobileSearch} onChange={e => setMobileSearch(e.target.value)} className="w-full min-h-[44px] rounded-xl px-3 text-sm bg-[var(--cn-accent-dim)] text-neutral-900 dark:text-white" />
+        <div className="flex gap-2 pb-2">
+          <button type="button" onClick={() => setMobileUnreadOnly(false)} aria-pressed={!mobileUnreadOnly} className={`rounded-full px-3 min-h-[40px] text-xs ${!mobileUnreadOnly ? "bg-[var(--cn-accent)] text-white" : "bg-[var(--cn-accent-dim)] text-neutral-500"}`}>Все</button>
+          <button type="button" onClick={() => setMobileUnreadOnly(true)} aria-pressed={mobileUnreadOnly} className={`rounded-full px-3 min-h-[40px] text-xs ${mobileUnreadOnly ? "bg-[var(--cn-accent)] text-white" : "bg-[var(--cn-accent-dim)] text-neutral-500"}`}>Непрочитанные</button>
+        </div>
+      </div>
       {/* DM-MOBILE-FOLDERS: horizontal pill bar, shown only when there are folders */}
       {folders.length > 0 && (
         <div className="flex items-center gap-1.5 overflow-x-auto px-3 py-2 border-b border-neutral-100 dark:border-white/5 scrollbar-none">
@@ -693,7 +705,10 @@ export default function DMConversationList({
           </p>
         ) : (
           <>
-          {mobileFolderFilter
+          {(mobileSearch.trim() || mobileUnreadOnly) ? (() => {
+            const matches = mobileFiltered.filter(c => (!mobileUnreadOnly || (c.unread ?? 0) > 0) && `${c.other.name} ${c.other.username}`.toLowerCase().includes(mobileSearch.trim().toLowerCase()));
+            return matches.length ? matches.map(renderConv) : <p className="text-center text-sm text-neutral-400 py-8">Ничего не найдено</p>;
+          })() : mobileFolderFilter
             ? mobileFiltered.map(renderConv)
             : (
           <>
@@ -748,7 +763,7 @@ export default function DMConversationList({
       {/* FIX-DM-FAV: контекстное меню по правой кнопке мыши (ПКМ) */}
       {menu && menuConv && typeof document !== "undefined" && createPortal(
         <div
-          className="fixed z-[9999] min-w-[210px] py-1 rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-sm"
+          className="fixed z-[9999] max-h-[calc(100dvh-24px)] overflow-y-auto min-w-[210px] py-1 rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl text-sm"
           style={{
             left: Math.min(menu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 230),
             top: menu.y,

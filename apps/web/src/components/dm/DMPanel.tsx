@@ -62,6 +62,7 @@ import { PinIcon, ChatIcon } from "@/components/ui/ConnectIcons";
 interface DMPanelProps {
   currentUserId: string;
   onClose: () => void;
+  onConversationOpenChange?: (open: boolean) => void;
   initialFriendId: string | null;
   highlightMessageId?: string | null;
   onHighlightConsumed?: () => void;
@@ -86,7 +87,7 @@ interface DMPanelProps {
   initialConversationId?: string | null;
 }
 
-export default function DMPanel({ currentUserId, onClose, initialFriendId, highlightMessageId, onHighlightConsumed, kind = "personal", initialConversationId = null }: DMPanelProps) {
+export default function DMPanel({ currentUserId, onClose, initialFriendId, highlightMessageId, onHighlightConsumed, kind = "personal", initialConversationId = null, onConversationOpenChange }: DMPanelProps) {
   const isBusiness = kind === "business";
   /* Адрес списка. Остальные запросы панели (один диалог, отправка, прочтение)
      от вида не зависят: диалог уже найден по id. */
@@ -94,6 +95,8 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
   // ── Data state ────────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  useEffect(() => { onConversationOpenChange?.(!!selectedConvId); }, [selectedConvId, onConversationOpenChange]);
+  useEffect(() => () => onConversationOpenChange?.(false), [onConversationOpenChange]);
   /* FIX-VAULTPW: разблокировка Сейфа держится только в памяти панели. */
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   /* MOBILE-UI: на телефоне открытая беседа — слой поверх списка диалогов:
