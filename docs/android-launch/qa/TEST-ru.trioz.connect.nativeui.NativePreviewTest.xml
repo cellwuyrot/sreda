@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.trioz.connect.nativeui.NativePreviewTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-04T15:14:15" hostname="7051b49e-f37" time="3.431">
+  <properties/>
+  <testcase name="encryptedContentNeverAppearsInPreview" classname="ru.trioz.connect.nativeui.NativePreviewTest" time="0.041"/>
+  <testcase name="secureConversationNeverShowsServerContent" classname="ru.trioz.connect.nativeui.NativePreviewTest" time="0.026"/>
+  <testcase name="nativeLoginActivityStartsAndClosesWithoutLegacyStorage" classname="ru.trioz.connect.nativeui.NativePreviewTest" time="3.297"/>
+  <testcase name="absentTextIsExplicit" classname="ru.trioz.connect.nativeui.NativePreviewTest" time="0.037"/>
+  <testcase name="ordinaryContentIsVisible" classname="ru.trioz.connect.nativeui.NativePreviewTest" time="0.028"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

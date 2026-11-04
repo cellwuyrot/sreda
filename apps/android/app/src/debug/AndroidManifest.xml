@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Explicit debug-only entry. Production launcher and WebView data remain untouched. -->
+        <activity android:name=".nativeui.NativePreviewActivity" android:exported="true" />
+    </application>
+</manifest>

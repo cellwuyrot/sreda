@@ -1,9 +1,12 @@
 import java.util.Properties
+import java.net.URI
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 // ── PUSH: подключение службы доставки уведомлений ───────────────────────────
@@ -73,6 +76,16 @@ val syncLauncherIcon = tasks.register<Copy>("syncLauncherIcon") {
     into(generatedIconRes.map { it.dir("drawable-nodpi") })
 }
 
+// Debug-only HTTPS staging override. Never changes the release origin.
+val previewAppUrl = providers.gradleProperty("trioz.debugAppUrl").orNull?.let { value ->
+    val uri = URI(value)
+    require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null &&
+        uri.rawQuery == null && uri.rawFragment == null && (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")) {
+        "trioz.debugAppUrl must be an HTTPS origin without credentials, path, query or fragment"
+    }
+    value.trimEnd('/')
+}
+
 android {
     namespace = "ru.trioz.connect"
     compileSdk = 36
@@ -110,7 +123,7 @@ android {
            У debug и release манифесты свои и по умолчанию не заданы, поэтому
            здесь замены не происходит: manifest merger сливает push-манифест с
            основным, как и задумано. */
-        sourceSets["debug"].manifest.srcFile("src/push/AndroidManifest.xml")
+        sourceSets["debug"].manifest.srcFile(layout.buildDirectory.file("generated/push-debug/AndroidManifest.xml"))
         sourceSets["release"].manifest.srcFile("src/push/AndroidManifest.xml")
     }
 
@@ -153,6 +166,7 @@ android {
             // Handy for pointing the debug build at a local dev server:
             // buildConfigField("String", "APP_URL", "\"http://10.0.2.2:3005\"")
             applicationIdSuffix = ".debug"
+            if (previewAppUrl != null) buildConfigField("String", "APP_URL", JsonOutput.toJson(previewAppUrl))
         }
     }
 
@@ -168,6 +182,7 @@ android {
     buildFeatures {
         buildConfig = true
         viewBinding = true
+        compose = true
     }
 }
 
@@ -175,6 +190,12 @@ android {
 tasks.named("preBuild") { dependsOn(syncLauncherIcon) }
 
 dependencies {
+    // Native migration work is isolated in the debug source set.
+    debugImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
+    debugImplementation("androidx.compose.material3:material3")
+    debugImplementation("androidx.activity:activity-compose:1.10.1")
+    debugImplementation("com.squareup.okhttp3:okhttp:5.3.0")
+
     /* PUSH: доставка уведомлений в закрытое приложение.
 
        FIX-BOOT: раньше зависимость стояла всегда с пометкой «безвредна без файла
@@ -191,6 +212,8 @@ dependencies {
     // аналог wireguard-android с параметрами маскировки.
     implementation("com.zaneschepke:amneziawg-android:2.3.7")
     implementation("androidx.webkit:webkit:1.14.0")
+    testDebugImplementation("com.squareup.okhttp3:mockwebserver:5.3.0")
+    testDebugImplementation("com.squareup.okhttp3:okhttp-tls:5.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     implementation("androidx.core:core-ktx:1.13.1")
@@ -200,6 +223,19 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.google.android.material:material:1.12.0")
 }
+
+// Preserve the debug native preview when the optional push manifest is enabled.
+val generateDebugPushManifest = tasks.register("generateDebugPushManifest") {
+    val src = file("src/push/AndroidManifest.xml")
+    val dst = layout.buildDirectory.file("generated/push-debug/AndroidManifest.xml")
+    inputs.file(src); outputs.file(dst)
+    doLast {
+        val activity = """<activity android:name=".nativeui.NativePreviewActivity" android:exported="true" />"""
+        dst.get().asFile.apply { parentFile.mkdirs(); writeText(src.readText().replace("</application>", activity + "</application>")) }
+    }
+}
+tasks.named("preBuild") { dependsOn(generateDebugPushManifest) }
+tasks.configureEach { if (name.contains("Manifest") && name != "generateDebugPushManifest") dependsOn(generateDebugPushManifest) }
 
 // One source of truth: exact package queries AND runtime policy are generated together.
 val generateVpnPolicy = tasks.register("generateVpnPolicy") {

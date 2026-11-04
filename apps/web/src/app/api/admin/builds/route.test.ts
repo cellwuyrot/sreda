@@ -10,7 +10,7 @@
  *   • чужой агент не может докладывать о чужой задаче;
  *   • отменённая задача останавливает агента — обратного канала к нему нет.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { prismaMock, row } from "@/test/prismaMock";
 
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
@@ -58,11 +58,13 @@ function buildNode(over: Record<string, unknown> = {}) {
   });
 }
 
-async function admin(method: "GET" | "POST" | "PATCH", body?: unknown, url = "http://localhost/api/admin/builds") {
+async function admin(method: "GET" | "POST" | "PATCH", body?: unknown, url = "http://localhost:3000/api/admin/builds", origin: string | null = "http://localhost:3000") {
   const mod = await import("@/app/api/admin/builds/route");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (origin !== null) headers.Origin = origin;
   const req = new Request(url, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const res = method === "GET" ? await mod.GET(req) : method === "POST" ? await mod.POST(req) : await mod.PATCH(req);
@@ -94,6 +96,8 @@ async function agentReport(id: string, body: unknown, token = TOKEN) {
 }
 
 beforeEach(() => {
+  // Isolate tests from CI or developer NEXTAUTH_URL; production validation stays enabled.
+  vi.stubEnv("NEXTAUTH_URL", "http://localhost:3000");
   mockSession.mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as never);
   prismaMock.buildJob.findMany.mockResolvedValue(row([]));
   prismaMock.buildJob.findUnique.mockResolvedValue(row(null));
@@ -107,6 +111,8 @@ beforeEach(() => {
   prismaMock.serverNode.update.mockResolvedValue(buildNode());
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("кто ставит сборки", () => {
   it("ИНВАРИАНТ: редактор не допускается — сборка раздаётся всем", async () => {
     mockSession.mockResolvedValue({ user: { id: "e1", role: "EDITOR" } } as never);
@@ -119,6 +125,21 @@ describe("кто ставит сборки", () => {
   it("без сессии — 403", async () => {
     mockSession.mockResolvedValue(null);
     expect((await admin("GET")).status).toBe(403);
+  });
+});
+
+describe("защита источника запросов", () => {
+  it.each(["POST", "PATCH"] as const)("%s отклоняет чужой или отсутствующий Origin", async (method) => {
+    const body = method === "POST" ? { target: "ANDROID" } : { id: "b1", action: "cancel" };
+    expect((await admin(method, body, undefined, "https://attacker.example")).status).toBe(403);
+    expect((await admin(method, body, undefined, null)).status).toBe(403);
+    expect(prismaMock.buildJob.create).not.toHaveBeenCalled();
+    expect(prismaMock.buildJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("доверяет NEXTAUTH_URL, а не подменённому адресу запроса", async () => {
+    expect((await admin("POST", { target: "ANDROID" }, "https://attacker.example/api/admin/builds", "https://attacker.example")).status).toBe(403);
+    expect(prismaMock.buildJob.create).not.toHaveBeenCalled();
   });
 });
 
@@ -284,8 +305,25 @@ describe("отмена администратором", () => {
     prismaMock.buildJob.findUnique.mockResolvedValue(job({ status: "QUEUED" }));
     const res = await admin("PATCH", { id: "b1", action: "cancel" });
     expect(res.status).toBe(200);
-    const data = prismaMock.buildJob.update.mock.calls[0]![0].data as Record<string, unknown>;
-    expect(data.status).toBe("CANCELED");
+    const { where, data } = prismaMock.buildJob.updateMany.mock.calls[0]![0];
+    expect(where).toMatchObject({ id: "b1", status: "QUEUED" });
+    expect(data).toMatchObject({ status: "CANCELED" });
+  });
+
+  it("запущенную или перехваченную агентом задачу безопасно отменить нельзя", async () => {
+    prismaMock.buildJob.findUnique.mockResolvedValue(job({ status: "RUNNING" }));
+    prismaMock.buildJob.updateMany.mockResolvedValue(row({ count: 0 }));
+    expect((await admin("PATCH", { id: "b1", action: "cancel" })).status).toBe(409);
+  });
+
+  it("чужой сайт не может запустить сборку", async () => {
+    const mod = await import("@/app/api/admin/builds/route");
+    const res = await mod.POST(new Request("http://localhost/api/admin/builds", {
+      method: "POST", headers: { Origin: "https://evil.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "ANDROID" }),
+    }));
+    expect(res.status).toBe(403);
+    expect(prismaMock.buildJob.create).not.toHaveBeenCalled();
   });
 
   it("законченную отменить нельзя", async () => {

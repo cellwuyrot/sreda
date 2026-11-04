@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import ModalBackdrop from "./ModalBackdrop";
 import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { isAndroidShell, isAllowedShellPath } from "@/lib/shell"; // ANDROID-LOCK
-import InfoTooltip from "@/components/ui/InfoTooltip";
 
 const SCOPES = [
   { id: "all", label: "Везде" },
@@ -63,7 +62,7 @@ export default function GlobalSearchModal({ onClose }: { onClose: () => void }) 
   const moreAbortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { if (window.innerWidth >= 768) inputRef.current?.focus(); }, []);
   useEffect(() => {
     moreAbortRef.current?.abort();
     setMoreLoading(false);
@@ -111,23 +110,23 @@ export default function GlobalSearchModal({ onClose }: { onClose: () => void }) 
   };
 
   return (
-    <ModalBackdrop onClose={onClose} maxWidth="max-w-3xl">
+    <ModalBackdrop onClose={onClose} maxWidth="max-w-3xl" mobileFullScreen ariaLabel="Поиск в TZ.Connect">
       <div className="flex items-center justify-between gap-4 mb-4">
-        <div><h3 className="text-lg font-semibold text-neutral-900 dark:text-white">Поиск в TZ.Connect<InfoTooltip text="По умолчанию ищет сразу везде. Если знаете, где искать, сузьте область кнопками ниже — сообщения, задачи, участники, статьи." side="bottom" className="ml-1" /></h3></div>
-        <button onClick={onClose} className="w-9 h-9 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-neutral-500 inline-flex items-center justify-center" aria-label="Закрыть"><XIcon size={16} style={{ color: "inherit" }} /></button>
+        <div><h3 className="text-lg font-semibold text-neutral-900 dark:text-white">Поиск в TZ.Connect</h3></div>
+        <button onClick={onClose} className="min-w-[44px] min-h-[44px] rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-neutral-500 inline-flex items-center justify-center" aria-label="Закрыть"><XIcon size={16} style={{ color: "inherit" }} /></button>
       </div>
       <div className="relative">
         <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Сообщение, задача, участник, статья..." className="w-full rounded-full border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-800 py-3 pl-10 pr-4 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-400 dark:focus:border-cyan-400" />
+        <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Сообщение, задача, участник, статья..." className="w-full rounded-full border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-800 py-3 pl-10 pr-4 text-base md:text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-400 dark:focus:border-cyan-400" />
       </div>
       <div className="flex gap-2 overflow-x-auto py-3" role="tablist" aria-label="Область поиска">
         {SCOPES.map((item) => <button key={item.id} onClick={() => setScope(item.id)} className={`whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${scope === item.id ? "border-violet-500 bg-violet-500 text-white dark:border-cyan-400 dark:bg-cyan-400 dark:text-neutral-950" : "border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-white/5"}`} role="tab" aria-selected={scope === item.id}>{item.label}</button>)}
       </div>
-      <div className="min-h-56 max-h-[55vh] overflow-y-auto rounded-2xl border border-neutral-200 p-1 dark:border-white/10">
+      <div className="min-h-56 max-h-[55vh] overflow-y-auto rounded-2xl border border-neutral-200 p-1 dark:border-white/10 max-md:flex-1 max-md:min-h-0 max-md:max-h-none max-md:border-0 max-md:rounded-none">
         {error && <p role="alert" className="p-3 text-sm text-red-500">{error}</p>}
         {loading && <div className="p-8 text-center text-sm text-neutral-500">Поиск…</div>}
         {!loading && query.trim().length < 2 && <div className="p-8 text-center text-sm text-neutral-500">Введите не менее двух символов</div>}
-        {!loading && query.trim().length >= 2 && results.length === 0 && <div className="p-8 text-center text-sm text-neutral-500">Ничего не найдено</div>}
+        {!loading && !error && query.trim().length >= 2 && results.length === 0 && <div className="p-8 text-center text-sm text-neutral-500">Ничего не найдено</div>}
         {!loading && results.map((result) => (
           <button key={`${result.type}:${result.id}`} onClick={() => {
             /* ANDROID-LOCK: оболочка живёт строго в /connect — результаты из
