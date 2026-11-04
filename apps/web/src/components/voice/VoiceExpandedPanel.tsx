@@ -39,10 +39,11 @@ function QualityIcon({ quality }: { quality: ConnectionQuality }) {
  * out as the primary action. `tone` only recolours the button; it never
  * changes its size or shape. */
 function ControlButton({
-  onClick, title, tone = "neutral", large = false, disabled = false, children,
+  onClick, title, label, tone = "neutral", large = false, disabled = false, children,
 }: {
   onClick: () => void;
   title: string;
+  label: string;
   tone?: "neutral" | "danger" | "active";
   large?: boolean;
   disabled?: boolean;
@@ -62,9 +63,10 @@ function ControlButton({
       aria-label={title}
       disabled={disabled}
       // FIX-LAYOUT: flex-shrink-0 — круглые кнопки никогда не сплющиваются в узком окне.
-      className={`flex flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${sizeCls} ${toneCls}`}
+      className={`relative flex flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${sizeCls} ${toneCls}`}
     >
       {children}
+      <span className="md:hidden absolute top-full mt-1 text-[10px] whitespace-nowrap text-neutral-600 dark:text-neutral-300">{label}</span>
     </button>
   );
 }
@@ -263,7 +265,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
       exit={{ opacity: 0 }}
       className={docked
         ? "flex h-full w-full min-h-0"
-        : "fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"}
+        : "fixed inset-0 z-50 flex items-center justify-center p-4 max-md:p-0 bg-black/60 backdrop-blur-sm"}
       onClick={(e) => { if (!docked && e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
@@ -274,7 +276,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
         /* GROUP-SKIN: tz-group-voice — крючок для фона голосовых каналов. */
         className={docked
           ? "tz-group-voice bg-white dark:bg-neutral-900 w-full h-full min-h-0 flex flex-col overflow-hidden"
-          : `tz-group-voice bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-white/10 w-full ${mediaTiles.length > 0 ? "max-w-3xl" : "max-w-xl"} overflow-hidden`}
+          : `tz-group-voice bg-white dark:bg-neutral-900 max-md:h-full max-md:flex max-md:flex-col max-md:rounded-none rounded-2xl shadow-2xl border border-neutral-200 dark:border-white/10 w-full ${mediaTiles.length > 0 ? "max-w-3xl" : "max-w-xl"} overflow-hidden`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header — собранная строка: индикатор статуса, название канала,
@@ -310,7 +312,8 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 flex-shrink-0 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg transition-colors text-neutral-500 hover:text-neutral-700 dark:hover:text-white"
+            aria-label="Свернуть голосовой канал"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center p-1.5 flex-shrink-0 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg transition-colors text-neutral-500 hover:text-neutral-700 dark:hover:text-white"
           >
             <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6L6 18M6 6l12 12" />
@@ -342,9 +345,9 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
         {/* FIX-LAYOUT: основная область — сцена слева, участники справа.
             На lg и уже колонка участников прячется, и список выезжает под
             сцену (flex-col), как было раньше на маленьких экранах. */}
-        <div className={`flex flex-col lg:flex-row flex-1 min-h-0 ${docked ? "" : "max-h-[80vh]"}`}>
+        <div className={`flex flex-col lg:flex-row flex-1 min-h-0 ${docked ? "" : "max-h-[80vh] max-md:max-h-none"}`}>
           {/* Сцена: выбранные потоки (до 4) на тёмной подложке. */}
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col px-4 pt-3 pb-2">
+          <div className={`flex-1 min-w-0 min-h-0 flex flex-col px-4 pt-3 pb-2 ${mediaTiles.length === 0 ? "max-md:hidden" : ""}`}>
             <div className="flex-1 min-h-[220px] rounded-xl bg-neutral-950 border border-neutral-200/10 dark:border-white/10 p-2">
               <StageArea
                 tiles={effectiveStageTiles}
@@ -390,7 +393,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
 
           {/* Участники — на широких экранах фиксированная колонка справа со
               своей прокруткой, на узких — блок под сценой (см. классы выше). */}
-          <div className="lg:w-64 flex-shrink-0 lg:border-l border-neutral-200 dark:border-white/10 flex flex-col min-h-0">
+          <div className={`lg:w-64 flex-shrink-0 lg:border-l border-neutral-200 dark:border-white/10 flex flex-col min-h-0 ${mediaTiles.length === 0 ? "max-md:flex-1" : "max-md:max-h-[40%]"}`}>
 
             <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
               <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
@@ -476,9 +479,10 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
             primary control, everything else shares the same smaller size. */}
         {/* FIX-LAYOUT: flex-wrap — при нехватке места кнопки аккуратно переносятся,
             а не съезжают и не вылезают за край панели. */}
-        <div className="flex flex-wrap items-center justify-center gap-3 px-4 py-4 border-t border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/50 flex-shrink-0">
+        <div className="flex flex-wrap items-center justify-center gap-3 max-md:gap-x-4 max-md:gap-y-8 max-md:pb-9 px-4 py-4 border-t border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/50 flex-shrink-0">
           {/* Microphone (larger than the rest) */}
           <ControlButton
+            label="Микрофон"
             onClick={voice.toggleMute}
             tone={voice.isMuted ? "danger" : "neutral"}
             large
@@ -503,6 +507,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
 
           {/* Deafen */}
           <ControlButton
+            label="Звук"
             onClick={voice.toggleDeafen}
             tone={voice.isDeafened ? "danger" : "neutral"}
             title={voice.isDeafened ? "Вкл. звук" : "Выкл. звук"}
@@ -516,6 +521,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
 
           {/* Noise suppressor */}
           <ControlButton
+            label="Шум"
             onClick={voice.toggleNS}
             tone={voice.nsEnabled ? "active" : "neutral"}
             title={voice.nsEnabled ? "Выкл. шумодав" : "Вкл. шумодав"}
@@ -528,6 +534,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
           {/* Screen share — several people may share at once, so this is never
               blocked just because someone else is already sharing. */}
           <ControlButton
+            label="Экран"
             onClick={() => (voice.isSharingScreen ? voice.stopScreenShare() : setSharePrivacyOpen(true))}
             tone={voice.isSharingScreen ? "active" : "neutral"}
             title={voice.isSharingScreen ? "Стоп демонстрация" : "Демонстрация экрана"}
@@ -546,6 +553,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
               в VoiceContext молча. Вне канала кнопка теперь заблокирована и
               объясняет причину, а не возвращается без единого слова. */}
           <ControlButton
+            label="Камера"
             onClick={() => {
               if (cameraBusy) return;
               /* FIX-SHARECAM: случайное нажатие сразу показывало вас каналу. */
@@ -581,6 +589,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
           {/* FIX-REPLAY: сохранить последние 30 секунд (голос + трансляция) — только Premium */}
           {voice.isPremium && (
             <ControlButton
+              label="Повтор"
               onClick={() => { void handleSaveReplay(); }}
               tone={replayState === "ok" ? "active" : replayState === "err" ? "danger" : "neutral"}
               disabled={!voice.replayReady || replayState === "busy"}
@@ -603,6 +612,7 @@ export default function VoiceExpandedPanel({ onClose, docked = false }: VoiceExp
 
           {/* Leave */}
           <ControlButton
+            label="Выйти"
             onClick={() => { voice.leaveVoice(); onClose(); }}
             tone="danger"
             title="Выйти"

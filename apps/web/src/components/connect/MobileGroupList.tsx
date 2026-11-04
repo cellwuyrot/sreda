@@ -5,8 +5,7 @@ import Link from "next/link";
 import { ChatIcon } from "@/components/ui/ConnectIcons";
 import PremiumMark from "@/components/connect/PremiumMark";
 import MobileNotificationBell from "@/components/mobile/MobileNotificationBell";
-import MobileProfileSheet from "@/components/mobile/MobileProfileSheet";
-import { useState } from "react";
+
 
 interface Group {
   id: string;
@@ -34,9 +33,7 @@ interface MobileGroupListProps {
 }
 
 export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, onJoinGroup, onOpenSearch, isPremium, onOpenPremiumInfo, groupUnread = {} }: MobileGroupListProps) {
-  /* MOBILE-PROFILE: своё меню человека. На телефоне верхняя панель скрыта, и до
-     профиля, уведомлений, рабочей среды и разделов по роли попасть было неоткуда. */
-  const [profileOpen, setProfileOpen] = useState(false);
+
 
   return (
     <div className="flex-1 flex flex-col h-full bg-neutral-50 dark:bg-neutral-950">
@@ -45,15 +42,15 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
         {/* MOBILE-VPN: тот же значок «TZ», что и первым в левой панели на
             большом экране, — и с тем же действием. Панель на телефоне скрыта
             целиком, поэтому вход в Premium и соединение пропадал вместе с ней. */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0" data-android-hide="true">
           {/* NETLINK-2: клик сразу открывает большое окно. Промежуточная плашка на
               телефоне была вдвойне лишней: узкий экран, а шагов до действия два. */}
           {onOpenPremiumInfo && (
             <PremiumMark isPremium={!!isPremium} onClick={onOpenPremiumInfo} size={36} />
           )}
-          <h1 className="text-xl font-bold text-neutral-900 dark:text-white truncate">TZ.Connect</h1>
+
         </div>
-        <div className="flex items-center">
+        <div className="ml-auto flex items-center">
           {onOpenSearch && (
             <button
               onClick={onOpenSearch}
@@ -84,7 +81,8 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto px-4 pt-5">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">Ваши сообщества</h2>
         {groups.length === 0 ? (
           <div className="text-center py-12">
             <span className="mb-4 flex justify-center"><ChatIcon size={48} tone="inactive" /></span>
@@ -95,7 +93,7 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
             <button
               key={g.id}
               onClick={() => onSelectGroup(g.id)}
-              className="w-full text-left px-3 py-2.5 min-h-[64px] bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 rounded-xl active:scale-[0.99] active:bg-neutral-50 dark:active:bg-neutral-800 transition-all flex items-center gap-3"
+              className="w-full text-left py-3 min-h-[72px] border-b border-neutral-200 dark:border-white/10 active:bg-neutral-100 dark:active:bg-white/5 transition-colors flex items-center gap-3"
             >
               <div className={`${g.isMain ? "w-12 h-12 ring-2 ring-violet-500/50 dark:ring-cyan-400/50" : "w-12 h-12"} rounded-xl bg-violet-100 dark:bg-cyan-400/10 flex items-center justify-center text-xl flex-shrink-0 overflow-hidden`}>
                 {g.icon && g.icon.startsWith("/") ? (
@@ -130,23 +128,13 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
         )}
       </div>
 
-      {/* MOBILE-UI: нижние действия — кнопки 44px+; safe-area учитывает таб-бар ниже. */}
-      <div className="p-3 border-t border-neutral-200 dark:border-white/5 flex gap-2">
-        <button onClick={onCreateGroup} className="flex-1 btn-primary text-sm min-h-[44px]">Создать</button>
-        <button onClick={onJoinGroup} className="flex-1 btn-secondary text-sm min-h-[44px]">Присоединиться</button>
-        {/* MOBILE-PROFILE: здесь стояла кнопка «Друзья» — она повторяла раздел из
-            нижней навигации, то есть занимала место и не давала ничего. На её
-            месте вход в СВОИ разделы: профиль, уведомления, рабочая среда и
-            разделы по роли (кабинет партнёра, редакторская, панель админа). До
-            этого попасть туда с телефона было неоткуда. */}
-        <button onClick={() => setProfileOpen(true)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center bg-amber-100 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 rounded-xl active:scale-95 transition-transform" aria-label="Профиль и разделы">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-        </button>
+      <div className="px-4 py-3 border-t border-neutral-200 dark:border-white/5">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">Действия</p>
+        <div className="flex gap-2">
+          <button onClick={onCreateGroup} className="flex-1 min-h-[44px] text-sm text-left text-accent">＋ Создать сообщество</button>
+          <button onClick={onJoinGroup} className="flex-1 min-h-[44px] text-sm text-left text-accent">Присоединиться →</button>
+        </div>
       </div>
-
-      <MobileProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

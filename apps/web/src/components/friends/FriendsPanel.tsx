@@ -49,6 +49,7 @@ export default function FriendsPanel({ onMessageFriend }: FriendsPanelProps) {
   const [tab, setTab] = useState<Tab>("friends");
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [username, setUsername] = useState("");
+  const [friendSearch, setFriendSearch] = useState("");
   const [message, setMessage] = useState<{ text: string; type: "ok" | "err" } | null>(null);
   const [loading, setLoading] = useState(false);
   const [friendConfirm, setFriendConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -161,9 +162,11 @@ export default function FriendsPanel({ onMessageFriend }: FriendsPanelProps) {
     <div className="w-60 max-md:w-full cn-sidebar flex flex-col h-full flex-shrink-0">
       {/* Header */}
       <div className="p-3 border-b border-neutral-200 dark:border-white/5 flex items-center justify-between flex-shrink-0">
-        <span className="text-sm font-semibold text-neutral-900 dark:text-white">Друзья</span>
+        <span className="text-sm max-md:text-xl font-semibold text-neutral-900 dark:text-white">Друзья</span>
+        <button type="button" onClick={() => setTab("add")} aria-label="Добавить друга" className="md:hidden min-w-[44px] min-h-[44px] text-xl text-accent">＋</button>
       </div>
 
+      {tab === "friends" && <div className="md:hidden px-4 pt-3"><input type="search" aria-label="Найти друга" placeholder="Найти друга" value={friendSearch} onChange={e => setFriendSearch(e.target.value)} className="w-full min-h-[44px] px-3 rounded-xl bg-[var(--cn-accent-dim)] text-sm text-neutral-900 dark:text-white" /></div>}
       {/* Tabs */}
       <div className="flex border-b border-neutral-200 dark:border-white/5 flex-shrink-0">
         {tabs.map((t) => (
@@ -203,12 +206,15 @@ export default function FriendsPanel({ onMessageFriend }: FriendsPanelProps) {
                     Добавить друга
                   </button>
                 </div>
+              ) : data.friends.filter(f => `${f.name} ${f.username}`.toLowerCase().includes(friendSearch.trim().toLowerCase())).length === 0 ? (
+                <p className="text-center py-8 text-neutral-400 text-sm">Друзья не найдены</p>
               ) : (
-                data.friends.map((f) => (
+                data.friends.filter(f => `${f.name} ${f.username}`.toLowerCase().includes(friendSearch.trim().toLowerCase())).map((f) => (
+                  <div key={f.id} className="flex items-center border-b border-neutral-200 dark:border-white/5 md:border-0">
                   <button
                     key={f.id}
                     onClick={() => setSelectedFriend(f)}
-                    className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-[var(--cn-hover)] transition-colors text-left"
+                    className="flex-1 min-w-0 flex items-center gap-3 px-2 py-2 max-md:min-h-[68px] rounded-lg hover:bg-[var(--cn-hover)] transition-colors text-left"
                   >
                     <div className="relative flex-shrink-0">
                       <GlowAvatar
@@ -224,6 +230,8 @@ export default function FriendsPanel({ onMessageFriend }: FriendsPanelProps) {
                       </div>
                     </div>
                   </button>
+                  {onMessageFriend && <button type="button" onClick={() => onMessageFriend(f.id)} aria-label={`Написать ${f.name}`} className="md:hidden min-w-[44px] min-h-[44px] text-accent">✉</button>}
+                  </div>
                 ))
               )}
             </motion.div>
