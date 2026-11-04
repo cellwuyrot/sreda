@@ -34,6 +34,7 @@ import SectionsPanel from "@/components/connect/SectionsPanel";
 import ModulesPanel from "@/components/connect/ModulesPanel";
 import PollsPanel from "@/components/connect/PollsPanel";
 import MobileGroupList from "@/components/connect/MobileGroupList";
+import MobileProfileSheet from "@/components/mobile/MobileProfileSheet";
 import ConnectSplash from "@/components/connect/ConnectSplash";
 import PanelResizer from "@/components/connect/PanelResizer";
 import AccountSuspendedOverlay from "@/components/connect/AccountSuspendedOverlay";
@@ -159,6 +160,8 @@ function ConnectPageInner() {
   /** CHAT: разговор, в который ведёт кнопка «Перейти в бизнес-чат» из /partner. */
   const [businessConvId, setBusinessConvId] = useState<string | null>(null);
   const [showPremiumInfo, setShowPremiumInfo] = useState(false);
+  const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
+  const [mobileConversationOpen, setMobileConversationOpen] = useState(false);
   /** Видимость «Бизнеса»: ADMIN/EDITOR — всегда; клиент — с момента подачи заявки. */
   const [showBusiness, setShowBusiness] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
@@ -202,6 +205,7 @@ function ConnectPageInner() {
   useMobileHistoryStack(mobileView, setMobileViewSynced, isDesktopViewport === false);
   const mobileBack = useCallback(() => window.history.back(), []);
   useHistoryLayer(showVoicePanel && isDesktopViewport === false, () => setShowVoicePanel(false), "voice");
+  useHistoryLayer(mobileProfileOpen && isDesktopViewport === false, () => setMobileProfileOpen(false), "profile-sheet");
 
   /* MOBILE-DRAWER: выдвижная панель каналов группы. Чат всегда по центру,
      текстовые и голосовые каналы с «Разделами» — слева. Открытие: свайп
@@ -962,7 +966,7 @@ function ConnectPageInner() {
         >
           {activeSection === "communities" && (
             <>
-              {mobileView === "groups" && (
+              {mobileView === "groups" && !mobileConversationOpen && (
                 <MobileGroupList
                   groups={groups}
                   onSelectGroup={handleSelectGroup}
@@ -1148,6 +1152,7 @@ function ConnectPageInner() {
             <div className="flex-1 flex flex-col h-full overflow-hidden">
               <DMPanel
                 currentUserId={userId}
+                onConversationOpenChange={setMobileConversationOpen}
                 onClose={() => { setActiveSection("communities"); setDmFriendId(null); }}
                 initialFriendId={dmFriendId}
                 highlightMessageId={highlightDmMessageId}
@@ -1160,6 +1165,7 @@ function ConnectPageInner() {
             <div className="flex-1 flex flex-col h-full overflow-hidden">
               <DMPanel
                 currentUserId={userId}
+                onConversationOpenChange={setMobileConversationOpen}
                 onClose={() => setActiveSection("communities")}
                 initialFriendId={null}
                 kind="business"
@@ -1204,9 +1210,14 @@ function ConnectPageInner() {
                 <span className="text-[11px] font-medium leading-none">{label}</span>
               </button>
             ))}
+            <button type="button" onClick={() => setMobileProfileOpen(true)} aria-label="Профиль и разделы"
+              className="relative flex-1 flex flex-col items-center justify-center gap-1 text-neutral-400 dark:text-neutral-500 active:text-accent">
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+              <span className="text-[11px] font-medium leading-none">Профиль</span>
+            </button>
           </div>
         )}
-
+        <MobileProfileSheet open={mobileProfileOpen} onClose={() => setMobileProfileOpen(false)} />
       </div>
       )}
 

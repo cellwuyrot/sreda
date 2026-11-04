@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useCall } from "@/components/call/CallProvider";
 import { callDuration } from "@/lib/callProtocol";
+import { Mic, MicOff, Video, VideoOff, SwitchCamera } from "lucide-react";
 
 /**
  * CALL: окно вызова — входящего, исходящего и разговора.
@@ -40,14 +41,14 @@ export default function CallWindow() {
      задать атрибутом в разметке. */
   useEffect(() => {
     if (localRef.current) localRef.current.srcObject = localStream;
-  }, [localStream]);
+  }, [localStream, cameraOn, state.phase]);
 
   useEffect(() => {
     if (remoteRef.current) remoteRef.current.srcObject = remoteStream;
     /* Звук собеседника идёт через отдельный <audio>: в голосовом звонке видео-
        элемента без картинки может не быть в разметке, а слышать надо всегда. */
     if (audioRef.current) audioRef.current.srcObject = remoteStream;
-  }, [remoteStream]);
+  }, [remoteStream, peerVideo, state.phase]);
 
   /* Секундный такт только на время разговора. */
   useEffect(() => {
@@ -72,6 +73,7 @@ export default function CallWindow() {
   return (
     <div
       className="fixed inset-0 z-[3000] flex flex-col items-center justify-between bg-[var(--cn-main,#12121c)] px-6 py-10 text-white"
+      style={{ paddingTop: "max(2.5rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(2.5rem, env(safe-area-inset-bottom, 0px))" }}
       role="dialog"
       aria-modal="true"
       aria-label="Звонок"
@@ -89,7 +91,7 @@ export default function CallWindow() {
       )}
 
       {/* Собеседник */}
-      <div className="relative z-10 mt-10 flex flex-col items-center gap-3 text-center">
+      <div className="relative z-10 mt-10 flex flex-col items-center gap-3 text-center max-md:mt-[12vh]">
         {peer.avatar ? (
           <img
             src={peer.avatar}
@@ -128,15 +130,15 @@ export default function CallWindow() {
         {state.phase === "active" && (
           <div className="flex items-center gap-4">
             <CallButton label={micMuted ? "Включить микрофон" : "Выключить микрофон"} active={!micMuted} onClick={toggleMic}>
-              {micMuted ? "Звук выкл." : "Микрофон"}
+              {micMuted ? <MicOff size={21}/> : <Mic size={21}/>}<span>{micMuted ? "Включить" : "Микрофон"}</span>
             </CallButton>
             <CallButton label={cameraOn ? "Выключить камеру" : "Включить камеру"} active={cameraOn} onClick={toggleCamera}>
-              {cameraOn ? "Камера" : "Камера выкл."}
+              {cameraOn ? <Video size={21}/> : <VideoOff size={21}/>}<span>Камера</span>
             </CallButton>
             {/* Переворот показываем только при включённой камере: иначе кнопка ничего не делает. */}
             {cameraOn && (
               <CallButton label="Перевернуть камеру" active onClick={flipCamera}>
-                {facing === "user" ? "Передняя" : "Задняя"}
+                <SwitchCamera size={21}/><span>{facing === "user" ? "Передняя" : "Задняя"}</span>
               </CallButton>
             )}
           </div>
@@ -148,9 +150,9 @@ export default function CallWindow() {
               type="button"
               onClick={decline}
               className="grid h-16 w-16 place-items-center rounded-full bg-red-600 text-sm font-semibold transition-colors hover:bg-red-500"
-              aria-label="Отклонить"
+              aria-label="Отклонить звонок"
             >
-              ✕
+              <span aria-hidden="true">✕</span><span className="sr-only">Отклонить звонок</span>
             </button>
             <button
               type="button"
@@ -158,7 +160,7 @@ export default function CallWindow() {
               className="grid h-16 w-16 place-items-center rounded-full bg-emerald-600 text-sm font-semibold transition-colors hover:bg-emerald-500"
               aria-label="Ответить"
             >
-              ✓
+              <span aria-hidden="true">✓</span><span className="sr-only">Ответить</span>
             </button>
           </div>
         ) : (
@@ -168,7 +170,7 @@ export default function CallWindow() {
             className="grid h-16 w-16 place-items-center rounded-full bg-red-600 text-sm font-semibold transition-colors hover:bg-red-500"
             aria-label="Завершить звонок"
           >
-            ✕
+            <span aria-hidden="true">✕</span><span className="sr-only">Завершить звонок</span>
           </button>
         )}
       </div>
