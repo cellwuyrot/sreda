@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.trioz.connect.OriginPolicyTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-04T15:14:02" hostname="7051b49e-f37" time="4.384">
+  <properties/>
+  <testcase name="ownHttpsOriginAccepted" classname="ru.trioz.connect.OriginPolicyTest" time="3.999"/>
+  <testcase name="credentialsRejected" classname="ru.trioz.connect.OriginPolicyTest" time="0.077"/>
+  <testcase name="suffixHostRejected" classname="ru.trioz.connect.OriginPolicyTest" time="0.071"/>
+  <testcase name="differentPortRejected" classname="ru.trioz.connect.OriginPolicyTest" time="0.041"/>
+  <testcase name="httpRejected" classname="ru.trioz.connect.OriginPolicyTest" time="0.083"/>
+  <testcase name="javascriptRejected" classname="ru.trioz.connect.OriginPolicyTest" time="0.05"/>
+  <testcase name="defaultPortAccepted" classname="ru.trioz.connect.OriginPolicyTest" time="0.055"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[[Robolectric] WARN: Android SDK 36 requires Java 21 (have Java 17). Tests won't be run on SDK 36 unless explicitly requested.
+]]></system-err>
+</testsuite>

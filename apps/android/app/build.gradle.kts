@@ -1,4 +1,6 @@
 import java.util.Properties
+import java.net.URI
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 
 plugins {
@@ -72,6 +74,16 @@ val syncLauncherIcon = tasks.register<Copy>("syncLauncherIcon") {
     from(launcherIconSource) { rename { "ic_launcher_image.png" } }
     // nodpi: картинка одна на все плотности, система масштабирует сама.
     into(generatedIconRes.map { it.dir("drawable-nodpi") })
+}
+
+// Debug-only HTTPS staging override. Never changes the release origin.
+val previewAppUrl = providers.gradleProperty("trioz.debugAppUrl").orNull?.let { value ->
+    val uri = URI(value)
+    require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null &&
+        uri.rawQuery == null && uri.rawFragment == null && (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")) {
+        "trioz.debugAppUrl must be an HTTPS origin without credentials, path, query or fragment"
+    }
+    value.trimEnd('/')
 }
 
 android {
@@ -154,6 +166,7 @@ android {
             // Handy for pointing the debug build at a local dev server:
             // buildConfigField("String", "APP_URL", "\"http://10.0.2.2:3005\"")
             applicationIdSuffix = ".debug"
+            if (previewAppUrl != null) buildConfigField("String", "APP_URL", JsonOutput.toJson(previewAppUrl))
         }
     }
 
@@ -181,7 +194,7 @@ dependencies {
     debugImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
     debugImplementation("androidx.compose.material3:material3")
     debugImplementation("androidx.activity:activity-compose:1.10.1")
-    debugImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    debugImplementation("com.squareup.okhttp3:okhttp:5.3.0")
 
     /* PUSH: доставка уведомлений в закрытое приложение.
 
@@ -199,6 +212,8 @@ dependencies {
     // аналог wireguard-android с параметрами маскировки.
     implementation("com.zaneschepke:amneziawg-android:2.3.7")
     implementation("androidx.webkit:webkit:1.14.0")
+    testDebugImplementation("com.squareup.okhttp3:mockwebserver:5.3.0")
+    testDebugImplementation("com.squareup.okhttp3:okhttp-tls:5.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     implementation("androidx.core:core-ktx:1.13.1")

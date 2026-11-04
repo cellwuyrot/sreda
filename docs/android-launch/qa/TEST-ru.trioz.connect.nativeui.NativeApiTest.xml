@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.trioz.connect.nativeui.NativeApiTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-11-04T15:14:08" hostname="7051b49e-f37" time="6.841">
+  <properties/>
+  <testcase name="unauthorizedPreservesStatus" classname="ru.trioz.connect.nativeui.NativeApiTest" time="5.062"/>
+  <testcase name="signInUsesCsrfCookieAndMemorySession" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.254"/>
+  <testcase name="cancellationCancelsHttpCall" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.21"/>
+  <testcase name="channelSendContainsOnlyIntendedFields" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.086"/>
+  <testcase name="failedWriteIsNotRetried" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.084"/>
+  <testcase name="unsafeOriginsRejected" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.072"/>
+  <testcase name="closedSessionCannotBeReused" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.068"/>
+  <testcase name="onlyApiPathsOnSameOriginAllowed" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.091"/>
+  <testcase name="encryptedOrBlankSendRejectedBeforeNetwork" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.079"/>
+  <testcase name="retryAfterCannotRepeatWrite" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.185"/>
+  <testcase name="redirectsNeverFollowed" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.193"/>
+  <testcase name="oversizedResponseRejected" classname="ru.trioz.connect.nativeui.NativeApiTest" time="0.453"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -17,11 +17,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import ru.trioz.connect.BuildConfig
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -34,7 +37,7 @@ class NativePreviewActivity : ComponentActivity() {
     }
 }
 
-private data class Palette(val bg: Color, val surface: Color, val text: Color, val muted: Color, val accent: Color, val line: Color)
+internal data class Palette(val bg: Color, val surface: Color, val text: Color, val muted: Color, val accent: Color, val line: Color)
 private fun palette(theme: String): Palette = when (theme) {
     "light" -> Palette(Color(0xfff5faf8), Color(0xffe7f0ed), Color(0xff172b2c), Color(0xff596e6d), Color(0xff007e7a), Color(0xffd4e5e0))
     "warm" -> Palette(Color(0xfffff9f1), Color(0xfff2e9dc), Color(0xff302b24), Color(0xff756c60), Color(0xff8b6436), Color(0xffe2d4c3))
@@ -62,12 +65,14 @@ private fun screenPath(s: Screen): String? = when (s) {
     Screen.Dms -> "/api/dm"
     Screen.Admin -> "/api/admin/system-stats"
     is Screen.Channels -> "/api/groups/${Uri.encode(s.id)}"
-    is Screen.Thread -> if (s.direct) "/api/dm/${Uri.encode(s.id)}" else "/api/messages?channelId=${Uri.encode(s.id)}"
+    is Screen.Thread -> null
     Screen.Settings -> null
 }
 
 @Composable private fun NativePreview(initialTheme: String, saveTheme: (String) -> Unit) {
-    val api = remember { NativeApi() }
+    var sessionGeneration by remember { mutableIntStateOf(0) }
+    val api = remember(sessionGeneration) { NativeApi() }
+    DisposableEffect(api) { onDispose { api.close() } }
     val scope = rememberCoroutineScope()
     var theme by remember { mutableStateOf(initialTheme) }
     val p = palette(theme)
@@ -80,6 +85,11 @@ private fun screenPath(s: Screen): String? = when (s) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var signingIn by remember { mutableStateOf(false) }
+    fun logout() {
+        api.close(); user = null; screen = Screen.Groups; priorGroup = null
+        username = ""; password = ""; toast = null; load = Load.Loading
+        sessionGeneration++
+    }
     fun back() { screen = when (screen) { is Screen.Thread -> priorGroup ?: Screen.Dms; is Screen.Channels, Screen.Admin -> Screen.Groups; else -> Screen.Groups } }
     BackHandler(user != null && screen !is Screen.Groups) { back() }
     LaunchedEffect(user) {
@@ -103,9 +113,20 @@ private fun screenPath(s: Screen): String? = when (s) {
             }
             if (!valid) throw IllegalStateException("Сервер вернул неожиданный формат данных")
             Load.Data(data)
-        } catch (e: Exception) { Load.Error(e.message ?: "Не удалось связаться с сервером") }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            if (e is NativeApiException && e.status == 401) logout()
+            Load.Error(e.message ?: "Не удалось связаться с сервером")
+        }
     }
-    MaterialTheme {
+    val colors = if (p.bg.luminance() < 0.5f) darkColorScheme(
+        primary = p.accent, onPrimary = p.bg, background = p.bg, onBackground = p.text,
+        surface = p.surface, onSurface = p.text, onSurfaceVariant = p.muted, outline = p.muted,
+    ) else lightColorScheme(
+        primary = p.accent, onPrimary = p.bg, background = p.bg, onBackground = p.text,
+        surface = p.surface, onSurface = p.text, onSurfaceVariant = p.muted, outline = p.muted,
+    )
+    MaterialTheme(colorScheme = colors) {
         Surface(color = p.bg, modifier = Modifier.fillMaxSize()) {
             if (user == null) {
                 Column(Modifier.fillMaxSize().statusBarsPadding().imePadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
@@ -121,11 +142,13 @@ private fun screenPath(s: Screen): String? = when (s) {
                         signingIn = true; toast = null
                         scope.launch {
                             try { user = api.signIn(username.trim(), password); password = ""; screen = Screen.Groups }
+                            catch (e: CancellationException) { throw e }
                             catch (e: Exception) { toast = e.message ?: "Ошибка входа"; password = "" }
                             finally { signingIn = false }
                         }
                     }) { Text(if (signingIn) "Вход…" else "Войти") }
                     toast?.let { Text(it, color = Color(0xffff8b87), modifier = Modifier.padding(top = 12.dp)) }
+                    Text("Сервер: ${BuildConfig.APP_URL}", color = p.muted, fontSize = 12.sp)
                     Text("Вход через TZ ID и регистрация ещё не перенесены.", color = p.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
                 }
             } else {
@@ -135,7 +158,7 @@ private fun screenPath(s: Screen): String? = when (s) {
                             val title = when (val s = screen) { Screen.Groups -> ""; Screen.Friends -> "Друзья"; Screen.Dms -> "Сообщения"; Screen.Settings -> "Настройки"; is Screen.Channels -> s.name; is Screen.Thread -> s.title; Screen.Admin -> "Администрирование" }
                             if (screen is Screen.Channels || screen is Screen.Thread || screen is Screen.Admin) Text("‹", color = p.accent, fontSize = 30.sp, modifier = Modifier.clickable { back() }.padding(end = 12.dp))
                             Text(title, color = p.text, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            if (screen != Screen.Settings) Text("Обновить", color = p.accent, fontSize = 13.sp, modifier = Modifier.clickable { refresh++ }.padding(8.dp))
+                            if (screen != Screen.Settings && screen !is Screen.Thread) Text("Обновить", color = p.accent, fontSize = 13.sp, modifier = Modifier.clickable { refresh++ }.padding(8.dp))
                         }
                         Text("ТЕСТОВАЯ НАТИВНАЯ ВЕРСИЯ · НЕ ПОЛНЫЙ ПЕРЕНОС", color = p.muted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
                         if (screen is Screen.Settings) {
@@ -149,9 +172,16 @@ private fun screenPath(s: Screen): String? = when (s) {
                                     }
                                 }
                                 item { Section("Приложение", p) }
+                                item { NativeRow("Выйти из тестовой сессии", "Локальный выход; старая WebView-сессия не изменяется", p) { logout() } }
                                 item { NativeRow("VPN", "Нативный экран ещё не подключён", p) { toast = "VPN пока не перенесён в тестовую нативную сборку" } }
                                 if (user?.text("role") == "ADMIN") item { NativeRow("Админка", "Обзор статистики", p) { screen = Screen.Admin } }
                                 item { Text("Дополнительные настройки, темы сообществ и оформление чата ещё не перенесены.", color = p.muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp)) }
+                            }
+                        } else if (screen is Screen.Thread) {
+                            val thread = screen as Screen.Thread
+                            key(thread.id, thread.direct, sessionGeneration) {
+                                NativeThread(api, thread.id, thread.direct,
+                                    user?.optBoolean("isPremium") == true || user?.text("role") == "ADMIN", p) { logout() }
                             }
                         } else when (val state = load) {
                             Load.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.accent) }
@@ -225,16 +255,7 @@ private fun screenPath(s: Screen): String? = when (s) {
                 } }
                 item { Text("Настройки, дополнительные разделы и оформление сообщества ещё не перенесены.", color = p.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 18.dp)) }
             }
-            is Screen.Thread -> {
-                val rows = (json as? JSONObject)?.optJSONArray("messages")?.objects().orEmpty()
-                item { Text("Только просмотр последних сообщений. Отправка, вложения, обновление в реальном времени и история пока не перенесены.", color = p.muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 12.dp)) }
-                items(rows) { m ->
-                    val author = m.optJSONObject("user")?.text("name", "Участник") ?: "Участник"
-                    val raw = m.text("content")
-                    val content = when { m.optBoolean("deleted") -> "Сообщение удалено"; m.optBoolean("encrypted") || raw.startsWith("e2ee:") -> "Зашифрованное сообщение недоступно в тестовой версии"; raw.isBlank() -> "Сообщение без текста или вложение"; else -> raw }
-                    Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) { Text(author, color = p.accent, fontWeight = FontWeight.Bold, fontSize = 12.sp); Text(content, color = p.text, fontSize = 14.sp) }
-                }
-            }
+            is Screen.Thread -> Unit
             Screen.Admin -> {
                 val obj = json as? JSONObject; val counts = obj?.optJSONObject("counts")
                 item { Text("Только обзор. Остальные функции админки ещё не перенесены.", color = p.muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp)) }

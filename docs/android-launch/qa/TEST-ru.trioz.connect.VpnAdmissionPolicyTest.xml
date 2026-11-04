@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.trioz.connect.VpnAdmissionPolicyTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-11-04T15:14:07" hostname="7051b49e-f37" time="0.532">
+  <properties/>
+  <testcase name="emptyPolicyAllows" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.063"/>
+  <testcase name="deniesListedPackage" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.036"/>
+  <testcase name="wildcardNotAccepted" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.059"/>
+  <testcase name="allowsWhenNoListedPackageInstalled" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.028"/>
+  <testcase name="disabledPolicyDoesNotInspectInventory" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.042"/>
+  <testcase name="duplicatesNotAccepted" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.081"/>
+  <testcase name="preservesVersionForConsent" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.058"/>
+  <testcase name="exactPackageOnly" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.053"/>
+  <testcase name="unknownInventoryFailsClosed" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.063"/>
+  <testcase name="brokenJsonFailsClosed" classname="ru.trioz.connect.VpnAdmissionPolicyTest" time="0.034"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

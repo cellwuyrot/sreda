@@ -9,6 +9,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class NativePreviewTest {
+    @Test fun nativeLoginActivityStartsAndClosesWithoutLegacyStorage() {
+        val controller = org.robolectric.Robolectric.buildActivity(NativePreviewActivity::class.java)
+        try { controller.setup() } finally { controller.pause().stop().destroy() }
+    }
     @Test fun secureConversationNeverShowsServerContent() {
         assertEquals("Защищённая переписка", preview(JSONObject("""{"secure":true,"lastMessage":{"content":"private"}}""")))
     }
