@@ -2922,7 +2922,7 @@ export default function MessageArea({
         <DayNightBackground opacity={dayNightOpacity / 100} />
       )}
       {/* Header */}
-      <header className="h-12 border-b bg-[var(--cn-main)]/80 backdrop-blur-sm flex items-center px-4 gap-2 backdrop-blur-sm flex-shrink-0">
+      <header className="h-12 max-md:h-16 border-b border-[var(--cn-border)] bg-[var(--cn-main)] flex items-center px-4 gap-2 flex-shrink-0">
         {onBack && (
           <button onClick={onBack} className="md:hidden -ml-3 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-neutral-400 active:text-neutral-600 dark:active:text-white" aria-label="Открыть каналы">
             {/* MOBILE-DRAWER: кнопка открывает выдвижную панель каналов слева */}
@@ -2932,7 +2932,7 @@ export default function MessageArea({
           </button>
         )}
         <span aria-hidden="true" className="flex items-center">{channelIcon ? channelIcon : (isNewsChannel ? <NewsIcon size={18} tone="active" /> : <ChatIcon size={18} tone="active" />)}</span>
-        <span className="font-medium text-neutral-900 dark:text-white text-sm">{channelName}</span>
+        <span className="font-medium max-md:text-base text-neutral-900 dark:text-white text-sm truncate">{channelName}</span>
         {isNewsChannel && (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">
             Новости

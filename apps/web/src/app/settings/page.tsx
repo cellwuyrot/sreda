@@ -24,6 +24,9 @@ import DesktopCachePanel from "@/components/settings/DesktopCachePanel";
 import InfoTooltip from "@/components/ui/InfoTooltip";
 import { cacheNotifyPrefs } from "@/lib/notifyPrefs";
 import { hasPremium } from "@/lib/premium";
+import { isAndroidShell } from "@/lib/shell";
+import { useHistoryLayer } from "@/components/connect/hooks/useMobileHistoryStack";
+import PremiumInfoModal from "@/components/connect/overlays/PremiumInfoModal";
 /* Общий каталог Business и действующие права TrioZ — в отдельном разделе подписок. */
 import ProfileSubscriptions from "@/components/settings/ProfileSubscriptions";
 import {
@@ -446,7 +449,7 @@ function AudioDeviceSelect() {
 /* FIX-VOICE-UI: dense — компактный вариант секции (меньше отступы) для вкладки «Голос и бинды». */
 function Section({ title, subtitle, info, dense, children }: { title: string; subtitle?: string; info?: string; dense?: boolean; children: React.ReactNode }) {
   return (
-    <div className={`bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 ${dense ? "rounded-xl p-4 space-y-3" : "rounded-2xl p-6 space-y-5"}`}>
+    <div className={`bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-white/10 ${dense ? "rounded-xl p-4 space-y-3" : "rounded-2xl p-6 space-y-5"} max-md:bg-transparent max-md:dark:bg-transparent max-md:rounded-none max-md:border-0 max-md:border-b max-md:border-neutral-200 max-md:dark:border-white/10 max-md:px-1 max-md:py-4`}>
       <div>
         <h2 className="flex items-center gap-1.5 text-base font-semibold text-neutral-900 dark:text-white">
           {title}
@@ -642,6 +645,10 @@ export default function SettingsPage() {
   /* Navigation */
   const [activeCat, setActiveCat] = useState<CategoryId>("account");
   const [mobileContentOpen, setMobileContentOpen] = useState(false);
+  const [androidShell, setAndroidShell] = useState(false);
+  const [vpnOpen, setVpnOpen] = useState(false);
+  useEffect(() => setAndroidShell(isAndroidShell()), []);
+  useHistoryLayer(vpnOpen, () => setVpnOpen(false), "settings-vpn", androidShell);
 
   /* PREMIUM-PAY: способы оплаты подписки (заполняются администратором). */
 
@@ -2062,6 +2069,16 @@ export default function SettingsPage() {
             </div>
 
             <nav className="space-y-4">
+              <button type="button" onClick={() => selectCat("profile")}
+                className="md:hidden w-full min-h-[64px] flex items-center gap-3 px-3 py-3 text-left border-b border-neutral-200 dark:border-white/10">
+                <span className="w-10 h-10 rounded-full bg-[var(--cn-accent-dim)] text-accent flex items-center justify-center font-bold">{profile.name?.slice(0, 1).toUpperCase()}</span>
+                <span><span className="block text-sm font-semibold text-neutral-900 dark:text-white">{profile.name}</span><span className="block text-xs text-neutral-500">Открыть и изменить профиль</span></span>
+                <span className="ml-auto text-neutral-400">›</span>
+              </button>
+              {androidShell && <button type="button" onClick={() => setVpnOpen(true)}
+                className="w-full min-h-[56px] flex items-center gap-3 px-3 py-3 text-left border-b border-neutral-200 dark:border-white/10 text-sm text-neutral-900 dark:text-white">
+                <span className="text-accent" aria-hidden="true">◈</span><span className="flex-1">VPN · Надёжное соединение</span><span className="text-neutral-400">›</span>
+              </button>}
               {CATEGORIES.map((group) => (
                 <div key={group.group}>
                   <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-gray-500">{group.group}</p>
@@ -2070,7 +2087,7 @@ export default function SettingsPage() {
                       <button
                         key={item.id}
                         onClick={() => selectCat(item.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        className={`w-full flex items-center gap-3 px-3 py-2 max-md:min-h-[52px] max-md:rounded-none max-md:border-b max-md:border-neutral-200 max-md:dark:border-white/10 rounded-xl text-sm font-medium transition-colors ${
                           activeCat === item.id
                             ? "bg-violet-500/10 dark:bg-cyan-500/10 text-violet-700 dark:text-cyan-300"
                             : "text-neutral-600 dark:text-gray-300 hover:bg-neutral-100 dark:hover:bg-white/5"
@@ -2120,6 +2137,7 @@ export default function SettingsPage() {
         </div>
       )}
       {toast && <Toast message={toast.message} type={toast.type} />}
+      {vpnOpen && androidShell && <PremiumInfoModal isPremium={effectivePremium} onClose={() => setVpnOpen(false)} onOpenSettings={() => { setVpnOpen(false); selectCat("premium"); }} />}
     </div>
   );
 }

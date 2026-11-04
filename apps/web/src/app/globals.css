@@ -1679,3 +1679,6 @@ button.tz-modern-reaction:focus-visible { outline: 2px solid #9866ed; outline-of
 }
 
 .tz-emoji-search input::placeholder { color: var(--cn-muted, #637088); opacity: 1; }
+
+/* В Android вход в VPN перенесён в настройки; на сайте остаётся прежним. */
+.tz-android [data-android-hide="true"] { display: none !important; }
