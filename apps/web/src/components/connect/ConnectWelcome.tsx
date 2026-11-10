@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
 import { timezoneForCity } from "@/lib/cityTimezones";
 import { useTheme } from "@/components/Providers";
+import { isVisualHidden, VISUAL_VISIBILITY_EVENT } from "@/lib/visualVisibility";
 
 /* ───────────────────────────────────────────────────────────
  *  ConnectWelcome — мифическая Земля под энергощитом в космосе
@@ -491,7 +492,7 @@ function SpaceScene({
     }
 
     function startLoop() {
-      if (raf || reduceMotion) return;
+      if (raf || reduceMotion || isVisualHidden()) return;
       lastDraw = 0;
       raf = requestAnimationFrame(frame);
     }
@@ -504,20 +505,22 @@ function SpaceScene({
 
     /* Окно не в фокусе — тоже повод остановиться: человек играет или работает в
        другой программе, а звёзды мерцают ему за счёт его же процессора. */
-    const onVisibility = () => (document.hidden ? stopLoop() : startLoop());
+    const onVisibility = () => (isVisualHidden() || !document.hasFocus() ? stopLoop() : startLoop());
 
     const ro = new ResizeObserver(resize);
     if (cv.parentElement) ro.observe(cv.parentElement);
     resize();
     generate();
     if (reduceMotion) draw();
-    else startLoop();
+    else if (!isVisualHidden()) startLoop();
     document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener(VISUAL_VISIBILITY_EVENT, onVisibility);
     window.addEventListener("blur", stopLoop);
     window.addEventListener("focus", startLoop);
     return () => {
       stopLoop();
       document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener(VISUAL_VISIBILITY_EVENT, onVisibility);
       window.removeEventListener("blur", stopLoop);
       window.removeEventListener("focus", startLoop);
       ro.disconnect();
@@ -593,24 +596,26 @@ function MythicEarth({ px, py }: { px: { get: () => number }; py: { get: () => n
       prevY = y;
       tx.set(x);
       ty.set(y);
-      if (idleFrames > 60 || document.hidden) {
+      if (idleFrames > 60 || isVisualHidden()) {
         raf = 0;
         return;
       }
       raf = requestAnimationFrame(step);
     };
     const wake = () => {
-      if (raf || document.hidden) return;
+      if (raf || isVisualHidden()) return;
       idleFrames = 0;
       raf = requestAnimationFrame(step);
     };
     wake();
     window.addEventListener("pointermove", wake, { passive: true });
     document.addEventListener("visibilitychange", wake);
+    document.addEventListener(VISUAL_VISIBILITY_EVENT, wake);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", wake);
       document.removeEventListener("visibilitychange", wake);
+      document.removeEventListener(VISUAL_VISIBILITY_EVENT, wake);
     };
   }, [px, py, tx, ty]);
 
@@ -785,6 +790,28 @@ function CityClock() {
   );
 }
 
+/** Pause only the decorative theme video while the native window is hidden. */
+export function WelcomeBackgroundVideo() {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    const sync = () => {
+      if (isVisualHidden()) video.pause();
+      else if (video.paused) void video.play().catch(() => {});
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    document.addEventListener(VISUAL_VISIBILITY_EVENT, sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      document.removeEventListener(VISUAL_VISIBILITY_EVENT, sync);
+    };
+  }, []);
+  return <video ref={ref} className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+    src="/uploads/banners/backgroundvid.mp4" autoPlay loop muted playsInline preload="auto" aria-hidden="true" />;
+}
+
 /* ════════════ Главный компонент ════════════ */
 export default function ConnectWelcome({ onCreate, onJoin }: ConnectWelcomeProps) {
   const { theme } = useTheme();
@@ -837,16 +864,7 @@ export default function ConnectWelcome({ onCreate, onJoin }: ConnectWelcomeProps
         style={{ background: "#08090b" }}
       >
         {/* Зацикленное фоновое видео вместо прежнего line-art космоса. */}
-        <video
-          className="absolute inset-0 h-full w-full object-cover pointer-events-none"
-          src="/uploads/banners/backgroundvid.mp4"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          aria-hidden="true"
-        />
+        <WelcomeBackgroundVideo />
 
         {/* Монохромное затемнение — читаемость надписи и кнопок поверх видео. */}
         <div

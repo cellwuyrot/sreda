@@ -95,6 +95,9 @@ export interface DesktopVpnApi {
 export interface TriozDesktopApi {
   isDesktop: true;
   platform: string;
+  /** Optional in older desktop clients. */
+  getWindowHidden?(): Promise<boolean>;
+  onWindowHiddenChange?(cb: (hidden: boolean) => void): Unsubscribe;
   getConfig(): Promise<DesktopConfig>;
   setConfig(patch: Partial<DesktopConfig>): Promise<DesktopConfig>;
   /** Global mute-toggle hotkey was pressed. */

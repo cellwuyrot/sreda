@@ -367,6 +367,23 @@ export function createMainWindow(): BrowserWindow {
     }
   });
 
+  // Page Visibility may remain visible with backgroundThrottling disabled.
+  // Send only native hide/minimize state; an unfocused but visible window and
+  // the PiP window must keep rendering. Defer to observe final native state.
+  const visibilityWindow = mainWindow;
+  const pushWindowHidden = () => {
+    setImmediate(() => {
+      if (!visibilityWindow.isDestroyed() && !visibilityWindow.webContents.isDestroyed()) {
+        visibilityWindow.webContents.send(IPC.WINDOW_HIDDEN_CHANGED,
+          !visibilityWindow.isVisible() || visibilityWindow.isMinimized());
+      }
+    });
+  };
+  visibilityWindow.on("minimize", pushWindowHidden);
+  visibilityWindow.on("restore", pushWindowHidden);
+  visibilityWindow.on("show", pushWindowHidden);
+  visibilityWindow.on("hide", pushWindowHidden);
+
   persistBounds(mainWindow);
 
   mainWindow.on("close", (event) => {

@@ -1,28 +1,17 @@
 "use client";
 
 /**
- * PERF-GPU: гасит непрерывную работу графического ускорителя, когда окно
- * приложения не видно человеку.
- *
- * Почему это нужно именно в оболочке: в `mainWindow.ts` намеренно выключено
- * `backgroundThrottling` (FIX-OVL-THROTTLE) — иначе накладка звонка замирает,
- * пока пользователь работает в другом окне. Побочный итог: Chromium продолжает
- * СОСТАВЛЯТЬ КАДРЫ для свёрнутого окна, а составление кадра — это работа
- * видеокарты. Все бесконечные CSS-анимации (мерцание звёзд, вращение орбит,
- * пульсация индикаторов) и слои с размытием при этом перерисовываются 60 раз в
- * секунду в никуда. Отсюда и постоянная загрузка GPU без всякой пользы.
- *
- * Решение не отключает ускорение целиком (без него пострадали бы видео и
- * демонстрация экрана) и не трогает верстку: мы лишь ставим на паузу анимации и
- * снимаем размытие, пока окно скрыто. Возврат фокуса восстанавливает всё
- * мгновенно, потому что состояние живёт в CSS, а не в JS.
- *
- * Отдельно уважаем системную настройку «уменьшить движение»: если человек её
- * включил, анимации не запускаются вообще — это заодно снимает нагрузку
- * навсегда на слабых машинах.
+ * Suspend cosmetic CSS effects when the browser page or native window is hidden.
+ * The desktop shell deliberately disables background throttling for voice; in
+ * that mode Chromium Page Visibility may report "visible" even when minimized.
+ * New desktop shells report real native state through an optional IPC bridge.
+ * Older shells and browsers continue using the Page Visibility API.
+ * Audio, screen capture, overlay state and background timers are not stopped.
  */
 
 import { useEffect } from "react";
+import { getDesktopApi } from "@/lib/desktop";
+import { VISUAL_VISIBILITY_EVENT } from "@/lib/visualVisibility";
 
 export function IdleAnimationGuard() {
   useEffect(() => {
@@ -31,10 +20,29 @@ export function IdleAnimationGuard() {
     /* «Простой» — это скрытое окно. Потеря фокуса сама по себе простоем не
        считается: окно рядом с другим окном человек видит, и застывшая
        картинка выглядела бы поломкой. */
+    let nativeHidden = false;
+    let disposed = false;
+    let revision = 0;
     const apply = () => {
-      if (document.hidden) root.setAttribute("data-tz-idle", "1");
+      const hidden = document.hidden || nativeHidden;
+      if (root.hasAttribute("data-tz-idle") === hidden) return;
+      if (hidden) root.setAttribute("data-tz-idle", "1");
       else root.removeAttribute("data-tz-idle");
+      document.dispatchEvent(new Event(VISUAL_VISIBILITY_EVENT));
     };
+
+    const desktop = getDesktopApi();
+    const unsubscribe = desktop?.onWindowHiddenChange?.((hidden) => {
+      revision++;
+      nativeHidden = hidden;
+      apply();
+    });
+    const initialRevision = revision;
+    desktop?.getWindowHidden?.().then((hidden) => {
+      if (disposed || revision !== initialRevision) return;
+      nativeHidden = hidden;
+      apply();
+    }).catch(() => {});
 
     apply();
     document.addEventListener("visibilitychange", apply);
@@ -50,6 +58,8 @@ export function IdleAnimationGuard() {
     motion?.addEventListener?.("change", applyMotion);
 
     return () => {
+      disposed = true;
+      unsubscribe?.();
       document.removeEventListener("visibilitychange", apply);
       motion?.removeEventListener?.("change", applyMotion);
       root.removeAttribute("data-tz-idle");

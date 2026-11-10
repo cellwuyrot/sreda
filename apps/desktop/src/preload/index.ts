@@ -37,6 +37,11 @@ const api = {
   /** Static info about the shell (version, platform, target URL). */
   getInfo: (): Promise<DesktopInfo> => ipcRenderer.invoke(IPC.GET_INFO),
 
+  /** Independent of Chromium Page Visibility when background throttling is off. */
+  getWindowHidden: (): Promise<boolean> => ipcRenderer.invoke(IPC.GET_WINDOW_HIDDEN),
+  onWindowHiddenChange: (cb: (hidden: boolean) => void): Unsubscribe =>
+    on(IPC.WINDOW_HIDDEN_CHANGED, (hidden) => cb(hidden === true)),
+
   /** Read the persisted desktop settings. */
   getConfig: (): Promise<DesktopConfig> => ipcRenderer.invoke(IPC.GET_CONFIG),
 
