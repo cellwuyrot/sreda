@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Help from "./MonitorHelp";
+import TurnMonitor from "./TurnMonitor";
 type Deployment = {
   id: string;
   appName: string;
@@ -140,6 +141,7 @@ export default function ProjectMonitorAdmin() {
       <nav className="admin-section-links" aria-label="Разделы мониторинга">
         <a href="#monitor-projects">Проекты</a>
         <a href="#monitor-resources">Ресурсы серверов</a>
+        <a href="#monitor-turn">TURN-серверы</a>
         <a href="#monitor-setup">Настройка агента</a>
       </nav>
       <div id="monitor-setup" />
@@ -479,6 +481,7 @@ export default function ProjectMonitorAdmin() {
           </article>
         ))}
       </section>
+      <TurnMonitor />
       <section id="monitor-resources" className="space-y-4">
         <h2 className="text-2xl font-semibold">Ресурсы серверов</h2>
         <Help>
