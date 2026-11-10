@@ -13,6 +13,8 @@
 
 import { useEffect, useRef } from "react";
 import type { GroupParticles, ParticleKind } from "@/lib/groupTheme";
+import { createFrameBudget } from "@/lib/frameBudget";
+import { isVisualHidden, VISUAL_VISIBILITY_EVENT } from "@/lib/visualVisibility";
 
 interface Props {
 	particles: GroupParticles;
@@ -150,8 +152,14 @@ export default function ParticleField({ particles, inline = false, className = "
 		const k = speed / 100;
 		const alpha = opacity / 100;
 
-		const step = () => {
-			if (stopped) return;
+		const budget = createFrameBudget();
+		const step = (now: number) => {
+			if (stopped || isVisualHidden()) return;
+			const frameScale = budget.consume(now);
+			if (!frameScale) {
+				if (!reduce) frame = window.requestAnimationFrame(step);
+				return;
+			}
 			ctx.clearRect(0, 0, w, h);
 			ctx.globalAlpha = alpha;
 			ctx.fillStyle = color;
@@ -162,15 +170,15 @@ export default function ParticleField({ particles, inline = false, className = "
 
 			for (let i = 0; i < dots.length; i += 1) {
 				const d = dots[i];
-				d.p += 0.02 * k;
+				d.p += 0.02 * k * frameScale;
 
 				if (kind === "stars") {
 					/* Звёзды не летят, а дышат прозрачностью. */
 					d.a = 0.35 + 0.65 * Math.abs(Math.sin(d.p));
 				} else {
-					d.x += d.vx * k + (kind === "snow" || kind === "petals" ? Math.sin(d.p) * 0.35 * k : 0);
-					d.y += d.vy * k;
-					d.rot += d.vr * k;
+					d.x += (d.vx * k + (kind === "snow" || kind === "petals" ? Math.sin(d.p) * 0.35 * k : 0)) * frameScale;
+					d.y += d.vy * k * frameScale;
+					d.rot += d.vr * k * frameScale;
 				}
 
 				if (kind === "fireflies") {
@@ -187,8 +195,8 @@ export default function ParticleField({ particles, inline = false, className = "
 					if (dist2 < 14_400 && dist2 > 0.01) {
 						const push = (14_400 - dist2) / 14_400;
 						const dist = Math.sqrt(dist2);
-						d.x += (dx / dist) * push * 2.2;
-						d.y += (dy / dist) * push * 2.2;
+						d.x += (dx / dist) * push * 2.2 * frameScale;
+						d.y += (dy / dist) * push * 2.2 * frameScale;
 					}
 				}
 
@@ -241,18 +249,19 @@ export default function ParticleField({ particles, inline = false, className = "
 			if (!reduce) frame = window.requestAnimationFrame(step);
 		};
 
-		step();
+		if (!isVisualHidden()) step(performance.now());
 
-		/* Скрытая вкладка не должна крутить анимацию. */
+		/* Pause on native minimize/hide as well as browser visibility. */
 		const onVisibility = () => {
-			if (document.hidden) {
-				window.cancelAnimationFrame(frame);
-			} else if (!reduce) {
-				window.cancelAnimationFrame(frame);
-				frame = window.requestAnimationFrame(step);
+			window.cancelAnimationFrame(frame);
+			budget.reset();
+			if (!isVisualHidden()) {
+				if (reduce) step(performance.now());
+				else frame = window.requestAnimationFrame(step);
 			}
 		};
 		document.addEventListener("visibilitychange", onVisibility);
+		document.addEventListener(VISUAL_VISIBILITY_EVENT, onVisibility);
 
 		return () => {
 			stopped = true;
@@ -260,6 +269,7 @@ export default function ParticleField({ particles, inline = false, className = "
 			window.removeEventListener("resize", resize);
 			window.removeEventListener("mousemove", onMove);
 			document.removeEventListener("visibilitychange", onVisibility);
+			document.removeEventListener(VISUAL_VISIBILITY_EVENT, onVisibility);
 			ro?.disconnect();
 		};
 	}, [kind, density, speed, size, color, opacity, interactive, inline]);
