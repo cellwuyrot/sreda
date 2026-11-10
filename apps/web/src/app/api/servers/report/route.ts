@@ -40,6 +40,25 @@ const ALLOWED_KEYS = [
 ] as const;
 const MAX_STRING = 200;
 
+/** Дополнительные поля только для MEDIA/VOICE; чужие ключи не сохраняются. */
+function sanitizeVoiceReport(value: unknown): Record<string, string | number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const src = value as Record<string, unknown>;
+  if (src.serviceType !== "VOICE") return {};
+  const out: Record<string, string | number> = { serviceType: "VOICE" };
+  if (src.capabilities === "VOICE,VIDEO,WEBRTC,TURN,SFU,API") out.capabilities = src.capabilities;
+  if (src.agentStatus === "running") out.agentStatus = src.agentStatus;
+  if (src.apiStatus === "reachable" || src.apiStatus === "unreachable") out.apiStatus = src.apiStatus;
+  // Проверка только локального UDP STUN Binding — она не доказывает TURN relay.
+  if (src.turnProbe === "stun_ok" || src.turnProbe === "timeout" || src.turnProbe === "error") out.turnProbe = src.turnProbe;
+  if (typeof src.turnCheckedAtMs === "number" && Number.isSafeInteger(src.turnCheckedAtMs) && src.turnCheckedAtMs >= 0) out.turnCheckedAtMs = src.turnCheckedAtMs;
+  for (const key of ["cpuPercent", "memoryUsedMb", "memoryTotalMb"] as const) {
+    const v = src[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && (key !== "cpuPercent" || v <= 100)) out[key] = v;
+  }
+  return out;
+}
+
 function sanitizeReport(value: unknown): Record<string, string | number> {
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
@@ -108,6 +127,7 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => null)) as { report?: unknown } | null;
   const report = sanitizeReport(body?.report);
+  if (node.kind === "MEDIA") Object.assign(report, sanitizeVoiceReport(body?.report));
   if (node.kind === "VPN" && body?.report && typeof body.report === "object" && !Array.isArray(body.report)) {
     Object.assign(report, sanitizeVpnHealth(body.report as Record<string, unknown>));
   }
