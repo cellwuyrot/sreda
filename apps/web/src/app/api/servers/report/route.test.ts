@@ -143,6 +143,40 @@ describe("что сохраняется из отчёта", () => {
   });
 });
 
+describe("отчёты MEDIA/VOICE", () => {
+  it("принимает только разрешённые поля голосового узла", async () => {
+    mockFindNode.mockResolvedValue(row(vpnNode({ kind: "MEDIA" })));
+    await call({ report: { serviceType: "VOICE", capabilities: "VOICE,VIDEO,WEBRTC,TURN,SFU,API", apiStatus: "reachable", agentStatus: "running", cpuPercent: 24, memoryUsedMb: 100, secret: "do-not-save" } });
+    const args = prismaMock.serverNode.update.mock.calls[0][0] as { data: { lastReport: string } };
+    const saved = JSON.parse(args.data.lastReport);
+    expect(saved).toMatchObject({ serviceType: "VOICE", apiStatus: "reachable", cpuPercent: 24 });
+    expect(saved.secret).toBeUndefined();
+  });
+  it("не меняет фильтрацию для VPN", async () => {
+    await call({ report: { serviceType: "VOICE", apiStatus: "reachable", cpuPercent: 24 } });
+    const args = prismaMock.serverNode.update.mock.calls[0][0] as { data: { lastReport: string } };
+    expect(JSON.parse(args.data.lastReport)).toEqual({});
+  });
+  it("сохраняет ограниченный результат локального STUN, не чужие поля", async () => {
+    mockFindNode.mockResolvedValue(row(vpnNode({ kind: "MEDIA" })));
+    await call({ report: { serviceType: "VOICE", turnProbe: "stun_ok", turnCheckedAtMs: 1234, turnSecret: "private" } });
+    const args = prismaMock.serverNode.update.mock.calls[0][0] as { data: { lastReport: string } };
+    expect(JSON.parse(args.data.lastReport)).toEqual({ serviceType: "VOICE", turnProbe: "stun_ok", turnCheckedAtMs: 1234 });
+  });
+  it("отбрасывает произвольное состояние и время STUN", async () => {
+    mockFindNode.mockResolvedValue(row(vpnNode({ kind: "MEDIA" })));
+    await call({ report: { serviceType: "VOICE", turnProbe: "relay_works", turnCheckedAtMs: -2 } });
+    const args = prismaMock.serverNode.update.mock.calls[0][0] as { data: { lastReport: string } };
+    expect(JSON.parse(args.data.lastReport)).toEqual({ serviceType: "VOICE" });
+  });
+  it("не сохраняет некорректные метрики и статусы", async () => {
+    mockFindNode.mockResolvedValue(row(vpnNode({ kind: "MEDIA" })));
+    await call({ report: { serviceType: "VOICE", cpuPercent: 101, memoryUsedMb: -1, apiStatus: "yes" } });
+    const args = prismaMock.serverNode.update.mock.calls[0][0] as { data: { lastReport: string } };
+    expect(JSON.parse(args.data.lastReport)).toEqual({ serviceType: "VOICE" });
+  });
+});
+
 describe("список пиров для узла", () => {
   it("узел не VPN — списка нет вовсе", async () => {
     mockFindNode.mockResolvedValue(row(vpnNode({ kind: "MEDIA" })));
