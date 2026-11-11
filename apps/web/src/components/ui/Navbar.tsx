@@ -191,7 +191,7 @@ export default function Navbar() {
     { href: "/projects", label: "T.R.I.O.Z." },
     { href: "https://int-veld.trioz.ru/", label: "Перо измерений" },
     { href: "/games", label: "Игры" },
-    { href: "/library", label: "TZ.Library" },
+    { href: "https://library.trioz.ru/", label: "TZ.Library" },
   ];
 
   // Inside the desktop shell hide the section links entirely (see note above);
