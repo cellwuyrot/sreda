@@ -426,7 +426,7 @@ const FALLBACK_WINDOWS: WindowData[] = [
     id: "4", windowKey: "library", title: "TZ.Library",
     subtitle: "Лор • Вики • История",
     description: "Хранилище знаний и лора вселенной",
-    href: "/library", accentColor: "#10b981", backgroundUrl: null,
+    href: "https://library.trioz.ru/", accentColor: "#10b981", backgroundUrl: null,
     backgroundType: "gradient", gradientFrom: "#001a0e", gradientTo: "#0a0a0f",
   },
 ];

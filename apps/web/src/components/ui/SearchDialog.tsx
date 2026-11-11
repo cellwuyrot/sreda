@@ -3,22 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Spinner from "@/components/ui/Spinner";
 import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
 import GlowAvatar from "@/components/ui/GlowAvatar";
 
 interface SearchResult {
-  articles?: ArticleResult[];
   messages?: MessageResult[];
   users?: UserResult[];
-}
-
-interface ArticleResult {
-  id: string;
-  title: string;
-  slug: string;
-  category: string;
-  snippet: string;
-  createdAt: string;
 }
 
 interface MessageResult {
@@ -41,7 +30,7 @@ interface UserResult {
   avatarGlowColors?: string | null;
 }
 
-type SearchTab = "all" | "articles" | "messages" | "users";
+type SearchTab = "all" | "messages" | "users";
 
 interface SearchDialogProps {
   open: boolean;
@@ -102,13 +91,11 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
 
   const tabs: { key: SearchTab; label: string }[] = [
     { key: "all", label: "Все" },
-    { key: "articles", label: "Статьи" },
     { key: "messages", label: "Сообщения" },
     { key: "users", label: "Пользователи" },
   ];
 
   const hasResults = results && (
-    (results.articles?.length || 0) > 0 ||
     (results.messages?.length || 0) > 0 ||
     (results.users?.length || 0) > 0
   );
@@ -139,7 +126,7 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Поиск по статьям, сообщениям, пользователям..."
+              placeholder="Поиск по сообщениям и пользователям..."
               className="flex-1 bg-transparent text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none"
               autoComplete="off"
             />
@@ -179,27 +166,6 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
             {query.length >= 2 && !loading && !hasResults && (
               <div className="py-12 text-center text-neutral-400 text-sm">
                 Ничего не найдено
-              </div>
-            )}
-
-            {/* Articles */}
-            {results?.articles && results.articles.length > 0 && (
-              <div className="p-2">
-                <div className="px-2 py-1 text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Статьи</div>
-                {results.articles.map((a) => (
-                  <Link
-                    key={a.id}
-                    href={`/library/${a.slug}`}
-                    onClick={onClose}
-                    className="block px-3 py-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-xs px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 rounded">{a.category}</span>
-                      <span className="text-sm font-medium text-neutral-900 dark:text-white">{a.title}</span>
-                    </div>
-                    <p className="text-xs text-neutral-500 dark:text-gray-400 line-clamp-1">{a.snippet}</p>
-                  </Link>
-                ))}
               </div>
             )}
 

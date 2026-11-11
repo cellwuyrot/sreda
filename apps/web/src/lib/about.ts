@@ -55,7 +55,7 @@ export const ABOUT_SECTIONS: AboutSection[] = [
     description:
       "Хранилище знаний и лора вселенной — от древних легенд до новейших открытий. Вики, база знаний, история мира.",
     color: "#10b981",
-    href: "/library",
+    href: "https://library.trioz.ru/",
   },
 ];
 

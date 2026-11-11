@@ -232,7 +232,7 @@ async function main() {
     { windowKey: "trioz", title: 'Проекты Т.Р.И.О."Z"', subtitle: "MMORPG • Стратегии • Онлайн", description: "Глобальная MMORPG с элементами стратегии и бесконечным миром", href: "/projects", accentColor: "#ff4444", backgroundType: "gradient", gradientFrom: "#1a0000", gradientTo: "#0a0a0f", order: 0 },
     { windowKey: "pero", title: "Перо Измерений", subtitle: "Книги • Настольные игры • Офлайн", description: "Развлекательные товары для развития мышления", href: "/pero", accentColor: "#8b5cf6", backgroundType: "gradient", gradientFrom: "#1a002e", gradientTo: "#0a0a0f", order: 1 },
     { windowKey: "connect", title: "TZ.Connect", subtitle: "Связь • IT-услуги • Бизнес", description: "Коммуникационная платформа и IT-решения", href: "/connect", accentColor: "#00f0ff", backgroundType: "gradient", gradientFrom: "#001a1f", gradientTo: "#0a0a0f", order: 2 },
-    { windowKey: "library", title: "TZ.Library", subtitle: "Лор • Вики • История", description: "Хранилище знаний и лора вселенной", href: "/library", accentColor: "#10b981", backgroundType: "gradient", gradientFrom: "#001a0e", gradientTo: "#0a0a0f", order: 3 },
+    { windowKey: "library", title: "TZ.Library", subtitle: "Лор • Вики • История", description: "Хранилище знаний и лора вселенной", href: "https://library.trioz.ru/", accentColor: "#10b981", backgroundType: "gradient", gradientFrom: "#001a0e", gradientTo: "#0a0a0f", order: 3 },
   ];
 
   for (const win of windows) {

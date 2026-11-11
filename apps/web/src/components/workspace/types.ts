@@ -302,7 +302,7 @@ export const RELATED_PROJECTS: { label: string; href: string }[] = [
   { label: "TZ.Connect", href: "/connect" },
   { label: "Перо измерений", href: "https://int-veld.trioz.ru/" },
   { label: "Игры", href: "/games" },
-  { label: "TZ.Library", href: "/library" },
+  { label: "TZ.Library", href: "https://library.trioz.ru/" },
 ];
 
 export const CARD_WIDTH = 300;

@@ -129,7 +129,7 @@ export default function PeroPage() {
               multiline
             />
             <div className="mt-6">
-              <Link href="/library" className="btn-secondary inline-block">
+              <Link href="https://library.trioz.ru/" className="btn-secondary inline-block">
                 Узнать больше о лоре
               </Link>
             </div>
