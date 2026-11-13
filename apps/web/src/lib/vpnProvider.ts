@@ -26,7 +26,7 @@ const TRUSTTUNNEL_BLOCKERS: readonly Omit<ProviderReadinessCheck, "status">[] = 
   {
     id: "endpoint-health",
     label: "Endpoint health и TLS",
-    detail: "Endpoint v1.1.0 не настроен и не запущен; проверенный health report не подключён.",
+    detail: "Состояние Endpoint и TLS не подтверждается автоматически: проверенный health report не подключён.",
   },
   {
     id: "credentials",
@@ -51,7 +51,7 @@ const TRUSTTUNNEL_BLOCKERS: readonly Omit<ProviderReadinessCheck, "status">[] = 
   {
     id: "turn-gateway",
     label: "Вход через turn",
-    detail: "Gateway-код ещё не развёрнут как служба; production-сеть и end-to-end соединение не проверены.",
+    detail: "Gateway не контролируется приложением; production-сеть и end-to-end готовность не подтверждены.",
   },
 ];
 
