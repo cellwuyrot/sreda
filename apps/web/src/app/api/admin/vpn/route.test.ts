@@ -132,4 +132,24 @@ describe("остальные настройки", () => {
     const args = prismaMock.vpnSettings.upsert.mock.calls[0][0] as { update: Record<string, unknown> };
     expect(args.update.enabled).toBe(false);
   });
+
+  it("отдаёт текущего провайдера и честно показывает заблокированную готовность TrustTunnel", async () => {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(row({ ...SETTINGS, activeProvider: "AMNEZIAWG" }));
+    prismaMock.vpnPeer.findMany.mockResolvedValue(row([]));
+    const result = await get();
+    expect(result.status).toBe(200);
+    expect(result.body.settings.activeProvider).toBe("AMNEZIAWG");
+    expect(result.body.providerControl).toMatchObject({
+      activeProvider: "AMNEZIAWG",
+      activeProviderLabel: "AmneziaWG",
+      trustTunnel: { ready: false, switchAllowed: false },
+    });
+    expect(result.body.providerControl.trustTunnel.checks).toHaveLength(6);
+  });
+
+  it("обычный PATCH настроек не может изменить activeProvider", async () => {
+    await patch({ activeProvider: "TRUSTTUNNEL" });
+    const args = prismaMock.vpnSettings.upsert.mock.calls[0][0] as { update: Record<string, unknown> };
+    expect(args.update.activeProvider).toBeUndefined();
+  });
 });

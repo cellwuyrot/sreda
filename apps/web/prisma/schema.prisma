@@ -854,6 +854,10 @@ model ServerNode {
 model VpnSettings {
   id      String  @id @default("default")
   enabled Boolean @default(false)
+  /// VPN-PROVIDER: единый провайдер для всего сервиса. На первом rollout
+  /// всегда сохраняем AmneziaWG; смена возможна только через защищённый
+  /// админский route после прохождения readiness gate.
+  activeProvider String @default("AMNEZIAWG")
   /// DNS, который получает клиент внутри туннеля.
   dns String @default("1.1.1.1")
   /// VPN-ROUTING: маршруты режима «весь трафик» — того, что человек выбирает
