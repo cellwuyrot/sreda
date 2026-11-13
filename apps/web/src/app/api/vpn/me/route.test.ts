@@ -213,6 +213,13 @@ describe("POST: аутентификация", () => {
 // ── Проверка прав (entitlement) ─────────────────────────────────────────────
 
 describe("POST: права на VPN", () => {
+  it("активный не-WireGuard провайдер закрывает AmneziaWG выдачу", async () => {
+    vi.mocked(getVpnSettings).mockResolvedValue({ ...MOCK_SETTINGS, activeProvider: "TRUSTTUNNEL" } as never);
+    const res = await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY }));
+    expect(res.status).toBe(503);
+    expect(prismaMock.vpnPeer.upsert).not.toHaveBeenCalled();
+  });
+
   it("без Premium подписки → 403", async () => {
     vi.mocked(hasVpnEntitlement).mockResolvedValue(false);
     const req = makeNextRequest({ publicKey: VALID_PUBLIC_KEY });
@@ -376,6 +383,13 @@ describe("GET /api/vpn/me", () => {
     expect(json).toHaveProperty("serviceEnabled");
     expect(json).toHaveProperty("entitled");
   });
+
+  it("не отдаёт WireGuard профиль при активном другом провайдере", async () => {
+    vi.mocked(getVpnSettings).mockResolvedValue({ ...MOCK_SETTINGS, activeProvider: "TRUSTTUNNEL" } as never);
+    const res = await GET();
+    expect(res.status).toBe(503);
+    expect(prismaMock.vpnPeer.findUnique).not.toHaveBeenCalled();
+  });
 });
 
 // ── DELETE ──────────────────────────────────────────────────────────────────
@@ -404,6 +418,13 @@ describe("DELETE /api/vpn/me", () => {
     const json = await res.json();
     expect(json.ok).toBe(true);
     expect(prismaMock.vpnPeer.delete).toHaveBeenCalledWith({ where: { id: "peer-1" } });
+  });
+
+  it("не сообщает об отзыве AmneziaWG при активном другом провайдере", async () => {
+    vi.mocked(getVpnSettings).mockResolvedValue({ ...MOCK_SETTINGS, activeProvider: "TRUSTTUNNEL" } as never);
+    const res = await DELETE();
+    expect(res.status).toBe(503);
+    expect(prismaMock.vpnPeer.findUnique).not.toHaveBeenCalled();
   });
 });
 
