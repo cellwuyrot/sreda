@@ -13,6 +13,7 @@ import {
   readWgReport,
   routingAllowedIps,
 } from "@/lib/vpn";
+import { isVpnProviderActive } from "@/lib/vpnProvider";
 
 /**
  * VPN-ADMINPEER: выдача доступа администратором по публичному ключу.
@@ -37,6 +38,12 @@ export async function POST(req: Request) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const settings = await getVpnSettings();
+  if (!isVpnProviderActive(settings.activeProvider, "AMNEZIAWG")) {
+    return NextResponse.json(
+      { error: "AmneziaWG сейчас не является активным провайдером" },
+      { status: 503 },
+    );
+  }
   if (!settings.enabled) {
     return NextResponse.json({ error: "Сервис отключён — включите его выше" }, { status: 503 });
   }

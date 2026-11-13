@@ -15,6 +15,7 @@ import {
   usageView,
   isUsageUnlimited,
 } from "@/lib/connectionUsage";
+import { isVpnProviderActive, parseVpnProvider, providerControlView } from "@/lib/vpnProvider";
 
 // VPN-PANEL: управление сервисом VPN. Только ADMIN — редактор сюда не
 // допускается: речь об инфраструктуре и доступах, а не о контенте.
@@ -32,6 +33,7 @@ export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const settings = await getVpnSettings();
+  const wireGuardActive = isVpnProviderActive(settings.activeProvider, "AMNEZIAWG");
 
   const nodes = await prisma.serverNode.findMany({
     where: { kind: "VPN" },
@@ -54,7 +56,7 @@ export async function GET() {
      отчёт обнуляется при перезапуске интерфейса, а учёт по подписчикам живёт
      расчётными периодами. Цифра в панели обязана совпадать с тем, что видит
      человек у себя, иначе спор о расходе неразрешим. */
-  const peers = await prisma.vpnPeer.findMany({
+  const peers = wireGuardActive ? await prisma.vpnPeer.findMany({
     select: {
       nodeId: true,
       enabled: true,
@@ -68,7 +70,7 @@ export async function GET() {
          ним не применяется вовсе. */
       user: { select: { role: true } },
     },
-  });
+  }) : [];
 
   const trafficByNode = new Map<string, number>();
   let usedTotal = 0;
@@ -90,6 +92,7 @@ export async function GET() {
   return NextResponse.json({
     settings: {
       enabled: settings.enabled,
+      activeProvider: parseVpnProvider(settings.activeProvider),
       dns: settings.dns,
       allowedIps: settings.allowedIps,
       serviceAllowedIps: settings.serviceAllowedIps,
@@ -102,7 +105,7 @@ export async function GET() {
     },
     /* NETLINK: сводка по расходу. Считается здесь же, где считается лимит:
        две реализации одной арифметики расходятся в первый же месяц. */
-    summary: {
+    summary: wireGuardActive ? {
       subscribers: peers.length,
       enabledPeers: peers.filter((peer) => peer.enabled).length,
       activePeers: activeCount,
@@ -112,11 +115,12 @@ export async function GET() {
          который сервис обязан выдержать в худшем случае. */
       committedGb: settings.trafficLimitGb * peers.length,
       periodResets: peers.filter((peer) => periodExpired(peer.usageResetAt, settings.usagePeriodDays)).length,
-    },
+    } : null,
+    providerControl: providerControlView(settings.activeProvider),
     /* VPN-PANEL2: состояние узла считается здесь, а не в панели. Сервер и так
        знает и отчёт, и точку подключения, и потолок; собирать это заново на
        клиенте означало бы держать те же правила в двух местах. */
-    nodes: nodes.map((node) => {
+    nodes: wireGuardActive ? nodes.map((node) => {
       const wg = nodeTunnel(node);
       const peers = node._count.vpnPeers;
       const online = nodeStatus(node.lastSeenAt, node.enabled) === "online";
@@ -154,8 +158,8 @@ export async function GET() {
         lastSeenAt: node.lastSeenAt,
         state,
       };
-    }),
-  });
+    }) : [],
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(req: Request) {

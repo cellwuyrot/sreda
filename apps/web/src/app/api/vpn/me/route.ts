@@ -23,6 +23,7 @@ import { hasPremium } from "@/lib/premium";
 import { hasActiveVpnPlan } from "@/lib/vpnPlan";
 import { usageView, isUsageUnlimited } from "@/lib/connectionUsage";
 import { LINK_NAME_LOWER, LINK_PLAN_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
+import { isVpnProviderActive } from "@/lib/vpnProvider";
 
 /**
  * VPN-WG: собственный доступ пользователя.
@@ -185,6 +186,12 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const settings = await getVpnSettings();
+  if (!isVpnProviderActive(settings.activeProvider, "AMNEZIAWG")) {
+    return NextResponse.json(
+      { error: "Текущий VPN-провайдер не обслуживается этим клиентским API", code: "VPN_PROVIDER_UNAVAILABLE" },
+      { status: 503 },
+    );
+  }
   const entitled = await hasVpnEntitlement(session.user.id);
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -323,6 +330,12 @@ export async function POST(req: NextRequest) {
   // VPN-PANEL: сервис выключен администратором — новые пиры не регистрируем.
   // Существующие при этом уже отпали: узлам уходит пустой список (см. отчёт).
   const settings = await getVpnSettings();
+  if (!isVpnProviderActive(settings.activeProvider, "AMNEZIAWG")) {
+    return NextResponse.json(
+      { error: "Текущий VPN-провайдер не обслуживается этим клиентским API", code: "VPN_PROVIDER_UNAVAILABLE" },
+      { status: 503 },
+    );
+  }
   if (!settings.enabled) {
     return NextResponse.json({ error: "Сервис отключён администратором" }, { status: 503 });
   }
@@ -485,6 +498,14 @@ export async function DELETE() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const settings = await getVpnSettings();
+  if (!isVpnProviderActive(settings.activeProvider, "AMNEZIAWG")) {
+    return NextResponse.json(
+      { error: "Текущий VPN-провайдер не обслуживается этим клиентским API", code: "VPN_PROVIDER_UNAVAILABLE" },
+      { status: 503 },
+    );
+  }
+
   const peer = await prisma.vpnPeer.findUnique({ where: { userId: session.user.id }, select: { id: true } });
   if (!peer) return NextResponse.json({ ok: true });
 
@@ -515,6 +536,12 @@ export async function PATCH(req: NextRequest) {
   if (banned) return banned;
 
   const settings = await getVpnSettings();
+  if (!isVpnProviderActive(settings.activeProvider, "AMNEZIAWG")) {
+    return NextResponse.json(
+      { error: "Текущий VPN-провайдер не обслуживается этим клиентским API", code: "VPN_PROVIDER_UNAVAILABLE" },
+      { status: 503 },
+    );
+  }
   if (!settings.enabled) {
     return NextResponse.json({ error: "Сервис отключён администратором" }, { status: 503 });
   }

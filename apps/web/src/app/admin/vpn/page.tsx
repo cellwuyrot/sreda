@@ -67,6 +67,24 @@ interface Summary {
   periodResets: number;
 }
 
+type ProviderCheck = {
+  id: string;
+  label: string;
+  status: "BLOCKED" | "READY";
+  detail: string;
+};
+
+interface ProviderControl {
+  activeProvider: "AMNEZIAWG" | "TRUSTTUNNEL" | null;
+  activeProviderLabel: string;
+  trustTunnel: {
+    ready: boolean;
+    switchAllowed: boolean;
+    checks: ProviderCheck[];
+  };
+  canRollbackToAmneziaWG: boolean;
+}
+
 /** Состояние узла считает сервер — он же знает и отчёт, и точку подключения. */
 type NodeState = "READY" | "FULL" | "NO_ENDPOINT" | "NO_KEY" | "NO_REPORT" | "DISABLED";
 
@@ -170,6 +188,7 @@ export default function AdminVpnPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [nodes, setNodes] = useState<NodeRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [providerControl, setProviderControl] = useState<ProviderControl | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -193,6 +212,7 @@ export default function AdminVpnPage() {
       setDraft(loaded);
       setNodes(Array.isArray(data.nodes) ? data.nodes : []);
       setSummary(data.summary ?? null);
+      setProviderControl(data.providerControl ?? null);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
@@ -227,6 +247,40 @@ export default function AdminVpnPage() {
       if (message) flash(message);
     } catch {
       setError("Ошибка сети");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const switchProvider = async (provider: "AMNEZIAWG" | "TRUSTTUNNEL") => {
+    if (!providerControl) return;
+    const from = providerControl.activeProviderLabel;
+    const to = provider === "AMNEZIAWG" ? "AmneziaWG" : "TrustTunnel";
+    if (!window.confirm(`Переключить единый VPN-провайдер проекта с «${from}» на «${to}»? Это затронет всех пользователей.`)) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/vpn/provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          confirmed: true,
+          expectedCurrentProvider: providerControl.activeProvider,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.providerControl) setProviderControl(data.providerControl);
+      if (!res.ok) {
+        setError(data?.error || "Переключение заблокировано");
+        return;
+      }
+      setError("");
+      flash(data?.changed ? `Активный провайдер: ${to}` : `Уже выбран ${to}`);
+      await load();
+    } catch {
+      setError("Не удалось связаться с сервером");
     } finally {
       setSaving(false);
     }
@@ -280,6 +334,63 @@ export default function AdminVpnPage() {
           <p className="text-sm text-neutral-400">Загрузка…</p>
         ) : (
           <>
+            {/* VPN-PROVIDER: один глобальный провайдер; TrustTunnel виден только
+                администратору и остаётся заблокированным до реальной готовности. */}
+            {providerControl && (
+              <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Активный VPN-провайдер</h2>
+                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-gray-400">
+                      Сейчас: <strong>{providerControl.activeProviderLabel}</strong>. Провайдер общий для всех подписчиков; клиент технологию не выбирает.
+                    </p>
+                  </div>
+                  {providerControl.canRollbackToAmneziaWG && (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void switchProvider("AMNEZIAWG")}
+                      className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-500/25 disabled:opacity-50 dark:text-amber-300"
+                    >
+                      Откатить на AmneziaWG
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-4 rounded-lg border border-neutral-200 p-3 dark:border-white/10">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-neutral-900 dark:text-white">TrustTunnel</span>
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                      {providerControl.trustTunnel.ready ? "Готов к проверке переключения" : "Переключение заблокировано"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={saving || !providerControl.trustTunnel.switchAllowed}
+                      onClick={() => void switchProvider("TRUSTTUNNEL")}
+                      className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-cyan-500 dark:text-neutral-950"
+                    >
+                      Переключить всех на TrustTunnel
+                    </button>
+                  </div>
+                  <ul className="mt-3 space-y-2">
+                    {providerControl.trustTunnel.checks.map((check) => (
+                      <li key={check.id} className="text-[11px]">
+                        <span className={check.status === "READY" ? "text-green-600 dark:text-green-400" : "text-amber-700 dark:text-amber-300"}>
+                          {check.status === "READY" ? "✓ " : "• "}{check.label}
+                        </span>
+                        {check.status !== "READY" && (
+                          <span className="ml-1 text-neutral-500 dark:text-gray-400">{check.detail}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-3 text-[11px] text-neutral-500 dark:text-gray-400">
+                    Credentials и секреты здесь не хранятся. Переход не активируется, пока серверная проверка не подтвердит все пункты.
+                  </p>
+                </div>
+              </section>
+            )}
+
             {/* ── Выключатель ── */}
             <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <div className="flex flex-wrap items-center gap-3">
@@ -461,6 +572,11 @@ export default function AdminVpnPage() {
                   </div>
                 </div>
               )}
+              {!summary && providerControl?.activeProvider !== "AMNEZIAWG" && (
+                <p className="mt-4 rounded-lg bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+                  Счётчики AmneziaWG не показываются для другого активного провайдера. Учёт TrustTunnel ещё не подключён.
+                </p>
+              )}
             </section>
 
             {/* ── Параметры туннеля ── */}
@@ -631,7 +747,7 @@ export default function AdminVpnPage() {
             <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
-                  Узлы{" "}
+                  Узлы AmneziaWG{" "}
                   <InfoTooltip
                     side="bottom"
                     text="Машины с WireGuard, через которые устройства выходят наружу. Пока ни один узел не готов, доступ не выдаётся никому."
@@ -642,7 +758,12 @@ export default function AdminVpnPage() {
                 </Link>
               </div>
 
-              {nodes.length === 0 ? (
+              {providerControl?.activeProvider !== "AMNEZIAWG" ? (
+                <p className="mt-3 rounded-lg bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+                  Узлы AmneziaWG сейчас не используются: активный провайдер — {providerControl?.activeProviderLabel ?? "неизвестен"}.
+                  Статистика по ним скрыта, чтобы не смешивать её с данными другого провайдера.
+                </p>
+              ) : nodes.length === 0 ? (
                 <div className="mt-3 rounded-xl border border-dashed border-neutral-200 p-4 dark:border-white/10">
                   <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Узлов ещё нет. Три шага:</p>
                   <ol className="mt-2 ml-4 list-decimal space-y-1 text-[11px] text-neutral-500 dark:text-gray-400">
