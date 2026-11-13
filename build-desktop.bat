@@ -160,7 +160,14 @@ if errorlevel 1 goto fail
 echo      VNIMANIE: sborka budet BEZ klienta VPN.
 :step_dist
 echo [9/9] Sborka installyatora - electron-builder
-call npm run dist -w apps/desktop -- -c.npmRebuild=false
+rem Ispolzuem obshchiy resolver versii: DESKTOP_VERSION, git tag/count,
+rem libo package.json, esli istorii git net. Pered publikaciey sravnite
+rem etu versiyu s uzhe vypushchennoy: ona dolzhna byt strogo bolshe.
+set "DESKTOP_BUILD_VERSION="
+for /f "delims=" %%V in ('node scripts\desktop-version.mjs') do set "DESKTOP_BUILD_VERSION=%%V"
+if not defined DESKTOP_BUILD_VERSION goto dist_fail
+echo      Versiya sborki: %DESKTOP_BUILD_VERSION%
+call npm run dist -w apps/desktop -- -c.npmRebuild=false -c.extraMetadata.version=%DESKTOP_BUILD_VERSION%
 if errorlevel 1 goto dist_fail
 if not exist "apps\desktop\release" goto dist_fail
 if "%CLIENT_OK%"=="0" goto done_noclient
