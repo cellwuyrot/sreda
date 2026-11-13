@@ -197,6 +197,28 @@ describe("список пиров для узла", () => {
     expect(prismaMock.vpnPeer.findMany).not.toHaveBeenCalled();
   });
 
+  it("TrustTunnel active provider sends no AmneziaWG peers or counters to the WG node", async () => {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(row({
+      enabled: true,
+      activeProvider: "TRUSTTUNNEL",
+      maxPeersPerNode: 200,
+      trafficLimitGb: 250,
+      usagePeriodDays: 30,
+      overLimitAction: "BLOCK",
+      throttleKbps: 2048,
+    }));
+    const { body } = await call({
+      report: {},
+      handshakes: [{ publicKey: KEY, atMs: Date.now() }],
+      transfers: [{ publicKey: KEY, rx: 100, tx: 200 }],
+    });
+    expect(body.peers).toEqual([]);
+    expect(prismaMock.vpnPeer.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.vpnPeer.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.vpnPeer.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
+  });
+
   it("пир отдаётся адресом с маской /32", async () => {
     prismaMock.vpnPeer.findMany.mockResolvedValue(
       row([peerFor(premiumUser(), { exitIp: "203.0.113.7" })]),

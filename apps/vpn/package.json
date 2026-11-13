@@ -10,6 +10,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/index.mjs"
+    "start": "node src/index.mjs",
+    "test:gateway": "node --test src/trusttunnel-gateway.node-test.mjs"
   }
 }

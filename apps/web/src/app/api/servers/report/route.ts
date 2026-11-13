@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { findNodeByToken } from "@/lib/serverMesh";
 import { getVpnSettings, isPeerEntitled, isValidWireGuardKey } from "@/lib/vpn";
+import { isVpnProviderActive } from "@/lib/vpnProvider";
 import { isTrafficBlocked, isUsageUnlimited, periodExpired, usageView } from "@/lib/connectionUsage";
 
 // SERVER-MESH: точка отчёта дочернего узла.
@@ -146,9 +147,16 @@ export async function POST(req: Request) {
     },
   });
 
+  // VPN-PROVIDER: сохранить последний снимок настроек для всего этого отчёта.
+  // Пока выбран не AmneziaWG, его агентам отдаётся пустой список, а их handshake
+  // и transfer нельзя ошибочно записать как активность другого провайдера.
+  const vpnSettingsForNode = node.kind === "VPN" ? await getVpnSettings() : null;
+  const wireGuardProviderActive =
+    node.kind === "VPN" && isVpnProviderActive(vpnSettingsForNode?.activeProvider, "AMNEZIAWG");
+
   // VPN-WG: рукопожатия, о которых доложил узел. Обновляем только своих пиров
   // — по nodeId, чтобы один узел не мог трогать записи другого.
-  if (node.kind === "VPN" && Array.isArray((body as { handshakes?: unknown })?.handshakes)) {
+  if (wireGuardProviderActive && Array.isArray((body as { handshakes?: unknown })?.handshakes)) {
     const handshakes = (body as { handshakes: unknown[] }).handshakes.slice(0, 500);
     for (const item of handshakes) {
       if (!item || typeof item !== "object") continue;
@@ -172,8 +180,8 @@ export async function POST(req: Request) {
      равно отвечал 200 — расход «не доходил до VpnPeer» без единой строки в логе.
      Теперь такие ошибки считаем и по итогу цикла отдаём честный HTTP 500. */
   let usageUpdateFailures = 0;
-  if (node.kind === "VPN" && Array.isArray((body as { transfers?: unknown })?.transfers)) {
-    const settings = await getVpnSettings();
+  if (wireGuardProviderActive && Array.isArray((body as { transfers?: unknown })?.transfers)) {
+    const settings = vpnSettingsForNode!;
     const transfers = (body as { transfers: unknown[] }).transfers.slice(0, 500);
     for (const item of transfers) {
       if (!item || typeof item !== "object") continue;
@@ -274,12 +282,12 @@ export async function POST(req: Request) {
   // руками, забанили — узлу пира по-прежнему присылали, и туннель работал. Теперь
   // любая потеря права снимает туннель в течение минуты, без отдельной задачи по
   // расписанию, а запись пира остаётся: вернулась подписка — вернулся доступ.
-  const vpnSettings = node.kind === "VPN" ? await getVpnSettings() : null;
+  const vpnSettings = vpnSettingsForNode;
   const vpnEnabled = vpnSettings?.enabled ?? false;
   const vpnPeers =
     node.kind !== "VPN" || !vpnSettings
       ? null
-      : !vpnEnabled
+      : !vpnEnabled || !wireGuardProviderActive
       ? []
       : (
           await prisma.vpnPeer.findMany({
