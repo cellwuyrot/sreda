@@ -90,6 +90,8 @@ android {
     namespace = "ru.trioz.connect"
     compileSdk = 36
 
+    sourceSets["debug"].java.srcDir("src/trustTunnelPilot/java")
+    sourceSets["testDebug"].java.srcDir("src/testTrustTunnelPilot/java")
     sourceSets["main"].res.srcDir(generatedIconRes)
     sourceSets["main"].manifest.srcFile(layout.buildDirectory.file("generated/vpn-policy/AndroidManifest.xml"))
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/vpn-policy/assets"))
@@ -165,6 +167,8 @@ android {
         debug {
             // Handy for pointing the debug build at a local dev server:
             // buildConfigField("String", "APP_URL", "\"http://10.0.2.2:3005\"")
+            // The pilot AAR currently contains only arm64-v8a. Do not ship a broken x86/armv7 APK.
+            ndk { abiFilters += "arm64-v8a" }
             applicationIdSuffix = ".debug"
             if (previewAppUrl != null) buildConfigField("String", "APP_URL", JsonOutput.toJson(previewAppUrl))
         }
@@ -190,6 +194,11 @@ android {
 tasks.named("preBuild") { dependsOn(syncLauncherIcon) }
 
 dependencies {
+    debugImplementation(files("libs/trusttunnel-test.aar"))
+    debugImplementation("org.slf4j:slf4j-api:1.7.25")
+    debugImplementation("com.github.tony19:logback-android:2.0.0")
+    debugImplementation("io.reactivex.rxjava3:rxandroid:3.0.0")
+    debugImplementation("com.akuleshov7:ktoml-core:0.7.0")
     // Native migration work is isolated in the debug source set.
     debugImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
     debugImplementation("androidx.compose.material3:material3")
@@ -227,11 +236,12 @@ dependencies {
 // Preserve the debug native preview when the optional push manifest is enabled.
 val generateDebugPushManifest = tasks.register("generateDebugPushManifest") {
     val src = file("src/push/AndroidManifest.xml")
+    val debugManifest = file("src/debug/AndroidManifest.xml")
     val dst = layout.buildDirectory.file("generated/push-debug/AndroidManifest.xml")
-    inputs.file(src); outputs.file(dst)
+    inputs.files(src, debugManifest); outputs.file(dst)
     doLast {
-        val activity = """<activity android:name=".nativeui.NativePreviewActivity" android:exported="true" />"""
-        dst.get().asFile.apply { parentFile.mkdirs(); writeText(src.readText().replace("</application>", activity + "</application>")) }
+        val additions = debugManifest.readText().substringAfter("<application>").substringBefore("</application>")
+        dst.get().asFile.apply { parentFile.mkdirs(); writeText(src.readText().replace("</application>", additions + "</application>")) }
     }
 }
 tasks.named("preBuild") { dependsOn(generateDebugPushManifest) }
