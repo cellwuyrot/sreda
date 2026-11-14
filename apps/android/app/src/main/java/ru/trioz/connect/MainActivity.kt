@@ -111,6 +111,8 @@ class MainActivity : AppCompatActivity() {
      * Если пользователь ещё не выдал разрешение, Android показывает диалог.
      * После получения разрешения запускаем сервис с этим профилем.
      */
+    private val trustTunnelPilot by lazy { TrustTunnelPilotBridge(this) }
+    internal fun awgBusy(): Boolean = pendingVpnConfig != null || AmneziaVpnService.state == VpnState.CONNECTING || AmneziaVpnService.state == VpnState.ON || AmneziaVpnService.state == VpnState.DISCONNECTING
     private var pendingVpnConfig: String? = null
     private var pendingVpnAccount: String = ""
 
@@ -141,16 +143,19 @@ class MainActivity : AppCompatActivity() {
 
     /** Запустить туннель с готовым профилем WireGuard/AmneziaWG. */
     private fun startCheckedVpn(config: String, account: String) {
+        if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите тестовый TrustTunnel"); return }
         val admission = VpnAdmissionPolicy.check(this)
         if (!admission.allowed) { AmneziaVpnService.report(VpnState.ERROR, admission.message); return }
         try { AmneziaVpnService.startUp(this, config, account) }
         catch (_: Exception) { AmneziaVpnService.report(VpnState.ERROR, "Android не разрешил запуск VPN. Откройте приложение и повторите.") }
     }
     fun vpnUp(config: String, account: String) {
+        if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите тестовый TrustTunnel"); return }
         val admission = VpnAdmissionPolicy.check(this)
         if (!admission.allowed) { AmneziaVpnService.report(VpnState.ERROR, admission.message); return }
         val prefs = getSharedPreferences("vpn-consent", MODE_PRIVATE)
-        val proceed = {
+        val proceed = proceed@{
+            if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите тестовый TrustTunnel"); return@proceed }
             val intent = VpnService.prepare(this)
             if (intent != null) { pendingVpnConfig = config; pendingVpnAccount = account; vpnPermissionLauncher.launch(intent) }
             else startCheckedVpn(config, account)
@@ -201,6 +206,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         configureWebView()
+        trustTunnelPilot.install(webView)
         registerBackNavigation()
 
         NotificationBridge.ensureChannel(this)

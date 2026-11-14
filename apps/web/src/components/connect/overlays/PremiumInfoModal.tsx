@@ -1,4 +1,5 @@
 "use client";
+import TrustTunnelPilotPanel from "./TrustTunnelPilotPanel";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
@@ -1119,6 +1120,7 @@ export default function PremiumInfoModal({
         className="relative z-10 w-full max-w-md max-h-[88vh] overflow-y-auto rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]"
         onClick={(e) => e.stopPropagation()}
       >
+        <TrustTunnelPilotPanel />
         {vpnEntitled === null ? (
           /* Короткая пауза вместо мигания витриной: показать подписчику
               «купите Premium» и тут же заменить на тумблер хуже, чем подождать мгновение. */
