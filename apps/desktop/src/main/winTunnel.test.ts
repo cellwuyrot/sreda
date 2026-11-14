@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   windowsTunnelDown,
+  tunnelProcessDiscoveryCommand,
   type TunnelServiceSnapshot,
   type TunnelShutdownRuntime,
 } from "./winTunnel";
@@ -175,5 +176,14 @@ describe("VPN lifecycle decisions", () => {
 
   it("после перезапуска orphaned tunnel определяется при начальном state=off", () => {
     expect(vpnNeedsCleanup("off", true)).toBe(true);
+  });
+});
+
+describe("VPN process discovery", () => {
+  it("excludes the probe itself while matching the TrioZ config path", () => {
+    const command = tunnelProcessDiscoveryCommand("C:\\ProgramData\\TrioZ\\vpn\\trioz.conf");
+    expect(command).toContain("$_.ProcessId -ne $PID");
+    expect(command).toContain('C:\\ProgramData\\TrioZ\\vpn\\trioz.conf');
+    expect(command).toContain('$_.CommandLine -like "*$needle*"');
   });
 });
