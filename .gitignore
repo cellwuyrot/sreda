@@ -87,3 +87,6 @@ apps/web/public/desktop/*
 # TZ ID private signing and storage keys
 apps/id/secrets/
 apps/id/.env
+
+# TRUSTTUNNEL-WIN: бинарники клиента раскладывает scripts/vendor-trusttunnel.mjs
+apps/desktop/resources/trusttunnel/

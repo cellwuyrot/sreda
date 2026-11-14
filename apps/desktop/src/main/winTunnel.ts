@@ -64,7 +64,7 @@ function psQuote(value: string): string {
  * превращается в лишние аргументы — именно на этом раньше ломался вызов с
  * путём вида «TrioZ Connect».
  */
-async function elevatedScript(script: string): Promise<number> {
+export async function elevatedScript(script: string): Promise<number> {
   const encoded = Buffer.from(script, "utf16le").toString("base64");
   // Явно скрываем и повышенный PowerShell, а не только стартовое окно.
   // Запрос UAC остаётся системным и никогда не обходится.

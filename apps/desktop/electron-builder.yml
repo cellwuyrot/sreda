@@ -23,6 +23,8 @@ files:
   # бы внутрь архива клиенты всех трёх платформ: лишние десятки мегабайт в
   # установщике, из которых на данной ОС не запускается ни один.
   - "!resources/wireguard/**"
+  # TRUSTTUNNEL-WIN: клиент TrustTunnel тоже только через extraResources.
+  - "!resources/trusttunnel/**"
   - package.json
 
 # VPN-EMBEDDED: встроенный клиент туннеля.
@@ -70,6 +72,14 @@ win:
   extraResources:
     - from: resources/wireguard/win32
       to: wireguard
+      filter:
+        - "**/*"
+    # TRUSTTUNNEL-WIN: официальный клиент TrustTunnel v1.1.12 (Apache-2.0) и
+    # wintun.dll; раскладывает scripts/vendor-trusttunnel.mjs с проверкой
+    # SHA-256. Повышенный сценарий копирует их в %ProgramData%\TrioZ\trusttunnel
+    # и сверяет хеши ещё раз (src/shared/trustTunnelWin.ts).
+    - from: resources/trusttunnel/win32
+      to: trusttunnel
       filter:
         - "**/*"
     # WASAPI-SS: нативный аддон. electron-builder копирует его

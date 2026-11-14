@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 import json
 import re
 import secrets
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import trusttunnel_vendor_tomli as tomllib
 from typing import Iterable
 
 _BEGIN = '# BEGIN TRIOZ MANAGED CREDENTIALS v1'

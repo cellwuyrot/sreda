@@ -22,6 +22,7 @@ import {
 } from "./overlay"; // FIX-OVL
 import { currentUpdateState, installDownloadedUpdate } from "./updater"; // UPD-BTN
 import { vpnUp, vpnDown, vpnState } from "./vpn"; // VPN-ONECLICK
+import { trustTunnelDown, trustTunnelStatus, trustTunnelUp } from "./trustTunnel"; // TRUSTTUNNEL-WIN
 import type { VoiceOverlayState } from "../shared/types";
 
 /** Register every IPC endpoint the preload bridge relies on. */
@@ -57,6 +58,9 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.VPN_UP, (_e, config: unknown) => vpnUp(typeof config === "string" ? config : ""));
   ipcMain.handle(IPC.VPN_DOWN, () => vpnDown());
   ipcMain.handle(IPC.VPN_STATUS, () => vpnState());
+  ipcMain.handle(IPC.TT_UP, (_e, profile: unknown) => trustTunnelUp(profile));
+  ipcMain.handle(IPC.TT_DOWN, () => trustTunnelDown());
+  ipcMain.handle(IPC.TT_STATUS, () => trustTunnelStatus());
 
   ipcMain.handle(IPC.SET_CONFIG, (_e, patch: Partial<DesktopConfig>): DesktopConfig => {
     const previous = getConfig();

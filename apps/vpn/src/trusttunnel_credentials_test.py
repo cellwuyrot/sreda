@@ -2,7 +2,10 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import trusttunnel_vendor_tomli as tomllib
 
 spec = importlib.util.spec_from_file_location('tt_credentials', Path(__file__).with_name('trusttunnel_credentials.py'))
 mod = importlib.util.module_from_spec(spec)

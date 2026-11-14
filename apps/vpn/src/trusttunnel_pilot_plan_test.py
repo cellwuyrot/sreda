@@ -1,7 +1,10 @@
 import hashlib
 import json
 import sys
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import trusttunnel_vendor_tomli as tomllib
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
