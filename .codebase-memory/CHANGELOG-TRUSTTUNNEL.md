@@ -7,3 +7,9 @@
 - `apps/web/src/lib/vpnProvider.ts` — актуализированы тексты двух блокировок без снятия блокировок.
 - `build-desktop.bat` — версия для electron-builder через существующий resolver; Windows-сборка не проверена.
 - Подробности и ограничения: `docs/TRUSTTUNNEL-PILOT-WORK-IN-PROGRESS.md`.
+
+## Этап 2
+
+- `apps/vpn/src/trusttunnel_credentials.py`: чистая изолированная подготовка snapshots учётных данных Endpoint 1.1.0, без записи файлов и связи с приложением.
+- `apps/vpn/src/trusttunnel_credentials_test.py`: локальные тесты, фиктивные данные.
+- `docs/TRUSTTUNNEL-PILOT-STAGE2.md`: наблюдения владельца, проверенные границы и невыполненная работа. Граф не перестроен и не содержит новый код.
