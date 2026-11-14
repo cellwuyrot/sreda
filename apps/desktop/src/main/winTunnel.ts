@@ -174,6 +174,13 @@ export async function tunnelServiceSnapshots(): Promise<TunnelServiceSnapshot[]>
   return snapshots;
 }
 
+/** Exclude the PowerShell probe itself: its command line contains the needle. */
+export function tunnelProcessDiscoveryCommand(conf: string): string {
+  return `$needle = ${psQuote(conf)}; Get-CimInstance Win32_Process | ` +
+    `Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like "*$needle*" } | ` +
+    "Select-Object -ExpandProperty ProcessId";
+}
+
 async function processExists(pid: number): Promise<boolean> {
   try {
     const { stdout } = await run(
@@ -200,9 +207,7 @@ export async function tunnelProcessPids(): Promise<number[]> {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        `$needle = ${psQuote(conf)}; Get-CimInstance Win32_Process | ` +
-          `Where-Object { $_.CommandLine -like "*$needle*" } | ` +
-          "Select-Object -ExpandProperty ProcessId",
+        tunnelProcessDiscoveryCommand(conf),
       ],
       { windowsHide: true, timeout: 15_000 },
     );
