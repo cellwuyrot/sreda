@@ -1,0 +1,10 @@
+{
+  "mainUrl": "https://trioz.ru",
+  "token": "REPLACE_WITH_RANDOM_TOKEN_FROM_install-sync-agent.sh",
+  "syncKey": "REPLACE_WITH_64_HEX_SAME_AS_TRIOZ_TT_SYNC_KEY_ON_WEB",
+  "credentialsPath": "/etc/trusttunnel/credentials.toml",
+  "serviceName": "trusttunnel",
+  "stateDir": "/var/lib/trioz-tt-sync",
+  "intervalSeconds": 60,
+  "minRestartIntervalSeconds": 30
+}

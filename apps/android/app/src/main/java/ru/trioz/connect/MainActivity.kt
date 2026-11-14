@@ -143,19 +143,19 @@ class MainActivity : AppCompatActivity() {
 
     /** Запустить туннель с готовым профилем WireGuard/AmneziaWG. */
     private fun startCheckedVpn(config: String, account: String) {
-        if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите тестовый TrustTunnel"); return }
+        if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите TrustTunnel"); return }
         val admission = VpnAdmissionPolicy.check(this)
         if (!admission.allowed) { AmneziaVpnService.report(VpnState.ERROR, admission.message); return }
         try { AmneziaVpnService.startUp(this, config, account) }
         catch (_: Exception) { AmneziaVpnService.report(VpnState.ERROR, "Android не разрешил запуск VPN. Откройте приложение и повторите.") }
     }
     fun vpnUp(config: String, account: String) {
-        if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите тестовый TrustTunnel"); return }
+        if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите TrustTunnel"); return }
         val admission = VpnAdmissionPolicy.check(this)
         if (!admission.allowed) { AmneziaVpnService.report(VpnState.ERROR, admission.message); return }
         val prefs = getSharedPreferences("vpn-consent", MODE_PRIVATE)
         val proceed = proceed@{
-            if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите тестовый TrustTunnel"); return@proceed }
+            if (trustTunnelPilot.busy()) { AmneziaVpnService.report(VpnState.ERROR, "Отключите TrustTunnel"); return@proceed }
             val intent = VpnService.prepare(this)
             if (intent != null) { pendingVpnConfig = config; pendingVpnAccount = account; vpnPermissionLauncher.launch(intent) }
             else startCheckedVpn(config, account)

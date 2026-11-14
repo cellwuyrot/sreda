@@ -21,16 +21,18 @@ def decode_b64url(value):
     except (ValueError, TypeError):
         raise VerificationError() from None
 
-def decrypt_bundle(key_hex, bundle):
+def decrypt_bundle(key_hex, bundle, aad=b'trioz-trusttunnel-pilot-v1', max_ciphertext=48000):
     if not isinstance(key_hex, str) or not re.fullmatch(r'[a-fA-F0-9]{64}', key_hex):
         raise VerificationError()
-    if not isinstance(bundle, str) or len(bundle) > 65536:
+    if not isinstance(aad, bytes) or not aad or not isinstance(max_ciphertext, int) or not 1 <= max_ciphertext <= 1048576:
+        raise VerificationError()
+    if not isinstance(bundle, str) or len(bundle) > max(65536, max_ciphertext * 2):
         raise VerificationError()
     parts = bundle.split('.')
     if len(parts) != 4 or parts[0] != 'v1':
         raise VerificationError()
     iv, ciphertext, tag = map(decode_b64url, parts[1:])
-    if len(iv) != 12 or len(tag) != 16 or not 1 <= len(ciphertext) <= 48000:
+    if len(iv) != 12 or len(tag) != 16 or not 1 <= len(ciphertext) <= max_ciphertext:
         raise VerificationError()
     try:
         lib = ctypes.CDLL('libcrypto.so.3')
@@ -49,7 +51,7 @@ def decrypt_bundle(key_hex, bundle):
             b = ctypes.create_string_buffer(raw, max(1,len(raw))); buffers.append(b); return b
         try:
             keybuf, ivbuf, inbuf, tagbuf = map(buffer, (bytes.fromhex(key_hex), iv, ciphertext, tag))
-            aad = buffer(b'trioz-trusttunnel-pilot-v1')
+            aad = buffer(aad)
             out = ctypes.create_string_buffer(len(ciphertext)+16); buffers.append(out)
             n = ctypes.c_int(); final = ctypes.c_int()
             if lib.EVP_DecryptInit_ex(ctx,lib.EVP_aes_256_gcm(),None,None,None) != 1: raise VerificationError()

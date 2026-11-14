@@ -11,8 +11,12 @@ import { createDecipheriv } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 test('python pilot plan can be sealed with the same per-admin credential', () => {
   const python = String.raw`
-import sys, json, tomllib
+import sys, json
 sys.path.insert(0, sys.argv[1])
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import trusttunnel_vendor_tomli as tomllib
 from trusttunnel_credentials import ManagedCredential
 from trusttunnel_pilot_plan import prepare_pilot_plan
 base = '[[client]]\nusername="smoke"\npassword="fixture"\n'

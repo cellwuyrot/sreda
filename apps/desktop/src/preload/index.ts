@@ -10,6 +10,8 @@ import type {
   ScreenSource,
 } from "../shared/types";
 import type { VpnStatePayload } from "../shared/vpnPlan"; // VPN-ONECLICK
+/** TRUSTTUNNEL-WIN */
+type TrustTunnelStatusPayload = { state: "off" | "connecting" | "on" | "disconnecting" | "error"; error: string | null; supported: boolean };
 import { initUpdateButton } from "./updateButton";
 
 /**
@@ -171,6 +173,18 @@ const api = {
     status: (): Promise<VpnStatePayload> => ipcRenderer.invoke(IPC.VPN_STATUS),
     onState: (cb: (state: VpnStatePayload) => void): Unsubscribe =>
       on(IPC.VPN_STATE, (state) => cb(state as VpnStatePayload)),
+  },
+
+  /**
+   * TRUSTTUNNEL-WIN: «Надёжное соединение». Профиль выдаёт сервер только
+   * подписчику; main-процесс проверяет его по строгому шаблону.
+   */
+  trustTunnel: {
+    up: (profile: string): Promise<TrustTunnelStatusPayload> => ipcRenderer.invoke(IPC.TT_UP, profile),
+    down: (): Promise<TrustTunnelStatusPayload> => ipcRenderer.invoke(IPC.TT_DOWN),
+    status: (): Promise<TrustTunnelStatusPayload> => ipcRenderer.invoke(IPC.TT_STATUS),
+    onState: (cb: (state: TrustTunnelStatusPayload) => void): Unsubscribe =>
+      on(IPC.TT_STATE, (state) => cb(state as TrustTunnelStatusPayload)),
   },
 
   // --- WASAPI-SS: нативный захват звука ОС (EXCLUDE PID приложения) ---

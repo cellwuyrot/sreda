@@ -46,7 +46,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
     override fun onCreate() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "TrustTunnel: тест", NotificationManager.IMPORTANCE_LOW))
+            NotificationChannel(CHANNEL, "TrustTunnel", NotificationManager.IMPORTANCE_LOW))
         worker.scheduleWithFixedDelay({
             try {
                 if (client != null && (!VpnAdmissionPolicy.check(this).allowed || prepare(this) != null)) {
@@ -65,7 +65,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
         val config = intent.getStringExtra(EXTRA_PROFILE)
         intent.removeExtra(EXTRA_PROFILE)
         val notification = NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_notification).setContentTitle("TrioZ VPN: тест")
+            .setSmallIcon(R.drawable.ic_notification).setContentTitle("TrioZ VPN")
             .setContentText("Подключение TrustTunnel").setOngoing(true).setSilent(true).build()
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification,
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
@@ -82,7 +82,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
                 val routes = checkNotNull(VpnClient.excludeCidr(
                     listOf("0.0.0.0/0", "2000::/3"),
                     listOf("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "0.0.0.0/8", "224.0.0.0/3")))
-                val builder = Builder().setSession("TrioZ TrustTunnel: тест")
+                val builder = Builder().setSession("TrioZ TrustTunnel")
                     .setMtu(1350).addAddress("172.20.2.13", 32)
                     .addAddress("fdfd:29::2", 64) // Engine sockets are protected via protectSocket; app traffic uses VPN.
                 // Mirrors the upstream adapter's empty dns_upstreams behavior.
@@ -103,7 +103,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
                     check(next.start(tunFd))
                 } finally { try { tunFd.close() } catch (_: Exception) {} }
             } catch (_: Exception) {
-                stopEngine("Не удалось запустить тестовый TrustTunnel")
+                stopEngine("Не удалось запустить TrustTunnel")
             } catch (_: LinkageError) {
                 stopEngine("Движок TrustTunnel недоступен в сборке")
             }
@@ -139,7 +139,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
                 ClientState.CONNECTED -> { Companion.state = "on"; error = null }
                 ClientState.CONNECTING, ClientState.RECOVERING, ClientState.WAITING_RECOVERY,
                 ClientState.WAITING_FOR_NETWORK -> Companion.state = "connecting"
-                ClientState.DISCONNECTED -> if (!stopping && !worker.isShutdown) worker.execute { stopEngine("Тестовый VPN отключён") }
+                ClientState.DISCONNECTED -> if (!stopping && !worker.isShutdown) worker.execute { stopEngine("VPN отключён") }
             }
         } catch (_: Exception) { if (!worker.isShutdown) worker.execute { stopEngine("Ошибка состояния VPN") } }
     }
