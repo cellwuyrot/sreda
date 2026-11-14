@@ -1,0 +1,23 @@
+[Unit]
+Description=TrioZ TrustTunnel credentials sync agent
+After=network-online.target trusttunnel.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/trioz-tt-sync/trusttunnel_sync_agent.py --config /etc/trioz/trusttunnel-sync.json
+Restart=always
+RestartSec=30
+# Root is required only to own/replace credentials.toml and restart the endpoint.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/trusttunnel /var/lib/trioz-tt-sync
+StateDirectory=trioz-tt-sync
+StateDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

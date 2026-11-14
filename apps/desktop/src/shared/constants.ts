@@ -84,6 +84,10 @@ export const IPC = {
   VPN_UP: "desktop:vpn-up",
   VPN_DOWN: "desktop:vpn-down",
   VPN_STATUS: "desktop:vpn-status",
+  /** TRUSTTUNNEL-WIN: «Надёжное соединение» — отдельный от AmneziaWG туннель. */
+  TT_UP: "desktop:tt-up",
+  TT_DOWN: "desktop:tt-down",
+  TT_STATUS: "desktop:tt-status",
   // renderer → main (send)
   SET_BADGE: "desktop:set-badge",
   /** NEW: немедленно пересчитать цифру непрочитанного на значке приложения. */
@@ -143,6 +147,8 @@ export const IPC = {
   UPDATE_STATE: "desktop:update-state",
   /** VPN-ONECLICK: main → renderer: состояние туннеля изменилось. */
   VPN_STATE: "desktop:vpn-state",
+  /** TRUSTTUNNEL-WIN: main → renderer: состояние TrustTunnel изменилось. */
+  TT_STATE: "desktop:tt-state",
 
   /** WASAPI-SS: запустить нативный loopback-захват звука без PID приложения. */
   WASAPI_START: "desktop:wasapi-start",

@@ -1,7 +1,7 @@
 {
   "name": "trioz-connect-desktop",
   "productName": "TZ Connect",
-  "version": "1.1.7",
+  "version": "1.2.0",
   "description": "Connect communication platform.",
   "author": {
     "name": "TrioZ",
@@ -12,10 +12,11 @@
   "main": "dist/main/index.js",
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run icons && npm run vendor:client && npm run build:native && tsc -p tsconfig.json && npm run bundle:preload",
+    "build": "npm run icons && npm run vendor:client && npm run vendor:trusttunnel && npm run build:native && tsc -p tsconfig.json && npm run bundle:preload",
     "icons": "node scripts/prepare-icons.mjs",
     "vendor:client": "node scripts/vendor-wireguard.mjs --allow-missing",
     "vendor:client:strict": "node scripts/vendor-wireguard.mjs",
+    "vendor:trusttunnel": "node scripts/vendor-trusttunnel.mjs",
     "bundle:preload": "esbuild src/preload/index.ts src/preload/overlay.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist/preload --log-level=warning",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\"",

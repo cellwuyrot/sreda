@@ -2,14 +2,17 @@
 
 Caller owns authentication, directory trust, backups, service restart/recovery and
 secret distribution. Uses cooperative locking and rejects symlinks and unsafe
-permissions. Never logs contents. Requires Python 3.11+.
+permissions. Never logs contents. Uses stdlib tomllib on Python 3.11+ or bundled Tomli on 3.10.
 """
 import fcntl
 import hashlib
 import os
 import secrets
 import stat
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import trusttunnel_vendor_tomli as tomllib
 from pathlib import Path
 
 class StoreError(RuntimeError):

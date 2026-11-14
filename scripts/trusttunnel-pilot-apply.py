@@ -13,10 +13,13 @@ import stat
 import subprocess
 import sys
 import time
-import tomllib
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'apps/vpn/src'))
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import trusttunnel_vendor_tomli as tomllib
 from trusttunnel_pilot_transaction import PilotTransaction, RecoveryRequired, RolledBack, protected_read, ensure_private_dir
 from trusttunnel_pilot_stage_verify import verify_stage
 

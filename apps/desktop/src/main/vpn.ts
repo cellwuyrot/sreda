@@ -1,6 +1,8 @@
+import { acquireVpnStart } from "./vpnStartLock";
 /** TrioZ AmneziaWG lifecycle. The Windows start path stays delegated to the
  * existing AmneziaWG client; physical network handoff is handled separately. */
 
+import { trustTunnelServiceState } from "./trustTunnelService"; // TRUSTTUNNEL-WIN
 import { app } from "electron";
 import { execFile } from "node:child_process";
 import { isIP } from "node:net";
@@ -645,6 +647,12 @@ function removeConfFile(): void {
  * Идемпотентна для UI: повторный вызов во время подключения ничего не ломает.
  */
 export async function vpnUp(config: string): Promise<VpnStatePayload> {
+  const release = acquireVpnStart();
+  if (!release) return { state: "error", since: null, error: "Другое VPN-подключение запускается", backend: null, embedded: true };
+  try { return await vpnUpInternal(config); } finally { release(); }
+}
+
+async function vpnUpInternal(config: string): Promise<VpnStatePayload> {
   if (typeof config !== "string" || !looksLikeConfig(config)) {
     emit({ state: "error", since: null, error: "Профиль подключения повреждён", backend: null, embedded: true });
     return current;
@@ -661,6 +669,12 @@ export async function vpnUp(config: string): Promise<VpnStatePayload> {
   const parsed = parseWgConfig(config);
   if (!parsed.privateKey || parsed.addresses.length === 0 || parsed.peers.length === 0) {
     emit({ state: "error", since: null, error: "Профиль подключения неполон", backend: null, embedded: true });
+    return current;
+  }
+
+  /* TRUSTTUNNEL-WIN: «Надёжное соединение» и обычный VPN взаимоисключающие. */
+  if ((await trustTunnelServiceState()) !== "absent") {
+    emit({ state: "error", since: null, error: "Сначала отключите «Надёжное соединение» (TrustTunnel)", backend: null, embedded: true });
     return current;
   }
 
