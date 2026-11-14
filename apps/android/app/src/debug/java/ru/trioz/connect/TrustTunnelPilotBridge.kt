@@ -35,7 +35,7 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
         try {
             activity.startForegroundService(Intent(activity, TrustTunnelPilotService::class.java)
                 .setAction(TrustTunnelPilotService.ACTION_START).putExtra(TrustTunnelPilotService.EXTRA_PROFILE, profile))
-        } catch (_: Exception) { TrustTunnelPilotService.reportFailure("Android не разрешил запуск тестового VPN") }
+        } catch (_: Exception) { TrustTunnelPilotService.reportFailure("Android не разрешил запуск VPN") }
     }
     fun install(view: WebView) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
@@ -56,14 +56,14 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
                     }
                     "up" -> {
                         val profile = req.getString("config")
-                        check(TrustTunnelPilotProfile.accepts(profile)) { "Неверный тестовый профиль" }
+                        check(TrustTunnelPilotProfile.accepts(profile)) { "Неверный профиль VPN" }
                         check(!busy() && !activity.awgBusy()) { "Сначала отключите другое VPN-соединение" }
                         val admission = VpnAdmissionPolicy.check(activity)
                         check(admission.allowed) { "Локальная политика VPN не разрешает подключение" }
                         TrustTunnelPilotService.reserve()
                         val token = ++generation
-                        AlertDialog.Builder(activity).setTitle("Тестовое VPN-соединение")
-                            .setMessage("TrustTunnel — экспериментальный VPN для администраторов проекта. При отключении VPN Android может использовать обычную сеть. Продолжить?")
+                        AlertDialog.Builder(activity).setTitle("VPN-соединение TrustTunnel")
+                            .setMessage("TrustTunnel доступен по подписке. При отключении VPN Android может использовать обычную сеть. Продолжить?")
                             .setPositiveButton("Продолжить") { _, _ ->
                                 if (token != generation) return@setPositiveButton
                                 if (activity.awgBusy() || !VpnAdmissionPolicy.check(activity).allowed) {

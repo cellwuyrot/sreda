@@ -16,6 +16,7 @@ import { syncOverlay, destroyOverlay } from "./overlay"; // FIX-OVL
 import { startActivityWatcher, stopActivityWatcher, resendActivity } from "./activity"; // FIX-ACT
 import { shutdownVpn, isVpnActive, recoverOrphanedVpn, startVpnNetworkMonitor } from "./vpn"; // VPN-ONECLICK
 import { cleanupVpnBeforeExit } from "./vpnLifecycle";
+import { refreshTrustTunnelOnStart, shutdownTrustTunnel } from "./trustTunnel"; // TRUSTTUNNEL-WIN
 import {
   registerProtocol,
   handleDeepLink,
@@ -110,6 +111,8 @@ async function onReady(): Promise<void> {
   } catch (err) {
     console.warn("[vpn] не удалось очистить зависший TrioZ tunnel при запуске:", err);
   }
+  /* TRUSTTUNNEL-WIN: только отражаем состояние службы, без запроса прав. */
+  void refreshTrustTunnelOnStart().catch(() => undefined);
 
   // FIX-BLANK: клиент обновился (electron-updater) → сборка веб-части почти
   // наверняка сменилась, а Next.js на каждую сборку выпускает новые имена
@@ -205,6 +208,7 @@ app.on("before-quit", (event) => {
              реальные службы/адаптер. Поэтому state=error/off не пропускает
              cleanup зависшего tunnel. */
           await cleanupVpnBeforeExit(isVpnActive, shutdownVpn);
+          await shutdownTrustTunnel(); // TRUSTTUNNEL-WIN
         } finally {
           vpnExitCheckDone = true;
           app.quit();

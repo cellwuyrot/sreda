@@ -1,8 +1,9 @@
 /** Strict validation at the privileged Windows boundary. Never log the profile.
- * This does not authorize a user; issuance checks the fresh project ADMIN role.
- * This is not a Windows runner and does not enable the pilot by itself.
+ * This does not authorize a user: the server re-checks Premium / «Надёжное
+ * соединение» / project ADMIN on every issue and on every endpoint sync.
+ * Lines 7 and 8 (username/password) are the only variable parts.
  */
-const staticLines: ReadonlyArray<string | null> = [
+export const TRUSTTUNNEL_PROFILE_LINES: ReadonlyArray<string | null> = [
   'loglevel = "info"',
   'vpn_mode = "general"',
   'killswitch_enabled = true',
@@ -24,10 +25,13 @@ const staticLines: ReadonlyArray<string | null> = [
 export function isValidTrustTunnelPilotProfile(input: unknown): input is string {
   if (typeof input !== 'string' || input.length > 4096 || input.includes('\r')) return false;
   const lines = input.split('\n');
-  if (lines.length !== staticLines.length) return false;
+  if (lines.length !== TRUSTTUNNEL_PROFILE_LINES.length) return false;
   return lines.every((line, index) => {
     if (index === 7) return /^username = "trioz_[a-f0-9]{32}"$/.test(line);
     if (index === 8) return /^password = "[A-Za-z0-9_-]{43}"$/.test(line);
-    return line === staticLines[index];
+    return line === TRUSTTUNNEL_PROFILE_LINES[index];
   });
 }
+
+/** Alias with the subscriber-era name. */
+export const isValidTrustTunnelProfile = isValidTrustTunnelPilotProfile;

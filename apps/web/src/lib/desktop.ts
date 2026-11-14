@@ -92,6 +92,18 @@ export interface DesktopVpnApi {
   onState(cb: (state: DesktopVpnState) => void): Unsubscribe;
 }
 
+export interface DesktopTrustTunnelState {
+  state: "off" | "connecting" | "on" | "disconnecting" | "error";
+  error: string | null;
+  supported: boolean;
+}
+export interface DesktopTrustTunnelApi {
+  up(config: string): Promise<DesktopTrustTunnelState>;
+  down(): Promise<DesktopTrustTunnelState>;
+  status(): Promise<DesktopTrustTunnelState>;
+  onState(cb: (state: DesktopTrustTunnelState) => void): Unsubscribe;
+}
+
 export interface TriozDesktopApi {
   isDesktop: true;
   platform: string;
@@ -161,6 +173,7 @@ export interface TriozDesktopApi {
    * в старых сборках оболочки и в браузере — обязателен feature-detect.
    */
   vpn?: DesktopVpnApi;
+  trustTunnel?: DesktopTrustTunnelApi;
   /**
    * FIX-SS-ECHO: WASAPI Process Loopback — захват системного звука (без эха
    * собственного микрофона) через нативный аддон. Доступно только в Windows-

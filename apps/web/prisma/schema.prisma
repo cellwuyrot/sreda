@@ -1050,6 +1050,26 @@ model VpnSubscription {
   @@index([status])
 }
 
+/// TRUSTTUNNEL-SUBSCRIBERS: включение «Надёжного соединения» TrustTunnel.
+///
+/// Пароль здесь НЕ хранится: логин и пароль выводятся на сервере из ключа
+/// TRIOZ_TT_CRED_KEY и `generation`. Смена пароля = generation + 1. Право на
+/// доступ (Premium, отдельная VPN-подписка или проектный ADMIN) проверяется
+/// заново при каждой выдаче и при каждой синхронизации с endpoint, поэтому
+/// истечение подписки, бан или удаление снимают доступ без участия человека.
+/// `disabledAt` — человек сам выключил функцию; запись остаётся для истории.
+model TrustTunnelAccess {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  generation   Int       @default(1)
+  disabledAt   DateTime?
+  lastIssuedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([disabledAt])
+}
+
 model AiChat {
   id        String      @id @default(cuid())
   userId    String
