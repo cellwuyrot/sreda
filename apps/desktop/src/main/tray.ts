@@ -1,4 +1,4 @@
-import { Tray, Menu, nativeImage, app } from "electron";
+import { Tray, Menu, nativeImage, app, dialog } from "electron";
 import { existsSync } from "node:fs";
 import path from "path";
 import { focusMainWindow, getMainWindow, setQuitting } from "./mainWindow";
@@ -6,6 +6,7 @@ import { clearCacheAndReload } from "./recovery"; // FIX-BLANK
 import { setBadgeListener } from "./badge";
 import { checkForUpdatesNow } from "./updater";
 import { IPC } from "../shared/constants";
+import { trustTunnelDown } from "./trustTunnel";
 
 let tray: Tray | null = null;
 
@@ -63,6 +64,31 @@ function buildMenu(): Electron.Menu {
         void clearCacheAndReload(win, "ручная перезагрузка из трея", { manual: true });
       },
     },
+    ...(process.platform === "win32" ? [{
+      label: "Аварийно отключить TrustTunnel",
+      click: async () => {
+        const choice = await dialog.showMessageBox({
+          type: "warning",
+          title: "Отключить TrustTunnel",
+          message: "Отключить TrustTunnel на этом компьютере?",
+          detail: "После отключения трафик может идти напрямую, без VPN. Для отключения Windows может запросить разрешение администратора.",
+          buttons: ["Отмена", "Отключить"], defaultId: 0, cancelId: 0,
+        });
+        if (choice.response !== 1) return;
+        try {
+          const result = await trustTunnelDown();
+          await dialog.showMessageBox({
+            type: result.state === "off" ? "info" : "error",
+            title: "TrustTunnel",
+            message: result.state === "off" ? "TrustTunnel отключён." : "Не удалось подтвердить отключение TrustTunnel.",
+            detail: result.state === "off" ? "Проверьте доступ к интернету. Трафик может идти напрямую." : (result.error ?? "Дождитесь завершения текущей операции и попробуйте снова."),
+            buttons: ["OK"],
+          });
+        } catch {
+          await dialog.showMessageBox({ type: "error", title: "TrustTunnel", message: "Не удалось отключить TrustTunnel.", detail: "Повторите попытку или остановите службу TrioZTrustTunnel в Windows.", buttons: ["OK"] });
+        }
+      },
+    }] : []),
     { type: "separator" },
     {
       label: "Заглушить / включить микрофон",

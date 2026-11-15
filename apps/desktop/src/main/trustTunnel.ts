@@ -56,9 +56,10 @@ export async function trustTunnelStatus(): Promise<TrustTunnelStatus> {
   if (svc === "unknown") return emit({ state: "error", error: "Не удалось проверить службу TrustTunnel." });
   if (svc === "stopped") return emit({ state: "error", error: "Служба TrustTunnel остановлена. Отключите её перед повторным подключением." });
   if (current.state === "on" || current.state === "connecting") {
-    return emit({ state: "error", error: "Служба TrustTunnel остановилась. Включите соединение снова." });
+    return emit({ state: "error", error: "Служба TrustTunnel остановилась. Включите соединение снова.", confirmed: false });
   }
-  return current;
+  // Once SCM confirms absence, clear a stale error; it must not block AWG forever.
+  return emit({ state: "off", error: null, confirmed: false });
 }
 
 export async function isTrustTunnelActive(): Promise<boolean> {

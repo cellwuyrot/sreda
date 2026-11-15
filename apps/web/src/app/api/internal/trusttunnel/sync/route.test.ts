@@ -58,13 +58,13 @@ describe("TrustTunnel endpoint sync", () => {
     const doc = open((await (await call()).json()).sealed);
     expect(doc.users).toEqual([]);
   });
-  it("revokes everybody when the global provider is AmneziaWG", async () => {
+  it("keeps entitled users when the legacy provider is AmneziaWG", async () => {
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({
       id: "default", enabled: true, activeProvider: "AMNEZIAWG",
     }));
     const doc = open((await (await call()).json()).sealed);
-    expect(doc.users).toEqual([]);
-    expect(prismaMock.trustTunnelAccess.findMany).not.toHaveBeenCalled();
+    expect(doc.users).toHaveLength(2);
+    expect(prismaMock.trustTunnelAccess.findMany).toHaveBeenCalled();
   });
   it("revokes everybody when the common VPN service is disabled", async () => {
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({
