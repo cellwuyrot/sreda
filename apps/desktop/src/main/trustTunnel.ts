@@ -22,6 +22,8 @@ export interface TrustTunnelStatus { state: TrustTunnelState; error: string | nu
 
 let current: TrustTunnelStatus = { state: "off", error: null, supported: process.platform === "win32", confirmed: false };
 let busy = false;
+// Ignore read-only probes started before a later start/stop operation.
+let operationEpoch = 0;
 
 function emit(next: Partial<TrustTunnelStatus>): TrustTunnelStatus {
   current = { ...current, ...next, supported: process.platform === "win32" };
@@ -50,7 +52,9 @@ function removePending(): void {
 
 export async function trustTunnelStatus(): Promise<TrustTunnelStatus> {
   if (process.platform !== "win32" || busy) return current;
+  const epoch = operationEpoch;
   const svc = await trustTunnelServiceState();
+  if (busy || epoch !== operationEpoch) return current;
   if (svc === "running") return emit({ state: "on", error: null, confirmed: false });
   if (svc === "pending") return emit({ state: "connecting", error: null });
   if (svc === "unknown") return emit({ state: "error", error: "Не удалось проверить службу TrustTunnel." });
@@ -70,6 +74,7 @@ export async function isTrustTunnelActive(): Promise<boolean> {
 export async function trustTunnelUp(profile: unknown): Promise<TrustTunnelStatus> {
   const release = acquireVpnStart();
   if (!release) return { state: "error", error: "Другое VPN-подключение запускается", supported: process.platform === "win32", confirmed: false };
+  operationEpoch++;
   try { return await trustTunnelUpInternal(profile); } finally { release(); }
 }
 
@@ -105,6 +110,7 @@ async function trustTunnelUpInternal(profile: unknown): Promise<TrustTunnelStatu
 export async function trustTunnelDown(): Promise<TrustTunnelStatus> {
   if (process.platform !== "win32") return emit({ state: "off", error: null });
   if (busy) return current;
+  operationEpoch++;
   busy = true;
   emit({ state: "disconnecting", error: null });
   try {
