@@ -80,11 +80,11 @@ describe("TrustTunnel subscriber profile", () => {
     expect(prismaMock.trustTunnelAccess.upsert).not.toHaveBeenCalled();
   });
 
-  it("refuses issuance when the global project provider is AmneziaWG", async () => {
+  it("allows issuance independently of the legacy global provider", async () => {
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "AMNEZIAWG", enabled: true }));
     prismaMock.user.findUnique.mockResolvedValue(user({ isPremium: true }));
-    expect((await POST(req())).status).toBe(503);
-    expect(prismaMock.trustTunnelAccess.upsert).not.toHaveBeenCalled();
+    expect((await POST(req())).status).toBe(200);
+    expect(prismaMock.trustTunnelAccess.upsert).toHaveBeenCalled();
   });
 
   it("requires same HTTPS origin, a session and the feature flag", async () => {

@@ -423,6 +423,7 @@ it("uses the same fixed-size connection window frame for the reliable provider",
   };
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => trustAccess }) as Response));
   render(<PremiumInfoModal isPremium onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "TrustTunnel" }));
   const dialog = await screen.findByRole("dialog", { name: "Надёжное соединение" });
   expect(dialog.className).toContain("h-full min-h-full");
   expect(dialog.className).toContain("p-6");
@@ -431,5 +432,5 @@ it("uses the same fixed-size connection window frame for the reliable provider",
   expect(modalCard?.className).toContain("max-h-[968px]");
   expect(modalCard?.className).toContain("max-w-md");
   expect(screen.getByRole("button", { name: "Подключить надёжное соединение" }).className).toContain("h-28 w-28");
-  expect(dialog.textContent).not.toMatch(/TrustTunnel|TrioZ|HTTP\/2|gateway|endpoint|AmneziaVPN/i);
+  expect(dialog.textContent).not.toMatch(/password|HTTP\/2|gateway|endpoint/i);
 });

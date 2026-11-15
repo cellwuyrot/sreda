@@ -9,7 +9,6 @@
  */
 import prisma from "./prisma";
 import { getVpnSettings } from "./vpn";
-import { isVpnProviderActive } from "./vpnProvider";
 import { isTrustTunnelSubscriberAllowed, type TrustTunnelSubscriberAccount } from "./trustTunnelSubscriberPolicy";
 import {
   deriveUsername, TT_SYNC_MAX_USERS, TrustTunnelConfigError,
@@ -28,11 +27,11 @@ export function trustTunnelEnabled(): boolean {
   return process.env.TRIOZ_TT_ENABLED === "true";
 }
 
-/** Fail closed if the global provider cannot be read or is not TrustTunnel. */
+/** Disable synchronization when the feature or reliable connection service is off. */
 export async function trustTunnelProviderIsActive(): Promise<boolean> {
   if (!trustTunnelEnabled()) return false;
   const settings = await getVpnSettings();
-  return settings.enabled === true && isVpnProviderActive(settings.activeProvider, "TRUSTTUNNEL");
+  return settings.enabled === true;
 }
 
 export function isEntitled(account: TrustTunnelSubscriberAccount | null, now: Date): boolean {
@@ -41,7 +40,7 @@ export function isEntitled(account: TrustTunnelSubscriberAccount | null, now: Da
 
 /** Complete snapshot or an exception — never a partial list (a partial list would revoke people). */
 export async function computeDesiredEntries(now: Date): Promise<DesiredEntry[]> {
-  // On rollback, the next complete snapshot removes managed TrustTunnel logins.
+  // Disabling the feature or service removes managed logins on the next snapshot.
   // A DB failure throws and returns 503 so the agent keeps its last state.
   if (!(await trustTunnelProviderIsActive())) return [];
   const rows = await prisma.trustTunnelAccess.findMany({

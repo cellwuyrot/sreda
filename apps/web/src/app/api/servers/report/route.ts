@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { findNodeByToken } from "@/lib/serverMesh";
 import { getVpnSettings, isPeerEntitled, isValidWireGuardKey } from "@/lib/vpn";
-import { isVpnProviderActive } from "@/lib/vpnProvider";
 import { isTrafficBlocked, isUsageUnlimited, periodExpired, usageView } from "@/lib/connectionUsage";
 
 // SERVER-MESH: точка отчёта дочернего узла.
@@ -152,7 +151,7 @@ export async function POST(req: Request) {
   // и transfer нельзя ошибочно записать как активность другого провайдера.
   const vpnSettingsForNode = node.kind === "VPN" ? await getVpnSettings() : null;
   const wireGuardProviderActive =
-    node.kind === "VPN" && isVpnProviderActive(vpnSettingsForNode?.activeProvider, "AMNEZIAWG");
+    node.kind === "VPN";
 
   // VPN-WG: рукопожатия, о которых доложил узел. Обновляем только своих пиров
   // — по nodeId, чтобы один узел не мог трогать записи другого.

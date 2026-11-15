@@ -137,11 +137,16 @@ export function buildDownScript(): string {
   ].join("\r\n");
 }
 
-/** `sc query` output → coarse state; no admin rights needed. */
+/** `sc query` localizes field names; its numeric states and symbolic names are stable. */
 export function parseScQuery(stdout: string): "running" | "pending" | "stopped" | "absent" | "unknown" {
-  if (/STATE\s*:\s*4\s+RUNNING/i.test(stdout)) return "running";
-  if (/STATE\s*:\s*[2356]\s/i.test(stdout)) return "pending";
-  if (/STATE\s*:\s*1\s+STOPPED/i.test(stdout)) return "stopped";
+  // Do not rely on the field name: e.g. Russian Windows prints "Состояние".
+  // Match both the numeric state and its symbolic name, so TYPE or exit-code
+  // lines cannot accidentally turn an unknown result into a running service.
+  const state = stdout.match(/^[^:\r\n]*:\s*([1-7])\s+(STOPPED|START_PENDING|STOP_PENDING|RUNNING|CONTINUE_PENDING|PAUSE_PENDING|PAUSED)\b/im);
+  const pair = state ? `${state[1]}:${state[2].toUpperCase()}` : "";
+  if (pair === "4:RUNNING") return "running";
+  if (["2:START_PENDING", "3:STOP_PENDING", "5:CONTINUE_PENDING", "6:PAUSE_PENDING"].includes(pair)) return "pending";
+  if (pair === "1:STOPPED") return "stopped";
   if (/\b1060\b/.test(stdout)) return "absent";
   return "unknown";
 }
