@@ -15,6 +15,7 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
     private var pending: String? = null
     private var generation = 0L
     private var permissionInFlight = false
+    private var settingsOpen = false
     private val permission = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val profile = pending
         pending = null
@@ -48,6 +49,12 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
                 require(id.matches(Regex("[A-Za-z0-9-]{1,80}")))
                 when (req.getString("op")) {
                     "status" -> Unit
+                    "settings" -> {
+                        check(!busy() && !settingsOpen) { "Сначала отключите TrustTunnel" }
+                        settingsOpen = true
+                        try { TrustTunnelRoutingSettings.open(activity, { !busy() }, { settingsOpen = false }) }
+                        catch (e: Exception) { settingsOpen = false; throw e }
+                    }
                     "down" -> {
                         pending = null
                         generation++
@@ -58,7 +65,7 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
                     "up" -> {
                         val profile = req.getString("config")
                         check(TrustTunnelPilotProfile.accepts(profile)) { "Неверный профиль VPN" }
-                        check(!busy() && !activity.awgBusy()) { "Сначала отключите другое VPN-соединение" }
+                        check(!busy() && !settingsOpen && !activity.awgBusy()) { "Сначала отключите другое VPN-соединение" }
                         val admission = VpnAdmissionPolicy.check(activity)
                         check(admission.allowed) { "Локальная политика VPN не разрешает подключение" }
                         TrustTunnelPilotService.reserve()
