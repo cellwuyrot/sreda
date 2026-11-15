@@ -96,6 +96,8 @@ export interface DesktopTrustTunnelState {
   state: "off" | "connecting" | "on" | "disconnecting" | "error";
   error: string | null;
   supported: boolean;
+  /** True only when the native client confirms the tunnel connection, not just service presence. */
+  confirmed?: boolean;
 }
 export interface DesktopTrustTunnelApi {
   up(config: string): Promise<DesktopTrustTunnelState>;

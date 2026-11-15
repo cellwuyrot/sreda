@@ -10,7 +10,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
-/** Debug only. Same-origin main frame, plus a server-authorized profile. */
+/** Same-origin main-frame bridge for a server-authorized TrustTunnel profile. */
 internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
     private var pending: String? = null
     private var generation = 0L
@@ -27,6 +27,7 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
     fun busy(): Boolean = permissionInFlight || TrustTunnelPilotService.state in setOf("connecting", "on", "disconnecting")
     private fun snapshot() = JSONObject().put("state", TrustTunnelPilotService.state)
         .put("error", TrustTunnelPilotService.error ?: JSONObject.NULL)
+        .put("confirmed", TrustTunnelPilotService.state == "on")
     private fun start(profile: String) {
         if (activity.awgBusy() || !VpnAdmissionPolicy.check(activity).allowed || VpnService.prepare(activity) != null) {
             TrustTunnelPilotService.reportFailure("VPN занят или системное разрешение отозвано")

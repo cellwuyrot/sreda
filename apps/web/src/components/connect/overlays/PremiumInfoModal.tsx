@@ -1,9 +1,10 @@
 "use client";
 import TrustTunnelPilotPanel from "./TrustTunnelPilotPanel";
+import ConnectionModalFrame from "./ConnectionModalFrame";
+import { getTrustTunnelEngine } from "@/lib/trustTunnelClient";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
-import { XIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS
 import { vpnEnrollmentKeys, waitForAndroidPeer } from "@/lib/vpnEnrollment";
 import { buildWireGuardConfig } from "@/lib/wgKeys"; // VPN-AUTOPREMIUM
 import { LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
@@ -183,7 +184,7 @@ function tunnelSinceLabel(iso: string | null): string {
    30 секунд только в видимом окне, не создавая опрос в скрытых вкладках. */
 const VPN_STATE_REFRESH_MS = 30_000;
 
-function VpnPanel({ onClose }: { onClose: () => void }) {
+function VpnPanel({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings?: () => void }) {
   const [state, setState] = useState<VpnState | null>(null);
   /* Успешный снимок не выбрасывается при временном сбое: статус отдельно
      объясняет, можно ли считать показанные цифры актуальными. */
@@ -213,6 +214,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
      включать нечем, и панель отправляет человека в приложение. */
   const [canTunnel, setCanTunnel] = useState(false);
   const [tunnel, setTunnel] = useState<DesktopVpnState | null>(null);
+  const [otherReliableActive, setOtherReliableActive] = useState<boolean | null>(null);
+  const [otherReliableChecked, setOtherReliableChecked] = useState(false);
   const [amneziaProfile, setAmneziaProfile] = useState<
     (AmneziaVpnProfile & { signature: string }) | null
   >(null);
@@ -249,6 +252,30 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       off();
     };
   }, []);
+
+  // While Amnezia is selected, do not start it alongside an older reliable-connection session.
+  const refreshOtherReliable = useCallback(async () => {
+    const engine = getTrustTunnelEngine();
+    if (!engine) {
+      setOtherReliableActive(false);
+      setOtherReliableChecked(true);
+      return;
+    }
+    try {
+      const current = await engine.status();
+      setOtherReliableActive(["on", "connecting", "disconnecting"].includes(current.state));
+      setOtherReliableChecked(true);
+    } catch {
+      setOtherReliableActive(null);
+      setOtherReliableChecked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOtherReliable();
+    const timer = window.setInterval(() => void refreshOtherReliable(), 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshOtherReliable]);
 
   /**
    * Зарегистрировать публичный ключ и собрать профиль прямо на устройстве.
@@ -339,6 +366,23 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       setBusy(false);
     }
   }, []);
+
+  const disconnectOtherReliable = useCallback(async () => {
+    const engine = getTrustTunnelEngine();
+    if (!engine || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const next = await engine.down();
+      if (next.state !== "off") throw new Error("disconnect");
+      setOtherReliableActive(false);
+      setOtherReliableChecked(true);
+    } catch {
+      setError("Не удалось отключить предыдущее соединение. Отключите его в приложении и повторите попытку.");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy]);
 
   const refresh = useCallback((): Promise<VpnState | null> => {
     /* Одновременные потребители получают один и тот же результат, а не null.
@@ -490,6 +534,8 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     !busy &&
     !tunnelConnecting &&
     !tunnelDisconnecting &&
+    otherReliableChecked &&
+    (otherReliableActive === false || active) &&
     (active || !nodeIncomplete);
 
   const powerLabel = active
@@ -512,7 +558,13 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
       ? "Выключаем…"
       : busy
         ? "Выполняем…"
-        : !canTunnel
+        : !otherReliableChecked
+          ? "Проверяем другое соединение…"
+          : otherReliableActive === true
+            ? "Сначала отключите другое подключение"
+            : otherReliableActive === null
+              ? "Не удалось проверить другое соединение"
+              : !canTunnel
           ? "Включение доступно в приложении TZ.Connect"
           : !ready
             ? "Подготавливаем доступ…"
@@ -597,219 +649,103 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
     [],
   );
 
+  const modalStatus = (() => {
+    if (state === null && refreshState === "loading") return { title: "Проверяем состояние…", description: "Получаем данные о доступе и состоянии сервера.", tone: "muted" as const };
+    if (refreshState === "unavailable") return { title: "Состояние недоступно", description: "Не удалось получить актуальные сведения о подключении.", tone: "warning" as const };
+    if (state && refreshState === "stale") return { title: "Последние данные могут быть неактуальны", description: "Повторяем проверку состояния соединения.", tone: "warning" as const };
+    if (state && !state.entitled) return { title: "Нужна подписка", description: "Подходит любая из двух: «Ускоренный интернет» или Premium. Доступ выдаётся сам, как только подписка активна.", tone: "muted" as const };
+    if (state?.entitled && !state.serviceEnabled) return { title: "Сервис отключён", description: "Сервис выключен администратором. Подключение недоступно, пока его не включат.", tone: "muted" as const };
+    if (state?.entitled && state.serviceEnabled && !state.nodeReady) return { title: "Узлы ещё не готовы", description: "Ни один сервер не вышел на связь. Включение станет доступно, как только узел появится.", tone: "muted" as const };
+    if (ready && !otherReliableChecked) return { title: "Проверяем состояние устройства…", description: "Проверяем, не работает ли другое подключение.", tone: "muted" as const };
+    if (ready && otherReliableActive === null && !active) return { title: "Не удалось проверить другое соединение", description: "Для безопасности сначала необходимо подтвердить, что другое подключение выключено.", tone: "warning" as const };
+    if (ready && otherReliableActive === true && !active) return { title: "Сначала отключите другое подключение", description: "Два защищённых подключения не включаются одновременно.", tone: "warning" as const };
+    if (ready && canTunnel) {
+      if (active) return {
+        title: "Соединение активно",
+        description: `${tunnelSinceLabel(tunnel?.since ?? null)} · режим: ${ROUTING_OPTIONS.find((o) => o.value === state?.peer?.routing)?.title.toLowerCase() ?? "весь трафик"}`,
+        tone: "success" as const,
+      };
+      if (tunnelConnecting) return {
+        title: tunnelReconnecting ? "Переподключение…" : "Подключаем…",
+        description: "Устанавливаем защищённое соединение — это занимает несколько секунд.",
+        tone: "accent" as const,
+      };
+      if (tunnelDisconnecting) return { title: "Выключаем…", description: "Завершаем защищённое соединение.", tone: "accent" as const };
+      return { title: "Готово к включению", description: "Выберите, что пойдёт через туннель, и нажмите «Включить».", tone: "muted" as const };
+    }
+    if (ready && !canTunnel) return {
+      title: androidShell ? "Обновите Android-приложение" : "Включение — в приложении",
+      description: androidShell
+        ? "Для встроенного VPN нужна актуальная версия TrioZ Connect и Android System WebView."
+        : desktopShell
+          ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
+          : "Выберите сервер и создайте профиль ниже. Импортируйте его в AmneziaVPN: браузер сам VPN не включает.",
+      tone: "muted" as const,
+    };
+    return { title: "Проверяем состояние…", description: "", tone: "muted" as const };
+  })();
+
+  const modalNotice = (
+    <>
+      {otherReliableActive === true && (
+        <div className="mt-5 rounded-2xl border border-violet-300/70 bg-violet-50 p-3 dark:border-violet-400/20 dark:bg-violet-500/[0.08]">
+          <p className="text-sm font-medium">Уже активно другое подключение</p>
+          <p className="mt-1 text-xs text-neutral-600 dark:text-white/60">Перед включением выбранного подключения нужно отключить предыдущее.</p>
+          <button type="button" disabled={busy} onClick={() => void disconnectOtherReliable()} className="mt-3 min-h-11 w-full rounded-xl border border-violet-300 px-4 text-sm font-semibold text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50 dark:border-violet-300/30 dark:text-violet-200 dark:hover:bg-violet-500/10">
+            Отключить другое соединение
+          </button>
+        </div>
+      )}
+      {otherReliableChecked && otherReliableActive === null && (
+        <p role="alert" className="mt-4 rounded-xl bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-200">
+          Не удалось проверить состояние другого подключения. Включение временно заблокировано; повторная проверка выполняется автоматически.
+        </p>
+      )}
+      {androidShell && canTunnel && (
+        <p className="mt-3 text-xs leading-relaxed text-neutral-500 dark:text-white/60">
+          Встроенное защищённое соединение. Активный статус подтверждает рукопожатие, но не гарантирует доступность каждого сайта. После отключения возможен обычный выход в сеть.
+        </p>
+      )}
+      {shownError && <p role="alert" className="mt-4 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">{shownError}</p>}
+      {nodeIncomplete && <p className="mt-4 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">Сервер соединения готовится — включение станет доступно через минуту.</p>}
+    </>
+  );
+
   return (
-    <div className="relative p-6 text-neutral-900 dark:text-white">
-      <div
-        className={`pointer-events-none absolute inset-0 opacity-70 ${active ? "bg-[radial-gradient(circle_at_50%_0%,rgba(34,197,94,.20),transparent_58%)]" : "bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,.14),transparent_58%)]"}`}
-      />
-      <div className="relative">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-neutral-400 dark:text-white/40">
-              TZ Premium · Надёжное соединение
-            </p>
-            <h3 className="mt-1 text-xl font-semibold">
-              Защищённое соединение
-            </h3>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">
-              Одно соединение для Premium и «Ускоренного интернета»
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-white/[0.07] dark:hover:text-white"
-            aria-label="Закрыть"
-          >
-            <XIcon size={15} style={{ color: "inherit" }} />
-          </button>
-        </div>
-
-        <div className="mt-7 flex flex-col items-center">
-          {/* FIX-POWERBTN: сам круг и есть выключатель. Раньше здесь стоял <div aria-hidden>,
-              то есть картинка: обработчик togglePower уже был написан, но нажимать было
-              нечего, и включение жило отдельной кнопкой внизу окна. Два органа управления
-              одним действием — это всегда вопрос «а этот тогда зачем», тем более когда
-              главный на вид — мертвый. */}
-          <button
-            type="button"
-            onClick={() => void togglePower()}
-            disabled={!powerReady}
-            aria-pressed={active}
-            aria-label={powerLabel}
-            title={powerReady ? powerLabel : powerHint}
-            className={`relative grid h-28 w-28 place-items-center rounded-full border outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-cyan-400/60 ${
-              powerReady
-                ? "cursor-pointer hover:scale-[1.03] active:scale-95"
-                : "cursor-not-allowed opacity-70"
-            } ${
-              active
-                ? "border-emerald-400/50 bg-emerald-500 text-white shadow-[0_0_45px_rgba(34,197,94,.34)]"
-                : tunnelConnecting
-                  ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-600 dark:text-cyan-300"
-                  : "border-neutral-300 bg-neutral-100 text-neutral-500 shadow-inner dark:border-white/10 dark:bg-white/[0.06] dark:text-white/50"
-            }`}
-          >
-            <span
-              className={`absolute inset-2 rounded-full border ${active ? "border-white/20" : "border-neutral-200 dark:border-white/[0.06]"}`}
-            />
-            {(tunnelConnecting || tunnelDisconnecting) && (
-              <span className="absolute inset-0 animate-ping rounded-full border border-cyan-400/50" />
-            )}
-            <svg
-              width="38"
-              height="38"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            >
-              <path d="M12 2v10" />
-              <path d="M6.35 5.35a8 8 0 1 0 11.3 0" />
-            </svg>
-          </button>
-
-          {state === null && refreshState === "loading" && (
-            <strong className="mt-4 text-sm text-neutral-500 dark:text-white/50">
-              Проверяем состояние…
-            </strong>
-          )}
-          {refreshState === "unavailable" && (
-            <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
-              Состояние недоступно
-            </strong>
-          )}
-          {state && refreshState === "stale" && (
-            <strong className="mt-4 text-center text-sm text-amber-700 dark:text-amber-300">
-              Последние данные могут быть неактуальны
-            </strong>
-          )}
-
-          {state && !state.entitled && (
-            <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
-                Нужна подписка
-              </strong>
-              <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Подходит любая из двух: «Ускоренный интернет» или Premium.
-                Доступ выдаётся сам, как только подписка активна.
-              </span>
-            </>
-          )}
-
-          {state?.entitled && !state.serviceEnabled && (
-            <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
-                Сервис отключён
-              </strong>
-              <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Сервис выключен администратором. Подключение недоступно, пока
-                его не включат.
-              </span>
-            </>
-          )}
-
-          {state?.entitled && state.serviceEnabled && !state.nodeReady && (
-            <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
-                Узлы ещё не готовы
-              </strong>
-              <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                Ни один сервер не вышел на связь. Включение станет доступно, как
-                только узел появится.
-              </span>
-            </>
-          )}
-
-          {ready && canTunnel && (
-            <>
-              <strong
-                className={`mt-4 text-sm ${active ? "text-emerald-600 dark:text-emerald-400" : tunnelConnecting ? "text-cyan-600 dark:text-cyan-300" : "text-neutral-600 dark:text-white/65"}`}
-              >
-                {active
-                  ? "Соединение активно"
-                  : tunnelConnecting
-                    ? tunnelReconnecting
-                      ? "Переподключение…"
-                      : "Подключаем…"
-                    : tunnelDisconnecting
-                      ? "Выключаем…"
-                      : "Готово к включению"}
-              </strong>
-              <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                {active
-                  ? `${tunnelSinceLabel(tunnel?.since ?? null)} · режим: ${
-                      ROUTING_OPTIONS.find(
-                        (o) => o.value === state?.peer?.routing,
-                      )?.title.toLowerCase() ?? "весь трафик"
-                    }`
-                  : tunnelConnecting
-                    ? "Устанавливаем туннель — это занимает несколько секунд"
-                    : "Выберите, что пойдёт через туннель, и нажмите «Включить»"}
-              </span>
-            </>
-          )}
-
-          {ready && !canTunnel && (
-            <>
-              <strong className="mt-4 text-sm text-neutral-600 dark:text-white/65">
-                {androidShell
-                  ? "Обновите Android-приложение"
-                  : "Включение — в приложении"}
-              </strong>
-              <span className="mt-1 text-center text-[11px] text-neutral-400 dark:text-white/35">
-                {androidShell
-                  ? "Для встроенного VPN нужна новая версия TrioZ Connect и актуальный Android System WebView. Экспорт профиля из Android-приложения отключён."
-                  : desktopShell
-                    ? "Обновите приложение TZ Connect до последней версии — в нём соединение поднимается одной кнопкой."
-                    : "Выберите сервер и создайте профиль ниже. Импортируйте его в AmneziaVPN: сам браузер VPN не включает."}
-              </span>
-            </>
-          )}
-        </div>
-
-        {androidShell && canTunnel && (
-          <p className="mt-3 text-xs leading-relaxed text-neutral-500 dark:text-white/60">
-            Встроенный AmneziaWG. Допуск проверяется локально по списку пакетов этой сборки.
-            Установка запрещённого пакета остановит VPN. Активный статус подтверждает рукопожатие,
-            но не гарантирует доступность каждого сайта. После отключения возможен обычный выход в сеть.
-          </p>
-        )}
-        {shownError && (
-          <p className="mt-4 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">
-            {shownError}
-          </p>
-        )}
-        {nodeIncomplete && (
-          <p className="mt-4 rounded-xl bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-            Сервер соединения готовится — включение станет доступно через
-            минуту.
-          </p>
-        )}
-
-        {/* ── Тариф и сервер ── */}
-        {plan && (
-          <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[9px] uppercase tracking-wider text-neutral-400 dark:text-white/30">
-                Тариф
-              </span>
-              <span className="text-[11px] text-neutral-400 dark:text-white/35">
-                {plan.until ? daysLeftLabel(plan.until) : "без срока"}
-              </span>
+    <ConnectionModalFrame
+      theme="amnezia"
+      eyebrow="TZ Premium · Надёжное соединение"
+      title="Защищённое соединение"
+      subtitle="Одно соединение для Premium и «Ускоренного интернета»"
+      onClose={onClose}
+      power={{
+        onClick: () => void togglePower(),
+        disabled: busy || tunnelConnecting || tunnelDisconnecting || (!active && !powerReady),
+        pressed: active,
+        transitional: tunnelConnecting || tunnelDisconnecting,
+        label: powerLabel,
+        hint: powerReady ? powerLabel : powerHint,
+      }}
+      status={modalStatus}
+      plan={{
+        label: plan?.label || (state ? "Без подписки" : "Проверяем тариф…"),
+        periodLabel: plan ? (plan.until ? daysLeftLabel(plan.until) : "без срока") : "—",
+        note: plan?.note ?? (plan?.kind === "none" ? `Подходит любая из двух: ${LINK_PLAN_QUOTED} или Premium.` : null),
+      }}
+      notice={modalNotice}
+    >
+        {state && !state.entitled && (
+          <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
+            <p className="text-xs font-medium text-neutral-800 dark:text-white/80">Доступ к соединению</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">Подключение появится после активации подписки.</p>
+            <div className="mt-3 space-y-3">
+              <BusinessSubscriptionActions kind="VPN" />
+              <BusinessSubscriptionActions kind="PREMIUM" />
             </div>
-            <strong className="mt-1 block text-sm">
-              {plan.label || "Без подписки"}
-            </strong>
-            {plan.note && (
-              <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
-                {plan.note}
-              </p>
-            )}
-            {plan.kind === "none" && (
-              <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
-                Подходит любая из двух: {LINK_PLAN_QUOTED} или Premium.
-              </p>
+            {onOpenSettings && (
+              <button type="button" onClick={onOpenSettings} className="mt-3 min-h-11 w-full rounded-xl border border-neutral-200 px-3 py-2 text-xs font-medium dark:border-white/10">
+                Все возможности и мои подписки
+              </button>
             )}
           </div>
         )}
@@ -1059,13 +995,11 @@ function VpnPanel({ onClose }: { onClose: () => void }) {
             )}
           </div>
         )}
-      </div>
-    </div>
+    </ConnectionModalFrame>
   );
 }
 
 export default function PremiumInfoModal({
-  isPremium,
   onClose,
   onOpenSettings,
 }: {
@@ -1073,72 +1007,48 @@ export default function PremiumInfoModal({
   onClose: () => void;
   onOpenSettings?: () => void;
 }) {
-  /* VPN-PLAN: раньше панель с тумблером открывалась только при isPremium,
-     и подписчик «только VPN» видел витрину Premium — включить VPN было негде.
-
-     Право на туннель считает сервер (Premium или подписка VPN, lib/vpn.ts)
-     и возвращает его в поле entitled. Сессия о подписке VPN не знает ничего,
-     поэтому спрашиваем сервер напрямую. При Premium запрос не нужен. */
-  const [vpnEntitled, setVpnEntitled] = useState<boolean | null>(
-    isPremium ? true : null,
-  );
-  const [accessCheckFailed, setAccessCheckFailed] = useState(false);
-
+  /* Администратор проекта выбирает единый provider для всех пользователей.
+     По этому ответу открывается один из двух вариантов общего окна. Проверка
+     тарифа остаётся внутри выбранной панели и не заменяет её отдельной витриной. */
+  const [activeProvider, setActiveProvider] = useState<"AMNEZIAWG" | "TRUSTTUNNEL" | null>(null);
+  const [providerCheckFailed, setProviderCheckFailed] = useState(false);
   useEffect(() => {
-    if (isPremium) return;
     let alive = true;
-    fetch("/api/vpn/me")
-      .then(async (r) => {
-        if (!r.ok) throw new Error("Не удалось проверить доступ");
-        const data: unknown = await r.json();
-        if (!data || typeof data !== "object")
-          throw new Error("Некорректный ответ доступа");
-        return data as { entitled?: unknown };
+    fetch("/api/vpn/trusttunnel", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("provider");
+        return response.json();
       })
       .then((data) => {
         if (!alive) return;
-        setVpnEntitled(data.entitled === true);
-        setAccessCheckFailed(false);
+        if (data?.activeProvider === "AMNEZIAWG" || data?.activeProvider === "TRUSTTUNNEL") {
+          setActiveProvider(data.activeProvider);
+          setProviderCheckFailed(false);
+        } else throw new Error("provider");
       })
-      .catch(() => {
-        /* Ошибка сети не означает, что у подписчика нет доступа: не заменяем
-           окно VPN витриной покупки на основании отсутствующего ответа. */
-        if (alive) setAccessCheckFailed(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [isPremium]);
+      .catch(() => { if (alive) setProviderCheckFailed(true); });
+    return () => { alive = false; };
+  }, []);
 
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       onClick={onClose}
+      role="presentation"
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div
-        className="relative z-10 w-full max-w-md max-h-[88vh] overflow-y-auto rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]"
+        className="relative z-10 h-[88vh] max-h-[968px] w-full max-w-md overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]"
         onClick={(e) => e.stopPropagation()}
       >
-        <TrustTunnelPilotPanel />
-        {vpnEntitled === null ? (
-          /* Короткая пауза вместо мигания витриной: показать подписчику
-              «купите Premium» и тут же заменить на тумблер хуже, чем подождать мгновение. */
+        {activeProvider === null ? (
           <div className="grid h-56 place-items-center px-6 text-center text-sm text-neutral-400 dark:text-white/40">
-            {accessCheckFailed
-              ? "Не удалось проверить доступ. Закройте окно и попробуйте снова."
-              : "Проверяем доступ…"}
+            {providerCheckFailed ? "Не удалось определить активную технологию. Повторите попытку позже." : "Проверяем тип соединения…"}
           </div>
-        ) : vpnEntitled ? (
-          <VpnPanel onClose={onClose} />
+        ) : activeProvider === "TRUSTTUNNEL" ? (
+          <TrustTunnelPilotPanel onClose={onClose} />
         ) : (
-          <div className="p-6 text-neutral-900 dark:text-white">
-            <div className="flex items-start justify-between gap-3"><div><p className="text-sm text-neutral-500 dark:text-gray-300">Подписки TrioZ</p><h3 className="mt-1 text-2xl font-semibold">Подключите нужные возможности</h3></div><button onClick={onClose} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl hover:bg-neutral-100 dark:hover:bg-white/10" aria-label="Закрыть"><XIcon size={18} /></button></div>
-            <p className="mt-3 text-base text-neutral-600 dark:text-gray-300">Оплата — в Business, доступ — в вашем аккаунте TrioZ. Повторно создавать аккаунт не нужно.</p>
-            <section className="mt-5 rounded-2xl border border-neutral-200 p-4 dark:border-white/20"><h4 className="text-lg font-semibold">Надёжное соединение</h4><p className="mb-4 mt-2 text-sm text-neutral-600 dark:text-gray-300">Защищённое подключение для ваших устройств. Отдельная подписка не включает остальные возможности Premium.</p><BusinessSubscriptionActions kind="VPN" /></section>
-            <section className="mt-4 rounded-2xl border border-neutral-200 p-4 dark:border-white/20"><h4 className="text-lg font-semibold">Premium</h4><p className="mb-4 mt-2 text-sm text-neutral-600 dark:text-gray-300">Дополнительные возможности TrioZ и надёжное соединение. Отдельная подписка на соединение не нужна.</p><BusinessSubscriptionActions kind="PREMIUM" /></section>
-            {onOpenSettings && <button onClick={onOpenSettings} className="mt-4 min-h-11 w-full rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium dark:border-white/20">Все возможности и мои подписки</button>}
-          </div>
+          <VpnPanel onClose={onClose} onOpenSettings={onOpenSettings} />
         )}
       </div>
     </div>

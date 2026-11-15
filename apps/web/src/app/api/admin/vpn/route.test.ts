@@ -133,7 +133,7 @@ describe("остальные настройки", () => {
     expect(args.update.enabled).toBe(false);
   });
 
-  it("отдаёт текущего провайдера и честно показывает заблокированную готовность TrustTunnel", async () => {
+  it("отдаёт текущего провайдера и отдельно показывает конфигурационный блокер TrustTunnel", async () => {
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({ ...SETTINGS, activeProvider: "AMNEZIAWG" }));
     prismaMock.vpnPeer.findMany.mockResolvedValue(row([]));
     const result = await get();
@@ -144,7 +144,9 @@ describe("остальные настройки", () => {
       activeProviderLabel: "AmneziaWG",
       trustTunnel: { ready: false, switchAllowed: false },
     });
-    expect(result.body.providerControl.trustTunnel.checks).toHaveLength(6);
+    expect(result.body.providerControl.trustTunnel.checks).toHaveLength(7);
+    expect(result.body.providerControl.trustTunnel.checks.find((check: { id: string }) => check.id === "runtime-config")).toMatchObject({ status: "BLOCKED", blocking: true });
+    expect(result.body.providerControl.trustTunnel.checks.filter((check: { status: string }) => check.status === "INFO")).toHaveLength(6);
   });
 
   it("обычный PATCH настроек не может изменить activeProvider", async () => {

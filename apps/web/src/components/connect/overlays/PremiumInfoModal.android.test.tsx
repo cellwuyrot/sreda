@@ -88,11 +88,13 @@ beforeEach(() => {
         ({
           ok: true,
           json: async () =>
-            String(input) === "/api/auth/session"
-              ? { user: { id: "user1" } }
-              : init?.method === "POST"
-                ? { peer }
-                : data(),
+            String(input) === "/api/vpn/trusttunnel"
+              ? { activeProvider: "AMNEZIAWG", selected: false, serviceEnabled: true }
+              : String(input) === "/api/auth/session"
+                ? { user: { id: "user1" } }
+                : init?.method === "POST"
+                  ? { peer }
+                  : data(),
         }) as never,
     ),
   );

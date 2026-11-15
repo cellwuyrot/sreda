@@ -1,11 +1,13 @@
 /**
- * VPN-PROVIDER: provider control plane shared by admin and data-plane routes.
+ * VPN provider control plane shared by admin and data-plane routes.
  *
- * TrustTunnel is deliberately not considered ready until its endpoint health,
- * credential lifecycle, per-user accounting and both native client engines are
- * implemented and verified. The admin page reports these blockers; it cannot
- * mark them ready.
+ * The selected provider is a single persistent project-wide setting. TrustTunnel
+ * may be selected when its server-side secrets/configuration are complete and
+ * TRIOZ_TT_ENABLED is explicitly enabled. Operational health (agent ACK and
+ * client tunnel state) is reported separately; this module never pretends that
+ * configuration validation is a live network health check.
  */
+import { loadTrustTunnelSettings } from "./trustTunnelAccess";
 
 export const VPN_PROVIDER_IDS = ["AMNEZIAWG", "TRUSTTUNNEL"] as const;
 export type VpnProviderId = (typeof VPN_PROVIDER_IDS)[number];
@@ -18,46 +20,23 @@ export const VPN_PROVIDER_LABELS: Record<VpnProviderId, string> = {
 export interface ProviderReadinessCheck {
   id: string;
   label: string;
-  status: "BLOCKED" | "READY";
+  status: "BLOCKED" | "READY" | "INFO";
+  blocking: boolean;
   detail: string;
 }
 
-const TRUSTTUNNEL_BLOCKERS: readonly Omit<ProviderReadinessCheck, "status">[] = [
-  {
-    id: "endpoint-health",
-    label: "Endpoint health и TLS",
-    detail: "Состояние Endpoint и TLS не подтверждается автоматически: проверенный health report не подключён.",
-  },
-  {
-    id: "credentials",
-    label: "Учётные данные пользователей",
-    detail: "Создание, безопасное обновление и отзыв per-user credentials не реализованы.",
-  },
-  {
-    id: "traffic-accounting",
-    label: "Учёт трафика",
-    detail: "Счётчики v1.1.0 не сопоставляются с пользователями TrioZ; текущие счётчики AmneziaWG сохраняются.",
-  },
-  {
-    id: "android-client",
-    label: "Android-клиент",
-    detail: "TrustTunnel native adapter не интегрирован и не проверен в сборке.",
-  },
-  {
-    id: "windows-client",
-    label: "Windows/Desktop-клиент",
-    detail: "TrustTunnel native adapter не интегрирован; сборка и подпись не проверены.",
-  },
-  {
-    id: "turn-gateway",
-    label: "Вход через turn",
-    detail: "Gateway не контролируется приложением; production-сеть и end-to-end готовность не подтверждены.",
-  },
-];
+function trustTunnelServerConfigured(env: Record<string, string | undefined>): boolean {
+  if (env.TRIOZ_TT_ENABLED !== "true") return false;
+  try {
+    loadTrustTunnelSettings(env);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function parseVpnProvider(value: unknown): VpnProviderId | null {
-  // Missing field is tolerated only for legacy unit fixtures and pre-migration
-  // reads; actual migrated rows receive AMNEZIAWG from PostgreSQL.
+  // Legacy rows created before the provider migration continue to mean AmneziaWG.
   if (value === undefined || value === null) return "AMNEZIAWG";
   return value === "AMNEZIAWG" || value === "TRUSTTUNNEL" ? value : null;
 }
@@ -66,17 +45,71 @@ export function isVpnProviderActive(value: unknown, expected: VpnProviderId): bo
   return parseVpnProvider(value) === expected;
 }
 
-export function trustTunnelReadiness() {
-  const checks: ProviderReadinessCheck[] = TRUSTTUNNEL_BLOCKERS.map((check) => ({
-    ...check,
-    status: "BLOCKED" as const,
-  }));
-  return { ready: checks.every((check) => check.status === "READY"), checks };
+export function trustTunnelReadiness(env: Record<string, string | undefined> = process.env) {
+  const configured = trustTunnelServerConfigured(env);
+  const checks: ProviderReadinessCheck[] = [
+    {
+      id: "runtime-config",
+      label: "Серверная конфигурация и флаг доступа",
+      status: configured ? "READY" : "BLOCKED",
+      blocking: true,
+      detail: configured
+        ? "Серверные параметры прошли локальную проверку формата. Это не активная проверка Endpoint или gateway."
+        : "Нужны TRIOZ_TT_ENABLED=true и корректно заданные серверные параметры TrustTunnel.",
+    },
+    {
+      id: "credentials",
+      label: "Индивидуальные учётные данные и отзыв",
+      status: "INFO",
+      blocking: false,
+      detail: "Механизм индивидуальных ключей и отзыва реализован; фактическое применение конкретного снимка подтверждается ACK агента.",
+    },
+    {
+      id: "endpoint-health",
+      label: "Состояние Endpoint и TLS",
+      status: "INFO",
+      blocking: false,
+      detail: "Активный health probe не подключён. Состояние применения подтверждается агентом, а не этой страницей.",
+    },
+    {
+      id: "turn-gateway",
+      label: "Связь turn → Endpoint",
+      status: "INFO",
+      blocking: false,
+      detail: "Оператор сообщил, что межсерверные проверки пройдены. Админка не выполняет сетевых проверок и не меняет настройки серверов.",
+    },
+    {
+      id: "android-client",
+      label: "Android-клиент",
+      status: "INFO",
+      blocking: false,
+      detail: "Движок включается в release исходниками; доступен только arm64-v8a. Подписанная сборка и проверка на физическом устройстве остаются обязательными.",
+    },
+    {
+      id: "windows-client",
+      label: "Windows-клиент",
+      status: "INFO",
+      blocking: false,
+      detail: "Код службы и проверка файлов присутствуют. Сборку, подпись и реальную работу Windows-клиента нужно проверять отдельно.",
+    },
+    {
+      id: "traffic-accounting",
+      label: "Учёт трафика TrustTunnel",
+      status: "INFO",
+      blocking: false,
+      detail: "Учёт трафика TrustTunnel в тарифах TrioZ не реализован. Счётчики AmneziaWG не используются как данные TrustTunnel.",
+    },
+  ];
+  const ready = checks.filter((check) => check.blocking).every((check) => check.status === "READY");
+  return { ready, checks };
 }
 
-export function providerControlView(activeProviderValue: unknown) {
+export function providerControlView(
+  activeProviderValue: unknown,
+  env: Record<string, string | undefined> = process.env,
+) {
   const activeProvider = parseVpnProvider(activeProviderValue);
-  const trustTunnel = trustTunnelReadiness();
+  const trustTunnel = trustTunnelReadiness(env);
   return {
     activeProvider,
     activeProviderLabel: activeProvider ? VPN_PROVIDER_LABELS[activeProvider] : "Неизвестный провайдер",

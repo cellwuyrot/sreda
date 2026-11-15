@@ -1,7 +1,7 @@
-/** Debug-only Android pilot bridge. Profile values must never be logged or persisted. */
+/** Native Android TrustTunnel bridge. Profile values must never be logged or persisted. */
 interface PilotPort { postMessage(message: string): void; onmessage: ((event: { data: string }) => void) | null }
 declare global { interface Window { TriozTrustTunnelPilotBridge?: PilotPort } }
-export type PilotStatus = { state: 'off' | 'connecting' | 'on' | 'disconnecting' | 'error'; error: string | null };
+export type PilotStatus = { state: 'off' | 'connecting' | 'on' | 'disconnecting' | 'error'; error: string | null; confirmed?: boolean };
 let sequence = 0;
 let active: PilotPort | undefined;
 const pending = new Map<string, { resolve: (value: PilotStatus) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -17,10 +17,16 @@ export function getAndroidTrustTunnelPilot() {
         pending.delete(data.id); clearTimeout(call.timer);
         if (typeof data.error === 'string') { call.reject(new Error(data.error)); return; }
         const result = data.result;
-        if (!result || !['off','connecting','on','disconnecting','error'].includes(result.state) || !(result.error === null || typeof result.error === 'string')) {
+        if (!result || !['off','connecting','on','disconnecting','error'].includes(result.state) ||
+            !(result.error === null || typeof result.error === 'string') ||
+            (result.confirmed !== undefined && typeof result.confirmed !== "boolean")) {
           call.reject(new Error('Некорректный ответ VPN')); return;
         }
-        call.resolve({ state: result.state, error: result.error });
+        call.resolve({
+          state: result.state,
+          error: result.error,
+          ...(typeof result.confirmed === "boolean" ? { confirmed: result.confirmed } : {}),
+        });
       } catch { /* Invalid response ignored; request will time out. */ }
     };
   }

@@ -22,8 +22,8 @@ async function requireAdmin() {
 
 /**
  * VPN-PROVIDER: one global provider, changed only by an administrator.
- * TrustTunnel remains fail-closed until the server-side readiness implementation
- * has actual evidence for every required capability.
+ * Switching to TrustTunnel requires explicit administrator acknowledgement and
+ * validated server configuration. Operational health is reported separately.
  */
 export async function POST(req: Request) {
   const actor = await requireAdmin();
@@ -33,13 +33,14 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json().catch(() => null)) as
-    | { provider?: unknown; confirmed?: unknown; expectedCurrentProvider?: unknown }
+    | { provider?: unknown; confirmed?: unknown; impactConfirmed?: unknown; expectedCurrentProvider?: unknown }
     | null;
   const target = body?.provider;
   const expectedCurrentProvider = body?.expectedCurrentProvider;
   if (
     (target !== "AMNEZIAWG" && target !== "TRUSTTUNNEL") ||
     body?.confirmed !== true ||
+    body?.impactConfirmed !== true ||
     (expectedCurrentProvider !== null &&
       expectedCurrentProvider !== "AMNEZIAWG" &&
       expectedCurrentProvider !== "TRUSTTUNNEL")
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
       if (target === "TRUSTTUNNEL") {
         const readiness = trustTunnelReadiness();
         if (!readiness.ready || current !== "AMNEZIAWG") {
-          const blockers = readiness.checks.filter((check) => check.status !== "READY");
+          const blockers = readiness.checks.filter((check) => check.blocking && check.status === "BLOCKED");
           await tx.auditLog.create({
             data: {
               userId: actor.id,
@@ -97,6 +98,15 @@ export async function POST(req: Request) {
       });
       if (changed.count !== 1) return { kind: "conflict" as const, currentRaw };
 
+      // Invalidate previous TrustTunnel credentials whenever the global provider
+      // changes. The next complete Endpoint snapshot will carry the new generation
+      // (or an empty set on rollback); stale ACKs can no longer mark old credentials
+      // as applied after a later switch back to TrustTunnel.
+      await tx.trustTunnelAccess.updateMany({
+        where: { disabledAt: null },
+        data: { generation: { increment: 1 }, lastIssuedAt: null },
+      });
+
       await tx.auditLog.create({
         data: {
           userId: actor.id,
@@ -104,7 +114,7 @@ export async function POST(req: Request) {
           action: "vpn.provider.switch",
           target: "VpnSettings",
           targetId: "default",
-          details: JSON.stringify({ from: currentRaw, to: target }),
+          details: JSON.stringify({ from: currentRaw, to: target, trustTunnelCredentialsRotated: true }),
         },
       });
       return { kind: "changed" as const, currentRaw };
@@ -113,9 +123,9 @@ export async function POST(req: Request) {
     if (result.kind === "blocked") {
       return NextResponse.json(
         {
-          error: "TrustTunnel пока не готов: переключение заблокировано",
+          error: "TrustTunnel не настроен: включите серверный флаг и проверьте параметры конфигурации",
           providerControl: providerControlView(result.currentRaw),
-          blockers: result.readiness.checks.filter((check) => check.status !== "READY"),
+          blockers: result.readiness.checks.filter((check) => check.blocking && check.status === "BLOCKED"),
         },
         { status: 409, headers: NO_STORE },
       );

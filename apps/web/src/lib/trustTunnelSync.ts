@@ -8,6 +8,8 @@
  * removed from the endpoint on the next agent cycle.
  */
 import prisma from "./prisma";
+import { getVpnSettings } from "./vpn";
+import { isVpnProviderActive } from "./vpnProvider";
 import { isTrustTunnelSubscriberAllowed, type TrustTunnelSubscriberAccount } from "./trustTunnelSubscriberPolicy";
 import {
   deriveUsername, TT_SYNC_MAX_USERS, TrustTunnelConfigError,
@@ -26,13 +28,22 @@ export function trustTunnelEnabled(): boolean {
   return process.env.TRIOZ_TT_ENABLED === "true";
 }
 
+/** Fail closed if the global provider cannot be read or is not TrustTunnel. */
+export async function trustTunnelProviderIsActive(): Promise<boolean> {
+  if (!trustTunnelEnabled()) return false;
+  const settings = await getVpnSettings();
+  return settings.enabled === true && isVpnProviderActive(settings.activeProvider, "TRUSTTUNNEL");
+}
+
 export function isEntitled(account: TrustTunnelSubscriberAccount | null, now: Date): boolean {
   return isTrustTunnelSubscriberAllowed({ enabled: process.env.TRIOZ_TT_ENABLED, account, now });
 }
 
 /** Complete snapshot or an exception — never a partial list (a partial list would revoke people). */
 export async function computeDesiredEntries(now: Date): Promise<DesiredEntry[]> {
-  if (!trustTunnelEnabled()) return [];
+  // On rollback, the next complete snapshot removes managed TrustTunnel logins.
+  // A DB failure throws and returns 503 so the agent keeps its last state.
+  if (!(await trustTunnelProviderIsActive())) return [];
   const rows = await prisma.trustTunnelAccess.findMany({
     where: { disabledAt: null }, select: { userId: true, generation: true },
     orderBy: { userId: "asc" }, take: TT_SYNC_MAX_USERS + 1,
@@ -77,10 +88,16 @@ export async function recordAck(ack: SyncAck, now: Date): Promise<boolean> {
   const match = Array.isArray(issued) ? issued.find((i) => i.serial === ack.serial && i.digest === ack.digest) : undefined;
   if (!match) return false;
   const prev = await readJson<AppliedRecord>(APPLIED_KEY);
-  if (prev && prev.ok && prev.serial > ack.serial) return false;
+  // ACKs may arrive late or out of order. Never let an older success (or
+  // failure) overwrite a newer observation, regardless of its success flag.
+  if (prev && prev.serial > ack.serial) return false;
   if (!ack.ok) {
-    // Keep the last successfully applied set; only note the failure.
-    await writeJson(APPLIED_KEY, { ...(prev ?? { serial: 0, keys: [] }), ok: false, at: now.getTime(), error: ack.error ?? "apply failed" });
+    // Retain the last known keys for diagnostics, but advance the observed
+    // serial and mark the state unconfirmed until a newer successful ACK.
+    await writeJson(APPLIED_KEY, {
+      serial: ack.serial, at: now.getTime(), keys: prev?.keys ?? [],
+      ok: false, error: ack.error ?? "apply failed",
+    });
     return true;
   }
   await writeJson(APPLIED_KEY, { serial: ack.serial, at: now.getTime(), keys: match.keys, ok: true, error: null });
@@ -95,7 +112,7 @@ export async function endpointStatusFor(settings: TrustTunnelServerSettings, acc
   if (!applied || !Array.isArray(applied.keys)) return { applied: false, lastSyncAt: null, agentError: false };
   const key = `${deriveUsername(settings.credKey, accountId)}:${generation}`;
   return {
-    applied: applied.keys.includes(key),
+    applied: applied.ok === true && applied.keys.includes(key),
     lastSyncAt: typeof applied.at === "number" ? applied.at : null,
     agentError: applied.ok === false,
   };
