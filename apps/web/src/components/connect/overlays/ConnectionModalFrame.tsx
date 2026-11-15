@@ -85,7 +85,11 @@ export default function ConnectionModalFrame({
   const styles = themeStyles[theme];
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+
+  // Keep the Escape handler current without mutating refs during render.
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
