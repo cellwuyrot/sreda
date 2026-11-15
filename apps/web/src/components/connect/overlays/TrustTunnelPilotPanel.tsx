@@ -27,6 +27,7 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
   const [otherVpnActive, setOtherVpnActive] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [launchError, setLaunchError] = useState("");
 
   const refreshAccess = useCallback(async () => {
     try {
@@ -52,8 +53,11 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
   const refreshEngine = useCallback(async () => {
     const engine = getTrustTunnelEngine();
     if (!engine) { setStatus(null); return; }
-    try { setStatus(await engine.status()); }
-    catch { setStatus({ state: "error", error: "Не удалось проверить состояние соединения" }); }
+    try {
+      const next = await engine.status();
+      setStatus(next);
+      if (next.state === "on") setLaunchError("");
+    } catch { setStatus({ state: "error", error: "Не удалось проверить состояние соединения" }); }
   }, []);
 
   const refreshOtherVpn = useCallback(async () => {
@@ -102,6 +106,7 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
     if (!currentEngine || busy || !access?.serviceEnabled || !access.available || !access.eligible || (access.enabled && !access.applied) || otherVpnActive !== false) return;
     setBusy(true);
     setMessage("");
+    setLaunchError("");
     try {
       const response = await fetch("/api/vpn/trusttunnel/config", {
         method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
@@ -119,9 +124,8 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
       // Connection data is handed directly to the native bridge and never rendered or stored in web UI.
       const next = await currentEngine.up(data.config);
       setStatus(next);
-      if (next.state === "error" && next.error) setMessage(next.error);
     } catch (error) {
-      setMessage(error instanceof Error && error.message !== "profile" && error.message !== "response"
+      setLaunchError(error instanceof Error && error.message !== "profile" && error.message !== "response"
         ? error.message : "Не удалось подготовить подключение. Проверьте доступ и состояние сервиса.");
     } finally { setBusy(false); }
   };
@@ -141,6 +145,7 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
     if (!currentEngine || busy) return;
     setBusy(true);
     setMessage("");
+    setLaunchError("");
     try {
       const next = await stopLocal(currentEngine);
       setStatus(next);
@@ -185,7 +190,9 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
 
   let stateText = "Проверяем состояние…";
   let stateTone: "success" | "accent" | "muted" | "warning" | "danger" = "muted";
-  if (active && !access?.selected) stateText = "Соединение ещё активно — отключите его";
+  if (status?.state === "on" && status.confirmed === true) { stateText = "Клиент подтвердил соединение"; stateTone = "success"; }
+  else if (status?.state === "on") { stateText = "Служба TrustTunnel запущена"; stateTone = "success"; }
+  else if (active && !access?.selected) stateText = "Соединение ещё активно — отключите его";
   else if (!access) stateText = "Не удалось проверить доступ";
   else if (!access.selected) stateText = "Эта технология сейчас не выбрана для проекта";
   else if (!access.serviceEnabled) stateText = "Сервис отключён администратором";
@@ -195,8 +202,6 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
   else if (engine && otherVpnActive === null) { stateText = "Не удалось проверить другое соединение"; stateTone = "warning"; }
   else if (status?.state === "connecting") { stateText = "Подключаемся…"; stateTone = "accent"; }
   else if (status?.state === "disconnecting") { stateText = "Отключаемся…"; stateTone = "accent"; }
-  else if (status?.state === "on" && status.confirmed === true) { stateText = "Клиент подтвердил соединение"; stateTone = "success"; }
-  else if (status?.state === "on") { stateText = "Служба запущена; прохождение трафика не подтверждено"; stateTone = "warning"; }
   else if (status?.state === "error") { stateText = "Не удалось подключиться"; stateTone = "danger"; }
   else if (access.agentError) { stateText = "Ошибка применения доступа"; stateTone = "danger"; }
   else if (waitingForApply) { stateText = "Ожидаем применение на сервере"; stateTone = "accent"; }
@@ -207,7 +212,7 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
   const statusDescription = status?.state === "on" && status.confirmed === true
     ? "Подключение подтверждено приложением. Доступность отдельных сайтов зависит от сети."
     : status?.state === "on"
-      ? "Приложение сообщает о работающем соединении; прохождение трафика отдельно не подтверждено."
+      ? "Служба работает. Прохождение трафика через VPN отдельно не проверено."
       : waitingForApply
         ? "Настройки применяются на сервере. Состояние будет проверено автоматически."
         : access?.selected && access.available && access.eligible && !access.enabled
@@ -227,6 +232,7 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
         </div>
       )}
       {status?.state === "error" && status.error && <p role="alert" className="mt-3 text-xs text-red-600 dark:text-red-300">{status.error}</p>}
+      {launchError && <p role="alert" className="mt-3 text-xs text-red-600 dark:text-red-300">{launchError}</p>}
       {message && <p role="alert" className="mt-4 rounded-xl bg-violet-500/10 px-3 py-2 text-xs leading-relaxed text-violet-700 dark:text-violet-200">{message}</p>}
       {access?.agentError && <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">Не удалось применить настройки на сервере. Подключение пока недоступно.</p>}
       {access?.available === false && access.selected && <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">Сервис временно недоступен. Повторите попытку позже.</p>}
