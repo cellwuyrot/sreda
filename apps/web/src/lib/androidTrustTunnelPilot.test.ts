@@ -16,6 +16,18 @@ describe('Android TrustTunnel pilot bridge', () => {
     port.onmessage!({ data: JSON.stringify({ id: sent.id, result: { state: 'on', error: null } }) });
     await expect(promise).resolves.toEqual({ state: 'on', error: null });
   });
+  it('preserves an explicit native confirmation flag', async () => {
+    const port = fake(); const bridge = getAndroidTrustTunnelPilot()!; const promise = bridge.status();
+    const sent = JSON.parse(port.postMessage.mock.calls[0][0] as string);
+    port.onmessage!({ data: JSON.stringify({ id: sent.id, result: { state: 'on', error: null, confirmed: true } }) });
+    await expect(promise).resolves.toEqual({ state: 'on', error: null, confirmed: true });
+  });
+  it('rejects a malformed optional confirmation flag', async () => {
+    const port = fake(); const promise = getAndroidTrustTunnelPilot()!.status();
+    const sent = JSON.parse(port.postMessage.mock.calls[0][0] as string);
+    port.onmessage!({ data: JSON.stringify({ id: sent.id, result: { state: 'on', error: null, confirmed: 'yes' } }) });
+    await expect(promise).rejects.toThrow('Некорректный ответ VPN');
+  });
   it('rejects invalid state and ignores responses with the wrong id', async () => {
     const port = fake(); const promise = getAndroidTrustTunnelPilot()!.status();
     const sent = JSON.parse(port.postMessage.mock.calls[0][0] as string);

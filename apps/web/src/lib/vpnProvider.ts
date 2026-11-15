@@ -60,9 +60,9 @@ export function trustTunnelReadiness(env: Record<string, string | undefined> = p
     {
       id: "credentials",
       label: "Индивидуальные учётные данные и отзыв",
-      status: "READY",
+      status: "INFO",
       blocking: false,
-      detail: "Ключи выводятся на сервере; агент получает зашифрованный снимок и подтверждает применение. Фактическая свежесть видна по ACK.",
+      detail: "Механизм индивидуальных ключей и отзыва реализован; фактическое применение конкретного снимка подтверждается ACK агента.",
     },
     {
       id: "endpoint-health",

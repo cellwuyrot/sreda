@@ -17,10 +17,16 @@ export function getAndroidTrustTunnelPilot() {
         pending.delete(data.id); clearTimeout(call.timer);
         if (typeof data.error === 'string') { call.reject(new Error(data.error)); return; }
         const result = data.result;
-        if (!result || !['off','connecting','on','disconnecting','error'].includes(result.state) || !(result.error === null || typeof result.error === 'string')) {
+        if (!result || !['off','connecting','on','disconnecting','error'].includes(result.state) ||
+            !(result.error === null || typeof result.error === 'string') ||
+            (result.confirmed !== undefined && typeof result.confirmed !== "boolean")) {
           call.reject(new Error('Некорректный ответ VPN')); return;
         }
-        call.resolve({ state: result.state, error: result.error, confirmed: result.confirmed === true });
+        call.resolve({
+          state: result.state,
+          error: result.error,
+          ...(typeof result.confirmed === "boolean" ? { confirmed: result.confirmed } : {}),
+        });
       } catch { /* Invalid response ignored; request will time out. */ }
     };
   }

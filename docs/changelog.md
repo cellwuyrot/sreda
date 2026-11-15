@@ -1,3 +1,14 @@
+
+## 2026-11-15 — TrustTunnel CI regression fixes
+
+- Corrected test fixtures for the global VPN provider preflight used by the
+  connection modal and Endpoint synchronization.
+- Added regressions proving global AmneziaWG selection and the common VPN
+  service switch both produce an empty TrustTunnel desired-state snapshot.
+- Kept unprobed TrustTunnel readiness checks informational and preserved
+  optional Android native `confirmed` responses for older bridge versions.
+- See `docs/CI-TRUSTTUNNEL-TEST-FIXES.md` for the CI diagnosis and validation.
+
 # Личная переписка — обновление 2026-10-27
 
 Новая шапка и меню «…», серверный поиск и переход к истории, материалы, реакции с хранением в БД, цитаты выделенного текста, настройки чтения/отправки, карточки файлов и редактирование добавленных изображений. Бизнес-чат не редизайнится. Ветки/опросы/планирование отложены.

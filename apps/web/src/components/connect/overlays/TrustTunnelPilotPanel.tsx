@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
-import { XIcon } from "@/components/ui/ConnectIcons";
 import { getVpnBridge } from "@/lib/vpnBridge";
 import { getTrustTunnelEngine, type TrustTunnelEngine } from "@/lib/trustTunnelClient";
+import ConnectionModalFrame from "./ConnectionModalFrame";
 
 type TunnelState = "off" | "connecting" | "on" | "disconnecting" | "error";
 type EngineStatus = { state: TunnelState; error: string | null; confirmed?: boolean };
@@ -20,48 +20,13 @@ type Access = {
   planLabel: string;
 };
 
-/** User-facing TrustTunnel control. Private profile text never enters the DOM. */
+/** User-facing control for the project-selected reliable connection. */
 export default function TrustTunnelPilotPanel({ onClose }: { onClose: () => void }) {
   const [access, setAccess] = useState<Access | null>(null);
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [otherVpnActive, setOtherVpnActive] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ));
-    focusable()[0]?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const items = focusable();
-      if (!items.length) { event.preventDefault(); return; }
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault(); last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault(); first.focus();
-      }
-    };
-    dialog.addEventListener("keydown", onKeyDown);
-    return () => {
-      dialog.removeEventListener("keydown", onKeyDown);
-      previous?.focus();
-    };
-  }, []);
 
   const refreshAccess = useCallback(async () => {
     try {
@@ -120,21 +85,23 @@ export default function TrustTunnelPilotPanel({ onClose }: { onClose: () => void
   const disconnectOtherVpn = async () => {
     const bridge = getVpnBridge();
     if (!bridge || busy) return;
-    setBusy(true); setMessage("");
+    setBusy(true);
+    setMessage("");
     try {
       const result = await bridge.down();
       if (result.state !== "off") throw new Error("other vpn");
       setOtherVpnActive(false);
       await refreshOtherVpn();
     } catch {
-      setMessage("Не удалось отключить другое соединение TrioZ. Отключите его в приложении и повторите попытку.");
+      setMessage("Не удалось отключить другое подключение. Отключите его в приложении и повторите попытку.");
     } finally { setBusy(false); }
   };
 
   const connect = async () => {
     const currentEngine = getTrustTunnelEngine();
     if (!currentEngine || busy || !access?.serviceEnabled || !access.available || !access.eligible || (access.enabled && !access.applied) || otherVpnActive) return;
-    setBusy(true); setMessage("");
+    setBusy(true);
+    setMessage("");
     try {
       const response = await fetch("/api/vpn/trusttunnel/config", {
         method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
@@ -145,11 +112,11 @@ export default function TrustTunnelPilotPanel({ onClose }: { onClose: () => void
       if (!data || typeof data !== "object" || !("applied" in data)) throw new Error("response");
       await refreshAccess();
       if (data.applied !== true) {
-        setMessage("Настраиваем доступ на сервере. Подключение станет доступно после подтверждения применения.");
+        setMessage("Настраиваем подключение на сервере. Оно станет доступно после подтверждения применения.");
         return;
       }
       if (!("config" in data) || typeof data.config !== "string") throw new Error("response");
-      // Profile is passed directly to the native bridge and is never displayed or persisted in web code.
+      // Connection data is handed directly to the native bridge and never rendered or stored in web UI.
       const next = await currentEngine.up(data.config);
       setStatus(next);
       if (next.state === "error" && next.error) setMessage(next.error);
@@ -162,126 +129,119 @@ export default function TrustTunnelPilotPanel({ onClose }: { onClose: () => void
   const disconnect = async () => {
     const currentEngine = getTrustTunnelEngine();
     if (!currentEngine || busy) return;
-    setBusy(true); setMessage("");
-    try {
-      setStatus(await currentEngine.down());
-    } catch {
-      setMessage("Не удалось отключить соединение. Попробуйте ещё раз.");
-    } finally { setBusy(false); }
+    setBusy(true);
+    setMessage("");
+    try { setStatus(await currentEngine.down()); }
+    catch { setMessage("Не удалось отключить соединение. Попробуйте ещё раз."); }
+    finally { setBusy(false); }
   };
 
   const toggle = () => active ? void disconnect() : void connect();
-  // An entitled user without a TrustTunnelAccess row must be able to make the
-  // first provisioning request; only subsequent connects wait for the Endpoint ACK.
+  // The first provisioning request is allowed before the Endpoint has created an access row.
   const powerReady = !!engine && !!access?.serviceEnabled && !!access.available && !!access.eligible && (!access.enabled || access.applied) && !waitingForApply && !otherVpnActive && !busy && !transitional;
 
   let stateText = "Проверяем состояние…";
-  let stateTone = "text-neutral-500 dark:text-white/55";
+  let stateTone: "success" | "accent" | "muted" | "warning" | "danger" = "muted";
   if (active && !access?.selected) stateText = "Соединение ещё активно — отключите его";
   else if (!access) stateText = "Не удалось проверить доступ";
   else if (!access.selected) stateText = "Эта технология сейчас не выбрана для проекта";
   else if (!access.serviceEnabled) stateText = "Сервис отключён администратором";
-  else if (!access.available) stateText = "Сервис временно недоступен";
+  else if (!access.available) { stateText = "Сервис временно недоступен"; stateTone = "warning"; }
   else if (!access.eligible) stateText = "Нет активного доступа";
-  else if (otherVpnActive) stateText = "Сначала отключите другое соединение TrioZ";
-  else if (status?.state === "connecting") { stateText = "Подключаемся…"; stateTone = "text-violet-600 dark:text-violet-300"; }
-  else if (status?.state === "disconnecting") { stateText = "Отключаемся…"; stateTone = "text-violet-600 dark:text-violet-300"; }
-  else if (status?.state === "on" && status.confirmed === true) { stateText = "Клиент подтвердил соединение"; stateTone = "text-emerald-600 dark:text-emerald-400"; }
-  else if (status?.state === "on") { stateText = "Служба запущена; прохождение трафика не подтверждено"; stateTone = "text-amber-600 dark:text-amber-300"; }
-  else if (status?.state === "error") { stateText = "Не удалось подключиться"; stateTone = "text-red-600 dark:text-red-400"; }
-  else if (access.agentError) { stateText = "Ошибка синхронизации сервера"; stateTone = "text-red-600 dark:text-red-400"; }
-  else if (waitingForApply) { stateText = "Ожидаем применение на сервере"; stateTone = "text-violet-600 dark:text-violet-300"; }
-  else if (access.enabled && access.applied) stateText = "Готово к подключению";
+  else if (otherVpnActive) stateText = "Сначала отключите другое подключение";
+  else if (status?.state === "connecting") { stateText = "Подключаемся…"; stateTone = "accent"; }
+  else if (status?.state === "disconnecting") { stateText = "Отключаемся…"; stateTone = "accent"; }
+  else if (status?.state === "on" && status.confirmed === true) { stateText = "Клиент подтвердил соединение"; stateTone = "success"; }
+  else if (status?.state === "on") { stateText = "Служба запущена; прохождение трафика не подтверждено"; stateTone = "warning"; }
+  else if (status?.state === "error") { stateText = "Не удалось подключиться"; stateTone = "danger"; }
+  else if (access.agentError) { stateText = "Ошибка применения доступа"; stateTone = "danger"; }
+  else if (waitingForApply) { stateText = "Ожидаем применение на сервере"; stateTone = "accent"; }
+  else if (access.enabled && access.applied) stateText = "Готово к включению";
   else if (!access.enabled) stateText = "Готово к первому подключению";
   else stateText = "Доступ готовится к подключению";
 
+  const statusDescription = status?.state === "on" && status.confirmed === true
+    ? "Подключение подтверждено приложением. Доступность отдельных сайтов зависит от сети."
+    : status?.state === "on"
+      ? "Приложение сообщает о работающем соединении; прохождение трафика отдельно не подтверждено."
+      : waitingForApply
+        ? "Настройки применяются на сервере. Состояние будет проверено автоматически."
+        : access?.selected && access.available && access.eligible && !access.enabled
+          ? "При первом включении подготовим подключение. Оно станет доступно после подтверждения сервера."
+          : "Нажмите круглую кнопку, чтобы включить или выключить соединение.";
+
+  const notice = (
+    <>
+      {otherVpnActive && (
+        <div className="mt-5 rounded-2xl border border-violet-300/70 bg-violet-50 p-3 dark:border-violet-400/20 dark:bg-violet-500/[0.08]">
+          <p className="text-sm font-medium">Уже активно другое подключение</p>
+          <p className="mt-1 text-xs text-neutral-600 dark:text-white/60">Одновременно можно использовать только одно защищённое подключение.</p>
+          <button type="button" disabled={busy} onClick={() => void disconnectOtherVpn()} className="mt-3 min-h-11 w-full rounded-xl border border-violet-300 px-4 text-sm font-semibold text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50 dark:border-violet-300/30 dark:text-violet-200 dark:hover:bg-violet-500/10">
+            Отключить другое соединение
+          </button>
+        </div>
+      )}
+      {message && <p role="alert" className="mt-4 rounded-xl bg-violet-500/10 px-3 py-2 text-xs leading-relaxed text-violet-700 dark:text-violet-200">{message}</p>}
+      {access?.agentError && <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">Не удалось применить настройки на сервере. Подключение пока недоступно.</p>}
+      {access?.available === false && access.selected && <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">Сервис временно недоступен. Повторите попытку позже.</p>}
+    </>
+  );
+
   return (
-    <div ref={dialogRef} className="relative overflow-hidden p-6 text-neutral-900 dark:text-white" role="dialog" aria-modal="true" aria-labelledby="trusttunnel-title" tabIndex={-1}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(139,92,246,.18),transparent_62%)]" />
-      <div className="relative">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-violet-600 dark:text-violet-300">TrioZ · защищённое подключение</p>
-            <h3 id="trusttunnel-title" className="mt-1 text-xl font-semibold">Надёжное соединение</h3>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-white/45">Единый способ подключения, выбранный проектом</p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-xl p-2 text-neutral-400 transition-colors hover:bg-violet-500/10 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:hover:text-white" aria-label="Закрыть">
-            <XIcon size={16} style={{ color: "inherit" }} />
-          </button>
-        </div>
-
-        <div className="mt-7 flex flex-col items-center">
-          <button
-            type="button"
-            onClick={toggle}
-            disabled={(!active && !powerReady) || busy || transitional}
-            aria-pressed={status?.state === "on"}
-            aria-label={active ? "Отключить надёжное соединение" : "Подключить надёжное соединение"}
-            className={`relative grid h-28 w-28 place-items-center rounded-full border outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-4 dark:focus-visible:ring-offset-[#111317] disabled:cursor-not-allowed disabled:opacity-50 ${
-              status?.state === "on" && status.confirmed === true
-                ? "border-emerald-400/50 bg-emerald-500 text-white shadow-[0_0_45px_rgba(34,197,94,.28)]"
-                : active ? "border-violet-400/60 bg-violet-500/15 text-violet-600 dark:text-violet-300"
-                  : "border-violet-300 bg-violet-50 text-violet-600 shadow-inner dark:border-violet-400/20 dark:bg-violet-500/[0.08] dark:text-violet-200"
-            }`}
-          >
-            <span className="absolute inset-2 rounded-full border border-current opacity-15" />
-            {transitional && <span className="absolute inset-0 animate-ping rounded-full border border-violet-400/50" />}
-            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M12 2v10" /><path d="M6.35 5.35a8 8 0 1 0 11.3 0" />
-            </svg>
-          </button>
-          <strong className={`mt-4 text-center text-sm ${stateTone}`} aria-live="polite">{stateText}</strong>
-          <span className="mt-1 max-w-xs text-center text-[11px] leading-relaxed text-neutral-400 dark:text-white/40">
-            {status?.state === "on" && status.confirmed === true
-              ? "Клиент подтвердил состояние подключённого туннеля. Это не гарантирует доступность каждого отдельного сайта."
-              : status?.state === "on"
-                ? "Windows сообщает о запущенной службе; отдельная проверка доступности туннеля пока не подключена."
-                : waitingForApply
-                  ? "Обычно применение занимает до двух минут. Не закрывайте окно для повторной проверки состояния."
-                  : access?.selected && access.available && access.eligible && !access.enabled
-                    ? "При первом нажатии подготовим доступ на сервере. Подключение станет доступно после подтверждения Endpoint."
-                    : "Нажмите кнопку, чтобы включить или выключить защищённое соединение."}
-          </span>
-        </div>
-
-        {otherVpnActive && (
-          <div className="mt-5 rounded-2xl border border-violet-300/70 bg-violet-50 p-3 dark:border-violet-400/20 dark:bg-violet-500/[0.08]">
-            <p className="text-sm font-medium">Уже активно другое соединение TrioZ</p>
-            <p className="mt-1 text-xs text-neutral-600 dark:text-white/60">Одновременно можно использовать только одну VPN-технологию TrioZ.</p>
-            <button type="button" disabled={busy} onClick={() => void disconnectOtherVpn()} className="mt-3 min-h-11 w-full rounded-xl border border-violet-300 px-4 text-sm font-semibold text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50 dark:border-violet-300/30 dark:text-violet-200 dark:hover:bg-violet-500/10">
-              Отключить другое соединение
-            </button>
-          </div>
-        )}
-
-        {message && <p role="alert" className="mt-4 rounded-xl bg-violet-500/10 px-3 py-2 text-xs leading-relaxed text-violet-700 dark:text-violet-200">{message}</p>}
-        {access?.agentError && <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">Сервер сообщил об ошибке применения доступа. Подключение пока недоступно.</p>}
-
-        <div className="mt-6 rounded-2xl border border-violet-200/80 bg-violet-50/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.035]">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-[9px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-white/35">Доступ</span>
-            <span className="text-[11px] text-neutral-400 dark:text-white/35">по данным аккаунта</span>
-          </div>
-          <strong className="mt-1 block text-sm">{access?.planLabel ?? "Проверяем тариф…"}</strong>
-          {!access?.eligible && access?.selected && access.available && (
-            <div className="mt-3 space-y-3">
-              <p className="text-xs text-neutral-600 dark:text-white/60">Для подключения нужна активная подписка «Надёжное соединение» или Premium.</p>
-              <BusinessSubscriptionActions kind="VPN" />
-              <BusinessSubscriptionActions kind="PREMIUM" />
-            </div>
-          )}
-          {access?.eligible && !engine && (
-            <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-200">На этом устройстве нет встроенного клиента TrustTunnel. Обновите приложение TrioZ до версии с поддержкой надёжного соединения.</p>
-          )}
-          {access?.available === false && access.selected && (
-            <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-200">Серверная часть сейчас недоступна. Повторите попытку позже или обратитесь к администратору проекта.</p>
-          )}
-        </div>
-
-        <button type="button" onClick={onClose} className="mt-5 min-h-11 w-full rounded-xl border border-neutral-200 px-4 text-sm font-medium text-neutral-600 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:border-white/10 dark:text-white/65 dark:hover:bg-white/5">
-          Закрыть
-        </button>
+    <ConnectionModalFrame
+      theme="reliable"
+      eyebrow="TZ Premium · Надёжное соединение"
+      title="Надёжное соединение"
+      subtitle="Одно соединение для Premium и «Ускоренного интернета»"
+      onClose={onClose}
+      power={{
+        onClick: toggle,
+        disabled: (!active && !powerReady) || busy || transitional,
+        pressed: status?.state === "on",
+        transitional,
+        label: active ? "Отключить надёжное соединение" : "Подключить надёжное соединение",
+        hint: powerReady ? "Подключить надёжное соединение" : stateText,
+      }}
+      status={{ title: stateText, description: statusDescription, tone: stateTone }}
+      plan={{
+        label: access?.planLabel ?? "Проверяем тариф…",
+        periodLabel: access ? "по данным аккаунта" : "—",
+        note: access?.eligible
+          ? "Надёжное соединение доступно по вашему тарифу."
+          : "Для подключения нужна активная подписка «Надёжное соединение» или Premium.",
+      }}
+      notice={notice}
+    >
+      <div className="mt-5 rounded-2xl border border-violet-200/80 bg-violet-50/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.035]">
+        <p className="text-xs font-medium text-neutral-800 dark:text-white/80">Подключение</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
+          Параметры подключения задаются проектом и применяются автоматически. Выбирать сервер или режим вручную не требуется.
+        </p>
       </div>
-    </div>
+
+      {!access?.eligible && access?.selected && access.available && (
+        <div className="mt-5 rounded-2xl border border-violet-200/80 bg-violet-50/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.035]">
+          <p className="text-xs font-medium text-neutral-800 dark:text-white/80">Доступ к соединению</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">Подключение появится после активации подписки.</p>
+          <div className="mt-3 space-y-3">
+            <BusinessSubscriptionActions kind="VPN" />
+            <BusinessSubscriptionActions kind="PREMIUM" />
+          </div>
+        </div>
+      )}
+
+      {access?.eligible && !engine && (
+        <p className="mt-4 rounded-xl bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-200">
+          Для этого устройства требуется обновление приложения.
+        </p>
+      )}
+
+      <div className="mt-5 rounded-2xl border border-violet-200/80 bg-violet-50/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.035]">
+        <p className="text-xs font-medium text-neutral-800 dark:text-white/80">Управление подключением</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
+          Соединение включается прямо в приложении. Профиль скачивать или импортировать не нужно.
+        </p>
+      </div>
+    </ConnectionModalFrame>
   );
 }

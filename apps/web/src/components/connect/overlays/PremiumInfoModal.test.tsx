@@ -11,6 +11,10 @@ import {
 /* Проверяем именно круглый выключатель: он получает расход из общего GET
    независимо от того, пришёл доступ через Premium или отдельный тариф. */
 const desktopApi = vi.hoisted(() => ({ get: vi.fn<() => unknown>(() => null) }));
+// The modal now asks the server which VPN technology is globally active before
+// it requests AmneziaWG state. Keep that control-plane response independent of
+// the per-test /api/vpn/me mock so these tests continue to exercise the same UI.
+const vpnApiFetch = vi.hoisted(() => vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>());
 vi.mock("@/lib/desktop", () => ({
   isDesktop: () => false,
   getDesktopApi: desktopApi.get,
@@ -58,7 +62,21 @@ function vpnState(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   desktopApi.get.mockReturnValue(null);
-  vi.stubGlobal("fetch", vi.fn());
+  vpnApiFetch.mockReset();
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/vpn/trusttunnel") {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          activeProvider: "AMNEZIAWG",
+          selected: false,
+          serviceEnabled: true,
+          available: false,
+        }),
+      } as Response);
+    }
+    return vpnApiFetch(input, init);
+  }));
 });
 
 afterEach(() => {
@@ -70,7 +88,7 @@ afterEach(() => {
 
 describe("PremiumInfoModal: без отображения учёта трафика", () => {
   it("не показывает данные трафика, даже если сервер их прислал", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+    vpnApiFetch.mockResolvedValue({
       ok: true,
       json: async () => vpnState(),
     } as Response);
@@ -117,7 +135,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
       uri: "vpn://TEST_PROFILE",
       wireGuardConfig: "READY-CONFIG",
     });
-    vi.mocked(fetch)
+    vpnApiFetch
       .mockResolvedValueOnce({
         ok: true,
         json: async () => vpnState({ peer }),
@@ -138,7 +156,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
         screen.getByRole("button", { name: "Показать QR-код" }),
       ).toBeTruthy(),
     );
-    const post = vi.mocked(fetch).mock.calls[1];
+    const post = vpnApiFetch.mock.calls[1];
     expect(post[0]).toBe("/api/vpn/me");
     const body = JSON.parse((post[1] as RequestInit).body as string);
     expect(body).toEqual({
@@ -161,7 +179,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
   });
 
   it("не показывает сообщение об отсутствии отчёта узла", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+    vpnApiFetch.mockResolvedValue({
       ok: true,
       json: async () =>
         vpnState({ traffic: { usedBytes: 0, limitGb: 250, measuredAt: null } }),
@@ -184,7 +202,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
   });
 
   it("сохраняет проверку общего состояния при временном сбое", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
+    vpnApiFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => vpnState(),
     } as Response);
@@ -196,7 +214,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
         }),
       ).toBeTruthy(),
     );
-    vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+    vpnApiFetch.mockRejectedValue(new Error("offline"));
     fireEvent.focus(window);
     await waitFor(() =>
       expect(
@@ -213,7 +231,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
     const visibility = vi
       .spyOn(document, "visibilityState", "get")
       .mockReturnValue("visible");
-    vi.mocked(fetch).mockResolvedValue({
+    vpnApiFetch.mockResolvedValue({
       ok: true,
       json: async () => vpnState(),
     } as Response);
@@ -221,24 +239,24 @@ describe("PremiumInfoModal: без отображения учёта трафи�
     await act(async () => {
       await Promise.resolve();
     });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vpnApiFetch).toHaveBeenCalledTimes(1);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(vpnApiFetch).toHaveBeenCalledTimes(2);
     visibility.mockReturnValue("hidden");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(vpnApiFetch).toHaveBeenCalledTimes(2);
     visibility.mockReturnValue("visible");
     await act(async () => {
       fireEvent(document, new Event("visibilitychange"));
     });
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(vpnApiFetch).toHaveBeenCalledTimes(3);
     view.unmount();
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(vpnApiFetch).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -257,7 +275,7 @@ function mockProfileExport(peer: ReturnType<typeof exportPeer> | null = null, fa
   vi.mocked(deviceKeyPair).mockReturnValue({ privateKey: "private-local-only", publicKey: "public-key" });
   vi.mocked(buildWireGuardConfig).mockReturnValue("SELECTED-CONFIG");
   vi.mocked(buildAmneziaVpnProfile).mockResolvedValue({ uri: "vpn://SELECTED", wireGuardConfig: "SELECTED-CONFIG" });
-  vi.mocked(fetch).mockImplementation(async (_url, options) => {
+  vpnApiFetch.mockImplementation(async (_url, options) => {
     if (options?.method === "POST") {
       const body = JSON.parse(options.body as string);
       if (fail) return { ok: false, json: async () => ({ error: "Выбранный сервер недоступен" }) } as Response;
@@ -274,12 +292,12 @@ describe("Выбор сервера в браузере", () => {
     await screen.findByRole("button", { name: /Сервер Франкфурт/ });
     const create = screen.getByRole("button", { name: "Скачать профиль для AmneziaVPN" });
     expect((create as HTMLButtonElement).disabled).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vpnApiFetch).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: /Сервер Франкфурт/ }));
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vpnApiFetch).toHaveBeenCalledTimes(1);
     fireEvent.click(create);
     await screen.findByRole("button", { name: "Показать QR-код" });
-    const posts = vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === "POST");
+    const posts = vpnApiFetch.mock.calls.filter(([, options]) => options?.method === "POST");
     expect(posts).toHaveLength(1);
     expect(JSON.parse(posts[0][1]?.body as string)).toEqual({ publicKey: "public-key", routing: "ALL", nodeId: "node-2" });
     expect(buildWireGuardConfig).toHaveBeenLastCalledWith(expect.objectContaining({ endpoint: "node-2.example:51820", privateKey: "private-local-only" }));
@@ -313,7 +331,7 @@ describe("Выбор сервера в браузере", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Сервер Франкфурт/ }));
     fireEvent.click(screen.getByRole("button", { name: "Скачать профиль для AmneziaVPN" }));
     await screen.findByText("Выбранный сервер недоступен");
-    expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+    expect(vpnApiFetch.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Скачать профиль" })).toBeNull();
     expect(screen.getByRole("button", { name: /Сервер Франкфурт/ }).getAttribute("aria-pressed")).toBe("true");
   });
@@ -325,7 +343,7 @@ describe("Выбор сервера: обновление состояния", (
     render(<PremiumInfoModal isPremium onClose={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /Сервер Франкфурт/ }));
     fireEvent.focus(window);
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(vpnApiFetch).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("button", { name: /Сервер Франкфурт/ }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Скачать профиль для AmneziaVPN" }));
     await screen.findByRole("button", { name: "Показать QR-код" });
@@ -336,12 +354,12 @@ describe("Выбор сервера: обновление состояния", (
     mockProfileExport();
     render(<PremiumInfoModal isPremium onClose={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /Сервер Франкфурт/ }));
-    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => vpnState({ servers: [selectableServers[0]] }) } as Response);
+    vpnApiFetch.mockResolvedValue({ ok: true, json: async () => vpnState({ servers: [selectableServers[0]] }) } as Response);
     fireEvent.click(screen.getByRole("button", { name: "Обновить список серверов" }));
     await screen.findByText("Выбранный сервер недоступен. Обновите список или выберите другой.");
     expect((screen.getByRole("button", { name: "Скачать профиль для AmneziaVPN" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("button", { name: /Сервер Москва/ }).getAttribute("aria-pressed")).toBe("false");
-    expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(0);
+    expect(vpnApiFetch.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(0);
   });
 
   it("обычный подписчик соединения тоже видит выбор сервера, без Premium", async () => {
@@ -352,7 +370,7 @@ describe("Выбор сервера: обновление состояния", (
   });
 
   it("при отсутствии серверов предлагает обновить список, не выдаёт профиль", async () => {
-    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => vpnState({ nodeReady: false }) } as Response);
+    vpnApiFetch.mockResolvedValue({ ok: true, json: async () => vpnState({ nodeReady: false }) } as Response);
     render(<PremiumInfoModal isPremium onClose={vi.fn()} />);
     expect(await screen.findByText("Сейчас нет доступных серверов.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Обновить список серверов" })).toBeTruthy();
@@ -366,15 +384,52 @@ it("сохраняет переподключение приложения на 
   desktopApi.get.mockReturnValue({ vpn: {
     status: async () => ({ state: "on" }), onState: () => () => {}, up,
   } });
-  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
-  vi.mocked(fetch).mockImplementation(async (url, options) => {
+  const originalFetch = vpnApiFetch.getMockImplementation()!;
+  vpnApiFetch.mockImplementation(async (url, options) => {
     if (options?.method === "PATCH") return { ok: true, json: async () => ({ ok: true, peer: exportPeer("node-2") }) } as Response;
     return originalFetch(url, options);
   });
   render(<PremiumInfoModal isPremium onClose={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: /Сервер Франкфурт/ }));
   await waitFor(() => expect(up).toHaveBeenCalledWith("SELECTED-CONFIG"));
-  const mutations = vi.mocked(fetch).mock.calls.filter(([, opts]) => opts?.method);
+  const mutations = vpnApiFetch.mock.calls.filter(([, opts]) => opts?.method);
   expect(mutations.map(([, opts]) => opts?.method)).toEqual(["PATCH", "POST"]);
   expect(JSON.parse(mutations[1][1]?.body as string).nodeId).toBe("node-2");
+});
+
+it("uses the shared fixed-size connection window frame for AmneziaWG", async () => {
+  mockProfileExport();
+  render(<PremiumInfoModal isPremium onClose={vi.fn()} />);
+  const dialog = await screen.findByRole("dialog", { name: "Защищённое соединение" });
+  expect(dialog.className).toContain("h-full min-h-full");
+  expect(dialog.className).toContain("p-6");
+  const modalCard = dialog.parentElement;
+  expect(modalCard?.className).toContain("h-[88vh]");
+  expect(modalCard?.className).toContain("max-h-[968px]");
+  expect(modalCard?.className).toContain("max-w-md");
+  expect(screen.getByRole("button", { name: /Включить защищённое соединение$/i }).className).toContain("h-28 w-28");
+});
+
+it("uses the same fixed-size connection window frame for the reliable provider", async () => {
+  const trustAccess = {
+    activeProvider: "TRUSTTUNNEL",
+    selected: true,
+    serviceEnabled: true,
+    available: true,
+    eligible: true,
+    enabled: true,
+    applied: true,
+    planLabel: "Premium",
+  };
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => trustAccess }) as Response));
+  render(<PremiumInfoModal isPremium onClose={vi.fn()} />);
+  const dialog = await screen.findByRole("dialog", { name: "Надёжное соединение" });
+  expect(dialog.className).toContain("h-full min-h-full");
+  expect(dialog.className).toContain("p-6");
+  const modalCard = dialog.parentElement;
+  expect(modalCard?.className).toContain("h-[88vh]");
+  expect(modalCard?.className).toContain("max-h-[968px]");
+  expect(modalCard?.className).toContain("max-w-md");
+  expect(screen.getByRole("button", { name: "Подключить надёжное соединение" }).className).toContain("h-28 w-28");
+  expect(dialog.textContent).not.toMatch(/TrustTunnel|TrioZ|HTTP\/2|gateway|endpoint|AmneziaVPN/i);
 });
