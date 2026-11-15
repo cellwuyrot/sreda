@@ -90,7 +90,10 @@ android {
     namespace = "ru.trioz.connect"
     compileSdk = 36
 
+    // TrustTunnel native engine/bridge are included in both debug and release.
+    // The bundled AAR contains arm64-v8a only, so the same ABI limit applies to all variants.
     sourceSets["debug"].java.srcDir("src/trustTunnelPilot/java")
+    sourceSets["release"].java.srcDir("src/trustTunnelPilot/java")
     sourceSets["testDebug"].java.srcDir("src/testTrustTunnelPilot/java")
     sourceSets["main"].res.srcDir(generatedIconRes)
     sourceSets["main"].manifest.srcFile(layout.buildDirectory.file("generated/vpn-policy/AndroidManifest.xml"))
@@ -144,8 +147,11 @@ android {
         applicationId = "ru.trioz.connect"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.4.0"
+        versionCode = 4
+        versionName = "0.5.0"
+
+        // TrustTunnel SDK in libs/trusttunnel-test.aar ships arm64-v8a only.
+        ndk { abiFilters += "arm64-v8a" }
 
         // The web origin the WebView loads. Override per build type / flavour
         // here without touching the Kotlin source (consumed by Config.kt).
@@ -167,8 +173,6 @@ android {
         debug {
             // Handy for pointing the debug build at a local dev server:
             // buildConfigField("String", "APP_URL", "\"http://10.0.2.2:3005\"")
-            // The pilot AAR currently contains only arm64-v8a. Do not ship a broken x86/armv7 APK.
-            ndk { abiFilters += "arm64-v8a" }
             applicationIdSuffix = ".debug"
             if (previewAppUrl != null) buildConfigField("String", "APP_URL", JsonOutput.toJson(previewAppUrl))
         }
@@ -194,12 +198,13 @@ android {
 tasks.named("preBuild") { dependsOn(syncLauncherIcon) }
 
 dependencies {
-    debugImplementation(files("libs/trusttunnel-test.aar"))
-    debugImplementation("org.slf4j:slf4j-api:1.7.25")
-    debugImplementation("com.github.tony19:logback-android:2.0.0")
-    debugImplementation("io.reactivex.rxjava3:rxandroid:3.0.0")
-    debugImplementation("com.akuleshov7:ktoml-core:0.7.0")
-    // Native migration work is isolated in the debug source set.
+    // TrustTunnel SDK/service are part of both debug and production release.
+    implementation(files("libs/trusttunnel-test.aar"))
+    implementation("org.slf4j:slf4j-api:1.7.25")
+    implementation("com.github.tony19:logback-android:2.0.0")
+    implementation("io.reactivex.rxjava3:rxandroid:3.0.0")
+    implementation("com.akuleshov7:ktoml-core:0.7.0")
+    // Debug-only native preview UI remains isolated from production.
     debugImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
     debugImplementation("androidx.compose.material3:material3")
     debugImplementation("androidx.activity:activity-compose:1.10.1")

@@ -101,6 +101,16 @@
             <meta-data android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON" android:value="false" />
         </service>
 
+        <!-- TrustTunnel native VPN engine, enabled in debug and production release. -->
+        <service android:name=".TrustTunnelPilotService" android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <intent-filter><action android:name="android.net.VpnService" /></intent-filter>
+            <meta-data android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON" android:value="false" />
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User initiated encrypted TrustTunnel VPN connection" />
+        </service>
+
         <activity
             android:name=".IncomingCallActivity"
             android:exported="false"

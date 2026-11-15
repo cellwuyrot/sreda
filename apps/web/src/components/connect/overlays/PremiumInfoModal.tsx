@@ -1,5 +1,6 @@
 "use client";
 import TrustTunnelPilotPanel from "./TrustTunnelPilotPanel";
+import { getTrustTunnelEngine } from "@/lib/trustTunnelClient";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
@@ -1079,13 +1080,42 @@ export default function PremiumInfoModal({
      Право на туннель считает сервер (Premium или подписка VPN, lib/vpn.ts)
      и возвращает его в поле entitled. Сессия о подписке VPN не знает ничего,
      поэтому спрашиваем сервер напрямую. При Premium запрос не нужен. */
+  const [activeProvider, setActiveProvider] = useState<"AMNEZIAWG" | "TRUSTTUNNEL" | null>(null);
+  const [providerCheckFailed, setProviderCheckFailed] = useState(false);
+  const [trustTunnelSession, setTrustTunnelSession] = useState(false);
   const [vpnEntitled, setVpnEntitled] = useState<boolean | null>(
     isPremium ? true : null,
   );
   const [accessCheckFailed, setAccessCheckFailed] = useState(false);
 
   useEffect(() => {
-    if (isPremium) return;
+    let alive = true;
+    fetch("/api/vpn/trusttunnel", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("provider");
+        return response.json();
+      })
+      .then((data) => {
+        if (!alive) return;
+        if (data?.activeProvider === "AMNEZIAWG" || data?.activeProvider === "TRUSTTUNNEL") {
+          setActiveProvider(data.activeProvider);
+          setProviderCheckFailed(false);
+          // A rollback revokes managed credentials on the next Endpoint sync;
+          // retain a disconnect control while a local TT session is still shutting down.
+          const engine = getTrustTunnelEngine();
+          if (engine) {
+            void engine.status().then((status) => {
+              if (alive) setTrustTunnelSession(["on", "connecting", "disconnecting"].includes(status.state));
+            }).catch(() => { if (alive) setTrustTunnelSession(false); });
+          }
+        } else throw new Error("provider");
+      })
+      .catch(() => { if (alive) setProviderCheckFailed(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (isPremium || activeProvider !== "AMNEZIAWG") return;
     let alive = true;
     fetch("/api/vpn/me")
       .then(async (r) => {
@@ -1108,20 +1138,26 @@ export default function PremiumInfoModal({
     return () => {
       alive = false;
     };
-  }, [isPremium]);
+  }, [isPremium, activeProvider]);
 
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       onClick={onClose}
+      role="presentation"
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div
         className="relative z-10 w-full max-w-md max-h-[88vh] overflow-y-auto rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]"
         onClick={(e) => e.stopPropagation()}
       >
-        <TrustTunnelPilotPanel />
-        {vpnEntitled === null ? (
+        {activeProvider === null ? (
+          <div className="grid h-56 place-items-center px-6 text-center text-sm text-neutral-400 dark:text-white/40">
+            {providerCheckFailed ? "Не удалось определить активную технологию. Повторите попытку позже." : "Проверяем тип соединения…"}
+          </div>
+        ) : activeProvider === "TRUSTTUNNEL" || trustTunnelSession ? (
+          <TrustTunnelPilotPanel onClose={onClose} />
+        ) : vpnEntitled === null ? (
           /* Короткая пауза вместо мигания витриной: показать подписчику
               «купите Premium» и тут же заменить на тумблер хуже, чем подождать мгновение. */
           <div className="grid h-56 place-items-center px-6 text-center text-sm text-neutral-400 dark:text-white/40">

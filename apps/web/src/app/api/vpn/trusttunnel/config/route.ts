@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isRateLimited } from "@/lib/rateLimit";
 import { buildSubscriberConfig, loadTrustTunnelSettings } from "@/lib/trustTunnelAccess";
-import { ENTITLEMENT_SELECT, endpointStatusFor, isEntitled, trustTunnelEnabled } from "@/lib/trustTunnelSync";
+import { ENTITLEMENT_SELECT, endpointStatusFor, isEntitled, trustTunnelProviderIsActive } from "@/lib/trustTunnelSync";
 import type { TrustTunnelSubscriberAccount } from "@/lib/trustTunnelSubscriberPolicy";
 
 const NO_STORE = { "Cache-Control": "no-store, private", "Pragma": "no-cache" };
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   const id = session?.user?.id;
   if (!id) return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: NO_STORE });
   try {
-    if (!trustTunnelEnabled()) return NextResponse.json({ error: "unavailable" }, { status: 503, headers: NO_STORE });
+    if (!(await trustTunnelProviderIsActive())) return NextResponse.json({ error: "unavailable" }, { status: 503, headers: NO_STORE });
     if (await isRateLimited("trusttunnel-issue", id, { limit: 20, windowMs: 60 * 60 * 1000 }))
       return NextResponse.json({ error: "rate_limited" }, { status: 429, headers: NO_STORE });
     let rotate = false;
@@ -63,11 +63,16 @@ export async function POST(req: Request) {
       update: { disabledAt: null, lastIssuedAt: now, ...(rotate ? { generation: { increment: 1 } } : {}) },
       select: { generation: true },
     });
-    const config = buildSubscriberConfig(settings, id, access.generation);
     const endpoint = await endpointStatusFor(settings, id, access.generation);
     await auditLog(id, session.user.username || session.user.name || "user",
       rotate ? "vpn.trusttunnel.profile.rotated" : "vpn.trusttunnel.profile.issued");
-    return NextResponse.json({ config, applied: endpoint.applied }, { headers: NO_STORE });
+    // Do not deliver a new private profile until the Endpoint has ACKed the
+    // matching credential generation. This also prevents stale-ACK races after
+    // a global provider switch.
+    return NextResponse.json({
+      ...(endpoint.applied ? { config: buildSubscriberConfig(settings, id, access.generation) } : {}),
+      applied: endpoint.applied,
+    }, { headers: NO_STORE });
   } catch {
     return NextResponse.json({ error: "unavailable" }, { status: 503, headers: NO_STORE });
   }

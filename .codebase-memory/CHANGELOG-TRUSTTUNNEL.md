@@ -77,3 +77,32 @@
 - По результатам первой проверки на чистом ПК проверка обнаружения процесса могла находить собственный PowerShell: путь `trioz.conf` присутствует в командной строке самой проверки. Поэтому она могла блокировать TrustTunnel сообщением об обычном VPN, даже если он не запущен.
 - `apps/desktop/src/main/winTunnel.ts`: фильтр исключает PID самой проверки, сохраняя поиск других процессов по точному пути профиля, а также проверку службы и адаптера. Добавлен регрессионный тест.
 - Локально пройдены 22 теста desktop, проверка типов desktop в изолированной среде и имитация фильтра PowerShell (свой процесс исключён, другой обнаружен). Настоящая Windows и сквозное подключение после исправления не проверены; требуется сборка и тест владельца. Кодовый граф не переиндексирован.
+
+
+## Текущий этап: глобальный provider switch и Android release source
+
+- По подтверждению владельца считать технологические/межсерверные проверки пройденными владельцем. Сами серверы/сеть в ходе этого обновления не опрашивались.
+- `apps/web/src/lib/vpnProvider.ts`: TrustTunnel readiness теперь блокирует переключение только при выключенном feature flag/некорректном серверном конфиге; непроверенные live health, клиентские сборки и traffic accounting остаются явно не блокирующими информационными пунктами.
+- `apps/web/src/app/api/admin/vpn/provider/route.ts` и `/admin/vpn`: global switch только ADMIN проекта; same-origin, confirmed + impactConfirmed, CAS и audit; диалог раскрывает последствия для активных сессий.
+- `apps/web/src/lib/trustTunnelSync.ts`, TrustTunnel config/status routes: глобальный activeProvider учитывается и при выдаче профиля, и при формировании полного endpoint snapshot. При AmneziaWG snapshot содержит пустой managed set; DB failure возвращает ошибку, не empty revoke. AmneziaWG-выдача уже учитывала глобальный provider.
+- `TrustTunnelPilotPanel.tsx` и `PremiumInfoModal.tsx`: пользовательское фиолетовое окно, тариф/доступ из API, ACK перед выдачей, no profile display/download, различение SDK-connected и просто Windows service running, конфликт с другим VPN, focus/Escape/Tab management.
+- Android Gradle: native engine AAR/dependencies и `TrustTunnelPilotService` включены в release; release bridge реализован, service объявлен в основном manifest; все variants arm64-only из-за состава AAR. Версия исходника 0.5.0 / code 4 (проверить Play Console до публикации). APK/AAB не собраны без Android SDK и signing keystore.
+- Добавлены/обновлены web tests: VPN provider readiness, provider API switching, trusttunnel subscriber config gate, status route, sync gating, user panel states. Полный Vitest прогон зависит от установленных npm зависимостей.
+- Обновлены `docs/TRUSTTUNNEL-1.2-DEPLOY.md`, `docs/TRUSTTUNNEL-STAGE7-PROVIDER-CONTROL.md`, `docs/android-release.md`, `README-TRUSTTUNNEL-CHECKPOINT.md`. Пилотные WIP-файлы оставлены как история.
+- Discord и высокий пинг не исправлены/не диагностированы: отсутствуют коррелированные HTTP/2 traces и количественные RTT/loss/jitter/UDP-voice measurements. HTTP 400 не привязан доказательно к запросу пользователя.
+- Пользовательский `apps/desktop/build/Makefile` сохранён. Graph `graph.db.zst` не переиндексирован; выполнить reindex после коммита в настоящем Git-репозитории.
+
+
+## 2026-11-15 — глобальный запуск и Android release integration
+
+- Снят пилотный blocker переключения: TrustTunnel допускается как глобальный провайдер после включения флага и строгой проверки обязательных секретов/адресов. Статусы endpoint, agent ACK, Android/Windows build и traffic accounting явно помечены как диагностические сведения/ограничения, а не живой health-check.
+- Global provider switch остаётся доступен только проектному ADMIN, same-origin, с optimistic compare-and-set, serializable transaction, обязательным подтверждением влияния и аудитом. При реальном переключении атомарно увеличивается generation активных TrustTunnelAccess и сбрасывается lastIssuedAt, чтобы старый endpoint ACK не подтверждал прежние credentials.
+- Оба data-plane пути соблюдают глобальный выбор: выдача TrustTunnel и endpoint desired-state snapshot доступны только при активном TrustTunnel; AmneziaWG выдача и списки пиров пусты при выбранном TrustTunnel. Ошибка БД не превращается в пустое состояние для endpoint pull.
+- TrustTunnel Android bridge/service/manifest/AAR подключены к release; версия исходников 0.5.0 (versionCode 4), native arm64 only. Никакой APK/AAB не собран в этой среде; нужен Android SDK и действующий ключ.
+- TrustTunnel UI заменён пользовательской фиолетовой панелью; нет скачивания/вывода профиля, доступы отображаются из серверного ответа, окно управляет фокусом и Escape, на Windows служба не трактуется как подтверждение прохождения трафика.
+- Переключение между технологиями прерывает текущие сессии на следующем снимке данных: AWG узел получает пустые пиры (в норме следующий опрос примерно за 5 секунд), Endpoint получает пустой TrustTunnel snapshot на rollback; оба перехода не бесшовные. Указано в предупреждениях/доках.
+- Причина Discord/высокого пинга не установлена; HTTP 400 поток не коррелирован с Windows запросом, UDP/RTT/jitter/loss нет количественных замеров.
+- Автоматическая переиндексация `graph.db.zst` не выполнена; граф требует reindex в рабочем репозитории после коммита.
+
+- Дополнительно сохранена семантика существующего общего выключателя `VpnSettings.enabled`: при выключении TrustTunnel endpoint получает пустой managed snapshot, API не выдаёт профиль, UI явно показывает остановку и предупреждает об обрыве сессий.
+- ACK Endpoint сделан монотонным по serial даже после неуспешного apply; запоздавший успешный ACK старого снимка не сможет перезаписать более новое состояние ошибки.
