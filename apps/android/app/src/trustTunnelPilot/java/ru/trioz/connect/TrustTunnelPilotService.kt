@@ -93,6 +93,8 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
                     require(parts.size == 2)
                     builder.addRoute(parts[0], parts[1].toInt())
                 }
+                // A missing selected package or empty allow-list aborts before creating a VPN.
+                TrustTunnelRoutingSettings.apply(this, builder)
                 verifier = CertificateVerificator()
                 val tunFd = checkNotNull(builder.establish())
                 try {

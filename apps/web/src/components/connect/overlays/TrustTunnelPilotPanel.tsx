@@ -28,6 +28,7 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [launchError, setLaunchError] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const refreshAccess = useCallback(async () => {
     try {
@@ -270,6 +271,22 @@ export default function TrustTunnelPilotPanel({ onClose, selector }: { onClose: 
         <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-white/40">
           Параметры подключения задаются проектом и применяются автоматически. Выбирать сервер или режим вручную не требуется.
         </p>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-violet-200/80 bg-violet-50/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.035]">
+        <button type="button" aria-expanded={showAdvanced} onClick={() => setShowAdvanced(value => !value)} className="min-h-11 w-full rounded-xl border border-violet-500 px-3 text-sm font-medium text-violet-700 focus-visible:ring-2 focus-visible:ring-violet-500 dark:text-violet-300">
+          Расширенные настройки
+        </button>
+        {showAdvanced && <div className="mt-3 text-xs leading-relaxed text-neutral-600 dark:text-white/70">
+          <p>Выбор приложений относится только к TrustTunnel. Приложения вне VPN используют обычное соединение без его защиты.</p>
+          {engine?.advancedSettings ? <>
+            <p className="mt-2">Настройки хранятся на устройстве и применяются при следующем подключении. Сначала отключите TrustTunnel.</p>
+            <button type="button" disabled={busy || active || status === null} onClick={async () => {
+              try { await engine.advancedSettings?.(); }
+              catch { setMessage("Не удалось открыть настройки. Убедитесь, что установлена последняя версия Android-приложения и VPN отключён."); }
+            }} className="mt-3 min-h-11 w-full rounded-xl border border-blue-500 px-3 font-medium text-blue-700 disabled:opacity-50 dark:text-blue-300">Выбрать приложения на Android</button>
+          </> : <p className="mt-2">Выбор приложений доступен только в поддерживаемой версии Android-приложения. В текущем клиенте Windows он пока не поддерживается; настройки VPN не изменены.</p>}
+        </div>}
       </div>
 
       {!access?.eligible && access?.selected && access.available && (
