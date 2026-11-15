@@ -65,8 +65,32 @@ describe('TrustTunnel subscriber panel', () => {
   it('does not describe a Windows SCM service as a confirmed tunnel', async () => {
     controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: false });
     responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
-    expect(await screen.findByText(/Служба запущена; прохождение трафика не подтверждено/)).toBeTruthy();
+    expect(await screen.findByText('Служба TrustTunnel запущена')).toBeTruthy();
+    expect(screen.getByText(/Прохождение трафика через VPN отдельно не проверено/)).toBeTruthy();
+    const power = screen.getByRole('button', { name: 'Отключить надёжное соединение' });
+    expect(power.getAttribute('aria-pressed')).toBe('true');
+    expect(power.className).toContain('bg-emerald-500');
   });
+
+
+  it('shows a running service even if the access API is unavailable', async () => {
+    controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: false });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    expect(await screen.findByText('Служба TrustTunnel запущена')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Отключить надёжное соединение' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('clears a stale launch error when a later probe sees the running service', async () => {
+    responses(ready);
+    controls.up.mockRejectedValueOnce(new Error('Сбой запуска'));
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Подключить надёжное соединение' }));
+    expect(await screen.findByText('Сбой запуска')).toBeTruthy();
+    controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: false });
+    expect(await screen.findByText('Служба TrustTunnel запущена', {}, { timeout: 7000 })).toBeTruthy();
+    expect(screen.queryByText('Сбой запуска')).toBeNull();
+  }, 10000);
 
   it('describes an Android engine connection reported as CONNECTED', async () => {
     controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: true });
