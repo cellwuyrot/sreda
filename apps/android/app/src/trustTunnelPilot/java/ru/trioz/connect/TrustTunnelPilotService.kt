@@ -20,7 +20,7 @@ import com.adguard.trusttunnel.VpnState as ClientState
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** Experimental debug-only engine.
+/** Native TrustTunnel VPN engine.
  * Credentials are kept in memory only; do not log, persist or export the config.
  * The controller must obtain user VPN permission and disallow simultaneous AWG.
  */
@@ -29,7 +29,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
         const val ACTION_START = "ru.trioz.connect.TRUSTTUNNEL_PILOT_START"
         const val ACTION_STOP = "ru.trioz.connect.TRUSTTUNNEL_PILOT_STOP"
         const val EXTRA_PROFILE = "profile"
-        private const val CHANNEL = "trusttunnel_pilot"
+        private const val CHANNEL = "trusttunnel"
         private const val NOTIFICATION_ID = 7101
         @Volatile var state = "off"; private set
         @Volatile var error: String? = null; private set

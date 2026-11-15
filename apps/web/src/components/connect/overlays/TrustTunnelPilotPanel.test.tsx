@@ -1,55 +1,95 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-const controls = vi.hoisted(() => ({ bridge: true, status: vi.fn(), up: vi.fn(), down: vi.fn() }));
+const controls = vi.hoisted(() => ({ bridge: true, status: vi.fn(), up: vi.fn(), down: vi.fn(), other: vi.fn() }));
 vi.mock('@/lib/trustTunnelClient', () => ({ getTrustTunnelEngine: () => controls.bridge ? controls : null }));
+vi.mock('@/lib/vpnBridge', () => ({ getVpnBridge: () => ({ status: controls.other, down: vi.fn().mockResolvedValue({ state: 'off' }) }) }));
 import TrustTunnelPilotPanel from './TrustTunnelPilotPanel';
+
 beforeEach(() => {
   controls.bridge = true; vi.clearAllMocks();
-  controls.status.mockResolvedValue({ state: 'off', error: null });
-  controls.up.mockResolvedValue({ state: 'on', error: null });
-  controls.down.mockResolvedValue({ state: 'off', error: null });
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  controls.status.mockResolvedValue({ state: 'off', error: null, confirmed: false });
+  controls.up.mockResolvedValue({ state: 'on', error: null, confirmed: false });
+  controls.down.mockResolvedValue({ state: 'off', error: null, confirmed: false });
+  controls.other.mockResolvedValue({ state: 'off' });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function responses(access: object, applied = true) {
-  const fn = vi.fn(async (url: unknown, init?: RequestInit) => String(url).endsWith('/config')
-    ? { ok: true, json: async () => init?.method === 'DELETE' ? { ok: true } : { config: 'FAKE-PRIVATE-PROFILE', applied } }
-    : { ok: true, json: async () => access });
+  let currentAccess = { ...access } as Record<string, unknown>;
+  const fn = vi.fn(async (url: unknown, init?: RequestInit) => {
+    if (String(url).endsWith('/config')) {
+      currentAccess = { ...currentAccess, enabled: true, applied };
+      return { ok: true, json: async () => applied
+        ? { config: 'FAKE-PRIVATE-PROFILE', applied: true }
+        : { applied: false } };
+    }
+    return { ok: true, json: async () => currentAccess };
+  });
   vi.stubGlobal('fetch', fn); return fn;
 }
-const ready = { available: true, eligible: true, enabled: true, applied: true };
+const ready = { activeProvider: 'TRUSTTUNNEL', selected: true, serviceEnabled: true, available: true, eligible: true, enabled: true, applied: true, planLabel: 'Premium' };
+
 describe('TrustTunnel subscriber panel', () => {
-  it('does not query or render without a supported native bridge', () => {
-    controls.bridge = false; const fetch = responses(ready);
-    expect(render(<TrustTunnelPilotPanel />).container.textContent).toBe(''); expect(fetch).not.toHaveBeenCalled();
-  });
-  it('hides for an ineligible inactive account', async () => {
-    responses({ ...ready, eligible: false }); const view = render(<TrustTunnelPilotPanel />);
-    await waitFor(() => expect(controls.status).toHaveBeenCalled()); expect(view.container.textContent).toBe('');
-  });
-  it('issues only on action and never displays the profile', async () => {
-    const fetch = responses(ready); const view = render(<TrustTunnelPilotPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Подключить' }));
-    await waitFor(() => expect(controls.up).toHaveBeenCalledWith('FAKE-PRIVATE-PROFILE'));
+  it('renders project provider status without exposing profiles or technical credentials', async () => {
+    responses(ready); const view = render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    expect(await screen.findByText('Надёжное соединение')).toBeTruthy();
+    expect(await screen.findByText('Premium')).toBeTruthy();
+    const dialog = screen.getByRole('dialog', { name: 'Надёжное соединение' });
+    expect(dialog.className).toContain('h-full min-h-full');
+    expect(dialog.className).toContain('p-6');
+    expect(screen.getByRole('button', { name: 'Подключить надёжное соединение' }).className).toContain('h-28 w-28');
     expect(view.container.textContent).not.toContain('FAKE-PRIVATE-PROFILE');
-    expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'POST', body: '{"rotate":false}' }));
+    expect(view.container.textContent).not.toContain('password =');
+    expect(view.container.textContent).not.toMatch(/TrustTunnel|TrioZ|HTTP\/2|gateway|endpoint|AmneziaVPN/i);
   });
-  it('waits for server application instead of connecting a pending profile', async () => {
-    responses({ ...ready, enabled: false, applied: false }, false); render(<TrustTunnelPilotPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Подключить' }));
-    expect(await screen.findByText(/Профиль отправлен на активацию/)).toBeTruthy(); expect(controls.up).not.toHaveBeenCalled();
+
+  it('provisions a first-time entitled user, then waits for Endpoint ACK without receiving a profile', async () => {
+    const fetch = responses({ ...ready, enabled: false, applied: false }, false);
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    const power = await screen.findByRole('button', { name: 'Подключить надёжное соединение' });
+    expect((power as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(power);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'POST' })));
+    expect(await screen.findByText('Ожидаем применение на сервере')).toBeTruthy();
+    expect(controls.up).not.toHaveBeenCalled();
+    expect((power as HTMLButtonElement).disabled).toBe(true);
   });
-  it('allows stopping an active tunnel after losing eligibility', async () => {
-    controls.status.mockResolvedValue({ state: 'on', error: null }); responses({ ...ready, eligible: false });
-    render(<TrustTunnelPilotPanel />); fireEvent.click(await screen.findByRole('button', { name: 'Отключить' }));
-    await waitFor(() => expect(controls.down).toHaveBeenCalled());
+
+  it('connects only when the endpoint has applied the account', async () => {
+    const fetch = responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Подключить надёжное соединение' }));
+    await waitFor(() => expect(controls.up).toHaveBeenCalledWith('FAKE-PRIVATE-PROFILE'));
+    expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'POST' }));
+    expect(fetch.mock.calls.some((call) => String(call[0]).endsWith('/config'))).toBe(true);
   });
-  it('rotates and revokes only with confirmation and without passing profile to engine', async () => {
-    const fetch = responses(ready); render(<TrustTunnelPilotPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Обновить ключ' }));
-    await screen.findByText(/Ключ обновлён/); expect(controls.up).not.toHaveBeenCalled();
-    expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ body: '{"rotate":true}' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Отозвать доступ' }));
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'DELETE' })));
+
+  it('does not describe a Windows SCM service as a confirmed tunnel', async () => {
+    controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: false });
+    responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    expect(await screen.findByText(/Служба запущена; прохождение трафика не подтверждено/)).toBeTruthy();
+  });
+
+  it('describes an Android engine connection reported as CONNECTED', async () => {
+    controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: true });
+    responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    expect(await screen.findByText('Клиент подтвердил соединение')).toBeTruthy();
+  });
+
+  it('asks to switch off the other connection when it is active', async () => {
+    controls.other.mockResolvedValue({ state: 'on' });
+    responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    expect(await screen.findByText('Сначала отключите другое подключение')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Отключить другое соединение/ })).toBeTruthy();
+  });
+
+  it('shows the shared service toggle when the admin has disabled the service', async () => {
+    responses({ ...ready, serviceEnabled: false });
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    expect(await screen.findByText('Сервис отключён администратором')).toBeTruthy();
+  });
+
+  it('renders a clear project-wide provider mismatch', async () => {
+    responses({ ...ready, selected: false, activeProvider: 'AMNEZIAWG', available: false });
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    expect(await screen.findByText('Эта технология сейчас не выбрана для проекта')).toBeTruthy();
   });
 });

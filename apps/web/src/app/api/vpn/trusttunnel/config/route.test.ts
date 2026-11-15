@@ -6,6 +6,7 @@ vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/rateLimit", () => ({ isRateLimited: vi.fn().mockResolvedValue(false) }));
 import { getServerSession } from "next-auth";
+import { deriveUsername } from "@/lib/trustTunnelAccess";
 import { DELETE, POST } from "./route";
 
 const user = (over: Record<string, unknown> = {}) => row({ id: "u1", role: "USER", isDeleted: false, banned: false, bannedUntil: null,
@@ -22,23 +23,34 @@ beforeEach(() => {
   vi.stubEnv("TRIOZ_TT_HOSTNAME", "turn.trioz.ru");
   vi.stubEnv("TRIOZ_TT_GATEWAY_IPV4", "170.168.18.20");
   vi.mocked(getServerSession).mockResolvedValue({ user: { id: "u1", username: "andy" } } as never);
+  prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "TRUSTTUNNEL", enabled: true }));
   prismaMock.trustTunnelAccess.upsert.mockResolvedValue(row({ generation: 1 }));
   prismaMock.siteConfig.findUnique.mockResolvedValue(null);
 });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("TrustTunnel subscriber profile", () => {
-  it("issues a profile to a Premium subscriber without logging the password", async () => {
+  it("provisions an entitled Premium account but does not deliver a profile before Endpoint ACK", async () => {
     prismaMock.user.findUnique.mockResolvedValue(user({ isPremium: true }));
     const res = await POST(req());
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toContain("no-store");
     const data = await res.json();
+    expect(data).toEqual({ applied: false });
+    expect(prismaMock.trustTunnelAccess.upsert).toHaveBeenCalled();
+    expect(JSON.stringify(prismaMock.auditLog.create.mock.calls)).not.toMatch(/password|secret|token/i);
+  });
+  it("delivers the current generated profile only after the matching Endpoint ACK", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(user({ isPremium: true }));
+    const username = deriveUsername(Buffer.from("11".repeat(32), "hex"), "u1");
+    prismaMock.siteConfig.findUnique.mockResolvedValue(row({ value: JSON.stringify({
+      serial: 123, at: Date.now(), keys: [`${username}:1`], ok: true, error: null,
+    }) }));
+    const res = await POST(req());
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.applied).toBe(true);
     expect(data.config).toMatch(/password = "[A-Za-z0-9_-]{43}"/);
-    expect(data.applied).toBe(false);
-    const pw = /password = "([^"]+)"/.exec(data.config)![1];
-    expect(JSON.stringify(prismaMock.auditLog.create.mock.calls)).not.toContain(pw);
-    expect(JSON.stringify(prismaMock.trustTunnelAccess.upsert.mock.calls)).not.toContain(pw);
   });
   it("issues to an active «Надёжное соединение» plan and to project ADMIN", async () => {
     prismaMock.user.findUnique.mockResolvedValue(user({ vpnAccess: true, vpnAccessUntil: new Date(Date.now() + 86_400_000) }));
@@ -61,6 +73,20 @@ describe("TrustTunnel subscriber profile", () => {
     expect(prismaMock.trustTunnelAccess.upsert.mock.calls[0][0].update).toMatchObject({ generation: { increment: 1 } });
     expect((await POST(req(JSON.stringify({ userId: "victim" })))).status).toBe(400);
   });
+  it("refuses issuance when the existing VPN service switch is off", async () => {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "TRUSTTUNNEL", enabled: false }));
+    prismaMock.user.findUnique.mockResolvedValue(user({ isPremium: true }));
+    expect((await POST(req())).status).toBe(503);
+    expect(prismaMock.trustTunnelAccess.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses issuance when the global project provider is AmneziaWG", async () => {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "AMNEZIAWG", enabled: true }));
+    prismaMock.user.findUnique.mockResolvedValue(user({ isPremium: true }));
+    expect((await POST(req())).status).toBe(503);
+    expect(prismaMock.trustTunnelAccess.upsert).not.toHaveBeenCalled();
+  });
+
   it("requires same HTTPS origin, a session and the feature flag", async () => {
     prismaMock.user.findUnique.mockResolvedValue(user({ isPremium: true }));
     expect((await POST(req("", "https://evil.example"))).status).toBe(403);

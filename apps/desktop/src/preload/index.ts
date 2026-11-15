@@ -11,7 +11,7 @@ import type {
 } from "../shared/types";
 import type { VpnStatePayload } from "../shared/vpnPlan"; // VPN-ONECLICK
 /** TRUSTTUNNEL-WIN */
-type TrustTunnelStatusPayload = { state: "off" | "connecting" | "on" | "disconnecting" | "error"; error: string | null; supported: boolean };
+type TrustTunnelStatusPayload = { state: "off" | "connecting" | "on" | "disconnecting" | "error"; error: string | null; supported: boolean; confirmed?: boolean };
 import { initUpdateButton } from "./updateButton";
 
 /**

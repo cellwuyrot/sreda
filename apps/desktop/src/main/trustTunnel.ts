@@ -18,9 +18,9 @@ import { isVpnActive } from "./vpn";
 import { acquireVpnStart } from "./vpnStartLock";
 
 export type TrustTunnelState = "off" | "connecting" | "on" | "disconnecting" | "error";
-export interface TrustTunnelStatus { state: TrustTunnelState; error: string | null; supported: boolean }
+export interface TrustTunnelStatus { state: TrustTunnelState; error: string | null; supported: boolean; confirmed: boolean }
 
-let current: TrustTunnelStatus = { state: "off", error: null, supported: process.platform === "win32" };
+let current: TrustTunnelStatus = { state: "off", error: null, supported: process.platform === "win32", confirmed: false };
 let busy = false;
 
 function emit(next: Partial<TrustTunnelStatus>): TrustTunnelStatus {
@@ -51,7 +51,7 @@ function removePending(): void {
 export async function trustTunnelStatus(): Promise<TrustTunnelStatus> {
   if (process.platform !== "win32" || busy) return current;
   const svc = await trustTunnelServiceState();
-  if (svc === "running") return emit({ state: "on", error: null });
+  if (svc === "running") return emit({ state: "on", error: null, confirmed: false });
   if (svc === "pending") return emit({ state: "connecting", error: null });
   if (svc === "unknown") return emit({ state: "error", error: "Не удалось проверить службу TrustTunnel." });
   if (svc === "stopped") return emit({ state: "error", error: "Служба TrustTunnel остановлена. Отключите её перед повторным подключением." });
@@ -68,7 +68,7 @@ export async function isTrustTunnelActive(): Promise<boolean> {
 
 export async function trustTunnelUp(profile: unknown): Promise<TrustTunnelStatus> {
   const release = acquireVpnStart();
-  if (!release) return { state: "error", error: "Другое VPN-подключение запускается", supported: process.platform === "win32" };
+  if (!release) return { state: "error", error: "Другое VPN-подключение запускается", supported: process.platform === "win32", confirmed: false };
   try { return await trustTunnelUpInternal(profile); } finally { release(); }
 }
 
@@ -92,7 +92,7 @@ async function trustTunnelUpInternal(profile: unknown): Promise<TrustTunnelStatu
     busy = false;
     const svc = await trustTunnelServiceState();
     if (svc !== "running") throw new Error(TT_EXIT[24]);
-    return emit({ state: "on", error: null });
+    return emit({ state: "on", error: null, confirmed: false });
   } catch (err) {
     return emit({ state: "error", error: err instanceof Error ? err.message : "Не удалось включить TrustTunnel" });
   } finally {

@@ -14,9 +14,10 @@ export interface TrustTunnelSubscriberAccount {
 }
 
 /**
- * Authorization only: NOT provisioning or revocation on the endpoint. Do not
- * enable subscriber issuance until those lifecycles are implemented. Existing
- * project's hasPremium grants Premium to project ADMIN by role.
+ * Fresh-account authorization, re-evaluated both when a profile is issued and
+ * when the Endpoint agent builds a complete desired-state snapshot. Existing
+ * project's hasPremium grants Premium to project ADMIN by role; group roles do
+ * not implicitly grant access.
  */
 export function isTrustTunnelSubscriberAllowed(input: {
   enabled: string | undefined;
