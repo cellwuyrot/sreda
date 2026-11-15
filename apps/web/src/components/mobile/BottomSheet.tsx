@@ -70,7 +70,7 @@ export default function BottomSheet({ open, onClose, children, height = "90%", t
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               {children}
             </div>
           </motion.div>

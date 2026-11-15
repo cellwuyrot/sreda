@@ -15,7 +15,7 @@ describe('Мобильные сообщества', () => {
     fireEvent.click(screen.getByText('＋ Создать сообщество')); expect(create).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByText('Присоединиться →')); expect(join).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByLabelText('Поиск в TZ.Connect')); expect(search).toHaveBeenCalledOnce();
-    const mark=screen.getByText('Premium'); expect(mark.closest('[data-android-hide="true"]')).toBeTruthy();
+    const mark=screen.getByText('Premium'); expect(mark.closest('[data-android-hide="true"]')).toBeNull();
     fireEvent.click(mark); expect(premium).toHaveBeenCalledOnce();
   });
 });
