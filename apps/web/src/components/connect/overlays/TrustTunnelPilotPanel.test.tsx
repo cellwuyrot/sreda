@@ -33,8 +33,13 @@ describe('TrustTunnel subscriber panel', () => {
     responses(ready); const view = render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
     expect(await screen.findByText('Надёжное соединение')).toBeTruthy();
     expect(await screen.findByText('Premium')).toBeTruthy();
+    const dialog = screen.getByRole('dialog', { name: 'Надёжное соединение' });
+    expect(dialog.className).toContain('h-full min-h-full');
+    expect(dialog.className).toContain('p-6');
+    expect(screen.getByRole('button', { name: 'Подключить надёжное соединение' }).className).toContain('h-28 w-28');
     expect(view.container.textContent).not.toContain('FAKE-PRIVATE-PROFILE');
     expect(view.container.textContent).not.toContain('password =');
+    expect(view.container.textContent).not.toMatch(/TrustTunnel|TrioZ|HTTP\/2|gateway|endpoint|AmneziaVPN/i);
   });
 
   it('provisions a first-time entitled user, then waits for Endpoint ACK without receiving a profile', async () => {
@@ -69,10 +74,10 @@ describe('TrustTunnel subscriber panel', () => {
     expect(await screen.findByText('Клиент подтвердил соединение')).toBeTruthy();
   });
 
-  it('asks to switch off the other TrioZ VPN when it is active', async () => {
+  it('asks to switch off the other connection when it is active', async () => {
     controls.other.mockResolvedValue({ state: 'on' });
     responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
-    expect(await screen.findByText('Сначала отключите другое соединение TrioZ')).toBeTruthy();
+    expect(await screen.findByText('Сначала отключите другое подключение')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Отключить другое соединение/ })).toBeTruthy();
   });
 

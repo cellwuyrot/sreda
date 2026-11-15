@@ -18,6 +18,11 @@ function open(sealed: string) {
 const base = { role: "USER", isDeleted: false, banned: false, bannedUntil: null, isPremium: false, vpnAccess: false, vpnAccessUntil: null };
 
 beforeEach(() => {
+  // The sync endpoint emits accounts only when TrustTunnel is the globally
+  // selected provider and the VPN service itself is enabled.
+  prismaMock.vpnSettings.upsert.mockResolvedValue(row({
+    id: "default", enabled: true, activeProvider: "TRUSTTUNNEL",
+  }));
   vi.stubEnv("TRIOZ_TT_ENABLED", "true");
   vi.stubEnv("TRIOZ_TT_CRED_KEY", "11".repeat(32));
   vi.stubEnv("TRIOZ_TT_SYNC_KEY", "22".repeat(32));
@@ -52,6 +57,22 @@ describe("TrustTunnel endpoint sync", () => {
     vi.stubEnv("TRIOZ_TT_ENABLED", "false");
     const doc = open((await (await call()).json()).sealed);
     expect(doc.users).toEqual([]);
+  });
+  it("revokes everybody when the global provider is AmneziaWG", async () => {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(row({
+      id: "default", enabled: true, activeProvider: "AMNEZIAWG",
+    }));
+    const doc = open((await (await call()).json()).sealed);
+    expect(doc.users).toEqual([]);
+    expect(prismaMock.trustTunnelAccess.findMany).not.toHaveBeenCalled();
+  });
+  it("revokes everybody when the common VPN service is disabled", async () => {
+    prismaMock.vpnSettings.upsert.mockResolvedValue(row({
+      id: "default", enabled: false, activeProvider: "TRUSTTUNNEL",
+    }));
+    const doc = open((await (await call()).json()).sealed);
+    expect(doc.users).toEqual([]);
+    expect(prismaMock.trustTunnelAccess.findMany).not.toHaveBeenCalled();
   });
   it("accepts an acknowledgement only for an issued snapshot", async () => {
     const res = await call({ ack: { serial: 123, ok: true, digest: "a".repeat(64), error: null } });
