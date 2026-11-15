@@ -1,7 +1,7 @@
-/** Debug-only Android pilot bridge. Profile values must never be logged or persisted. */
+/** Native Android TrustTunnel bridge. Profile values must never be logged or persisted. */
 interface PilotPort { postMessage(message: string): void; onmessage: ((event: { data: string }) => void) | null }
 declare global { interface Window { TriozTrustTunnelPilotBridge?: PilotPort } }
-export type PilotStatus = { state: 'off' | 'connecting' | 'on' | 'disconnecting' | 'error'; error: string | null };
+export type PilotStatus = { state: 'off' | 'connecting' | 'on' | 'disconnecting' | 'error'; error: string | null; confirmed?: boolean };
 let sequence = 0;
 let active: PilotPort | undefined;
 const pending = new Map<string, { resolve: (value: PilotStatus) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -20,7 +20,7 @@ export function getAndroidTrustTunnelPilot() {
         if (!result || !['off','connecting','on','disconnecting','error'].includes(result.state) || !(result.error === null || typeof result.error === 'string')) {
           call.reject(new Error('Некорректный ответ VPN')); return;
         }
-        call.resolve({ state: result.state, error: result.error });
+        call.resolve({ state: result.state, error: result.error, confirmed: result.confirmed === true });
       } catch { /* Invalid response ignored; request will time out. */ }
     };
   }

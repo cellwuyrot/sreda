@@ -1,64 +1,45 @@
-# TrustTunnel Stage 7 — provider control on connect
+# TrustTunnel Stage 7 — глобальный выбор технологии VPN
 
-This patch adds a persistent, administrator-only global provider control to the
-existing TrioZ VPN service. It does **not** activate TrustTunnel.
+`VpnSettings.activeProvider` задаёт **одну технологию для всего проекта**. Отдельного пользовательского выбора технологии нет. По умолчанию и для старых строк используется `AMNEZIAWG`.
 
-## Behavior
+## Что делает текущая реализация
 
-- `VpnSettings.activeProvider` is a single global setting. Its migration default
-  is `AMNEZIAWG`; existing subscriptions, peers, and usage counters are left
-  intact.
-- The admin VPN page shows the active provider, the TrustTunnel readiness
-  blockers, and a confirmed switch action. Users do not choose a technology.
-- `POST /api/admin/vpn/provider` requires an ADMIN session, same-origin request,
-  explicit confirmation, and the provider state the administrator confirmed.
-  Updates use a serializable transaction and compare-and-set; successful changes
-  and blocked TrustTunnel attempts are recorded in `AuditLog`.
-- Returning to AmneziaWG is always available as a rollback. Switching to
-  TrustTunnel is rejected until every server-side readiness gate is implemented
-  and actually passes.
-- If a non-AmneziaWG or unknown provider is stored, the AmneziaWG profile,
-  enrollment, deletion, admin peer issuance, and node peer delivery fail closed.
-  VPN node reports do not update AmneziaWG handshakes or usage while that
-  provider is inactive. AmneziaWG usage totals are hidden rather than presented
-  as TrustTunnel usage.
-- TrustTunnel credentials and private keys are not collected or stored by this
-  control page.
+- В админке «Сервисы и система → VPN» текущий провайдер и диагностические пункты показываются без раскрытия ключей. Только роль проекта `ADMIN` может менять глобальную настройку; роли администраторов групп не подходят.
+- `POST /api/admin/vpn/provider` требует сессию ADMIN, same-origin, известное ожидаемое текущее значение, отдельное подтверждение и подтверждение влияния на пользователей. Запись выполняется serializable-транзакцией с compare-and-set; успех и заблокированные попытки заносятся в `AuditLog`.
+- Переключение на TrustTunnel разрешено, когда `TRIOZ_TT_ENABLED=true`, а все серверные параметры проходят строгую проверку формата `loadTrustTunnelSettings`. Это проверка конфигурации, **не сетевой health-check** и не доказательство работоспособности каждого клиента.
+- Новые AmneziaWG-профили и операции выдачи блокируются, когда глобально выбран TrustTunnel. Новая выдача TrustTunnel-профилей и синхронизация управляемых учётных данных разрешены только при глобально выбранном TrustTunnel и включённом серверном флаге.
+- Снимок Endpoint полный. Если глобально выбран AmneziaWG или флаг выключен, следующий успешный pull возвращает пустой управляемый список. Endpoint-агент применяет его штатным механизмом; изменение credentials может перезапустить Endpoint и прервать текущие сессии. Если БД недоступна, маршрут возвращает ошибку и не выдаёт пустой снимок.
+- Оба направления переключения не являются бесшовными. При выборе TrustTunnel AmneziaWG-узлы получают пустой список пиров при следующем опросе (в проекте интервал обычно 5 секунд) и снимают активные AWG-сессии. При выборе AmneziaWG следующий успешный снимок Endpoint становится пустым и удаляет управляемые TrustTunnel-учётные записи; обновление credentials может перезапустить Endpoint и оборвать активные TT-сессии.
+- При каждом реальном изменении глобального провайдера увеличивается generation включённых `TrustTunnelAccess` записей. Старые профили становятся недействительными, старый Endpoint ACK не подтверждает новое поколение, а после повторного выбора TrustTunnel клиент дожидается свежего ACK и запрашивает профиль заново.
+- Старые версии клиентов не переключаются автоматически. Пользователям необходимо установить поддерживающую версию и переподключиться; при смене технологии возможен кратковременный или ожидаемый простой.
+- Ни один маршрут не переключается молча на запасную технологию. Если выбранный провайдер или его настройки недоступны, клиент получает состояние ошибки/недоступности, а не ложный успех.
+- Учет трафика и тарифные лимиты TrustTunnel не реализованы. Значения счётчиков AmneziaWG нельзя показывать как трафик TrustTunnel.
 
-## Current readiness blockers
+## Права и подписки
 
-The readiness report intentionally marks all of these as blocked:
+TrustTunnel выдаётся только при действующей подписке Premium, активной подписке «Надёжное соединение» (`vpnAccess` с действующим сроком) или роли проектного `ADMIN`. Администратор группы сам по себе доступа не получает. Блокировка, удаление аккаунта, истечение подписки, отзыв и отключение флага приводят к исключению записи из следующего успешного снимка. Это не мгновенный отзыв при потере связи с Endpoint.
 
-1. Endpoint v1.1.0 configuration, TLS validation, and authenticated health report.
-2. Per-user credential creation, refresh, and revocation.
-3. Verified per-user traffic ingestion and mapping into TrioZ accounts.
-4. Android native adapter and tested build.
-5. Windows/Desktop native adapter, build, and signing.
-6. Turn gateway deployment and real end-to-end validation.
+## Важные ограничения диагностики
 
-These are implementation blockers, not editable administrator checkboxes. The
-HTTP API independently enforces the same gate, so a crafted browser request
-cannot force a switch.
+- Проверка конфигурации на странице админки не подключается к Endpoint, gateway или целевым сайтам.
+- Android release теперь включает TrustTunnel SDK/bridge, но содержит native ABI только `arm64-v8a`; подписанная сборка и физическое устройство требуют отдельной проверки.
+- Windows-код управления службой присутствует, но проверка SCM-состояния службы не равна проверке проходящего трафика. В этой сборке UI не маркирует только запущенную Windows-службу как подтверждённый туннель.
+- Пользователь сообщил, что межсерверная связность и проверки технологии уже пройдены. В рамках подготовки архива реальные серверы не опрашивались и их версии не сверялись.
+- Причина проблемы Discord и высокого пинга не установлена. Успешный HTTP/1.1 proxy-запрос не проверяет весь путь Windows TUN → TrustTunnel Client → HTTP/2 → gateway → Endpoint. Наблюдавшийся HTTP 400 не привязан доказательно к этому запросу; численные ping/UDP измерения отсутствуют. Это отдельное открытое расследование, не причина блокировать глобальный переключатель при подтверждённых владельцем серверных проверках.
 
-## Database and application rollout
+## Развёртывание и откат
 
-Apply the migration before deploying code that reads the new column. Back up
-the database and use the existing release procedure:
+1. Сохранить БД, переменные окружения web, credentials Endpoint и конфигурацию агента. ZIP исходников не содержит production env или ключей.
+2. Проверить наличие и применить существующие Prisma migrations, если они ещё не применены: `npm run migrate -w apps/web`. Не использовать `migrate reset` или `db push`.
+3. На web-серверах согласованно задать `TRIOZ_TT_ENABLED=true`, `TRIOZ_TT_CRED_KEY`, `TRIOZ_TT_SYNC_KEY`, `TRIOZ_TT_SYNC_TOKEN_SHA256`, `TRIOZ_TT_HOSTNAME`, `TRIOZ_TT_GATEWAY_IPV4`, `TRIOZ_TT_PORT`. Ключи CRED/SYNC должны быть разными 32-байтовыми hex; секреты не переносить через Git/чат. `NEXTAUTH_URL` должен совпадать с HTTPS origin приложения.
+4. Развернуть код/зависимости web обычной процедурой и перезапустить web-процесс с обновлённой средой. Отдельно обновить endpoint pull-agent только если его код или конфигурация отличаются от уже установленной версии. Перед ручным запуском `--once` проверить, какой блок credentials он будет изменять: пустой снимок удаляет управляемые записи и может перезапустить Endpoint.
+5. Открыть админку. Пока серверная конфигурация неполная, TrustTunnel останется недоступен для выбора. После проверки настроек администратор проекта может переключить всех пользователей на TrustTunnel с явным подтверждением. Страница показывает не блокирующие пункты диагностики и отсутствие traffic accounting.
+6. Для отката выбрать «AmneziaWG» в той же админке. Новые выдачи переключатся сразу после обновления web; generation активных TrustTunnelAccess будет увеличен, а управляемые TrustTunnel-аккаунты удалены Endpoint при следующем успешном цикле агента. Предупредить пользователей: это может разорвать их активные TrustTunnel-сессии и вызвать перезапуск Endpoint. AmneziaWG остаётся действующей резервной технологией.
 
-```bash
-npm run migrate -w apps/web
-npm run build -w apps/web
-```
+Изменение `activeProvider` уже имеет миграцию `20261112000000_vpn_provider_control`; учётные записи TrustTunnel — `20261201000000_trusttunnel_access`. В этом обновлении новых Prisma-миграций не добавлено. Проверить фактический статус migrations в БД перед запуском команды.
 
-Then verify in the admin page that `AmneziaWG` remains active and TrustTunnel is
-blocked. Do not start the Endpoint, change firewall/Nginx/DNS, or switch users
-as part of this stage.
+## Проверки перед выпуском
 
-## Tests
+Автоматические тесты покрывают ADMIN-only, CSRF/same-origin, подтверждение воздействия, optimistic concurrency, конфигурационные блокировки, права Premium/VPN-подписки/проектного ADMIN, отказ для group admin, блокировку маршрутов профиля и пустой снимок на глобальном AmneziaWG. Эти тесты не заменяют проверку БД, Endpoint ACK и клиентского трафика.
 
-Run the provider-control, user-route, node-report, and admin VPN tests with the
-project's Vitest setup, then run the web typecheck. These require the repository's
-normal installed dependencies and generated Prisma client.
-
-This stage is control-plane groundwork only; it is not production readiness and
-does not provide an Android APK or Windows build.
+Перед публичным выпуском проверить на тестовых аккаунтах и устройствах: применение и ACK снимка, включение/отключение глобального провайдера, отзыв доступа, переключение на AmneziaWG, текущие сессии и обновление старого клиента, Android разрешения/смену сети/IPv4/IPv6/DNS, Windows UAC/службу/адаптер/маршрут, Discord/голосовой UDP и измеренные игровые задержки. Не публиковать APK до проверки подписи и обновления поверх текущей версии.

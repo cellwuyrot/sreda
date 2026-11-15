@@ -36,6 +36,13 @@ beforeEach(() => {
   vi.mocked(getServerSession).mockResolvedValue(
     row({ user: { id: "admin-1", username: "owner", role: "ADMIN" } }),
   );
+  vi.stubEnv("TRIOZ_TT_ENABLED", "true");
+  vi.stubEnv("TRIOZ_TT_CRED_KEY", "11".repeat(32));
+  vi.stubEnv("TRIOZ_TT_SYNC_KEY", "22".repeat(32));
+  vi.stubEnv("TRIOZ_TT_SYNC_TOKEN_SHA256", "33".repeat(32));
+  vi.stubEnv("TRIOZ_TT_HOSTNAME", "turn.trioz.ru");
+  vi.stubEnv("TRIOZ_TT_GATEWAY_IPV4", "170.168.18.20");
+  vi.stubEnv("TRIOZ_TT_PORT", "8443");
   mockTransaction();
   prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "AMNEZIAWG" }));
   prismaMock.vpnSettings.updateMany.mockResolvedValue(row({ count: 1 }));
@@ -49,32 +56,34 @@ describe("POST /api/admin/vpn/provider", () => {
     vi.mocked(getServerSession).mockResolvedValue(
       role ? row({ user: { id: "u1", role } }) : null,
     );
-    expect((await call({ provider: "TRUSTTUNNEL", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" })).status).toBe(403);
+    expect((await call({ provider: "TRUSTTUNNEL", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" })).status).toBe(403);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it("отклоняет cross-origin запрос до транзакции", async () => {
-    expect((await call({ provider: "TRUSTTUNNEL", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" }, "https://attacker.invalid")).status).toBe(403);
+    expect((await call({ provider: "TRUSTTUNNEL", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" }, "https://attacker.invalid")).status).toBe(403);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it("отклоняет запрос без Origin", async () => {
-    expect((await call({ provider: "TRUSTTUNNEL", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" }, null)).status).toBe(403);
+    expect((await call({ provider: "TRUSTTUNNEL", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" }, null)).status).toBe(403);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
-  it("требует явное подтверждение и известный провайдер", async () => {
-    expect((await call({ provider: "TRUSTTUNNEL" })).status).toBe(400);
-    expect((await call({ provider: "OTHER", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" })).status).toBe(400);
+  it("требует явное подтверждение воздействия и известный провайдер", async () => {
+    expect((await call({ provider: "TRUSTTUNNEL", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" })).status).toBe(400);
+    expect((await call({ provider: "TRUSTTUNNEL", impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" })).status).toBe(400);
+    expect((await call({ provider: "OTHER", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" })).status).toBe(400);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
-  it("fail-closed: блокирует TrustTunnel и пишет аудит без изменения активного провайдера", async () => {
-    const result = await call({ provider: "TRUSTTUNNEL", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" });
+  it("fail-closed: не переключает TrustTunnel при неполной конфигурации и пишет аудит", async () => {
+    vi.stubEnv("TRIOZ_TT_ENABLED", "false");
+    const result = await call({ provider: "TRUSTTUNNEL", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" });
     expect(result.status).toBe(409);
     expect(result.body.providerControl.activeProvider).toBe("AMNEZIAWG");
     expect(result.body.providerControl.trustTunnel.ready).toBe(false);
-    expect(result.body.blockers).toHaveLength(6);
+    expect(result.body.blockers).toHaveLength(1);
     expect(prismaMock.vpnSettings.updateMany).not.toHaveBeenCalled();
     expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -87,10 +96,29 @@ describe("POST /api/admin/vpn/provider", () => {
     });
   });
 
+  it("allows a validated global switch and persists it with audit", async () => {
+    const result = await call({ provider: "TRUSTTUNNEL", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" });
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, changed: true, providerControl: { activeProvider: "TRUSTTUNNEL" } });
+    expect(prismaMock.vpnSettings.updateMany).toHaveBeenCalledWith({
+      where: { id: "default", activeProvider: "AMNEZIAWG" },
+      data: { activeProvider: "TRUSTTUNNEL" },
+    });
+    expect(prismaMock.trustTunnelAccess.updateMany).toHaveBeenCalledWith({
+      where: { disabledAt: null },
+      data: { generation: { increment: 1 }, lastIssuedAt: null },
+    });
+    expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: "vpn.provider.switch", details: JSON.stringify({ from: "AMNEZIAWG", to: "TRUSTTUNNEL", trustTunnelCredentialsRotated: true }) }),
+    });
+  });
+
   it("поля readiness в запросе не могут обойти серверную проверку", async () => {
+    vi.stubEnv("TRIOZ_TT_ENABLED", "false");
     const result = await call({
       provider: "TRUSTTUNNEL",
       confirmed: true,
+      impactConfirmed: true,
       expectedCurrentProvider: "AMNEZIAWG",
       readiness: { endpoint: true, credentials: true, accounting: true, android: true, windows: true, gateway: true },
     });
@@ -99,26 +127,31 @@ describe("POST /api/admin/vpn/provider", () => {
   });
 
   it("повторный выбор активного AmneziaWG безопасно идемпотентен", async () => {
-    const result = await call({ provider: "AMNEZIAWG", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" });
+    const result = await call({ provider: "AMNEZIAWG", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" });
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ ok: true, changed: false });
     expect(prismaMock.vpnSettings.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.trustTunnelAccess.updateMany).not.toHaveBeenCalled();
     expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
   });
 
   it("откат к AmneziaWG разрешён и аудируется даже если сейчас активен TrustTunnel", async () => {
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "TRUSTTUNNEL" }));
-    const result = await call({ provider: "AMNEZIAWG", confirmed: true, expectedCurrentProvider: "TRUSTTUNNEL" });
+    const result = await call({ provider: "AMNEZIAWG", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "TRUSTTUNNEL" });
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ ok: true, changed: true, providerControl: { activeProvider: "AMNEZIAWG" } });
     expect(prismaMock.vpnSettings.updateMany).toHaveBeenCalledWith({
       where: { id: "default", activeProvider: "TRUSTTUNNEL" },
       data: { activeProvider: "AMNEZIAWG" },
     });
+    expect(prismaMock.trustTunnelAccess.updateMany).toHaveBeenCalledWith({
+      where: { disabledAt: null },
+      data: { generation: { increment: 1 }, lastIssuedAt: null },
+    });
     expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         action: "vpn.provider.switch",
-        details: JSON.stringify({ from: "TRUSTTUNNEL", to: "AMNEZIAWG" }),
+        details: JSON.stringify({ from: "TRUSTTUNNEL", to: "AMNEZIAWG", trustTunnelCredentialsRotated: true }),
       }),
     });
   });
@@ -126,14 +159,14 @@ describe("POST /api/admin/vpn/provider", () => {
   it("отказывает при гонке двух переключений", async () => {
     prismaMock.vpnSettings.updateMany.mockResolvedValue(row({ count: 0 }));
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "TRUSTTUNNEL" }));
-    const result = await call({ provider: "AMNEZIAWG", confirmed: true, expectedCurrentProvider: "TRUSTTUNNEL" });
+    const result = await call({ provider: "AMNEZIAWG", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "TRUSTTUNNEL" });
     expect(result.status).toBe(409);
     expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
   });
 
   it("отклоняет подтверждение устаревшего активного провайдера", async () => {
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "TRUSTTUNNEL" }));
-    const result = await call({ provider: "AMNEZIAWG", confirmed: true, expectedCurrentProvider: "AMNEZIAWG" });
+    const result = await call({ provider: "AMNEZIAWG", confirmed: true, impactConfirmed: true, expectedCurrentProvider: "AMNEZIAWG" });
     expect(result.status).toBe(409);
     expect(result.body.providerControl.activeProvider).toBe("TRUSTTUNNEL");
     expect(prismaMock.vpnSettings.updateMany).not.toHaveBeenCalled();

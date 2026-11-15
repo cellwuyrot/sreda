@@ -1,5 +1,5 @@
-> **Android VPN 0.4.0:** актуальная инструкция по политике допуска, Firebase, подписи APK/AAB и Google Play — [docs/android-release.md](../../docs/android-release.md).
-> Старый `android-fixes.patch` не применять: изменения уже интегрированы. Android не использует стороннее приложение AmneziaVPN для встроенного подключения.
+> **Android VPN 0.5.0 (candidate, versionCode 4):** актуальная инструкция по политике допуска, Firebase, подписи APK/AAB и Google Play — [docs/android-release.md](../../docs/android-release.md).
+> Старый `android-fixes.patch` не применять: изменения уже интегрированы. Android не использует стороннее приложение AmneziaVPN для встроенного подключения. TrustTunnel SDK/bridge/service включены в release для ARM64; до выпуска обязательны совместимая подпись и тест на настоящем устройстве.
 
 # Connect — Android-клиент
 

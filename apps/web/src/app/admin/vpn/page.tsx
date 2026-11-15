@@ -70,7 +70,8 @@ interface Summary {
 type ProviderCheck = {
   id: string;
   label: string;
-  status: "BLOCKED" | "READY";
+  status: "BLOCKED" | "READY" | "INFO";
+  blocking: boolean;
   detail: string;
 };
 
@@ -256,7 +257,10 @@ export default function AdminVpnPage() {
     if (!providerControl) return;
     const from = providerControl.activeProviderLabel;
     const to = provider === "AMNEZIAWG" ? "AmneziaWG" : "TrustTunnel";
-    if (!window.confirm(`Переключить единый VPN-провайдер проекта с «${from}» на «${to}»? Это затронет всех пользователей.`)) {
+    const impact = provider === "AMNEZIAWG"
+      ? "Новые подключения будут идти через AmneziaWG. При следующем полном снимке агент TrustTunnel получит пустой список и удалит управляемые учётные записи. Уже активные TrustTunnel-сессии будут отозваны; Endpoint может перезапустить службу и прервать их. Переход не бесшовный."
+      : "Новые профили и список пиров AmneziaWG будут заблокированы. VPN-узлы получат пустой список пиров при следующем опросе (обычно примерно через 5 секунд), поэтому уже активные AmneziaWG-сессии тоже отключатся. Старые версии клиентов не умеют автоматически перейти на TrustTunnel — пользователям потребуется обновить приложение и подключиться заново. Учёт трафика TrustTunnel пока не ведётся.";
+    if (!window.confirm(`Переключить единый VPN-провайдер проекта с «${from}» на «${to}» для ВСЕХ пользователей?\n\n${impact}\n\nПодтвердить изменение?`)) {
       return;
     }
     setSaving(true);
@@ -267,6 +271,7 @@ export default function AdminVpnPage() {
         body: JSON.stringify({
           provider,
           confirmed: true,
+          impactConfirmed: true,
           expectedCurrentProvider: providerControl.activeProvider,
         }),
       });
@@ -334,13 +339,12 @@ export default function AdminVpnPage() {
           <p className="text-sm text-neutral-400">Загрузка…</p>
         ) : (
           <>
-            {/* VPN-PROVIDER: один глобальный провайдер; TrustTunnel виден только
-                администратору и остаётся заблокированным до реальной готовности. */}
+            {/* VPN-PROVIDER: единый тип соединения для всех пользователей проекта. */}
             {providerControl && (
               <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Активный VPN-провайдер</h2>
+                    <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Активная технология подключения</h2>
                     <p className="mt-0.5 text-xs text-neutral-500 dark:text-gray-400">
                       Сейчас: <strong>{providerControl.activeProviderLabel}</strong>. Провайдер общий для всех подписчиков; клиент технологию не выбирает.
                     </p>
@@ -360,8 +364,8 @@ export default function AdminVpnPage() {
                 <div className="mt-4 rounded-lg border border-neutral-200 p-3 dark:border-white/10">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-neutral-900 dark:text-white">TrustTunnel</span>
-                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                      {providerControl.trustTunnel.ready ? "Готов к проверке переключения" : "Переключение заблокировано"}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${providerControl.trustTunnel.ready ? "bg-violet-500/15 text-violet-700 dark:text-violet-300" : "bg-amber-500/15 text-amber-700 dark:text-amber-300"}`}>
+                      {providerControl.trustTunnel.ready ? "Можно выбрать для проекта" : "Не настроен на сервере"}
                     </span>
                     <button
                       type="button"
@@ -375,17 +379,15 @@ export default function AdminVpnPage() {
                   <ul className="mt-3 space-y-2">
                     {providerControl.trustTunnel.checks.map((check) => (
                       <li key={check.id} className="text-[11px]">
-                        <span className={check.status === "READY" ? "text-green-600 dark:text-green-400" : "text-amber-700 dark:text-amber-300"}>
-                          {check.status === "READY" ? "✓ " : "• "}{check.label}
+                        <span className={check.status === "READY" ? "text-green-600 dark:text-green-400" : check.status === "BLOCKED" ? "text-red-600 dark:text-red-400" : "text-violet-600 dark:text-violet-300"}>
+                          {check.status === "READY" ? "✓ " : check.status === "BLOCKED" ? "! " : "i "}{check.label}
                         </span>
-                        {check.status !== "READY" && (
-                          <span className="ml-1 text-neutral-500 dark:text-gray-400">{check.detail}</span>
-                        )}
+                        <span className="ml-1 text-neutral-500 dark:text-gray-400">{check.detail}</span>
                       </li>
                     ))}
                   </ul>
                   <p className="mt-3 text-[11px] text-neutral-500 dark:text-gray-400">
-                    Credentials и секреты здесь не хранятся. Переход не активируется, пока серверная проверка не подтвердит все пункты.
+                    Настройка общая для всех пользователей. Смена прерывает действующие сессии при следующем применении снимка на узле. Пароли, токены и ключи в админке не показываются.
                   </p>
                 </div>
               </section>
@@ -407,14 +409,18 @@ export default function AdminVpnPage() {
                 <button
                   type="button"
                   disabled={saving}
-                  onClick={() =>
+                  onClick={() => {
+                    if (settings.enabled && providerControl?.activeProvider === "TRUSTTUNNEL" &&
+                      !window.confirm("Отключить «Надёжное соединение» для всех пользователей? Endpoint получит пустой список учётных записей, активные TrustTunnel-сессии будут прерваны, а Endpoint может перезапуститься.")) return;
                     patch(
                       { enabled: !settings.enabled },
                       settings.enabled
-                        ? "Сервис выключен — узлы снимут туннели в течение минуты"
+                        ? providerControl?.activeProvider === "TRUSTTUNNEL"
+                          ? "Сервис отключён — Endpoint удалит управляемые учётные записи при следующей синхронизации"
+                          : "Сервис выключен — узлы снимут туннели в течение минуты"
                         : "Сервис включён",
-                    )
-                  }
+                    );
+                  }}
                   className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
                     settings.enabled
                       ? "bg-red-500/15 text-red-600 hover:bg-red-500/25 dark:text-red-400"
