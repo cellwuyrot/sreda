@@ -42,11 +42,11 @@ export default function MobileGroupList({ groups, onSelectGroup, onCreateGroup, 
         {/* MOBILE-VPN: тот же значок «TZ», что и первым в левой панели на
             большом экране, — и с тем же действием. Панель на телефоне скрыта
             целиком, поэтому вход в Premium и соединение пропадал вместе с ней. */}
-        <div className="flex items-center gap-2.5 min-w-0" data-android-hide="true">
+        <div className="flex items-center gap-2.5 min-w-0">
           {/* NETLINK-2: клик сразу открывает большое окно. Промежуточная плашка на
               телефоне была вдвойне лишней: узкий экран, а шагов до действия два. */}
           {onOpenPremiumInfo && (
-            <PremiumMark isPremium={!!isPremium} onClick={onOpenPremiumInfo} size={36} />
+            <PremiumMark isPremium={!!isPremium} onClick={onOpenPremiumInfo} size={44} />
           )}
 
         </div>
