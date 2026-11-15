@@ -33,11 +33,12 @@ async function result() {
 }
 
 describe("GET /api/vpn/trusttunnel", () => {
-  it("shows project-wide AmneziaWG selection and does not grant a TrustTunnel profile", async () => {
+  it("allows TrustTunnel independently of the legacy provider value", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(account());
+    prismaMock.trustTunnelAccess.findUnique.mockResolvedValue(null);
     const response = await result();
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ activeProvider: "AMNEZIAWG", selected: false, available: false, eligible: false });
-    expect(prismaMock.trustTunnelAccess.findUnique).not.toHaveBeenCalled();
+    expect(response.body).toMatchObject({ selected: true, available: true, eligible: true });
   });
 
   it("reports Premium access and endpoint application without returning credentials", async () => {

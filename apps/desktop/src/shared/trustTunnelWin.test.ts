@@ -44,6 +44,8 @@ describe("Windows TrustTunnel elevated scripts", () => {
   it("parses sc query output", () => {
     expect(parseScQuery("SERVICE_NAME: TrioZTrustTunnel\n        STATE              : 4  RUNNING")).toBe("running");
     expect(parseScQuery("        STATE              : 2  START_PENDING")).toBe("pending");
+    expect(parseScQuery("Состояние          : 4  RUNNING")).toBe("running");
+    expect(parseScQuery("Состояние          : 1  STOPPED")).toBe("stopped");
     expect(parseScQuery("        STATE              : 1  STOPPED")).toBe("stopped");
     expect(parseScQuery("[SC] EnumQueryServicesStatus:OpenService FAILED 1060")).toBe("absent");
     expect(parseScQuery("Access denied")).toBe("unknown");

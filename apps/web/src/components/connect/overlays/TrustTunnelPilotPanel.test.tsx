@@ -39,7 +39,7 @@ describe('TrustTunnel subscriber panel', () => {
     expect(screen.getByRole('button', { name: 'Подключить надёжное соединение' }).className).toContain('h-28 w-28');
     expect(view.container.textContent).not.toContain('FAKE-PRIVATE-PROFILE');
     expect(view.container.textContent).not.toContain('password =');
-    expect(view.container.textContent).not.toMatch(/TrustTunnel|TrioZ|HTTP\/2|gateway|endpoint|AmneziaVPN/i);
+    expect(view.container.textContent).not.toMatch(/password|HTTP\/2|gateway|endpoint/i);
   });
 
   it('provisions a first-time entitled user, then waits for Endpoint ACK without receiving a profile', async () => {
@@ -91,5 +91,38 @@ describe('TrustTunnel subscriber panel', () => {
     responses({ ...ready, selected: false, activeProvider: 'AMNEZIAWG', available: false });
     render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
     expect(await screen.findByText('Эта технология сейчас не выбрана для проекта')).toBeTruthy();
+  });
+});
+
+describe('profile recovery', () => {
+  it('stops the local service before explicitly revoking the account', async () => {
+    const fetch = responses(ready); vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Отозвать профиль' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'DELETE' })));
+    expect(controls.down).toHaveBeenCalled();
+    expect(controls.down.mock.invocationCallOrder[0]).toBeLessThan(fetch.mock.invocationCallOrder[1]);
+  });
+  it('does not revoke when local disconnect fails', async () => {
+    const fetch = responses(ready); vi.spyOn(window, 'confirm').mockReturnValue(true);
+    controls.down.mockResolvedValue({ state: 'error', error: 'Отказано' });
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Отозвать профиль' }));
+    expect(await screen.findByText(/Не удалось отключить соединение на устройстве/)).toBeTruthy();
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  });
+  it('offers local disconnect even when access is unavailable and service status is an error', async () => {
+    controls.status.mockResolvedValue({ state: 'error', error: 'Служба остановлена' });
+    responses({ ...ready, available: false }); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Отключить TrustTunnel' }));
+    await waitFor(() => expect(controls.down).toHaveBeenCalled());
+  });
+  it('rotates only after user confirmation and local disconnect', async () => {
+    const fetch = responses(ready, false); vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Пересоздать профиль' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'POST', body: JSON.stringify({ rotate: true }) })));
+    expect(controls.down).toHaveBeenCalled();
+    expect(controls.up).not.toHaveBeenCalled();
   });
 });

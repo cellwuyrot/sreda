@@ -24,10 +24,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("global TrustTunnel snapshot gating", () => {
-  it("sends an empty managed set when the project selects AmneziaWG", async () => {
+  it("keeps entitled credentials even when the legacy field says AmneziaWG", async () => {
     prismaMock.vpnSettings.upsert.mockResolvedValue(row({ id: "default", activeProvider: "AMNEZIAWG", enabled: true }));
-    expect(await computeDesiredEntries(new Date())).toEqual([]);
-    expect(prismaMock.trustTunnelAccess.findMany).not.toHaveBeenCalled();
+    prismaMock.trustTunnelAccess.findMany.mockResolvedValue(row([{ userId: "user_1", generation: 3 }]));
+    prismaMock.user.findMany.mockResolvedValue(row([entitled]));
+    expect(await computeDesiredEntries(new Date())).toEqual([{ accountId: "user_1", generation: 3 }]);
   });
 
   it("includes currently entitled users only when TrustTunnel is globally selected", async () => {

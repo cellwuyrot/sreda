@@ -184,7 +184,7 @@ function tunnelSinceLabel(iso: string | null): string {
    30 секунд только в видимом окне, не создавая опрос в скрытых вкладках. */
 const VPN_STATE_REFRESH_MS = 30_000;
 
-function VpnPanel({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings?: () => void }) {
+function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; onOpenSettings?: () => void; selector?: React.ReactNode }) {
   const [state, setState] = useState<VpnState | null>(null);
   /* Успешный снимок не выбрасывается при временном сбое: статус отдельно
      объясняет, можно ли считать показанные цифры актуальными. */
@@ -263,7 +263,7 @@ function VpnPanel({ onClose, onOpenSettings }: { onClose: () => void; onOpenSett
     }
     try {
       const current = await engine.status();
-      setOtherReliableActive(["on", "connecting", "disconnecting"].includes(current.state));
+      setOtherReliableActive(current.state === "error" ? null : ["on", "connecting", "disconnecting"].includes(current.state));
       setOtherReliableChecked(true);
     } catch {
       setOtherReliableActive(null);
@@ -713,6 +713,7 @@ function VpnPanel({ onClose, onOpenSettings }: { onClose: () => void; onOpenSett
 
   return (
     <ConnectionModalFrame
+      selector={selector}
       theme="amnezia"
       eyebrow="TZ Premium · Надёжное соединение"
       title="Защищённое соединение"
@@ -1007,28 +1008,18 @@ export default function PremiumInfoModal({
   onClose: () => void;
   onOpenSettings?: () => void;
 }) {
-  /* Администратор проекта выбирает единый provider для всех пользователей.
-     По этому ответу открывается один из двух вариантов общего окна. Проверка
-     тарифа остаётся внутри выбранной панели и не заменяет её отдельной витриной. */
-  const [activeProvider, setActiveProvider] = useState<"AMNEZIAWG" | "TRUSTTUNNEL" | null>(null);
-  const [providerCheckFailed, setProviderCheckFailed] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/vpn/trusttunnel", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("provider");
-        return response.json();
-      })
-      .then((data) => {
-        if (!alive) return;
-        if (data?.activeProvider === "AMNEZIAWG" || data?.activeProvider === "TRUSTTUNNEL") {
-          setActiveProvider(data.activeProvider);
-          setProviderCheckFailed(false);
-        } else throw new Error("provider");
-      })
-      .catch(() => { if (alive) setProviderCheckFailed(true); });
-    return () => { alive = false; };
-  }, []);
+  // Local choice only; changing tabs never changes a server-wide setting or stops a tunnel.
+  const [activeProvider, setActiveProvider] = useState<"AMNEZIAWG" | "TRUSTTUNNEL">("AMNEZIAWG");
+  const selector = (
+    <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-violet-200 bg-blue-50/60 p-1.5 dark:border-white/10 dark:bg-white/[0.04]" role="group" aria-label="Тип подключения">
+      {([ ["AMNEZIAWG", "AmneziaWG"], ["TRUSTTUNNEL", "TrustTunnel"] ] as const).map(([id, label]) => (
+        <button key={id} type="button" aria-pressed={activeProvider === id} onClick={() => setActiveProvider(id)}
+          className={`min-h-11 rounded-xl px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${activeProvider === id ? "bg-gradient-to-r from-violet-600 to-blue-600 text-white" : "text-neutral-700 hover:bg-violet-100 dark:text-white/75 dark:hover:bg-white/10"}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div
@@ -1041,14 +1032,10 @@ export default function PremiumInfoModal({
         className="relative z-10 h-[88vh] max-h-[968px] w-full max-w-md overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111317]"
         onClick={(e) => e.stopPropagation()}
       >
-        {activeProvider === null ? (
-          <div className="grid h-56 place-items-center px-6 text-center text-sm text-neutral-400 dark:text-white/40">
-            {providerCheckFailed ? "Не удалось определить активную технологию. Повторите попытку позже." : "Проверяем тип соединения…"}
-          </div>
-        ) : activeProvider === "TRUSTTUNNEL" ? (
-          <TrustTunnelPilotPanel onClose={onClose} />
+        {activeProvider === "TRUSTTUNNEL" ? (
+          <TrustTunnelPilotPanel onClose={onClose} selector={selector} />
         ) : (
-          <VpnPanel onClose={onClose} onOpenSettings={onOpenSettings} />
+          <VpnPanel onClose={onClose} onOpenSettings={onOpenSettings} selector={selector} />
         )}
       </div>
     </div>
