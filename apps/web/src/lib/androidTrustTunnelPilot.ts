@@ -39,5 +39,5 @@ export function getAndroidTrustTunnelPilot() {
       catch { clearTimeout(timer); pending.delete(id); reject(new Error('Не удалось обратиться к Android VPN')); }
     });
   }
-  return { status: () => request('status'), up: (config: string) => request('up', config), down: () => request('down') };
+  return { status: () => request('status'), up: (config: string) => request('up', config), down: () => request('down'), advancedSettings: () => request('settings') };
 }
