@@ -5,6 +5,7 @@ export interface TrustTunnelEngine {
   status(): Promise<PilotStatus>;
   up(config: string): Promise<PilotStatus>;
   down(): Promise<PilotStatus>;
+  advancedSettings?(): Promise<PilotStatus>;
 }
 /** Only native bridges on supported platforms may receive private profiles. */
 export function getTrustTunnelEngine(): TrustTunnelEngine | null {

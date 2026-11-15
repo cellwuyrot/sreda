@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-const controls = vi.hoisted(() => ({ bridge: true, status: vi.fn(), up: vi.fn(), down: vi.fn(), other: vi.fn() }));
+const controls = vi.hoisted(() => ({ bridge: true, status: vi.fn(), up: vi.fn(), down: vi.fn(), other: vi.fn(), advancedSettings: undefined as undefined | ReturnType<typeof vi.fn> }));
 vi.mock('@/lib/trustTunnelClient', () => ({ getTrustTunnelEngine: () => controls.bridge ? controls : null }));
 vi.mock('@/lib/vpnBridge', () => ({ getVpnBridge: () => ({ status: controls.other, down: vi.fn().mockResolvedValue({ state: 'off' }) }) }));
 import TrustTunnelPilotPanel from './TrustTunnelPilotPanel';
 
 beforeEach(() => {
-  controls.bridge = true; vi.clearAllMocks();
+  controls.bridge = true; controls.advancedSettings = undefined; vi.clearAllMocks();
   controls.status.mockResolvedValue({ state: 'off', error: null, confirmed: false });
   controls.up.mockResolvedValue({ state: 'on', error: null, confirmed: false });
   controls.down.mockResolvedValue({ state: 'off', error: null, confirmed: false });
@@ -148,5 +148,31 @@ describe('profile recovery', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'POST', body: JSON.stringify({ rotate: true }) })));
     expect(controls.down).toHaveBeenCalled();
     expect(controls.up).not.toHaveBeenCalled();
+  });
+});
+
+describe('TrustTunnel advanced settings', () => {
+  it('opens Android native settings only while the tunnel is off', async () => {
+    controls.advancedSettings = vi.fn().mockResolvedValue({ state: 'off', error: null });
+    responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    await screen.findByText('Готово к включению');
+    fireEvent.click(screen.getByRole('button', { name: 'Расширенные настройки' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать приложения на Android' }));
+    await waitFor(() => expect(controls.advancedSettings).toHaveBeenCalledTimes(1));
+  });
+  it('prevents changing Android settings while the tunnel is running', async () => {
+    controls.advancedSettings = vi.fn(); controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: true });
+    responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    await screen.findByText('Клиент подтвердил соединение');
+    fireEvent.click(screen.getByRole('button', { name: 'Расширенные настройки' }));
+    expect((screen.getByRole('button', { name: 'Выбрать приложения на Android' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('does not pretend Windows supports per-app routing', async () => {
+    responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    await screen.findByText('Готово к включению');
+    fireEvent.click(screen.getByRole('button', { name: 'Расширенные настройки' }));
+    expect(screen.getByText(/В текущем клиенте Windows он пока не поддерживается/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Выбрать приложения на Android/ })).toBeNull();
   });
 });

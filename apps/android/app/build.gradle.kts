@@ -273,7 +273,7 @@ val generateVpnPolicy = tasks.register("generateVpnPolicy") {
             id
         }
         require(ids.distinct().size == ids.size)
-        val queries = "<queries>" + ids.joinToString("") { "<package android:name=\"$it\" />" } + "</queries>"
+        val queries = "<queries><intent><action android:name=\"android.intent.action.MAIN\" /><category android:name=\"android.intent.category.LAUNCHER\" /></intent>" + ids.joinToString("") { "<package android:name=\"$it\" />" } + "</queries>"
         val dir = output.get().asFile
         dir.mkdirs()
         dir.resolve("AndroidManifest.xml").writeText(manifest.readText().replace("<!-- VPN_POLICY_QUERIES -->", queries))
