@@ -1217,7 +1217,7 @@ function ConnectPageInner() {
             </button>
           </div>
         )}
-        <MobileProfileSheet open={mobileProfileOpen} onClose={() => setMobileProfileOpen(false)} />
+        <MobileProfileSheet open={mobileProfileOpen} onClose={() => setMobileProfileOpen(false)} onOpenConnection={() => setShowPremiumInfo(true)} />
       </div>
       )}
 
