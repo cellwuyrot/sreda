@@ -33,6 +33,7 @@ interface ConnectionModalFrameProps {
   };
   plan: ConnectionPlanCardData;
   notice?: ReactNode;
+  selector?: ReactNode;
   children?: ReactNode;
 }
 
@@ -80,6 +81,7 @@ export default function ConnectionModalFrame({
   status,
   plan,
   notice,
+  selector,
   children,
 }: ConnectionModalFrameProps) {
   const styles = themeStyles[theme];
@@ -158,6 +160,7 @@ export default function ConnectionModalFrame({
           </button>
         </div>
 
+        {selector}
         <div className="mt-7 flex flex-col items-center">
           <button
             type="button"

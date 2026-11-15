@@ -22,7 +22,7 @@ export async function GET() {
   try {
     const vpnSettings = await getVpnSettings();
     const activeProvider = parseVpnProvider(vpnSettings.activeProvider);
-    const selected = activeProvider === "TRUSTTUNNEL";
+    const selected = true; // Both technologies are available; choice is local to the user.
     const serviceEnabled = vpnSettings.enabled === true;
     const base = { activeProvider, selected, serviceEnabled, available: false, eligible: false, enabled: false, applied: false, planLabel: "Нет активного доступа" };
     if (!selected || !serviceEnabled || !trustTunnelEnabled() || !(await trustTunnelProviderIsActive())) {

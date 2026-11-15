@@ -253,44 +253,6 @@ export default function AdminVpnPage() {
     }
   };
 
-  const switchProvider = async (provider: "AMNEZIAWG" | "TRUSTTUNNEL") => {
-    if (!providerControl) return;
-    const from = providerControl.activeProviderLabel;
-    const to = provider === "AMNEZIAWG" ? "AmneziaWG" : "TrustTunnel";
-    const impact = provider === "AMNEZIAWG"
-      ? "Новые подключения будут идти через AmneziaWG. При следующем полном снимке агент TrustTunnel получит пустой список и удалит управляемые учётные записи. Уже активные TrustTunnel-сессии будут отозваны; Endpoint может перезапустить службу и прервать их. Переход не бесшовный."
-      : "Новые профили и список пиров AmneziaWG будут заблокированы. VPN-узлы получат пустой список пиров при следующем опросе (обычно примерно через 5 секунд), поэтому уже активные AmneziaWG-сессии тоже отключатся. Старые версии клиентов не умеют автоматически перейти на TrustTunnel — пользователям потребуется обновить приложение и подключиться заново. Учёт трафика TrustTunnel пока не ведётся.";
-    if (!window.confirm(`Переключить единый VPN-провайдер проекта с «${from}» на «${to}» для ВСЕХ пользователей?\n\n${impact}\n\nПодтвердить изменение?`)) {
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/admin/vpn/provider", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider,
-          confirmed: true,
-          impactConfirmed: true,
-          expectedCurrentProvider: providerControl.activeProvider,
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (data?.providerControl) setProviderControl(data.providerControl);
-      if (!res.ok) {
-        setError(data?.error || "Переключение заблокировано");
-        return;
-      }
-      setError("");
-      flash(data?.changed ? `Активный провайдер: ${to}` : `Уже выбран ${to}`);
-      await load();
-    } catch {
-      setError("Не удалось связаться с сервером");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (status === "loading") {
     return <div className="flex min-h-screen items-center justify-center bg-neutral-50 dark:bg-neutral-950"><Spinner /></div>;
   }
@@ -339,59 +301,11 @@ export default function AdminVpnPage() {
           <p className="text-sm text-neutral-400">Загрузка…</p>
         ) : (
           <>
-            {/* VPN-PROVIDER: единый тип соединения для всех пользователей проекта. */}
-            {providerControl && (
-              <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Активная технология подключения</h2>
-                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-gray-400">
-                      Сейчас: <strong>{providerControl.activeProviderLabel}</strong>. Провайдер общий для всех подписчиков; клиент технологию не выбирает.
-                    </p>
-                  </div>
-                  {providerControl.canRollbackToAmneziaWG && (
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => void switchProvider("AMNEZIAWG")}
-                      className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-500/25 disabled:opacity-50 dark:text-amber-300"
-                    >
-                      Откатить на AmneziaWG
-                    </button>
-                  )}
-                </div>
-
-                <div className="mt-4 rounded-lg border border-neutral-200 p-3 dark:border-white/10">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-neutral-900 dark:text-white">TrustTunnel</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${providerControl.trustTunnel.ready ? "bg-violet-500/15 text-violet-700 dark:text-violet-300" : "bg-amber-500/15 text-amber-700 dark:text-amber-300"}`}>
-                      {providerControl.trustTunnel.ready ? "Можно выбрать для проекта" : "Не настроен на сервере"}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={saving || !providerControl.trustTunnel.switchAllowed}
-                      onClick={() => void switchProvider("TRUSTTUNNEL")}
-                      className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-cyan-500 dark:text-neutral-950"
-                    >
-                      Переключить всех на TrustTunnel
-                    </button>
-                  </div>
-                  <ul className="mt-3 space-y-2">
-                    {providerControl.trustTunnel.checks.map((check) => (
-                      <li key={check.id} className="text-[11px]">
-                        <span className={check.status === "READY" ? "text-green-600 dark:text-green-400" : check.status === "BLOCKED" ? "text-red-600 dark:text-red-400" : "text-violet-600 dark:text-violet-300"}>
-                          {check.status === "READY" ? "✓ " : check.status === "BLOCKED" ? "! " : "i "}{check.label}
-                        </span>
-                        <span className="ml-1 text-neutral-500 dark:text-gray-400">{check.detail}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-3 text-[11px] text-neutral-500 dark:text-gray-400">
-                    Настройка общая для всех пользователей. Смена прерывает действующие сессии при следующем применении снимка на узле. Пароли, токены и ключи в админке не показываются.
-                  </p>
-                </div>
-              </section>
-            )}
+            <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+              <h2 className="text-sm font-semibold">Способы подключения</h2>
+              <p className="mt-2 text-xs text-neutral-600 dark:text-gray-300">AmneziaWG и TrustTunnel доступны независимо. Пользователь выбирает способ на своём устройстве; одновременно на одном устройстве используется только один туннель.</p>
+              <p className="mt-2 text-xs text-neutral-600 dark:text-gray-300">TrustTunnel: {providerControl?.trustTunnel.ready ? "серверная конфигурация задана; работоспособность не проверена" : "не настроен или выключен"}. Учёт трафика TrustTunnel пока не реализован.</p>
+            </section>
 
             {/* ── Выключатель ── */}
             <section className="admin-card rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
@@ -410,15 +324,10 @@ export default function AdminVpnPage() {
                   type="button"
                   disabled={saving}
                   onClick={() => {
-                    if (settings.enabled && providerControl?.activeProvider === "TRUSTTUNNEL" &&
-                      !window.confirm("Отключить «Надёжное соединение» для всех пользователей? Endpoint получит пустой список учётных записей, активные TrustTunnel-сессии будут прерваны, а Endpoint может перезапуститься.")) return;
+                    if (settings.enabled && !window.confirm("Отключить оба способа для всех пользователей? Туннели будут прерваны после синхронизации узлов.")) return;
                     patch(
                       { enabled: !settings.enabled },
-                      settings.enabled
-                        ? providerControl?.activeProvider === "TRUSTTUNNEL"
-                          ? "Сервис отключён — Endpoint удалит управляемые учётные записи при следующей синхронизации"
-                          : "Сервис выключен — узлы снимут туннели в течение минуты"
-                        : "Сервис включён",
+                      settings.enabled ? "Сервис отключён: узлы применят изменения при синхронизации" : "Сервис включён",
                     );
                   }}
                   className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
@@ -577,11 +486,6 @@ export default function AdminVpnPage() {
                     </p>
                   </div>
                 </div>
-              )}
-              {!summary && providerControl?.activeProvider !== "AMNEZIAWG" && (
-                <p className="mt-4 rounded-lg bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-                  Счётчики AmneziaWG не показываются для другого активного провайдера. Учёт TrustTunnel ещё не подключён.
-                </p>
               )}
             </section>
 
@@ -764,12 +668,7 @@ export default function AdminVpnPage() {
                 </Link>
               </div>
 
-              {providerControl?.activeProvider !== "AMNEZIAWG" ? (
-                <p className="mt-3 rounded-lg bg-amber-400/[0.08] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-                  Узлы AmneziaWG сейчас не используются: активный провайдер — {providerControl?.activeProviderLabel ?? "неизвестен"}.
-                  Статистика по ним скрыта, чтобы не смешивать её с данными другого провайдера.
-                </p>
-              ) : nodes.length === 0 ? (
+              {nodes.length === 0 ? (
                 <div className="mt-3 rounded-xl border border-dashed border-neutral-200 p-4 dark:border-white/10">
                   <p className="text-xs font-medium text-neutral-700 dark:text-white/80">Узлов ещё нет. Три шага:</p>
                   <ol className="mt-2 ml-4 list-decimal space-y-1 text-[11px] text-neutral-500 dark:text-gray-400">

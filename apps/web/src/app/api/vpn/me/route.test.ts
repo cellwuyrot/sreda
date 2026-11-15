@@ -213,11 +213,11 @@ describe("POST: аутентификация", () => {
 // ── Проверка прав (entitlement) ─────────────────────────────────────────────
 
 describe("POST: права на VPN", () => {
-  it("активный не-WireGuard провайдер закрывает AmneziaWG выдачу", async () => {
+  it("выдаёт AmneziaWG независимо от прежней настройки провайдера", async () => {
     vi.mocked(getVpnSettings).mockResolvedValue({ ...MOCK_SETTINGS, activeProvider: "TRUSTTUNNEL" } as never);
     const res = await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY }));
-    expect(res.status).toBe(503);
-    expect(prismaMock.vpnPeer.upsert).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(prismaMock.vpnPeer.upsert).toHaveBeenCalled();
   });
 
   it("без Premium подписки → 403", async () => {
@@ -384,11 +384,11 @@ describe("GET /api/vpn/me", () => {
     expect(json).toHaveProperty("entitled");
   });
 
-  it("не отдаёт WireGuard профиль при активном другом провайдере", async () => {
+  it("возвращает состояние AmneziaWG независимо от прежней настройки", async () => {
     vi.mocked(getVpnSettings).mockResolvedValue({ ...MOCK_SETTINGS, activeProvider: "TRUSTTUNNEL" } as never);
     const res = await GET();
-    expect(res.status).toBe(503);
-    expect(prismaMock.vpnPeer.findUnique).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(prismaMock.vpnPeer.findUnique).toHaveBeenCalled();
   });
 });
 
@@ -420,11 +420,11 @@ describe("DELETE /api/vpn/me", () => {
     expect(prismaMock.vpnPeer.delete).toHaveBeenCalledWith({ where: { id: "peer-1" } });
   });
 
-  it("не сообщает об отзыве AmneziaWG при активном другом провайдере", async () => {
+  it("разрешает отзыв AmneziaWG независимо от прежней настройки", async () => {
     vi.mocked(getVpnSettings).mockResolvedValue({ ...MOCK_SETTINGS, activeProvider: "TRUSTTUNNEL" } as never);
     const res = await DELETE();
-    expect(res.status).toBe(503);
-    expect(prismaMock.vpnPeer.findUnique).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(prismaMock.vpnPeer.findUnique).toHaveBeenCalled();
   });
 });
 

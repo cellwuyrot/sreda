@@ -15,7 +15,7 @@ import {
   usageView,
   isUsageUnlimited,
 } from "@/lib/connectionUsage";
-import { isVpnProviderActive, parseVpnProvider, providerControlView } from "@/lib/vpnProvider";
+import { parseVpnProvider, providerControlView } from "@/lib/vpnProvider";
 
 // VPN-PANEL: управление сервисом VPN. Только ADMIN — редактор сюда не
 // допускается: речь об инфраструктуре и доступах, а не о контенте.
@@ -33,7 +33,7 @@ export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const settings = await getVpnSettings();
-  const wireGuardActive = isVpnProviderActive(settings.activeProvider, "AMNEZIAWG");
+  const wireGuardActive = true; // Both technologies can serve subscribers.
 
   const nodes = await prisma.serverNode.findMany({
     where: { kind: "VPN" },
