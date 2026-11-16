@@ -10,7 +10,6 @@ import { useEffect, useState, useRef, useCallback, useId, Children, isValidEleme
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useTheme } from "@/components/Providers";
-import { useConnectTheme } from "@/contexts/ThemeContext";
 import { useLang } from "@/lib/i18n"; // FIX-I18N
 import { useVoice, REPLAY_MAX_SECONDS, REPLAY_MIN_SECONDS, EQ_BANDS, EQ_MIN_DB, EQ_MAX_DB, EQ_PRESET_ORDER, EQ_PRESET_LABELS, MIC_GAIN_MIN_DB, MIC_GAIN_MAX_DB } from "@/contexts/VoiceContext";
 import { getDesktopApi, type DesktopConfig } from "@/lib/desktop";
@@ -635,7 +634,6 @@ export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { lang, setLang } = useLang(); // FIX-I18N
-  const { lightVariant, toggleLightVariant } = useConnectTheme();
   const voice = useVoice();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -1920,16 +1918,6 @@ export default function SettingsPage() {
                   Тёмная
                 </button>
                 <button
-                  onClick={() => setTheme("light")}
-                  className={`py-2.5 rounded-xl text-sm font-medium transition-all border ${
-                    theme === "light"
-                      ? "bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-300"
-                      : "bg-neutral-100 dark:bg-white/5 border-neutral-200 dark:border-white/10 text-neutral-500 dark:text-gray-400"
-                  }`}
-                >
-                  Светлая
-                </button>
-                <button
                   onClick={() => { if (effectivePremium) setTheme("mono"); }}
                   disabled={!effectivePremium}
                   title={effectivePremium ? "Монохром (Premium)" : "Доступно с Premium"}
@@ -1944,21 +1932,6 @@ export default function SettingsPage() {
                   Монохром
                   <span className="ml-1 align-middle text-[10px] font-semibold text-amber-500">Premium</span>
                 </button>
-                <button
-                  onClick={() => { if (effectivePremium) setTheme("mono-lite"); }}
-                  disabled={!effectivePremium}
-                  title={effectivePremium ? "Monochrome Lite (Premium)" : "Доступно с Premium"}
-                  className={`relative py-2.5 rounded-xl text-sm font-medium transition-all border ${
-                    theme === "mono-lite"
-                      ? "bg-white/10 border-white/40 text-neutral-900 dark:text-white"
-                      : effectivePremium
-                        ? "bg-neutral-100 dark:bg-white/5 border-neutral-200 dark:border-white/10 text-neutral-500 dark:text-gray-400"
-                        : "bg-neutral-100 dark:bg-white/5 border-neutral-200 dark:border-white/10 text-neutral-400 dark:text-gray-600 opacity-60 cursor-not-allowed"
-                  }`}
-                >
-                  Mono Lite
-                  <span className="ml-1 align-middle text-[10px] font-semibold text-amber-500">Premium</span>
-                </button>
               </div>
 
               {!effectivePremium && (
@@ -1969,54 +1942,13 @@ export default function SettingsPage() {
               {theme === "mono" && (
                 <p className="text-xs text-neutral-500 dark:text-gray-400 mt-2">
                   Строгий монохромный дизайн (глубокий чёрный и графит, серебристые акценты).
-                  Анимации в TZ.Connect отключены.
-                </p>
-              )}
-              {theme === "mono-lite" && (
-                <p className="text-xs text-neutral-500 dark:text-gray-400 mt-2">
-                  «Monochrome Lite» — светлая пара Monochrome: холодная бумага и графит.
-                  Тот же материальный язык и та же дисциплина движения, что и в тёмном Монохроме.
-                </p>
-              )}
-              {theme === "light" && (
-                <p className="text-xs text-neutral-500 dark:text-gray-400 mt-2">
-                  «Светлая» — дизайн «Бумажная студия»: слоистые панели-«листы» с мягкими
-                  тенями вместо линий, дневной свет у верхней кромки и чернильный акцент.
-                  Цвет чернил выбирается ниже — фиолет или тёплая охра.
+                  Графика доступна на главном экране TZ.Connect.
                 </p>
               )}
             </div>
 
-            {theme === "light" && (
-              <div className="mt-4">
-                <p className="text-sm text-neutral-900 dark:text-white font-medium mb-2">Цветовая схема (светлая тема)</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => { if (lightVariant !== "default") toggleLightVariant(); }}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all border ${
-                      lightVariant === "default"
-                        ? "bg-violet-500/10 border-violet-500/30 text-violet-600"
-                        : "bg-neutral-100 border-neutral-200 text-neutral-500"
-                    }`}
-                  >
-                    Violet
-                  </button>
-                  <button
-                    onClick={() => { if (lightVariant !== "warm") toggleLightVariant(); }}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all border ${
-                      lightVariant === "warm"
-                        ? "bg-orange-500/10 border-orange-500/30 text-orange-600"
-                        : "bg-neutral-100 border-neutral-200 text-neutral-500"
-                    }`}
-                  >
-                    Warm
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Перенесено из раздела TZ.Connect: «Оформление» (баннер, свечение
-                аватара, фон дня и ночи), «Кастомизация чата» и «Профиль сервера».
+                аватара), «Кастомизация чата» и «Профиль сервера».
                 Порядок на экране повторяет порядок применения: сначала тема выше,
                 потом частные настройки, и в самом низу — своё оформление Premium,
                 которое ложится поверх всего остального. */}

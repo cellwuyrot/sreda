@@ -13,7 +13,6 @@ const DrawingEditor = dynamic(() => import("@/components/ui/DrawingEditor"), { s
 import { io, type Socket } from "socket.io-client";
 import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
-import DayNightBackground from "@/components/connect/DayNightBackground";
 import ForwardModal from "@/components/connect/ForwardModal";
 // FIX-FWDBUF: пересылка через внутренний буфер — человек сам выбирает место.
 import ForwardPendingBar from "@/components/connect/ForwardPendingBar";
@@ -148,29 +147,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
 
   // Reply
   const [replyTo, setReplyTo] = useState<{ id: string; name: string; content: string; quote?: string } | null>(null);
-
-  // День/ночь фон (настройка): показывается только внутри области чата
-  const [dayNightEnabled, setDayNightEnabled] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("tz-connect-daynight") === "true";
-    }
-    return false;
-  });
-  const [dayNightOpacity, setDayNightOpacity] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      return parseInt(localStorage.getItem("tz-connect-daynight-opacity") ?? "15", 10);
-    }
-    return 15;
-  });
-  useEffect(() => {
-    function handleDayNightChange(e: Event) {
-      const detail = (e as CustomEvent<{ enabled: boolean; opacity: number }>).detail;
-      setDayNightEnabled(detail.enabled);
-      setDayNightOpacity(detail.opacity);
-    }
-    window.addEventListener("tz-daynight-change", handleDayNightChange);
-    return () => window.removeEventListener("tz-daynight-change", handleDayNightChange);
-  }, []);
 
   // Typing
   const [typingName, setTypingName] = useState<string | null>(null);
@@ -1785,9 +1761,6 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
           <section {...dropPaste.dropProps} className={`tz-skin-chat flex-1 flex flex-col h-full bg-[var(--cn-main)] relative min-w-0 ${detailsMode && !isBusiness ? "lg:pr-80" : ""}`}>
             {dropPaste.isDragOver && (
               <div className="tz-dropzone">Отпустите файлы, чтобы прикрепить</div>
-            )}
-            {dayNightEnabled && (
-              <DayNightBackground opacity={dayNightOpacity / 100} />
             )}
             {!isBusiness ? <DMPersonalHeader
               other={isVaultConv ? { ...otherUser, name: "Сейф" } : otherUser} secure={isSecureConv} vault={isVaultConv}
