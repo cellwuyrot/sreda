@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motio
 import { timezoneForCity } from "@/lib/cityTimezones";
 import { useTheme } from "@/components/Providers";
 import { isVisualHidden, VISUAL_VISIBILITY_EVENT } from "@/lib/visualVisibility";
+import { advanceWelcomeScene, WELCOME_FRAME_MS } from "./welcomeSceneTiming";
 
 /* ───────────────────────────────────────────────────────────
  *  ConnectWelcome — мифическая Земля под энергощитом в космосе
@@ -446,22 +447,10 @@ function SpaceScene({
       c2d.restore();
     }
 
-    /* PERF-ANIM: цена этой сцены — целое ядро процессора, и платилась она круглосуточно.
-
-       Здесь каждый кадр заново рисуется всё небо: звёзды, кометы, созвездия и город
-       — сотни отдельных штрихов с тенями (shadowBlur), а тени в canvas считаются на CPU.
-       При 60 кадрах в секунду это и есть та самая загрузка в диспетчере задач.
-
-       В браузере беду частично прятал сам Chromium: у скрытого окна он останавливает
-       requestAnimationFrame. Но в нашем приложении троттлинг фона выключен намеренно
-       (mainWindow.ts, FIX-OVL-THROTTLE — иначе засыпает оверлей голосового канала), и
-       потому свернутое окно продолжало рисовать космос в полную силу. Поэтому цикл
-       управляет собой сам: 30 кадров в секунду вместо 60 (для медленного мерцания
-       звёзд разницы не видно) и полная остановка, когда окно не видно или не в фокусе.
-       При «уменьшить анимацию» в ОС сцена рисуется один раз и застывает. */
-    const FRAME_MS = 1000 / 30;
-    /* Шаг времени удвоен, чтобы скорость сцены не зависела от частоты кадров. */
-    const T_STEP = 0.032;
+    /* Декоративный фон не должен непрерывно занимать ресурсы чата.
+       Ограничиваем перерисовку; эффекты, использующие t, учитывают реальное время.
+       Звёзды и кометы движутся медленнее. Скрытое окно и reduced-motion — ниже. */
+    const FRAME_MS = WELCOME_FRAME_MS;
     const reduceMotion =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -486,8 +475,8 @@ function SpaceScene({
     function frame(now: number) {
       raf = requestAnimationFrame(frame);
       if (now - lastDraw < FRAME_MS) return;
+      t += advanceWelcomeScene(now, lastDraw);
       lastDraw = now;
-      t += T_STEP;
       draw();
     }
 
