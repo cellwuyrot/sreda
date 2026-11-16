@@ -46,12 +46,31 @@ describe('TrustTunnel subscriber panel', () => {
     const fetch = responses({ ...ready, enabled: false, applied: false }, false);
     render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
     const power = await screen.findByRole('button', { name: 'Подключить надёжное соединение' });
-    expect((power as HTMLButtonElement).disabled).toBe(false);
+    // The button is rendered before the asynchronous status checks complete.
+    // Wait for readiness, not just for the button to exist.
+    await waitFor(() => expect((power as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(power);
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'POST' })));
     expect(await screen.findByText('Ожидаем применение на сервере')).toBeTruthy();
     expect(controls.up).not.toHaveBeenCalled();
     expect((power as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps first-time connection disabled until the other VPN status is known', async () => {
+    let resolveOther!: (value: { state: string }) => void;
+    controls.other.mockImplementationOnce(() => new Promise(resolve => { resolveOther = resolve; }));
+    const fetch = responses({ ...ready, enabled: false, applied: false }, false);
+    render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    const power = await screen.findByRole('button', { name: 'Подключить надёжное соединение' });
+    await screen.findByText('Не удалось проверить другое соединение');
+    expect((power as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(power);
+    expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/config'))).toBe(false);
+    resolveOther({ state: 'off' });
+    await waitFor(() => expect((power as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(power);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/vpn/trusttunnel/config', expect.objectContaining({ method: 'POST' })));
+    expect(controls.up).not.toHaveBeenCalled();
   });
 
   it('connects only when the endpoint has applied the account', async () => {

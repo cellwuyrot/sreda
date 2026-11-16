@@ -17,7 +17,6 @@ import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CITY_NAMES } from "@/lib/cityTimezones";
 import GlowAvatar, { GLOW_PRESETS, GlowAvatarUser } from "@/components/ui/GlowAvatar";
-import { DayNightMiniPreview } from "@/components/connect/DayNightBackground";
 import { getDMSoundEnabled, setDMSoundEnabled, playDMNotification } from "@/lib/dmSound";
 import { exportKeysToJSON, importKeysFromJSON } from "@/lib/e2ee";
 import { SparklesIcon, FilmIcon, MoonIcon, KeyIcon, UploadIcon, DownloadIcon } from "@/components/ui/ConnectIcons";
@@ -70,7 +69,7 @@ export default function ConnectProfileSettings({
   const { data: session } = useSession();
   const [confirmKeyReplace, setConfirmKeyReplace] = useState(false);
   const sessionUser = session?.user as { id?: string; name?: string; username?: string } | undefined;
-  /* Свечение аватара, анимированный баннер и фон дня и ночи — платные
+  /* Свечение аватара и анимированный баннер — платные
      возможности. Раньше здесь стояла проверка должности, из-за чего
      оплатившие подписку их не видели, а администраторы получали даром.
      Администратор оставлен, чтобы возможность было чем проверить. */
@@ -78,12 +77,6 @@ export default function ConnectProfileSettings({
 
   const [glowEnabled, setGlowEnabled] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
-  const [dayNightEnabled, setDayNightEnabled] = useState<boolean>(() =>
-    typeof window !== "undefined" && localStorage.getItem("tz-connect-daynight") === "true",
-  );
-  const [dayNightOpacity, setDayNightOpacity] = useState<number>(() =>
-    typeof window !== "undefined" ? parseInt(localStorage.getItem("tz-connect-daynight-opacity") ?? "15", 10) : 15,
-  );
   const [selectedPreset, setSelectedPreset] = useState<string | null>("royal");
   const [customColors, setCustomColors] = useState<string[]>([...GLOW_PRESETS.royal.colors]);
   const [useCustom, setUseCustom] = useState(false);
@@ -168,12 +161,6 @@ export default function ConnectProfileSettings({
   }
 
   async function save() {
-    localStorage.setItem("tz-connect-daynight", String(dayNightEnabled));
-    localStorage.setItem("tz-connect-daynight-opacity", String(dayNightOpacity));
-    window.dispatchEvent(new CustomEvent("tz-daynight-change", {
-      detail: { enabled: dayNightEnabled, opacity: dayNightOpacity },
-    }));
-
     setSaving(true);
     setError(null);
     try {
@@ -308,14 +295,14 @@ export default function ConnectProfileSettings({
       </SettingsCard>
       )}
 
-      {/* ── Карточка «Оформление»: баннер, свечение аватара, фон дня и ночи. ──
+      {/* ── Карточка «Оформление»: баннер, свечение аватара. ──
           Всё это — привилегия Premium (или ADMIN), см. isPrivileged выше.
           Карточка показывается в разделе «Внешний вид», см. проп sections. */}
       {showAppearance && (
       <SettingsCard title="Оформление">
         {!isPrivileged && (
           <p className="text-xs text-neutral-500 dark:text-gray-400 border border-neutral-200 dark:border-white/10 rounded-xl px-3 py-2">
-            Свечение аватара, анимированный баннер и фон дня и ночи входят в Premium.
+            Свечение аватара и анимированный баннер входят в Premium.
           </p>
         )}
 
@@ -436,62 +423,6 @@ export default function ConnectProfileSettings({
           </AnimatePresence>
         </>)}
 
-        {isPrivileged && (
-          <div className="pt-2 border-t border-neutral-100 dark:border-white/5 space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-neutral-900 dark:text-white flex items-center gap-1.5">
-                <MoonIcon size={18} tone="active" /> Фон дня и ночи
-                <InfoTooltip text="Живое небо и цифровой город на фоне окна чата, меняются в зависимости от времени суток." />
-              </p>
-              <button
-                onClick={() => setDayNightEnabled(!dayNightEnabled)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${dayNightEnabled ? "bg-cyan-500 dark:bg-cyan-500" : "bg-neutral-300 dark:bg-neutral-600"}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${dayNightEnabled ? "translate-x-5" : "translate-x-0"}`} />
-              </button>
-            </div>
-
-            <AnimatePresence>
-              {dayNightEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden space-y-3"
-                >
-                  <div className="relative h-20 rounded-xl overflow-hidden border border-neutral-200 dark:border-white/10">
-                    <DayNightMiniPreview opacity={dayNightOpacity} />
-                    <div className="absolute inset-0 flex items-end p-2">
-                      <span className="text-[10px] text-white/60 font-mono bg-black/30 px-1.5 py-0.5 rounded">
-                        предпросмотр · {new Date().getHours()}:{String(new Date().getMinutes()).padStart(2, "0")}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400">Прозрачность фона</p>
-                      <span className="text-xs font-mono text-cyan-500 dark:text-cyan-400">{dayNightOpacity}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={5}
-                      max={35}
-                      step={1}
-                      value={dayNightOpacity}
-                      onChange={(e) => setDayNightOpacity(+e.target.value)}
-                      className="w-full accent-cyan-500"
-                    />
-                    <div className="flex justify-between text-[10px] text-neutral-400">
-                      <span>Едва заметно (5%)</span>
-                      <span>Атмосферно (35%)</span>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
       </SettingsCard>
       )}
 

@@ -487,9 +487,8 @@ body {
    Monochrome (premium) — "Cinematic Industrial" material overrides.
    These sit at the end of the file so they win over earlier component styles.
    The whole app carries `.mono` on <html>, so the material language is applied
-   everywhere; /connect additionally has its ambient JS motion gated off in
-   React (DayNightBackground returns null, ConnectWelcome static, framer-motion
-   reduced). The goal is a re-imagined design — matte panels, brushed metal,
+   everywhere; /connect uses the particle scene with visibility and reduced-motion
+   handling. The goal is a re-imagined design — matte panels, brushed metal,
    tempered glass, dusty layers, erosion & wear — not a grayscale filter.
    ════════════════════════════════════════════════════════════════════════ */
 
@@ -613,9 +612,7 @@ body {
   transform: none !important;
 }
 
-/* 7) Premium welcome chips — brushed chrome. The /connect welcome background is
-   no longer a brushed-metal texture: it is now an open charcoal void with a
-   drifting line-art space scene (see MonoSpaceDrift in ConnectWelcome.tsx). */
+/* 7) Premium chips — brushed chrome. */
 .mono .mono-chip {
   background:
     linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0) 45%),

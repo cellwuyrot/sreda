@@ -11,133 +11,88 @@ interface VoiceRecorderProps {
 export default function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState("");
+  const [review, setReview] = useState<{ blob: Blob; duration: number; url: string } | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mounted = useRef(false);
+  const pending = useRef(false);
+  const cancelled = useRef(false);
+
+  useEffect(() => () => { if (review) URL.revokeObjectURL(review.url); }, [review]);
 
   useEffect(() => {
+    mounted.current = true;
     return () => {
+      mounted.current = false;
+      cancelled.current = true;
       if (timerRef.current) clearInterval(timerRef.current);
-      if (recorderRef.current?.state === "recording") {
-        recorderRef.current.stop();
-      }
+      if (recorderRef.current?.state !== "inactive") recorderRef.current?.stop();
     };
   }, []);
 
   const startRecording = useCallback(async () => {
+    if (pending.current || recorderRef.current) return;
+    pending.current = true;
+    cancelled.current = false;
+    setError("");
+    let stream: MediaStream | undefined;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "audio/ogg";
-
-      const recorder = new MediaRecorder(stream, { mimeType });
-      chunksRef.current = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mounted.current || cancelled.current) { stream.getTracks().forEach(t => t.stop()); return; }
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"].find(t => MediaRecorder.isTypeSupported(t));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      const started = Date.now();
+      const capturedStream = stream;
+      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
+        capturedStream.getTracks().forEach(t => t.stop());
         if (timerRef.current) clearInterval(timerRef.current);
-
-        const duration = (Date.now() - startTimeRef.current) / 1000;
-        if (chunksRef.current.length > 0 && duration >= 0.5) {
-          /* Тип БЕЗ кодеков. `mimeType` здесь — «audio/webm;codecs=opus», и
-             именно эта строка уходила на сервер как Content-Type части запроса,
-             а он сверял её со списком разрешённых точным равенством и отвечал
-             415. То есть голосовое молча не отправлялось (клиент ошибку не
-             показывал). Сервер теперь режет параметры сам, но отправлять чистый
-             тип правильно и здесь: он попадает во вложение сообщения. */
-          const blob = new Blob(chunksRef.current, { type: baseMimeType(mimeType) });
-          onRecorded(blob, Math.round(duration));
+        timerRef.current = null;
+        recorderRef.current = null;
+        const duration = (Date.now() - started) / 1000;
+        if (mounted.current && !cancelled.current && chunks.length && duration >= 0.5) {
+          const blob = new Blob(chunks, { type: baseMimeType(recorder.mimeType || mimeType || "audio/webm") });
+          setReview({ blob, duration: Math.round(duration), url: URL.createObjectURL(blob) });
         }
-        setRecording(false);
-        setElapsed(0);
+        if (mounted.current) {
+          if (!cancelled.current && (!chunks.length || duration < 0.5)) setError("Запись слишком короткая. Попробуйте ещё раз.");
+          setRecording(false); setElapsed(0);
+        }
       };
-
+      recorder.onerror = () => { cancelled.current = true; if (mounted.current) setError("Ошибка записи. Проверьте микрофон."); };
       recorderRef.current = recorder;
-      startTimeRef.current = Date.now();
       recorder.start(250);
       setRecording(true);
-
-      timerRef.current = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
-      }, 500);
+      timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
     } catch {
-      // Microphone denied
-    }
-  }, [onRecorded]);
-
-  const stopRecording = useCallback(() => {
-    if (recorderRef.current?.state === "recording") {
-      recorderRef.current.stop();
-    }
+      stream?.getTracks().forEach(t => t.stop());
+      recorderRef.current = null;
+      if (mounted.current) setError("Не удалось начать запись. Проверьте доступ к микрофону.");
+    } finally { pending.current = false; }
   }, []);
 
-  const cancelRecording = useCallback(() => {
-    chunksRef.current = [];
-    startTimeRef.current = Date.now();
-    if (recorderRef.current?.state === "recording") {
-      recorderRef.current.stop();
-    }
-    setRecording(false);
-    setElapsed(0);
+  const stopRecording = useCallback((cancel: boolean) => {
+    if (cancel) cancelled.current = true;
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
   }, []);
-
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, "0")}`;
-  };
-
-  if (recording) {
-    return (
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={cancelRecording}
-          className="p-2 text-red-400 hover:text-red-500 transition-colors"
-          title="Отменить"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-        <div className="flex items-center gap-2 flex-1 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800/30">
-          <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-          <span className="text-sm text-red-600 dark:text-red-400 font-mono">{formatTime(elapsed)}</span>
-          <span className="text-xs text-red-400">Запись...</span>
-        </div>
-        <button
-          type="button"
-          onClick={stopRecording}
-          className="p-2.5 bg-violet-500 dark:bg-cyan-600 text-white rounded-xl hover:opacity-90 transition-opacity"
-          title="Отправить"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-          </svg>
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={startRecording}
-      disabled={disabled}
-      className="p-2.5 text-neutral-400 hover:text-violet-500 dark:hover:text-cyan-400 transition-colors disabled:opacity-50"
-      title="Голосовое сообщение"
-    >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-14 0m14 0a7 7 0 00-14 0m14 0v1a7 7 0 01-14 0v-1m7 8v4m-4 0h8" />
-      </svg>
-    </button>
+  const time = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+  if (review) return (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-cyan-400/20 bg-slate-900 p-2">
+      <audio controls preload="metadata" src={review.url} aria-label="Прослушать голосовое сообщение" className="h-9 max-w-full" />
+      <button type="button" onClick={() => setReview(null)} className="rounded-xl px-3 py-2 text-sm text-neutral-300 hover:text-red-400">Удалить</button>
+      <button type="button" disabled={disabled} onClick={() => { const take = review; setReview(null); onRecorded(take.blob, take.duration); }} className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50">Отправить</button>
+    </div>
   );
+  if (recording) return (
+    <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-cyan-400/20 bg-slate-900 px-2 py-1.5">
+      <button type="button" onClick={() => stopRecording(true)} aria-label="Отменить запись" title="Отменить" className="rounded-xl px-2 py-1.5 text-neutral-400 hover:text-red-400 focus-visible:outline focus-visible:outline-cyan-400">✕</button>
+      <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />
+      <span className="text-sm text-white tabular-nums" aria-label={`Запись ${time}`}>{time}</span>
+      <span className="hidden sm:inline text-xs text-neutral-400">Запись голосового сообщения</span>
+      <button type="button" onClick={() => stopRecording(false)} aria-label="Остановить запись" title="Остановить запись" className="ml-auto rounded-xl bg-cyan-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 focus-visible:outline focus-visible:outline-white">Готово</button>
+    </div>
+  );
+  return <div className="flex items-center gap-1"><button type="button" onClick={startRecording} disabled={disabled} aria-label="Записать голосовое сообщение" title="Голосовое сообщение" className="p-2.5 text-neutral-400 hover:text-cyan-400 transition-colors motion-reduce:transition-none disabled:opacity-50"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3a3 3 0 00-3 3v5a3 3 0 006 0V6a3 3 0 00-3-3zM5 11a7 7 0 0014 0M12 18v3m-4 0h8" /></svg></button>{error && <span role="alert" className="text-xs text-red-400">{error}</span>}</div>;
 }

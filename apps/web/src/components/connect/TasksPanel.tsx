@@ -737,7 +737,7 @@ function TaskCloseModal({ task, onCancel, onConfirm }: {
         <div className="space-y-2 mb-5">
           {CLOSED_STATUSES.map((key) => (
             <label key={key} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${stage === key ? "border-violet-500 dark:border-cyan-400 bg-violet-500/5 dark:bg-cyan-400/5" : "border-neutral-200 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-white/5"}`}>
-              <input type="radio" name="close-stage" value={key} checked={stage === key} onChange={() => setStage(key)} className="accent-violet-600 dark:accent-cyan-400" />
+              <input type="radio" name="close-stage" value={key} checked={stage === key} onChange={() => setStage(key)} className="h-5 w-5 rounded-md accent-cyan-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400" />
               <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${CLOSED_META[key].cls}`}>{CLOSED_META[key].label}</span>
             </label>
           ))}
@@ -1129,9 +1129,9 @@ function TaskDetailsContent({ task, currentUserId, canModerate, members, onRefre
               <span className="text-[11px] text-neutral-400">{task.checklist.filter((c) => c.done).length}/{task.checklist.length}</span>
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 rounded-2xl bg-white/[0.03] p-2">
             {task.checklist?.map((item) => (
-              <label key={item.id} className="flex items-center gap-2 group rounded-lg px-2 py-1 hover:bg-neutral-50 dark:hover:bg-white/5">
+              <label key={item.id} className="flex items-center gap-3 group rounded-xl px-3 py-2 hover:bg-white/5 transition-colors motion-reduce:transition-none">
                 <input
                   type="checkbox"
                   checked={item.done}
@@ -1141,7 +1141,7 @@ function TaskDetailsContent({ task, currentUserId, canModerate, members, onRefre
                 />
                 <span className={`flex-1 text-sm ${item.done ? "line-through text-neutral-400" : "text-neutral-800 dark:text-neutral-200"}`}>{item.text}</span>
                 {canManage && (
-                  <button onClick={() => deleteChecklistItem(item.id)} className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-red-500" aria-label="Удалить пункт"><XIcon size={12} style={{ color: "inherit" }} /></button>
+                  <button onClick={() => deleteChecklistItem(item.id)} className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-neutral-400 hover:text-red-500" aria-label="Удалить пункт"><XIcon size={12} style={{ color: "inherit" }} /></button>
                 )}
               </label>
             ))}

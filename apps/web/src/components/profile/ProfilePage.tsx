@@ -555,7 +555,7 @@ export default function ProfilePage({ username }: { username?: string }) {
       <BackButton />
 
       {/* Шапка */}
-      <div className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900/60">
+      <div className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900/80">
         {/* FIX-BANNERONE: фон профиля рисует общий компонент — тегом <img>, а не
             свойством background-image. Так рамка из настроек совпадает с
             мини-профилем, и пустой блок больше не выдаёт себя за «фона нет». */}
@@ -600,7 +600,7 @@ export default function ProfilePage({ username }: { username?: string }) {
                 <button
                   type="button"
                   onClick={() => router.push(`/connect?section=dm&dm=${head.id}`)}
-                  className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 max-sm:flex-1"
+                  className="flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 motion-reduce:transition-none max-sm:flex-1"
                   aria-label={`Написать ${head.name}`}
                 >
                   <MessagesIcon size={16} style={{ color: "inherit" }} />
@@ -613,7 +613,7 @@ export default function ProfilePage({ username }: { username?: string }) {
                   className={`flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 max-sm:flex-1 ${
                     isFollowing
                       ? "border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-gray-300 hover:bg-neutral-50 dark:hover:bg-white/5"
-                      : "bg-indigo-600 text-white hover:bg-indigo-500"
+                      : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
                   }`}
                 >
                   <UserPlusIcon size={16} style={{ color: "inherit" }} />
