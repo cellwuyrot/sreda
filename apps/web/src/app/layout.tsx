@@ -5,7 +5,6 @@ import Providers from "@/components/Providers";
 import ConditionalNavbar from "@/components/ui/ConditionalNavbar";
 import BottomNav from "@/components/mobile/BottomNav";
 import MainWrapper from "@/components/mobile/MainWrapper";
-import MobileThemeToggle from "@/components/mobile/MobileThemeToggle";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -69,7 +68,7 @@ export default async function RootLayout({
           (function(){
             var d = document.documentElement;
             var t = localStorage.getItem('trioz-theme') || 'dark';
-            if (t !== 'dark' && t !== 'light' && t !== 'mono' && t !== 'mono-lite') t = 'dark';
+            t = (t === 'mono' || t === 'mono-lite') ? 'mono' : 'dark';
             d.classList.toggle('dark', t === 'dark' || t === 'mono');
             d.classList.toggle('light', t === 'light' || t === 'mono-lite');
             d.classList.toggle('mono', t === 'mono');
@@ -95,7 +94,6 @@ export default async function RootLayout({
         <Providers>
           <ConditionalNavbar />
           <MainWrapper>{children}</MainWrapper>
-          <MobileThemeToggle />
           <BottomNav />
         </Providers>
       </body>

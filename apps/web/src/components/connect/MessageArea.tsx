@@ -23,7 +23,6 @@ import VideoNotePlayer from "@/components/ui/VideoNotePlayer";
 import { useMobile } from "@/hooks/useMobile";
 import type { MediaNoteKind } from "@/lib/mediaNote";
 import { noteFileName } from "@/lib/mediaNote";
-import DayNightBackground from "@/components/connect/DayNightBackground";
 import ServiceDocsBar from "@/components/connect/ServiceDocsBar"; // FIX-SRVDOC
 import { PlusMenu } from "@/components/connect/ChannelTools";
 import { ModuleSettingsButton } from "@/components/connect/ModuleSettingsModal"; // FIX-NEWSGEAR
@@ -1155,30 +1154,6 @@ export default function MessageArea({
     });
     fetchPinned();
   };
-
-  // Day-Night background (optional, controlled via profile settings)
-  const [dayNightEnabled, setDayNightEnabled] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("tz-connect-daynight") === "true";
-    }
-    return false;
-  });
-  const [dayNightOpacity, setDayNightOpacity] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      return parseInt(localStorage.getItem("tz-connect-daynight-opacity") ?? "15", 10);
-    }
-    return 15;
-  });
-
-  useEffect(() => {
-    function handleDayNightChange(e: Event) {
-      const detail = (e as CustomEvent<{ enabled: boolean; opacity: number }>).detail;
-      setDayNightEnabled(detail.enabled);
-      setDayNightOpacity(detail.opacity);
-    }
-    window.addEventListener("tz-daynight-change", handleDayNightChange);
-    return () => window.removeEventListener("tz-daynight-change", handleDayNightChange);
-  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -2916,10 +2891,6 @@ export default function MessageArea({
     <div {...dropPaste.dropProps} className="tz-skin-chat flex-1 flex flex-col h-full min-w-0 relative">
       {dropPaste.isDragOver && (
         <div className="tz-dropzone">Отпустите файлы, чтобы прикрепить</div>
-      )}
-      {/* Day-Night atmospheric background (optional) */}
-      {dayNightEnabled && (
-        <DayNightBackground opacity={dayNightOpacity / 100} />
       )}
       {/* Header */}
       <header className="h-12 max-md:h-16 border-b border-[var(--cn-border)] bg-[var(--cn-main)] flex items-center px-4 gap-2 flex-shrink-0">

@@ -459,7 +459,7 @@ export default function UserContextMenu({
       /* Прокручивается только список действий, шапка с профилем закреплена:
          раньше уезжала вся карточка целиком, и человек, докрутив до нижних
          пунктов, переставал видеть, к кому они относятся. */
-      className="fixed z-[200] w-60 flex flex-col rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl select-none animate-fade-in overflow-hidden"
+      className="fixed z-[200] w-64 max-w-[calc(100vw-24px)] flex flex-col rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-2xl select-none animate-fade-in motion-reduce:animate-none overflow-hidden"
       style={{ left: pos.left, top: pos.top, maxHeight: pos.maxHeight || undefined }}
       onContextMenu={(e) => e.preventDefault()}
       onMouseEnter={onPointerKeep}
@@ -470,7 +470,7 @@ export default function UserContextMenu({
       {/* FIX-BANNERONE: та же картинка и то же кадрирование, что на странице профиля. */}
       <ProfileBanner src={user.profileBanner} className="h-14 flex-shrink-0 rounded-t-[10px]" />
 
-      <div className="flex items-start gap-2.5 px-2.5 pt-2 pb-2 -mt-5 relative flex-shrink-0">
+      <div className="flex items-start gap-3 px-4 pt-2 pb-3 -mt-5 relative flex-shrink-0">
         <GlowAvatar
           user={{
             id: user.id,
