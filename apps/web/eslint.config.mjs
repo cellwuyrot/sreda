@@ -3,9 +3,15 @@ import nextConfig from "eslint-config-next";
 export default [
   ...nextConfig,
   {
+    // Next enables the TypeScript plugin only for TypeScript files.
+    files: ["**/*.ts", "**/*.tsx"],
     rules: {
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "@typescript-eslint/no-explicit-any": "error",
+    },
+  },
+  {
+    rules: {
       // React Hooks 6 / Next 16 currently reports ordinary async data loading
       // effects (fetch callback updates state) as set-state-in-effect. The app
       // intentionally uses effects to synchronize API data, sockets and browser

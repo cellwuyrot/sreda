@@ -737,7 +737,10 @@ const Topography = ({
     dpr
   };
   const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+  // Commit the latest settings before the drawing effect; do not mutate refs during render.
+  useEffect(() => {
+    settingsRef.current = settings;
+  });
 
   useEffect(() => {
     const container = containerRef.current;
