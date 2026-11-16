@@ -62,16 +62,14 @@ function CodeInput({
           ref={(el) => { inputsRef.current[i] = el; }}
           type="text"
           inputMode="numeric"
+          autoComplete={i === 0 ? "one-time-code" : "off"}
+          aria-label={`Цифра ${i + 1} из ${length}`}
           maxLength={1}
           value={value[i] || ""}
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
           onPaste={handlePaste}
-          className="w-12 h-14 text-center text-2xl font-bold rounded-xl border-2 
-            border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-800
-            text-neutral-900 dark:text-white
-            focus:border-violet-500 dark:focus:border-cyan-400 focus:outline-none
-            transition-colors"
+          className="w-10 sm:w-12 h-14 text-center text-2xl font-bold rounded-xl border-2 border-white/10 bg-slate-900 text-white focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 transition-colors motion-reduce:transition-none"
         />
       ))}
     </div>
@@ -439,7 +437,8 @@ export default function SignInPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-gray-300 transition-colors"
-                    tabIndex={-1}
+                    aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+                    aria-pressed={showPassword}
                   >
                     {showPassword ? (
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -455,14 +454,15 @@ export default function SignInPage() {
                 </div>
               </div>
               {authType === "register" && (
-                <div className="rounded-xl border border-neutral-200 dark:border-white/10 p-3 space-y-2">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
                   {/* REG-VALIDATE: живой список требований. Пока есть невыполненные,
                       кнопка получения кода неактивна. */}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between text-xs"><span className="font-medium text-neutral-300">Надёжность пароля</span><span className="text-neutral-400">{password ? ["Очень слабый", "Слабый", "Средний", "Хороший", "Сильный"][pwdScore] : "Введите пароль"}</span></div>
+                  <div className="flex items-center gap-1.5" role="meter" aria-label="Надёжность пароля" aria-valuemin={0} aria-valuemax={4} aria-valuenow={pwdScore}>
                     {[0, 1, 2, 3].map((i) => (
                       <span
                         key={i}
-                        className={`h-1 flex-1 rounded-full transition-colors ${
+                        className={`h-1.5 flex-1 rounded-full transition-colors motion-reduce:transition-none ${
                           pwdScore > i
                             ? pwdScore >= 4
                               ? "bg-emerald-500"

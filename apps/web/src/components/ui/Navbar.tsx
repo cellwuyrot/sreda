@@ -6,11 +6,10 @@ import { unregisterShellPushDevice } from "@/hooks/usePushDevice";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
-import { useTheme } from "@/components/Providers";
 import { notifyExternal } from "@/lib/appNotify"; // ANDROID-NOTIFY
 import { loadNotifyPrefs } from "@/lib/notifyPrefs";
 import { useInlineEdit } from "@/components/InlineEditContext";
-import { Sun, Moon, SquarePen, ChevronDown, LogOut, Menu, X } from "lucide-react";
+import { SquarePen, ChevronDown, LogOut, Menu, X } from "lucide-react";
 import { BellIcon, GearIcon, BellOffIcon, UsersIcon } from "@/components/ui/ConnectIcons"; // FIX-ICONS, PROFILE-WALL: + UsersIcon: + BellOffIcon (SVG вместо PNG)
 import { io, type Socket } from "socket.io-client";
 import { isDesktop } from "@/lib/desktop";
@@ -165,7 +164,6 @@ export default function Navbar() {
     };
   }, [userId]);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { theme, toggleTheme } = useTheme();
   /* NAV-NOEDIT: iz konteksta pravki nuzhen tolko priznak admina. */
   const { isAdmin } = useInlineEdit();
   const pathname = usePathname();
@@ -237,19 +235,6 @@ export default function Navbar() {
               controls (Редактировать, уведомления, Админ, имя) don't float
               near the centre of a wide window. */}
           <div className={`tz-navbar-right flex items-center gap-2 ${desktopShell ? "mr-auto" : "ml-auto"}`}>
-            {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-lg text-neutral-500 dark:text-gray-400 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
-              title={theme === "dark" ? "Светлая тема" : "Тёмная тема"}
-            >
-              {theme === "dark" ? (
-                <Sun className="w-5 h-5" strokeWidth={2} />
-              ) : (
-                <Moon className="w-5 h-5" strokeWidth={2} />
-              )}
-            </button>
-
             {session ? (
               <div className="flex items-center gap-2">
                 {accountRole === "CONSULTANT" && (

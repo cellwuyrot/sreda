@@ -16,6 +16,7 @@ import { CallProvider } from "@/components/call/CallProvider"; // CALL
 import WelcomeModal from "@/components/WelcomeModal";
 import { ConfirmDialogHost } from "@/components/ui/ConfirmDialog";
 import { ThemeProvider as ConnectThemeProvider } from "@/contexts/ThemeContext";
+import { normalizeTheme } from "@/lib/themeNormalization";
 import { LanguageProvider } from "@/lib/i18n"; // FIX-I18N
 
 // Семейства тем:
@@ -52,35 +53,25 @@ function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
 
   useEffect(() => {
-    const saved = (localStorage.getItem("trioz-theme") as Theme | null) ?? "dark";
+    const stored = localStorage.getItem("trioz-theme");
+    const saved: Theme = normalizeTheme(stored);
     setThemeState(saved);
+    localStorage.setItem("trioz-theme", saved);
     applyThemeClasses(saved);
   }, []);
 
   // FIX-PERF: setTheme стабилен (useCallback), чтобы не пересоздавать
   // toggleTheme и value контекста на каждый рендер.
   const setTheme = useCallback((next: Theme) => {
-    setThemeState(next);
-    localStorage.setItem("trioz-theme", next);
-    applyThemeClasses(next);
+    const normalized: Theme = normalizeTheme(next);
+    setThemeState(normalized);
+    localStorage.setItem("trioz-theme", normalized);
+    applyThemeClasses(normalized);
   }, []);
 
-  // Быстрый тумблер (навбар, мобильная версия) переключает «день/ночь»
-  // ВНУТРИ текущего семейства тем. Премиум-тема Monochrome при этом
-  // НЕ теряется: mono ↔ mono-lite, dark ↔ light.
-  const toggleTheme = useCallback(
-    () =>
-      setTheme(
-        theme === "mono"
-          ? "mono-lite"
-          : theme === "mono-lite"
-            ? "mono"
-            : theme === "light"
-              ? "dark"
-              : "light",
-      ),
-    [theme, setTheme],
-  );
+  // Legacy API only. Theme selection, including the Premium entitlement check,
+  // lives in appearance settings; no quick toggle may bypass that check.
+  const toggleTheme = useCallback(() => {}, []);
 
   // FIX-PERF: мемоизируем значение контекста — потребители useTheme()
   // перерисовываются только при реальной смене темы, а не на каждый рендер
