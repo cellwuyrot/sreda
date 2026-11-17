@@ -42,6 +42,11 @@ export function registerIpc(): void {
     return !!win && !win.isDestroyed() && (!win.isVisible() || win.isMinimized());
   });
 
+  ipcMain.handle(IPC.GET_WINDOW_ACTIVE, (): boolean => {
+    const win = getMainWindow();
+    return !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused();
+  });
+
   ipcMain.handle(IPC.GET_CONFIG, (): DesktopConfig => getConfig());
 
   /* UPD-BTN: кнопка в углу окна спрашивает состояние при появлении — обновление

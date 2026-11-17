@@ -44,6 +44,10 @@ const api = {
   onWindowHiddenChange: (cb: (hidden: boolean) => void): Unsubscribe =>
     on(IPC.WINDOW_HIDDEN_CHANGED, (hidden) => cb(hidden === true)),
 
+  getWindowActive: (): Promise<boolean> => ipcRenderer.invoke(IPC.GET_WINDOW_ACTIVE),
+  onWindowActiveChange: (cb: (active: boolean) => void): Unsubscribe =>
+    on(IPC.WINDOW_ACTIVE_CHANGED, (active) => cb(active === true)),
+
   /** Read the persisted desktop settings. */
   getConfig: (): Promise<DesktopConfig> => ipcRenderer.invoke(IPC.GET_CONFIG),
 

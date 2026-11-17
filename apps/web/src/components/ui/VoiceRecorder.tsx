@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { baseMimeType } from "@/lib/mediaNote";
+import RecordingWaveform from "./RecordingWaveform";
 
 interface VoiceRecorderProps {
   onRecorded: (blob: Blob, duration: number) => void;
@@ -10,6 +11,7 @@ interface VoiceRecorderProps {
 
 export default function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
   const [recording, setRecording] = useState(false);
+  const [recordingStream, setRecordingStream] = useState<MediaStream | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
   const [review, setReview] = useState<{ blob: Blob; duration: number; url: string } | null>(null);
@@ -58,12 +60,13 @@ export default function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderPro
         }
         if (mounted.current) {
           if (!cancelled.current && (!chunks.length || duration < 0.5)) setError("Запись слишком короткая. Попробуйте ещё раз.");
-          setRecording(false); setElapsed(0);
+          setRecording(false); setRecordingStream(null); setElapsed(0);
         }
       };
       recorder.onerror = () => { cancelled.current = true; if (mounted.current) setError("Ошибка записи. Проверьте микрофон."); };
       recorderRef.current = recorder;
       recorder.start(250);
+      setRecordingStream(stream);
       setRecording(true);
       timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
     } catch {
@@ -86,9 +89,10 @@ export default function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderPro
     </div>
   );
   if (recording) return (
-    <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-cyan-400/20 bg-slate-900 px-2 py-1.5">
+    <div className="tz-micro-enter flex min-w-0 items-center gap-2 rounded-2xl border border-cyan-400/20 bg-slate-900 px-2 py-1.5">
       <button type="button" onClick={() => stopRecording(true)} aria-label="Отменить запись" title="Отменить" className="rounded-xl px-2 py-1.5 text-neutral-400 hover:text-red-400 focus-visible:outline focus-visible:outline-cyan-400">✕</button>
       <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />
+      {recordingStream && <RecordingWaveform stream={recordingStream} />}
       <span className="text-sm text-white tabular-nums" aria-label={`Запись ${time}`}>{time}</span>
       <span className="hidden sm:inline text-xs text-neutral-400">Запись голосового сообщения</span>
       <button type="button" onClick={() => stopRecording(false)} aria-label="Остановить запись" title="Остановить запись" className="ml-auto rounded-xl bg-cyan-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 focus-visible:outline focus-visible:outline-white">Готово</button>

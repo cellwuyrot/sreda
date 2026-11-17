@@ -8,7 +8,7 @@ import { createNotification } from "@/lib/createNotification";
 import prisma from "@/lib/prisma";
 
 const PRIORITIES = ["low", "normal", "high"];
-const mentionRegex = /@([A-Za-z0-9_а-яА-ЯёЁ]+)/g;
+const mentionRegex = /@([\p{L}\p{M}\p{N}_-]+)/gu;
 
 const commentSelect = {
   id: true,

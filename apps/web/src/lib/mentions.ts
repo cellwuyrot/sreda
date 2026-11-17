@@ -12,8 +12,8 @@ export interface MentionToken {
   everyone: boolean;
 }
 
-const USERNAME_CHAR = /[A-Za-z0-9_а-яА-ЯёЁ]/;
-const TOKEN_RE = /@(everyone|[A-Za-z0-9_а-яА-ЯёЁ]+)/gi;
+const USERNAME_CHAR = /[\p{L}\p{M}\p{N}_-]/u;
+const TOKEN_RE = /@([\p{L}\p{M}\p{N}_-]+)/giu;
 
 function hasValidPrefix(text: string, start: number): boolean {
   if (start === 0) return true;
@@ -76,6 +76,6 @@ export function findMentionQuery(text: string, caret: number): { query: string; 
   const at = upto.lastIndexOf("@");
   if (at < 0 || !hasValidPrefix(upto, at)) return null;
   const query = upto.slice(at + 1);
-  if (!/^[A-Za-z0-9_а-яА-ЯёЁ]*$/.test(query)) return null;
+  if (!/^[\p{L}\p{M}\p{N}_-]*$/u.test(query)) return null;
   return { query: query.toLowerCase(), start: at };
 }

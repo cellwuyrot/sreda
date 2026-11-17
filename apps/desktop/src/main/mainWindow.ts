@@ -384,6 +384,19 @@ export function createMainWindow(): BrowserWindow {
   visibilityWindow.on("show", pushWindowHidden);
   visibilityWindow.on("hide", pushWindowHidden);
 
+  const pushWindowActive = () => {
+    if (!visibilityWindow.isDestroyed() && !visibilityWindow.webContents.isDestroyed()) {
+      visibilityWindow.webContents.send(IPC.WINDOW_ACTIVE_CHANGED,
+        visibilityWindow.isVisible() && !visibilityWindow.isMinimized() && visibilityWindow.isFocused());
+    }
+  };
+  visibilityWindow.on("focus", pushWindowActive);
+  visibilityWindow.on("blur", pushWindowActive);
+  visibilityWindow.on("minimize", pushWindowActive);
+  visibilityWindow.on("restore", pushWindowActive);
+  visibilityWindow.on("hide", pushWindowActive);
+  visibilityWindow.on("show", pushWindowActive);
+
   persistBounds(mainWindow);
 
   mainWindow.on("close", (event) => {

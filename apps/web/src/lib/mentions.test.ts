@@ -4,6 +4,9 @@ import { findMentionQuery, hasEveryoneMention, parseMentions, resolveMentionIds 
 describe("единый parser mentions", () => {
   it.each([
     ["Привет @ivan", ["ivan"]],
+    ["Привет @новый-ник", ["новый-ник"]],
+    ["Привет @你好世界朋友", ["你好世界朋友"]],
+    ["Привет @everyone_test", ["everyone_test"]],
     ["часть@ivan.com", []],
     ["foo@everyone.com", []],
     ["test@ivan", []],

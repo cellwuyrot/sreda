@@ -1011,10 +1011,11 @@ export default function PremiumInfoModal({
   // Local choice only; changing tabs never changes a server-wide setting or stops a tunnel.
   const [activeProvider, setActiveProvider] = useState<"AMNEZIAWG" | "TRUSTTUNNEL">("AMNEZIAWG");
   const selector = (
-    <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-violet-200 bg-blue-50/60 p-1.5 dark:border-white/10 dark:bg-white/[0.04]" role="group" aria-label="Тип подключения">
+    <div className="relative mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-violet-200 bg-blue-50/60 p-1.5 dark:border-white/10 dark:bg-white/[0.04]" role="group" aria-label="Тип подключения">
+      <span aria-hidden="true" className="tz-segment-thumb pointer-events-none absolute inset-y-1.5 left-1.5 w-[calc(50%-0.625rem)] rounded-xl bg-gradient-to-r from-violet-600 to-blue-600" style={{ transform: activeProvider === "TRUSTTUNNEL" ? "translateX(calc(100% + 0.5rem))" : "translateX(0)" }} />
       {([ ["AMNEZIAWG", "AmneziaWG"], ["TRUSTTUNNEL", "TrustTunnel"] ] as const).map(([id, label]) => (
         <button key={id} type="button" aria-pressed={activeProvider === id} onClick={() => setActiveProvider(id)}
-          className={`min-h-11 rounded-xl px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${activeProvider === id ? "bg-gradient-to-r from-violet-600 to-blue-600 text-white" : "text-neutral-700 hover:bg-violet-100 dark:text-white/75 dark:hover:bg-white/10"}`}>
+          className={`relative min-h-11 rounded-xl px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${activeProvider === id ? "text-white" : "text-neutral-700 hover:bg-violet-100 dark:text-white/75 dark:hover:bg-white/10"}`}>
           {label}
         </button>
       ))}

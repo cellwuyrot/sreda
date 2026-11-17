@@ -1681,3 +1681,21 @@ button.tz-modern-reaction:focus-visible { outline: 2px solid #9866ed; outline-of
 .tz-android-header-title { display: none; }
 .tz-android .tz-android-header-title { display: block; }
 .tz-android .tz-community-list-heading { display: none; }
+
+/* Discrete microinteractions: no idle timers, no background animation. */
+.tz-check-mark { stroke-dasharray: 20; stroke-dashoffset: 20; }
+input:checked + .tz-check-box .tz-check-mark { stroke-dashoffset: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .tz-micro-enter { animation: tz-micro-enter 180ms ease-out both; }
+  .tz-list-enter { animation: tz-list-enter 160ms ease-out both; }
+  .tz-check-mark { transition: stroke-dashoffset 180ms ease-out; }
+  .tz-check-box { transition: background-color 160ms, border-color 160ms, transform 180ms cubic-bezier(.2,1.4,.4,1); }
+  input:checked + .tz-check-box { transform: scale(1.08); }
+  .tz-segment-thumb { transition: transform 240ms cubic-bezier(.2,1.2,.3,1); }
+  .tz-code-slot { transition: border-color 160ms, box-shadow 160ms, transform 160ms; }
+  .tz-code-slot[data-filled="true"] { transform: translateY(-1px); }
+  .tz-code-slot:focus { transform: translateY(-2px); }
+  .tz-status-mark { animation: tz-micro-enter 180ms ease-out both; }
+}
+@keyframes tz-micro-enter { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes tz-list-enter { from { opacity: 0; transform: translateX(-3px); } to { opacity: 1; transform: translateX(0); } }

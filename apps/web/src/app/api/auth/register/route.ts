@@ -5,6 +5,7 @@ import { rateLimit } from "@/lib/rateLimit";
 import { isRegistrationEmailAllowed, REGISTRATION_BLOCKED } from "@/lib/emailWhitelist";
 import { autoJoinMainCommunity } from "@/lib/mainCommunity";
 import { getClientIp, isIdentityBlocked, recordIdentities, DEVICE_COOKIE } from "@/lib/identity";
+import { checkUsername } from "@/lib/registerValidation";
 
 export async function POST(req: NextRequest) {
   const limited = await rateLimit(req, "register", { limit: 10, windowMs: 60 * 60 * 1000 });
@@ -45,12 +46,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Имя: от 2 до 60 символов" }, { status: 400 });
     }
 
-    if (!/^[a-zA-Z0-9_]{6,20}$/.test(username)) {
-      return NextResponse.json({ error: "Юзернейм: 6-20 символов, латиница, цифры и _" }, { status: 400 });
-    }
-
-    if (!/[0-9]/.test(username)) {
-      return NextResponse.json({ error: "Юзернейм должен содержать хотя бы одну цифру" }, { status: 400 });
+    const normalizedUsername = username.trim();
+    const usernameCheck = checkUsername(normalizedUsername);
+    if (!usernameCheck.valid) {
+      return NextResponse.json({ error: usernameCheck.error }, { status: 400 });
     }
 
     if (typeof password !== "string" || password.length < 8) {
@@ -95,7 +94,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email уже зарегистрирован" }, { status: 400 });
     }
 
-    const existingUsername = await prisma.user.findUnique({ where: { username } });
+    const existingUsername = await prisma.user.findFirst({ where: { username: { equals: normalizedUsername, mode: "insensitive" } } });
     if (existingUsername) {
       return NextResponse.json({ error: "Юзернейм уже занят" }, { status: 400 });
     }
@@ -107,7 +106,7 @@ export async function POST(req: NextRequest) {
         data: {
           email,
           name: trimmedName,
-          username,
+          username: normalizedUsername,
           password: hashed,
           // Без подтверждённого кода до этого места уже не дойти.
           emailVerified: true,
