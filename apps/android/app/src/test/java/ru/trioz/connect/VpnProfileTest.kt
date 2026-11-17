@@ -53,4 +53,28 @@ class VpnProfileTest {
     @Test fun refusesTwoPrivateKeys() { assertThrows(IllegalArgumentException::class.java) { VpnProfile.withNativeKey(profile("PrivateKey = $privateKey"), privateKey) } }
     @Test fun refusesOversizedInput() { assertThrows(IllegalArgumentException::class.java) { VpnProfile.withNativeKey("a".repeat(40000), privateKey) } }
     @Test fun refusesMissingEndpoint() { assertThrows(IllegalArgumentException::class.java) { VpnProfile.withNativeKey(profile().replace("Endpoint = 192.0.2.1:51820", ""), privateKey) } }
+    @Test fun preservesAwg31AndCascadeEndpoint() {
+        val hpk = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+        val config = VpnProfile.withNativeKey(profile("""
+            S1 = 12
+            S2 = 12
+            S3 = 12
+            S4 = 12
+            HeaderProtectionKey = $hpk
+            ContentPaddingAddition = 0-64
+            RekeyAfterTime = 90-120
+            RekeyTimeout = 5-10
+            RejectAfterTime = 180
+            KeepaliveTimeout = 10
+            MaxHandshakeAttempts = 20
+            RandomTrailers = 1
+            DisableCookies = 0
+        """.trimIndent()).replace("192.0.2.1:51820", "170.168.18.20:51820"), privateKey)
+        val userspace = config.`interface`.toAwgUserspaceString()
+        assertTrue(userspace.contains("header_protection_key=" + "07".repeat(32)))
+        for (field in listOf("content_padding_addition=0-64", "rekey_after_time=90-120", "rekey_timeout=5-10", "reject_after_time=180", "keepalive_timeout=10", "max_handshake_attempts=20", "random_trailers=1", "disable_cookies=0")) {
+            assertTrue(field, userspace.contains(field))
+        }
+        assertEquals("170.168.18.20:51820", config.peers.first().endpoint.get().toString())
+    }
 }

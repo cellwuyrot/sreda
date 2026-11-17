@@ -1,0 +1,21 @@
+{
+  "windows": {
+    "repository": "https://github.com/amnezia-vpn/amneziawg-windows-client",
+    "tag": "3.1.0",
+    "architecture": "amd64",
+    "releaseSha256": "a1b48ea8699cd347832a3691d832004574ef8ad65bcf887611ac8acb99b7de8b",
+    "files": {
+      "amneziawg.exe": "ba446f6e1a4093e43a65d6ff45f4b8c7b6485dc419327eedaa1a218549740e3a",
+      "wintun.dll": "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce",
+      "awg.exe": "272badace73caeb26dc42656f318b3eb7f10028c2f76faad1f52d6fe1e0ced12"
+    }
+  },
+  "android": {
+    "repository": "https://github.com/amnezia-vpn/amneziawg-android",
+    "tag": "v3.1.20260814",
+    "sourceCommit": "5c16489",
+    "apkSha256": "74f109a948f012e8b90b4055e98bb9bee77bbb8e5d0fe7d5a057dd9698009697",
+    "abi": "arm64-v8a",
+    "nativeSha256": "8bd1d044fcf1828924981bb8b1d66571b884c16d2d779de603d5b359d6ed4416"
+  }
+}

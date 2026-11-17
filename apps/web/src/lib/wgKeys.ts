@@ -1,3 +1,5 @@
+import { AWG_PROFILE_KEYS, normalizeAwg3 } from "./awg3";
+
 /**
  * VPN-AUTOKEY: генерация пары ключей WireGuard на устройстве пользователя.
  *
@@ -160,12 +162,7 @@ export function generateWireGuardKeyPair(): WireGuardKeyPair {
  * Порядок дополнительных параметров интерфейса. На разбор он не влияет, но
  * профиль читают люди, и привычный порядок читается быстрее произвольного.
  */
-const EXTRA_ORDER = [
-  "Jc", "Jmin", "Jmax",
-  "S1", "S2", "S3", "S4",
-  "H1", "H2", "H3", "H4",
-  "I1", "I2", "I3", "I4", "I5",
-];
+const EXTRA_ORDER = AWG_PROFILE_KEYS;
 
 /**
  * Ключ WireGuard — 32 байта в base64: ровно 43 символа алфавита и одно «=».
@@ -218,6 +215,8 @@ export function buildWireGuardConfig(params: {
 }): string {
   assertWireGuardKey(params.privateKey, "PrivateKey");
   assertWireGuardKey(params.serverPublicKey, "PublicKey узла");
+
+  if (params.extra) normalizeAwg3(params.extra);
 
   const extraLines = params.extra
     ? EXTRA_ORDER.filter((key) => params.extra?.[key] !== undefined).map((key) => `${key} = ${params.extra?.[key]}`)

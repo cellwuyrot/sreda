@@ -16,7 +16,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import org.amnezia.awg.backend.GoBackend
 import org.amnezia.awg.backend.Tunnel
-import org.amnezia.awg.backend.TunnelActionHandler
 import org.json.JSONObject
 import java.time.Instant
 import java.util.concurrent.Executors
@@ -83,17 +82,9 @@ class AmneziaVpnService : Service() {
                         check(VpnService.prepare(this) == null) { "Нет системного разрешения VPN" }
                         stopBackend()
                         val cfg = VpnProfile.withNativeKey(raw, VpnKeyStore(this).pair(intent.getStringExtra("account").orEmpty()).privateKey.toBase64())
-                        val hooks = object : TunnelActionHandler {
-                            override fun runPreUp(scripts: Collection<String>) { check(scripts.isEmpty()) }
-                            override fun runPostUp(scripts: Collection<String>) { check(scripts.isEmpty()) }
-                            override fun runPreDown(scripts: Collection<String>) { check(scripts.isEmpty()) }
-                            override fun runPostDown(scripts: Collection<String>) { check(scripts.isEmpty()) }
-                        }
-                        val be = GoBackend(this, hooks)
+                        val be = GoBackend(this)
                         val tun = object : Tunnel {
                             override fun getName() = "trioz"
-                            override fun isIpv4ResolutionPreferred() = true
-                            override fun isMetered() = true
                             override fun onStateChange(newState: Tunnel.State) {
                                 if (newState == Tunnel.State.DOWN && !stopping && !worker.isShutdown)
                                     worker.execute { if (tunnel === this) fail("Системное VPN-соединение остановлено") }
