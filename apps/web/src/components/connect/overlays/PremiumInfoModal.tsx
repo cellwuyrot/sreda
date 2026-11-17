@@ -947,14 +947,14 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
                     type="button"
                     onClick={() =>
                       downloadText(
-                        currentAmneziaProfile.uri,
-                        "tz-connect.vpn",
+                        currentAmneziaProfile.wireGuardConfig,
+                        "tz-connect.conf",
                         "text/plain;charset=utf-8",
                       )
                     }
                     className="rounded-xl bg-violet-600 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-violet-500 dark:bg-cyan-500 dark:text-[#06161a] dark:hover:bg-cyan-400"
                   >
-                    Скачать профиль
+                    Скачать .conf
                   </button>
                   <button
                     type="button"
@@ -965,19 +965,7 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
                     {showAmneziaQr ? "Скрыть QR-код" : "Показать QR-код"}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadText(
-                      currentAmneziaProfile.wireGuardConfig,
-                      "tz-connect.conf",
-                      "text/plain;charset=utf-8",
-                    )
-                  }
-                  className="mt-2 w-full text-[10px] text-neutral-400 underline-offset-2 hover:underline dark:text-white/35"
-                >
-                  Скачать .conf (fallback)
-                </button>
+                
                 {showAmneziaQr && (
                   <div className="mt-3 flex flex-col items-center rounded-xl bg-white p-4">
                     <QRCodeSVG
