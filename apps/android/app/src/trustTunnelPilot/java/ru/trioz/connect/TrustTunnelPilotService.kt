@@ -67,9 +67,17 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
         val notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification).setContentTitle("TrioZ VPN")
             .setContentText("Подключение TrustTunnel").setOngoing(true).setSilent(true).build()
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification,
-            if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification,
+                if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
+        } catch (_: Exception) {
+            // A denied foreground start must not crash the WebView process.
+            reportFailure("Android не разрешил запуск службы TrustTunnel")
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         worker.execute {
+            var failure = "Не удалось проверить профиль и разрешение TrustTunnel"
             try {
                 check(client == null && config != null && config.length <= 12000)
                 stopping = false
@@ -79,6 +87,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
                 // Do not pass an untrusted document to the upstream TOML parser:
                 // its parser can log errors, potentially including secrets.
                 check(TrustTunnelPilotProfile.accepts(config))
+                failure = "Не удалось подготовить маршруты TrustTunnel"
                 val routes = checkNotNull(VpnClient.excludeCidr(
                     listOf("0.0.0.0/0", "2000::/3"),
                     listOf("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "0.0.0.0/8", "224.0.0.0/3")))
@@ -94,10 +103,13 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
                     builder.addRoute(parts[0], parts[1].toInt())
                 }
                 // A missing selected package or empty allow-list aborts before creating a VPN.
+                failure = "Не удалось применить список приложений TrustTunnel. Проверьте расширенные настройки."
                 TrustTunnelRoutingSettings.apply(this, builder)
                 verifier = CertificateVerificator()
+                failure = "Android не смог создать VPN-интерфейс TrustTunnel"
                 val tunFd = checkNotNull(builder.establish())
                 try {
+                    failure = "Не удалось запустить движок TrustTunnel"
                     val next = VpnClient(config, this)
                     client = next
                     state = "connecting"; error = null
@@ -105,7 +117,7 @@ class TrustTunnelPilotService : VpnService(), VpnClientListener {
                     check(next.start(tunFd))
                 } finally { try { tunFd.close() } catch (_: Exception) {} }
             } catch (_: Exception) {
-                stopEngine("Не удалось запустить TrustTunnel")
+                stopEngine(failure)
             } catch (_: LinkageError) {
                 stopEngine("Движок TrustTunnel недоступен в сборке")
             }
