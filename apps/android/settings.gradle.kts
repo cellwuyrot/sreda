@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Connect"
 include(":app")
+
+include(":awg-tunnel")

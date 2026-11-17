@@ -31,6 +31,7 @@
  */
 
 import { TUNNEL_NAME, type VpnBackend } from "./vpnPlan";
+import { awgExtraUapi } from "./awg3Uapi";
 
 /**
  * Метка маршрутизации для режима «весь трафик». Тем же числом помечаются пакеты
@@ -208,6 +209,7 @@ export function parseWgConfig(config: string): ParsedWgConfig {
     "s1", "s2", "s3", "s4",
     "h1", "h2", "h3", "h4",
     "i1", "i2", "i3", "i4", "i5",
+  "headerprotectionkey", "contentpaddingaddition", "rekeyaftertime", "rekeytimeout", "rejectaftertime", "keepalivetimeout", "maxhandshakeattempts", "randomtrailers", "disablecookies",
   ]);
 
   let section: "none" | "interface" | "peer" = "none";
@@ -314,7 +316,7 @@ export function uapiSetRequest(parsed: ParsedWgConfig, routeAll: boolean, platfo
      маршрут до точки подключения (см. ifaceUpCommands). */
   if (routeAll && platform === "linux") lines.push(`fwmark=${ROUTE_MARK}`);
 
-  for (const [key, value] of Object.entries(parsed.extra)) lines.push(`${key}=${value}`);
+  for (const [key, value] of Object.entries(parsed.extra)) lines.push(awgExtraUapi(key, value));
 
   lines.push("replace_peers=true");
   for (const peer of parsed.peers) {

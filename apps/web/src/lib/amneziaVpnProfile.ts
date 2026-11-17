@@ -9,33 +9,7 @@
  * используемый официальным импортёром AmneziaVPN.
  */
 
-const AWG_KEYS = [
-  "Jc",
-  "Jmin",
-  "Jmax",
-  "S1",
-  "S2",
-  "S3",
-  "S4",
-  "H1",
-  "H2",
-  "H3",
-  "H4",
-  "I1",
-  "I2",
-  "I3",
-  "I4",
-  "I5",
-  "HeaderProtectionKey",
-  "ContentPaddingAddition",
-  "RekeyAfterTime",
-  "RekeyTimeout",
-  "RejectAfterTime",
-  "KeepaliveTimeout",
-  "MaxHandshakeAttempts",
-  "RandomTrailers",
-  "DisableCookies",
-] as const;
+import { AWG_PROFILE_KEYS as AWG_KEYS, normalizeAwg3 } from "./awg3";
 
 interface ParsedConfig {
   values: Record<string, string>;
@@ -118,6 +92,7 @@ export async function buildAmneziaVpnProfile(
   description = "TZ Connect",
 ): Promise<AmneziaVpnProfile> {
   const { values, hostName, port } = parseConfig(wireGuardConfig);
+  normalizeAwg3(values);
   const allowedIps = (values.AllowedIPs ?? "").split(/\s*,\s*/).filter(Boolean);
   const dns = (values.DNS ?? "").split(/\s*,\s*/).filter(Boolean);
 
