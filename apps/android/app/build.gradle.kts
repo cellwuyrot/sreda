@@ -227,7 +227,7 @@ dependencies {
     // VPN-ANDROID: AmneziaWG Go-backend для нативного VPN-туннеля.
     // Официальная нативная реализация AmneziaWG для Android,
     // аналог wireguard-android с параметрами маскировки.
-    implementation("com.zaneschepke:amneziawg-android:2.3.7")
+    implementation(project(":awg-tunnel"))
     implementation("androidx.webkit:webkit:1.14.0")
     testDebugImplementation("com.squareup.okhttp3:mockwebserver:5.3.0")
     testDebugImplementation("com.squareup.okhttp3:okhttp-tls:5.3.0")

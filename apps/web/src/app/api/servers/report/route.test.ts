@@ -537,3 +537,10 @@ describe('VPN network health report',()=>{
   expect(JSON.parse(args.data.lastReport)).not.toHaveProperty('vpnNat');
  });
 });
+
+it("keeps long 3.x parameter names but never server private keys", async () => {
+  const hpk = Buffer.alloc(32, 7).toString("base64");
+  await call({ report: {}, obfuscation: { HeaderProtectionKey: hpk, ContentPaddingAddition: "0-64", RekeyAfterTime: "90-120", RandomTrailers: "1", DisableCookies: "0", PrivateKey: "must-not-save", UnknownLongParameter: "bad" } });
+  const args = prismaMock.serverNode.update.mock.calls[0][0] as { data: { obfuscation: string } };
+  expect(JSON.parse(args.data.obfuscation)).toEqual({ HeaderProtectionKey: hpk, ContentPaddingAddition: "0-64", RekeyAfterTime: "90-120", RandomTrailers: "1", DisableCookies: "0" });
+});

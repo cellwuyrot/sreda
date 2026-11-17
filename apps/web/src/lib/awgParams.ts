@@ -29,6 +29,8 @@
  * клиент и узел посчитают размеры по-разному, и рукопожатие не сойдётся никогда.
  */
 
+import { AWG3_KEYS, normalizeAwg3 } from "./awg3";
+
 /** Порядок полей в профиле. awg требует их до `PrivateKey` в секции `[Interface]`. */
 export const AWG_KEYS = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"] as const;
 
@@ -70,9 +72,13 @@ export function awgProblem(params: unknown): string {
   if (!params || typeof params !== "object") return "Параметры маскировки пришли не объектом";
   const value = params as Record<string, unknown>;
 
+  try { normalizeAwg3(value); } catch (error) {
+    return error instanceof Error ? error.message : "Некорректные параметры AWG 3.x";
+  }
+  const isV3 = AWG3_KEYS.some((key) => value[key] !== undefined);
   const present = AWG_KEYS.filter((key) => value[key] !== undefined && value[key] !== "" && value[key] !== null);
   /* Ни одного поля — это обычный WireGuard, а не ошибка. */
-  if (present.length === 0) return "";
+  if (present.length === 0 && !isV3) return "";
 
   if (present.length !== AWG_KEYS.length) {
     const missing = AWG_KEYS.filter((key) => !present.includes(key));
@@ -80,11 +86,21 @@ export function awgProblem(params: unknown): string {
   }
 
   const num: Record<string, number> = {};
+  const headers: Array<[number, number]> = [];
   for (const key of AWG_KEYS) {
     const raw = value[key];
+    if (key.startsWith("H")) {
+      const text = String(raw).trim();
+      if (!/^\d{1,10}(-\d{1,10})?$/.test(text)) return `Параметр ${key} должен быть целым числом или диапазоном`;
+      const [lo, hi = lo] = text.split("-").map(Number);
+      if (lo < (isV3 ? 1 : AWG_LIMITS[key].min) || hi > 4294967295 || lo > hi) return `Параметр ${key} вне допустимых границ`;
+      headers.push([lo, hi]);
+      num[key] = lo;
+      continue;
+    }
     const parsed = typeof raw === "number" ? raw : Number(String(raw).trim());
     if (!Number.isInteger(parsed)) return `Параметр ${key} должен быть целым числом`;
-    const limit = AWG_LIMITS[key];
+    const limit = isV3 && key.startsWith("S") ? { min: 0, max: 65535 } : AWG_LIMITS[key];
     if (parsed < limit.min || parsed > limit.max) {
       return `Параметр ${key} вне допустимых границ (${limit.min}–${limit.max})`;
     }
@@ -93,7 +109,13 @@ export function awgProblem(params: unknown): string {
 
   if (num.Jmin >= num.Jmax) return "Jmin должен быть меньше Jmax";
   if (num.S1 + 56 === num.S2) return "S1 + 56 не должно равняться S2";
-  if (new Set([num.H1, num.H2, num.H3, num.H4]).size !== 4) return "Значения H1–H4 должны быть разными";
+  for (let i = 0; i < headers.length; i += 1) {
+    for (let j = i + 1; j < headers.length; j += 1) {
+      if (headers[i][0] <= headers[j][1] && headers[j][0] <= headers[i][1]) {
+        return "Значения H1–H4 должны быть разными, диапазоны не должны пересекаться";
+      }
+    }
+  }
 
   return "";
 }

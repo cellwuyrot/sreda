@@ -12,7 +12,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run icons && npm run vendor:client && npm run vendor:trusttunnel && npm run build:native && tsc -p tsconfig.json && npm run bundle:preload",
+    "build": "npm run icons && npm run vendor:client && npm run verify:awg31 && npm run vendor:trusttunnel && npm run build:native && tsc -p tsconfig.json && npm run bundle:preload",
     "icons": "node scripts/prepare-icons.mjs",
     "vendor:client": "node scripts/vendor-wireguard.mjs --allow-missing",
     "vendor:client:strict": "node scripts/vendor-wireguard.mjs",
@@ -24,7 +24,8 @@
     "dev": "npm run build && cross-env TRIOZ_DEV=1 electron .",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
-    "build:native": "npx node-gyp rebuild --target=33.2.1 --arch=x64 --dist-url=https://electronjs.org/headers"
+    "build:native": "npx node-gyp rebuild --target=33.2.1 --arch=x64 --dist-url=https://electronjs.org/headers",
+    "verify:awg31": "node ../../scripts/verify-awg31-components.mjs win32"
   },
   "dependencies": {
     "@trioz/shared": "*",

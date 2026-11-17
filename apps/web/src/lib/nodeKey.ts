@@ -17,6 +17,7 @@
  */
 
 import { isValidAwgParams, isAllowedEndpointPort, awgProblem, AWG_KEYS } from "@/lib/awgParams";
+import { AWG3_KEYS, normalizeAwg3 } from "@/lib/awg3";
 import { isValidWireGuardKey } from "@/lib/vpn";
 
 export const NODE_KEY_PREFIX = "TRIOZ-NODE-";
@@ -30,7 +31,7 @@ export interface ParsedNodeKey {
   /** Подсеть туннеля узла, например 10.8.0.0/24. */
   subnet: string;
   /** Набор маскировки узла: все одиннадцать значений. */
-  awg: Record<string, number>;
+  awg: Record<string, string | number>;
 }
 
 /** Имя или IP без схемы и порта. Клиент пишет это в Endpoint как есть. */
@@ -87,13 +88,22 @@ export function parseNodeKey(raw: unknown): { node: ParsedNodeKey } | { error: s
      прошёл одну и не прошёл другую. */
   const awgRaw = body.awg;
   if (!awgRaw || typeof awgRaw !== "object") return { error: "В ключе нет параметров маскировки" };
-  const awg: Record<string, number> = {};
+  const awg: Record<string, string | number> = {};
   for (const key of AWG_KEYS) {
     const v = (awgRaw as Record<string, unknown>)[key];
     const n = typeof v === "number" ? v : Number(v);
+    if (key.startsWith("H") && typeof v === "string" && /^\d{1,10}-\d{1,10}$/.test(v)) {
+      awg[key] = v;
+      continue;
+    }
     if (!Number.isInteger(n)) return { error: `Параметр маскировки ${key} в ключе отсутствует или не число` };
     awg[key] = n;
   }
+  try {
+    const source = awgRaw as Record<string, unknown>;
+    for (const key of AWG3_KEYS) if (source[key] !== undefined) awg[key] = source[key] as string | number;
+    Object.assign(awg, normalizeAwg3({ ...source, ...awg }));
+  } catch { return { error: "Некорректные параметры AWG 3.x в ключе узла" }; }
   const problem = awgProblem(awg);
   if (problem) return { error: `Набор маскировки из ключа непригоден: ${problem}` };
   if (!isValidAwgParams(awg)) return { error: "Набор маскировки из ключа непригоден" };

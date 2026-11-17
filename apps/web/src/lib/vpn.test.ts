@@ -556,3 +556,25 @@ describe("routingAllowedIps", () => {
     expect(VPN_SERVICE_ALLOWED_IPS).toBe("10.8.0.0/24");
   });
 });
+
+describe("AWG 3.1 report parsing", () => {
+  const hpk = Buffer.alloc(32, 7).toString("base64");
+  const v3 = { ...AWG_FULL, HeaderProtectionKey: hpk, ContentPaddingAddition: "0-64", RandomTrailers: "1", DisableCookies: "0", RekeyAfterTime: "90-120" };
+  it("retains settings across report parsing", () => {
+    expect(parseObfuscation(JSON.stringify(v3))).toMatchObject({ ...v3, H1: String(v3.H1), H2: String(v3.H2), H3: String(v3.H3), H4: String(v3.H4) });
+  });
+  it("does not silently drop a bad 3.x field", () => {
+    expect(parseObfuscation(JSON.stringify({ ...v3, HeaderProtectionKey: "invalid" }))).toBeNull();
+    const tunnel = nodeTunnel({ endpointHost: "170.168.18.20:51820", lastReport: JSON.stringify({ wgPublicKey: KEY }), obfuscation: JSON.stringify({ ...v3, RandomTrailers: "oops" }) });
+    expect(tunnel.publicKey).toBeNull();
+  });
+  it("does not lose the cascade endpoint", () => {
+    const tunnel = nodeTunnel({ endpointHost: "170.168.18.20:51820", lastReport: JSON.stringify({ wgPublicKey: KEY, endpoint: "185.109.21.157:51820" }), obfuscation: JSON.stringify(v3) });
+    expect(tunnel.endpoint).toBe("170.168.18.20:51820");
+    expect(tunnel.obfuscation?.HeaderProtectionKey).toBe(hpk);
+  });
+});
+
+it("accepts S1/S2=12 and standard H1-H4 with explicit AWG 3.x settings", () => {
+  expect(parseObfuscation(JSON.stringify({ ...AWG_FULL, S1: 12, S2: 12, S3: 12, S4: 12, H1: 1, H2: 2, H3: 3, H4: 4, HeaderProtectionKey: Buffer.alloc(32, 7).toString("base64") }))).toMatchObject({ S1: 12, H1: "1" });
+});

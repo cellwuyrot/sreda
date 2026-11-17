@@ -68,6 +68,7 @@ const OBFUSCATION_KEYS = new Set([
   "s1", "s2", "s3", "s4",
   "h1", "h2", "h3", "h4",
   "i1", "i2", "i3", "i4", "i5",
+  "headerprotectionkey", "contentpaddingaddition", "rekeyaftertime", "rekeytimeout", "rejectaftertime", "keepalivetimeout", "maxhandshakeattempts", "randomtrailers", "disablecookies",
 ]);
 
 /**
