@@ -256,7 +256,7 @@ function renderBlocks(text: string, options?: RenderOptions): ReactNode {
 function renderInline(text: string, options?: RenderOptions): ReactNode {
     const parts: ReactNode[] = [];
     const mentionStarts = new Map(parseMentions(text).map((token) => [token.start, token]));
-    const regex = /((https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|^- (.+)$|^## (.+)$|^> (.+)$|#(\S+)|@(everyone|[A-Za-z0-9_а-яА-ЯёЁ]+)|:([a-z0-9_]{2,32}):)/gm;
+    const regex = /((https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|^- (.+)$|^## (.+)$|^> (.+)$|#(\S+)|@([\p{L}\p{M}\p{N}_-]+)|:([a-z0-9_]{2,32}):)/gmu;
     let lastIndex = 0;
     let match;
     let key = 0;

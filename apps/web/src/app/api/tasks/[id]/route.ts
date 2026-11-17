@@ -12,7 +12,7 @@ const OPEN_STATUSES = ["open", "in_progress"];
 const CLOSED_STATUSES = ["done", "failed", "needs_clarification"];
 const STATUSES = [...OPEN_STATUSES, ...CLOSED_STATUSES];
 const PRIORITIES = ["low", "normal", "high"];
-const mentionRegex = /@([A-Za-z0-9_а-яА-ЯёЁ]+)/g;
+const mentionRegex = /@([\p{L}\p{M}\p{N}_-]+)/gu;
 
 const commentSelect = {
   id: true,

@@ -42,7 +42,7 @@ export interface FieldCheck {
 /* Имя человека, а не логин: буквы любого алфавита, пробел, дефис, апостроф.
    Цифры и знаки запрещены — иначе «имя» превращается во второй никнейм. */
 const NAME_SHAPE = /^[\p{L}][\p{L} '’-]*$/u;
-const USERNAME_SHAPE = /^[a-zA-Z0-9_]+$/;
+
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@.]+\.[^\s@]{2,}$/;
 
 function finish(value: string, reqs: Requirement[]): FieldCheck {
@@ -69,9 +69,9 @@ export function checkUsername(raw: string): FieldCheck {
 	const v = (raw ?? "").trim();
 	return finish(v, [
 		{ id: "len", label: `Логин: от ${USERNAME_MIN} до ${USERNAME_MAX} символов`, ok: v.length >= USERNAME_MIN && v.length <= USERNAME_MAX },
-		{ id: "shape", label: "Логин: латиница, цифры и _", ok: v.length === 0 ? false : USERNAME_SHAPE.test(v) },
-		{ id: "digit", label: "Логин: минимум одна цифра", ok: /\d/.test(v) },
-		{ id: "letter", label: "Логин: начинается с латинской буквы", ok: /^[a-zA-Z]/.test(v) },
+		// Keep names compatible with @mentions, profile URLs and email login.
+		{ id: "safe", label: "Логин: буквы любого алфавита, цифры, _ и дефис", ok: /^[\p{L}\p{M}\p{N}_-]+$/u.test(v) },
+		{ id: "reserved", label: "Логин не должен совпадать со служебным упоминанием everyone", ok: v.toLowerCase() !== "everyone" },
 	]);
 }
 
