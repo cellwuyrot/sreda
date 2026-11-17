@@ -4,6 +4,7 @@ import { hasPremium } from "@/lib/premium";
 import { hasActiveVpnPlan } from "@/lib/vpnPlan";
 /* FIX-AWG: единая проверка параметров маскировки — и для панели, и для выдачи профиля. */
 import { AWG_LIMITS, awgProblem } from "@/lib/awgParams";
+import { normalizeAwg3 } from "@/lib/awg3";
 
 /**
  * VPN-WG: серверная часть выдачи доступа к WireGuard.
@@ -409,9 +410,14 @@ export function parseObfuscation(raw: string | null | undefined): Obfuscation | 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const source = parsed as Record<string, unknown>;
   const out: Obfuscation = {};
+  try { Object.assign(out, normalizeAwg3(source)); } catch { return null; }
 
-  for (const [key, [min, max]] of Object.entries(NUMERIC_BOUNDS)) {
-    const value = Number(source[key]);
+  const isV3 = Object.keys(out).length > 0;
+  for (const [key, bounds] of Object.entries(NUMERIC_BOUNDS)) {
+    const rawValue = source[key];
+    if (typeof rawValue !== "string" && typeof rawValue !== "number") continue;
+    const [min, max] = isV3 && key.startsWith("S") ? [0, 65535] : bounds;
+    const value = Number(rawValue);
     if (Number.isInteger(value) && value >= min && value <= max) out[key] = value;
   }
   for (const key of HEADER_KEYS) {
@@ -437,9 +443,9 @@ export function parseObfuscation(raw: string | null | undefined): Obfuscation | 
    * неполный набор: половина параметров хуже, чем ни одного, потому что клиент
    * и узел посчитают размеры по-разному.
    *
-   * Отказ здесь означает откат к ОБЫЧНОМУ WireGuard, а не отсутствие туннеля:
-   * клиент получит рабочий профиль без маскировки. Это ровно та развилка, где
-   * «работает, но заметнее» безусловно лучше, чем «не подключается никогда».
+   * Отказ возвращает null. nodeTunnel запрещает выдачу пригодного профиля,
+   * если узел объявил параметры, но они не прошли проверку: тихий откат
+   * с AWG 3.x на обычный WireGuard недопустим.
    */
   if (awgProblem(out) !== "") return null;
 
@@ -465,8 +471,10 @@ export function nodeTunnel(node: {
   obfuscation: Obfuscation | null;
 } {
   const reported = readWgReport(node.lastReport);
+  const obfuscation = parseObfuscation(node.obfuscation);
+  const configured = !!node.obfuscation && !["", "{}", "null"].includes(node.obfuscation.trim());
   return {
-    publicKey: reported.publicKey,
+    publicKey: configured && !obfuscation ? null : reported.publicKey,
     endpoint: normalizeWgEndpoint(node.endpointHost) || reported.endpoint,
     /* FIX-AWG-ONLY: параметры маскировки выдаются всегда, когда узел их
        прислал в отчёте.
@@ -482,7 +490,7 @@ export function nodeTunnel(node: {
        маскированные, а старые записи с transport = "PLAIN" иначе навечно остались
        бы без маскировки. Единственный критерий — прислал ли узел годные
        параметры: негодные parseObfuscation отбросит сам. */
-    obfuscation: parseObfuscation(node.obfuscation),
+    obfuscation,
   };
 }
 

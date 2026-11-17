@@ -1,3 +1,5 @@
+import { AWG_PROFILE_KEYS } from "@/lib/awg3";
+
 import { sanitizeVpnHealth } from "@/lib/vpnNodeHealth";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
@@ -83,8 +85,9 @@ function readObfuscation(value: unknown): string | null {
   if (typeof value !== "object" || Array.isArray(value)) return null;
   const out: Record<string, string | number> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (!/^[A-Za-z][A-Za-z0-9]{0,7}$/.test(key)) continue;
-    if (typeof item === "number" && Number.isFinite(item)) out[key] = item;
+    if (!(AWG_PROFILE_KEYS as readonly string[]).includes(key)) continue;
+    if (typeof item === "boolean" && ["RandomTrailers", "DisableCookies"].includes(key)) out[key] = item ? "1" : "0";
+    else if (typeof item === "number" && Number.isFinite(item)) out[key] = item;
     else if (typeof item === "string" && item.length <= 512) out[key] = item;
   }
   return JSON.stringify(out);

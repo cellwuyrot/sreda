@@ -83,3 +83,19 @@ describe("buildAmneziaVpnProfile", () => {
     ).rejects.toThrow(/endpoint/);
   });
 });
+
+it("preserves 3.1 settings and the relay endpoint through .conf → vpn://", async () => {
+  const { buildWireGuardConfig } = await import("./wgKeys");
+  const hpk = Buffer.alloc(32, 7).toString("base64");
+  const conf = buildWireGuardConfig({ privateKey: PRIVATE_KEY, address: "10.8.0.7", dns: "1.1.1.1", serverPublicKey: SERVER_KEY,
+    endpoint: "170.168.18.20:51820", allowedIps: "0.0.0.0/0, ::/0",
+    extra: { Jc: 4, Jmin: 40, Jmax: 200, S1: 12, S2: 12, S3: 12, S4: 12, H1: 1, H2: 2, H3: 3, H4: 4,
+      HeaderProtectionKey: hpk, ContentPaddingAddition: "0-64", RekeyAfterTime: "90-120", RekeyTimeout: "5-10", RejectAfterTime: 180, KeepaliveTimeout: 10, MaxHandshakeAttempts: 20, RandomTrailers: "1", DisableCookies: "0" } });
+  const root = decode((await buildAmneziaVpnProfile(conf)).uri) as { hostName: string; containers: Array<{awg: {last_config: string}}> };
+  expect(root.hostName).toBe("170.168.18.20");
+  const last = JSON.parse(root.containers[0].awg.last_config);
+  expect(last).toMatchObject({ HeaderProtectionKey: hpk, ContentPaddingAddition: "0-64", RekeyAfterTime: "90-120", RekeyTimeout: "5-10", RejectAfterTime: "180", KeepaliveTimeout: "10", MaxHandshakeAttempts: "20", RandomTrailers: "1", DisableCookies: "0" });
+  expect(last.config).toBe(conf);
+  expect(last.config).toContain("Endpoint = 170.168.18.20:51820");
+  expect(last.config).not.toContain("185.109.21.157");
+});

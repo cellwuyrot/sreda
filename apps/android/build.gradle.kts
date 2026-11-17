@@ -1,6 +1,7 @@
 // Top-level build file. Version numbers live here so the app module stays lean.
 plugins {
     id("com.android.application") version "8.10.1" apply false
+    id("com.android.library") version "8.10.1" apply false
     id("org.jetbrains.kotlin.android") version "2.2.0" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.0" apply false
     /* PUSH: плагин доступов службы доставки. apply false — он применяется в

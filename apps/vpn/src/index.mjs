@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { PARAM_KEYS } from "./awg-params.mjs";
 /**
  * TrioZ VPN — агент дочернего узла WireGuard.
  *
@@ -132,12 +133,7 @@ const VERSION = "0.1.0";
  * Берётся только секция `[Interface]`: в `[Peer]` таких ключей нет, а вот
  * наткнуться на чужую строку оттуда — легко.
  */
-const PARAM_KEYS = new Set([
-  "Jc", "Jmin", "Jmax",
-  "S1", "S2", "S3", "S4",
-  "H1", "H2", "H3", "H4",
-  "I1", "I2", "I3", "I4", "I5",
-]);
+// Keep this separate so the reporter whitelist can be tested without starting the agent.
 
 function readInterfaceParams() {
   const path = process.env.WG_CONF_PATH || `/etc/amneziawg/${CONFIG.iface}.conf`;
