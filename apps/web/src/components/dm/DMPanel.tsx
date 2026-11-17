@@ -2152,9 +2152,14 @@ export default function DMPanel({ currentUserId, onClose, initialFriendId, highl
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-sm shadow-lg"
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            onDragEnd={(_event, info) => { if (Math.abs(info.offset.y) > 45) setToast(null); }}
+            role="status"
+            className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-sm shadow-lg"
           >
             {toast}
+            <button type="button" onClick={() => setToast(null)} aria-label="Закрыть уведомление" className="rounded p-1 focus-visible:outline focus-visible:outline-2">×</button>
           </motion.div>
         )}
       </AnimatePresence>

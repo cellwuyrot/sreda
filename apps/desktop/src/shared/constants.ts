@@ -50,6 +50,7 @@ export const IPC = {
   GET_INFO: "desktop:get-info",
   /** Actual native window state; Chromium visibility can stay visible. */
   GET_WINDOW_HIDDEN: "desktop:get-window-hidden",
+  GET_WINDOW_ACTIVE: "desktop:get-window-active",
   GET_CONFIG: "desktop:get-config",
   SET_CONFIG: "desktop:set-config",
   /** Выбор для следующей демонстрации: источник, качество, звук и тариф. */
@@ -123,6 +124,7 @@ export const IPC = {
   OVERLAY_MOVE_END: "desktop:overlay-move-end",
   // main → renderer (push)
   WINDOW_HIDDEN_CHANGED: "desktop:window-hidden-changed",
+  WINDOW_ACTIVE_CHANGED: "desktop:window-active-changed",
   TOGGLE_MUTE: "desktop:toggle-mute",
   PUSH_TO_TALK: "desktop:push-to-talk",
   /** FIX-REPLAY: глобальный бинд «сохранить повтор» нажат. */

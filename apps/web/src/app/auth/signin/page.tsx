@@ -66,10 +66,11 @@ function CodeInput({
           aria-label={`Цифра ${i + 1} из ${length}`}
           maxLength={1}
           value={value[i] || ""}
+          data-filled={Boolean(value[i])}
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
           onPaste={handlePaste}
-          className="w-10 sm:w-12 h-14 text-center text-2xl font-bold rounded-xl border-2 border-white/10 bg-slate-900 text-white focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 transition-colors motion-reduce:transition-none"
+          className="tz-code-slot w-10 sm:w-12 h-14 text-center text-2xl font-bold rounded-xl border-2 border-white/10 bg-slate-900 text-white focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 transition-colors motion-reduce:transition-none"
         />
       ))}
     </div>
@@ -401,8 +402,9 @@ export default function SignInPage() {
                       onChange={(e) => setUsername(e.target.value)}
                       className="input-field"
                       placeholder="my_username"
-                      pattern="[a-zA-Z0-9_]{6,20}"
-                      title="6-20 символов: латиница, цифры и _, минимум одна цифра"
+                      minLength={6}
+                      maxLength={20}
+                      title="От 6 до 20 символов: буквы любого алфавита, цифры, _ и дефис"
                       required
                     />
                   </div>
