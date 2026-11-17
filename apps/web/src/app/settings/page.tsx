@@ -1150,15 +1150,16 @@ export default function SettingsPage() {
                       required
                     />
                   </Field>
-                  <Field label="Юзернейм" info="3–20 символов, только латиница, цифры и _">
+                  <Field label="Юзернейм" info="3–20 символов: буквы любого алфавита, цифры, _ и дефис">
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 text-sm">@</span>
                       <Input
                         value={nameForm.username}
                         onChange={(e) => setNameForm((f) => ({ ...f, username: e.target.value }))}
                         placeholder="username"
-                        pattern="[a-zA-Z0-9_]{3,20}"
-                        title="3–20 символов: буквы, цифры, _"
+                        minLength={3}
+                        maxLength={20}
+                        title="3–20 символов: буквы любого алфавита, цифры, _ и дефис"
                         required
                         className="!pl-8"
                         style={{ paddingLeft: "2rem" }}

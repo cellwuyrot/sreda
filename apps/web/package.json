@@ -36,6 +36,7 @@
     "next": "^16.2.6",
     "next-auth": "^4.24.14",
     "nodemailer": "^7.0.13",
+    "ogl": "^1.0.11",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
     "qrcode.react": "^4.2.0",

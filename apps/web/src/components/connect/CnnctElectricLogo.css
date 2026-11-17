@@ -1,0 +1,5 @@
+/* A bounded canvas: no full-window WebGL surface. */
+.electric-logo { position: relative; width: min(420px, 75vw, 60vh); aspect-ratio: 1; pointer-events: auto; }
+.electric-logo canvas { position: absolute; inset: 0; }
+.electric-logo__fallback { position: absolute; inset: 15%; width: 70%; height: 70%; object-fit: contain; filter: brightness(0) invert(1); opacity: .78; }
+.electric-logo__fallback-text { display: none; position: absolute; inset: 0; place-items: center; color: #cbd5e1; font: 600 1.5rem system-ui, sans-serif; letter-spacing: .15em; }

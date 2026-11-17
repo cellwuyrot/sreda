@@ -110,6 +110,8 @@ export interface TriozDesktopApi {
   isDesktop: true;
   platform: string;
   /** Optional in older desktop clients. */
+  getWindowActive?(): Promise<boolean>;
+  onWindowActiveChange?(cb: (active: boolean) => void): Unsubscribe;
   getWindowHidden?(): Promise<boolean>;
   onWindowHiddenChange?(cb: (hidden: boolean) => void): Unsubscribe;
   getConfig(): Promise<DesktopConfig>;

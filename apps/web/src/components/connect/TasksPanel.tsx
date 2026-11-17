@@ -1026,7 +1026,10 @@ function TaskDetailsContent({ task, currentUserId, canModerate, members, onRefre
           <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400 flex flex-wrap gap-3">
             <span>Автор: @{task.creator.username || task.creator.name}</span>
             <span>Исполнитель: {task.assignee ? `@${task.assignee.username || task.assignee.name}` : "не назначен"}</span>
-            <span>Статус: {statusLabel(task.status)}</span>
+            <span className="tz-status-mark inline-flex items-center gap-1" key={task.status}>
+              <span aria-hidden="true">{task.status === "done" ? "✓" : task.status === "failed" ? "×" : "•"}</span>
+              Статус: {statusLabel(task.status)}
+            </span>
             {isClosed && task.closedAt && (
               <span>
                 Закрыта {new Date(task.closedAt).toLocaleString("ru-RU")}
@@ -1131,14 +1134,17 @@ function TaskDetailsContent({ task, currentUserId, canModerate, members, onRefre
           </div>
           <div className="space-y-1.5 rounded-2xl bg-white/[0.03] p-2">
             {task.checklist?.map((item) => (
-              <label key={item.id} className="flex items-center gap-3 group rounded-xl px-3 py-2 hover:bg-white/5 transition-colors motion-reduce:transition-none">
+              <label key={item.id} className="tz-list-enter flex items-center gap-3 group rounded-xl px-3 py-2 hover:bg-white/5 transition-colors motion-reduce:transition-none">
                 <input
                   type="checkbox"
                   checked={item.done}
                   disabled={isClosed}
                   onChange={(e) => toggleChecklistItem(item.id, e.target.checked)}
-                  className="accent-violet-600 dark:accent-cyan-400"
+                  className="peer sr-only"
                 />
+                <span aria-hidden="true" className="tz-check-box flex h-4 w-4 shrink-0 items-center justify-center rounded border border-neutral-500 peer-checked:border-cyan-400 peer-checked:bg-cyan-500 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400 peer-disabled:opacity-50">
+                  <svg viewBox="0 0 16 16" className="h-3 w-3 text-slate-950" fill="none"><path className="tz-check-mark" d="M3 8l3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </span>
                 <span className={`flex-1 text-sm ${item.done ? "line-through text-neutral-400" : "text-neutral-800 dark:text-neutral-200"}`}>{item.text}</span>
                 {canManage && (
                   <button onClick={() => deleteChecklistItem(item.id)} className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-neutral-400 hover:text-red-500" aria-label="Удалить пункт"><XIcon size={12} style={{ color: "inherit" }} /></button>
