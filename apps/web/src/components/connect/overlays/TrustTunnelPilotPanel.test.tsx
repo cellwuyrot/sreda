@@ -111,6 +111,17 @@ describe('TrustTunnel subscriber panel', () => {
     expect(screen.queryByText('Сбой запуска')).toBeNull();
   }, 10000);
 
+  it('shows a sanitized native admission-policy error without exposing the profile', async () => {
+    responses(ready);
+    controls.up.mockRejectedValueOnce(new Error('VPN заблокирован локальной политикой этой сборки'));
+    const view = render(<TrustTunnelPilotPanel onClose={vi.fn()} />);
+    const power = await screen.findByRole('button', { name: 'Подключить надёжное соединение' });
+    await waitFor(() => expect((power as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(power);
+    expect(await screen.findByText('VPN заблокирован локальной политикой этой сборки')).toBeTruthy();
+    expect(view.container.textContent).not.toContain('FAKE-PRIVATE-PROFILE');
+  });
+
   it('describes an Android engine connection reported as CONNECTED', async () => {
     controls.status.mockResolvedValue({ state: 'on', error: null, confirmed: true });
     responses(ready); render(<TrustTunnelPilotPanel onClose={vi.fn()} />);

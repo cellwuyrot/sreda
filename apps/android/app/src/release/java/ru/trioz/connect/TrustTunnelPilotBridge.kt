@@ -16,6 +16,7 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
     private var generation = 0L
     private var permissionInFlight = false
     private var settingsOpen = false
+    private class UserVisibleFailure(message: String) : Exception(message)
     private val permission = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val profile = pending
         pending = null
@@ -30,11 +31,11 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
         .put("error", TrustTunnelPilotService.error ?: JSONObject.NULL)
         .put("confirmed", TrustTunnelPilotService.state == "on")
     private fun start(profile: String) {
-        if (activity.awgBusy() || !VpnAdmissionPolicy.check(activity).allowed || VpnService.prepare(activity) != null) {
-            TrustTunnelPilotService.reportFailure("VPN занят или системное разрешение отозвано")
-            return
-        }
         try {
+            if (activity.awgBusy() || !VpnAdmissionPolicy.check(activity).allowed || VpnService.prepare(activity) != null) {
+                TrustTunnelPilotService.reportFailure("VPN занят или системное разрешение отозвано")
+                return
+            }
             activity.startForegroundService(Intent(activity, TrustTunnelPilotService::class.java)
                 .setAction(TrustTunnelPilotService.ACTION_START).putExtra(TrustTunnelPilotService.EXTRA_PROFILE, profile))
         } catch (_: Exception) { TrustTunnelPilotService.reportFailure("Android не разрешил запуск VPN") }
@@ -44,6 +45,7 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
         WebViewCompat.addWebMessageListener(view, "TriozTrustTunnelPilotBridge", setOf(Config.appUrl)) { _, msg, origin, mainFrame, reply ->
             if (!mainFrame || !Config.isTrustedOrigin(origin.toString()) || msg.data.orEmpty().length > 12000) return@addWebMessageListener
             var id = ""
+            var reservedByRequest = false
             try {
                 val req = JSONObject(msg.data.orEmpty()); id = req.getString("id")
                 require(id.matches(Regex("[A-Za-z0-9-]{1,80}")))
@@ -64,11 +66,13 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
                     }
                     "up" -> {
                         val profile = req.getString("config")
-                        check(TrustTunnelPilotProfile.accepts(profile)) { "Неверный профиль VPN" }
-                        check(!busy() && !settingsOpen && !activity.awgBusy()) { "Сначала отключите другое VPN-соединение" }
-                        val admission = VpnAdmissionPolicy.check(activity)
-                        check(admission.allowed) { "Локальная политика VPN не разрешает подключение" }
+                        TrustTunnelStartGuard.failure(
+                            profileValid = TrustTunnelPilotProfile.accepts(profile),
+                            busy = busy() || settingsOpen || activity.awgBusy(),
+                            admission = VpnAdmissionPolicy.check(activity),
+                        )?.let { throw UserVisibleFailure(it) }
                         TrustTunnelPilotService.reserve()
+                        reservedByRequest = true
                         val token = ++generation
                         AlertDialog.Builder(activity).setTitle("VPN-соединение TrustTunnel")
                             .setMessage("TrustTunnel доступен по подписке. При отключении VPN Android может использовать обычную сеть. Продолжить?")
@@ -77,11 +81,16 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
                                 if (activity.awgBusy() || !VpnAdmissionPolicy.check(activity).allowed) {
                                     TrustTunnelPilotService.reportFailure("VPN занят или локальный допуск отозван")
                                 } else {
-                                    val consent = VpnService.prepare(activity)
-                                    if (consent != null) {
-                                        pending = profile; permissionInFlight = true
-                                        try { permission.launch(consent) } catch (_: Exception) { pending = null; permissionInFlight = false; TrustTunnelPilotService.reportFailure("Не удалось запросить разрешение VPN") }
-                                    } else start(profile)
+                                    try {
+                                        val consent = VpnService.prepare(activity)
+                                        if (consent != null) {
+                                            pending = profile; permissionInFlight = true
+                                            permission.launch(consent)
+                                        } else start(profile)
+                                    } catch (_: Exception) {
+                                        pending = null; permissionInFlight = false
+                                        TrustTunnelPilotService.reportFailure("Не удалось запросить разрешение VPN в Android")
+                                    }
                                 }
                             }.setNegativeButton("Отмена") { _, _ -> if (token == generation) TrustTunnelPilotService.reportOff() }
                             .setOnCancelListener { if (token == generation) TrustTunnelPilotService.reportOff() }.show()
@@ -89,8 +98,11 @@ internal class TrustTunnelPilotBridge(private val activity: MainActivity) {
                     else -> throw IllegalArgumentException("Неизвестная операция")
                 }
                 reply.postMessage(JSONObject().put("id", id).put("result", snapshot()).toString())
-            } catch (_: Exception) {
-                reply.postMessage(JSONObject().put("id", id).put("error", "Не удалось выполнить операцию VPN").toString())
+            } catch (e: Exception) {
+                // Only explicitly whitelisted, credential-free text crosses the bridge.
+                val message = (e as? UserVisibleFailure)?.message ?: "Не удалось выполнить операцию VPN"
+                if (reservedByRequest) TrustTunnelPilotService.reportFailure(message)
+                reply.postMessage(JSONObject().put("id", id).put("error", message).toString())
             }
         }
     }
