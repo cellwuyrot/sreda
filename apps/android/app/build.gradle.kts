@@ -204,8 +204,11 @@ dependencies {
     implementation("com.github.tony19:logback-android:2.0.0")
     implementation("io.reactivex.rxjava3:rxandroid:3.0.0")
     implementation("com.akuleshov7:ktoml-core:0.7.0")
-    // Debug-only native preview UI remains isolated from production.
-    debugImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
+    // The Compose compiler is applied to all variants. Its runtime must also
+    // be present in release, even though the native preview UI is debug-only.
+    implementation(platform("androidx.compose:compose-bom:2025.05.01"))
+    implementation("androidx.compose.runtime:runtime")
+    // Native preview UI and its network dependency remain debug-only.
     debugImplementation("androidx.compose.material3:material3")
     debugImplementation("androidx.activity:activity-compose:1.10.1")
     debugImplementation("com.squareup.okhttp3:okhttp:5.3.0")
