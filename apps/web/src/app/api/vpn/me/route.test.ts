@@ -67,7 +67,7 @@ import {
 } from "@/lib/vpn";
 
 // Динамический импорт после всех vi.mock.
-const { POST, GET, DELETE } = await import("@/app/api/vpn/me/route");
+const { POST, GET, DELETE, PATCH } = await import("@/app/api/vpn/me/route");
 
 // ── Вспомогательные данные ──────────────────────────────────────────────────
 
@@ -585,6 +585,45 @@ describe("POST: явный выбор узла", () => {
     expect((await POST(makeNextRequest({ publicKey: VALID_PUBLIC_KEY, nodeId: "node-1" }))).status).toBe(403);
     expect(prismaMock.serverNode.findFirst).not.toHaveBeenCalled();
     expect(prismaMock.vpnPeer.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH: переименование устройства", () => {
+  it("меняет только подпись конкретного устройства", async () => {
+    prismaMock.vpnPeer.findFirst.mockResolvedValue({ id: "peer-1" } as never);
+
+    const res = await PATCH(makeNextRequest({
+      action: "rename",
+      publicKey: VALID_PUBLIC_KEY,
+      label: "Рабочий ноутбук",
+    }));
+
+    expect(res.status).toBe(200);
+    expect(prismaMock.vpnPeer.update).toHaveBeenCalledWith({
+      where: { id: "peer-1" },
+      data: { label: "Рабочий ноутбук" },
+    });
+  });
+
+  it("отклоняет пустое название", async () => {
+    const res = await PATCH(makeNextRequest({
+      action: "rename",
+      publicKey: VALID_PUBLIC_KEY,
+      label: "   ",
+    }));
+    expect(res.status).toBe(400);
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
+  });
+
+  it("не позволяет переименовать чужое или отсутствующее устройство", async () => {
+    prismaMock.vpnPeer.findFirst.mockResolvedValue(null);
+    const res = await PATCH(makeNextRequest({
+      action: "rename",
+      publicKey: VALID_PUBLIC_KEY,
+      label: "Ноутбук",
+    }));
+    expect(res.status).toBe(404);
+    expect(prismaMock.vpnPeer.update).not.toHaveBeenCalled();
   });
 });
 

@@ -557,15 +557,42 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = (await req.json().catch(() => null)) as {
+    action?: unknown;
     nodeId?: unknown;
     publicKey?: unknown;
+    label?: unknown;
   } | null;
 
-  const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
-  if (!nodeId) return NextResponse.json({ error: "Не указан сервер" }, { status: 400 });
   if (!isValidWireGuardKey(body?.publicKey)) {
     return NextResponse.json({ error: "Не указан корректный ключ устройства" }, { status: 400 });
   }
+
+  // Переименование не меняет конфигурацию туннеля и configAt.
+  if (body.action === "rename") {
+    const label = typeof body.label === "string"
+      ? sanitizeText(body.label).trim().slice(0, 80)
+      : "";
+    if (!label) {
+      return NextResponse.json({ error: "Укажите название устройства" }, { status: 400 });
+    }
+
+    const target = await prisma.vpnPeer.findFirst({
+      where: { userId: session.user.id, publicKey: body.publicKey },
+      select: { id: true },
+    });
+    if (!target) {
+      return NextResponse.json({ error: "Устройство не найдено" }, { status: 404 });
+    }
+
+    await prisma.vpnPeer.update({
+      where: { id: target.id },
+      data: { label },
+    });
+    return NextResponse.json({ ok: true, label });
+  }
+
+  const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
+  if (!nodeId) return NextResponse.json({ error: "Не указан сервер" }, { status: 400 });
 
   const peer = await prisma.vpnPeer.findFirst({
     where: { userId: session.user.id, publicKey: body.publicKey },
