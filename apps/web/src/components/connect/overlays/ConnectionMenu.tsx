@@ -5,6 +5,7 @@ import PremiumMark from "@/components/connect/PremiumMark";
 import { LINK_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 import BusinessSubscriptionActions from "@/components/subscriptions/BusinessSubscriptionActions";
 import { daysLeftLabel } from "@/lib/connectionUsage";
+import { vpnEnrollmentKeys } from "@/lib/vpnEnrollment";
 
 /**
  * NETLINK: кнопка «TZ» — состояние соединения, а не только вход в окно.
@@ -43,7 +44,8 @@ interface ConnectionState {
     until?: string | null;
   } | null;
   servers?: ServerChoice[] | null;
-  peer?: { enabled?: boolean; nodeId?: string; node?: { name?: string; region?: string } | null } | null;
+  peer?: { publicKey?: string; enabled?: boolean; nodeId?: string; node?: { name?: string; region?: string } | null } | null;
+  devices?: { publicKey: string; label: string; address: string; nodeId?: string }[];
 }
 
 interface ConnectionMenuProps {
@@ -65,6 +67,7 @@ export default function ConnectionMenu({
   const [state, setState] = useState<ConnectionState | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [currentPublicKey, setCurrentPublicKey] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [stale, setStale] = useState(false);
@@ -76,7 +79,9 @@ export default function ConnectionMenu({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/vpn/me", { cache: "no-store" });
+      const pair = await vpnEnrollmentKeys();
+      setCurrentPublicKey(pair.publicKey);
+      const res = await fetch(`/api/vpn/me?publicKey=${encodeURIComponent(pair.publicKey)}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Не удалось получить состояние");
       const data: unknown = await res.json();
       /* Ответ проверяется на тип, а не принимается на веру: строка или null вместо
@@ -128,7 +133,7 @@ export default function ConnectionMenu({
       const res = await fetch("/api/vpn/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodeId }),
+        body: JSON.stringify({ nodeId, publicKey: currentPublicKey }),
       });
       const data = (await res.json().catch(() => null)) as { error?: string; needsReissue?: boolean } | null;
       if (!res.ok) {
@@ -155,7 +160,11 @@ export default function ConnectionMenu({
   const disconnect = async () => {
     setBusy(true);
     try {
-      const res = await fetch("/api/vpn/me", { method: "DELETE" });
+      const res = await fetch("/api/vpn/me", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicKey: currentPublicKey }),
+      });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
         setError(data?.error || "Не удалось выключить");

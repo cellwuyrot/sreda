@@ -27,6 +27,7 @@ import { QRCodeSVG } from "qrcode.react";
 type VpnRouting = "ALL" | "SERVICES";
 
 interface VpnPeerState {
+  publicKey: string;
   nodeId?: string;
   address: string;
   exitIp: string;
@@ -68,6 +69,7 @@ interface VpnState {
   entitled: boolean;
   nodeReady: boolean;
   peer: (VpnPeerState & { nodeId?: string }) | null;
+  devices?: (VpnPeerState & { nodeId?: string; peerApplied?: boolean })[];
   plan?: PlanState | null;
   servers?: ServerChoice[] | null;
 }
@@ -340,7 +342,7 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
       try {
         const enrolled = await enroll(mode, nodeId);
         if (!enrolled) return;
-        await waitForAndroidPeer();
+        await waitForAndroidPeer(enrolled.peer.publicKey);
         const st = await bridge.up(enrolled.config);
         setTunnel(st);
       } catch (e) {
@@ -390,7 +392,8 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
     const pending = (async (): Promise<VpnState | null> => {
       try {
-        const res = await fetch("/api/vpn/me", { cache: "no-store" });
+        const pair = await vpnEnrollmentKeys();
+        const res = await fetch(`/api/vpn/me?publicKey=${encodeURIComponent(pair.publicKey)}`, { cache: "no-store" });
         const data = res.ok ? await res.json().catch(() => null) : null;
         if (!data || typeof data !== "object")
           throw new Error("Некорректный ответ состояния");
@@ -399,6 +402,7 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
           entitled: data.entitled === true,
           nodeReady: data.nodeReady === true,
           peer: data.peer ?? null,
+          devices: Array.isArray(data.devices) ? data.devices : [],
           plan: data.plan ?? null,
           servers: Array.isArray(data.servers) ? data.servers : [],
         };
@@ -427,10 +431,11 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
     setShowAmneziaQr(false);
     setBusy(true);
     try {
+      const pair = await vpnEnrollmentKeys();
       const res = await fetch("/api/vpn/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodeId }),
+        body: JSON.stringify({ nodeId, publicKey: pair.publicKey }),
       });
       const data = (await res.json().catch(() => null)) as {
         error?: string;
