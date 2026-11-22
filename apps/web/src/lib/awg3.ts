@@ -27,8 +27,8 @@ export function normalizeAwg3(source: Record<string, unknown>): Record<string, s
       }
       out[key] = text;
     } else if ((AWG3_TOGGLE_KEYS as readonly string[]).includes(key)) {
-      if (!/^(0|1|true|false)$/i.test(text)) throw new Error(`Некорректный параметр ${key}`);
-      out[key] = /^(1|true)$/i.test(text) ? "1" : "0";
+      if (!/^(0|1|true|false|on|off)$/i.test(text)) throw new Error(`Некорректный параметр ${key}`);
+      out[key] = /^(1|true|on)$/i.test(text) ? "1" : "0";
     } else {
       if (!/^\d{1,5}(-\d{1,5})?$/.test(text)) throw new Error(`Некорректный параметр ${key}`);
       const [lo, hi = lo] = text.split("-").map(Number);

@@ -132,9 +132,11 @@ describe("Android native VPN flow", () => {
     );
   });
   it("denies enrollment before sending a public key to server", async () => {
-    native.publicKey.mockRejectedValue(
-      new Error("VPN недоступен по политике этой сборки"),
-    );
+    native.publicKey
+      .mockResolvedValueOnce("native-public")
+      .mockRejectedValue(
+        new Error("VPN недоступен по политике этой сборки"),
+      );
     await connect();
     await screen.findByText("VPN недоступен по политике этой сборки");
     expect(native.up).not.toHaveBeenCalled();

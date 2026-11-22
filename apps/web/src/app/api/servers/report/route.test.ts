@@ -42,6 +42,7 @@ function premiumUser(over: Record<string, unknown> = {}) {
 function peerFor(user: Record<string, unknown>, over: Record<string, unknown> = {}) {
   return {
     publicKey: KEY,
+    userId: "user-1",
     address: "10.8.0.2",
     exitIp: "",
     rxBytes: 0,
@@ -81,7 +82,14 @@ beforeEach(() => {
     }),
   );
   prismaMock.vpnPeer.findMany.mockResolvedValue(row([]));
+  prismaMock.vpnAccountUsage.findMany.mockResolvedValue(row([]));
   prismaMock.vpnPeer.updateMany.mockResolvedValue(row({ count: 1 }));
+  prismaMock.$transaction.mockImplementation(async (callback) => {
+    if (typeof callback !== "function") {
+      throw new Error("Ожидалась interactive-транзакция");
+    }
+    return callback(prismaMock);
+  });
 });
 
 describe("кто может отчитываться", () => {
@@ -465,11 +473,26 @@ describe("лимит трафика в списке пиров", () => {
     );
   }
 
-  /** Пир, у которого расход уже вышел за лимит. */
+  /** Общий расход аккаунта уже вышел за лимит 250 GB. */
+  function overLimitAccountUsage() {
+    prismaMock.vpnAccountUsage.findMany.mockResolvedValue(
+      row([{
+        id: "usage-1",
+        userId: "user-1",
+        rxBytes: 300 * GB,
+        txBytes: 0,
+        usageResetAt: new Date(),
+        usageUpdatedAt: new Date(),
+      }]),
+    );
+  }
+
+  /** Пир, у которого общий расход аккаунта уже вышел за лимит. */
   function overLimitPeer(role: string) {
     prismaMock.vpnPeer.findMany.mockResolvedValue(
-      row([peerFor(premiumUser({ role }), { rxBytes: 200 * GB, txBytes: 100 * GB })]),
+      row([peerFor(premiumUser({ role }))]),
     );
+    overLimitAccountUsage();
   }
 
   /**
@@ -500,8 +523,9 @@ describe("лимит трафика в списке пиров", () => {
     /* Групповая роль намеренно не выбирается и не участвует в расчёте: только
        глобальный user.role === ADMIN — исключение из лимита. */
     prismaMock.vpnPeer.findMany.mockResolvedValue(
-      row([peerFor(premiumUser({ role: "USER", groupRole: "ADMIN" }), { rxBytes: 200 * GB, txBytes: 100 * GB })]),
+      row([peerFor(premiumUser({ role: "USER", groupRole: "ADMIN" }))]),
     );
+    overLimitAccountUsage();
     const res = await call({ report: {} });
     expect(res.body.peers).toEqual([]);
   });
