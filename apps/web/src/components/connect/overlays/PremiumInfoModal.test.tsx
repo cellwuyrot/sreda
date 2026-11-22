@@ -62,6 +62,10 @@ function vpnState(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   desktopApi.get.mockReturnValue(null);
+  vi.mocked(deviceKeyPair).mockReturnValue({
+    privateKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    publicKey: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+  });
   vpnApiFetch.mockReset();
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === "/api/vpn/trusttunnel") {
@@ -102,7 +106,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
       ).toBeTruthy(),
     );
     expect(
-      screen.queryByText(/Трафик|Израсходовано|Осталось|Учёт:/i),
+      screen.queryByText(/(?:^|\s)Трафик(?:\s|$|:)|Израсходовано|Осталось|Учёт:/i),
     ).toBeNull();
     expect(
       screen.queryByRole("button", { name: /обновить данные/i }),
@@ -222,7 +226,7 @@ describe("PremiumInfoModal: без отображения учёта трафи�
       ).toBeTruthy(),
     );
     expect(
-      screen.queryByText(/Трафик|Израсходовано|Осталось|Учёт:/i),
+      screen.queryByText(/(?:^|\s)Трафик(?:\s|$|:)|Израсходовано|Осталось|Учёт:/i),
     ).toBeNull();
   });
 

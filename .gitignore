@@ -34,8 +34,11 @@ yarn-debug.log*
 yarn-error.log*
 
 # ── Local env files ──────────────────────────────────────────────────
+# Environment files, secrets and timestamped backups
 .env
-.env*.local
+.env.*
+!.env.example
+!.env.template
 
 # ── Vercel ───────────────────────────────────────────────────────────
 .vercel

@@ -206,7 +206,7 @@ export async function POST(req: Request) {
       const rawTx = tx;
       const peer = await prisma.vpnPeer.findFirst({
         where: { nodeId: node.id, publicKey },
-        select: { id: true, rxBytes: true, txBytes: true, lastRx: true, lastTx: true, usageResetAt: true },
+        select: { id: true, userId: true, rxBytes: true, txBytes: true, lastRx: true, lastTx: true, usageResetAt: true },
       });
       if (!peer) continue;
 
@@ -227,24 +227,61 @@ export async function POST(req: Request) {
       const savedRx = expired ? deltaRx : peer.rxBytes + deltaRx;
       const savedTx = expired ? deltaTx : peer.txBytes + deltaTx;
       try {
-        await prisma.vpnPeer.update({
-          where: { id: peer.id },
-          data: expired
-            ? {
-                rxBytes: deltaRx,
-                txBytes: deltaTx,
-                lastRx: rawRx,
-                lastTx: rawTx,
-                usageResetAt: measuredAt,
-                usageUpdatedAt: measuredAt,
-              }
-            : {
-                rxBytes: peer.rxBytes + deltaRx,
-                txBytes: peer.txBytes + deltaTx,
-                lastRx: rawRx,
-                lastTx: rawTx,
-                usageUpdatedAt: measuredAt,
-              },
+        await prisma.$transaction(async (tx) => {
+          await tx.vpnPeer.update({
+            where: { id: peer.id },
+            data: expired
+              ? {
+                  rxBytes: deltaRx,
+                  txBytes: deltaTx,
+                  lastRx: rawRx,
+                  lastTx: rawTx,
+                  usageResetAt: measuredAt,
+                  usageUpdatedAt: measuredAt,
+                }
+              : {
+                  rxBytes: peer.rxBytes + deltaRx,
+                  txBytes: peer.txBytes + deltaTx,
+                  lastRx: rawRx,
+                  lastTx: rawTx,
+                  usageUpdatedAt: measuredAt,
+                },
+          });
+
+          // Общая квота аккаунта. UPSERT атомарен даже при отчётах
+          // с нескольких VPN-узлов одновременно.
+          await tx.$executeRaw`
+            INSERT INTO "VpnAccountUsage"
+              ("id", "userId", "rxBytes", "txBytes", "usageResetAt", "usageUpdatedAt")
+            VALUES (
+              ${"vpnusage_" + peer.userId},
+              ${peer.userId},
+              ${deltaRx},
+              ${deltaTx},
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT ("userId") DO UPDATE SET
+              "rxBytes" = CASE
+                WHEN "VpnAccountUsage"."usageResetAt"
+                  + (${settings.usagePeriodDays} * INTERVAL '1 day') <= NOW()
+                THEN EXCLUDED."rxBytes"
+                ELSE "VpnAccountUsage"."rxBytes" + EXCLUDED."rxBytes"
+              END,
+              "txBytes" = CASE
+                WHEN "VpnAccountUsage"."usageResetAt"
+                  + (${settings.usagePeriodDays} * INTERVAL '1 day') <= NOW()
+                THEN EXCLUDED."txBytes"
+                ELSE "VpnAccountUsage"."txBytes" + EXCLUDED."txBytes"
+              END,
+              "usageResetAt" = CASE
+                WHEN "VpnAccountUsage"."usageResetAt"
+                  + (${settings.usagePeriodDays} * INTERVAL '1 day') <= NOW()
+                THEN NOW()
+                ELSE "VpnAccountUsage"."usageResetAt"
+              END,
+              "usageUpdatedAt" = NOW()
+          `;
         });
         // Диагностика: id пира — внутренний, ключей/адресов тут нет.
         console.log(`AWG report: updated peer=${peer.id} rx=${savedRx} tx=${savedTx}`);
@@ -286,25 +323,22 @@ export async function POST(req: Request) {
   // расписанию, а запись пира остаётся: вернулась подписка — вернулся доступ.
   const vpnSettings = vpnSettingsForNode;
   const vpnEnabled = vpnSettings?.enabled ?? false;
-  const vpnPeers =
+
+  const vpnPeerRows =
     node.kind !== "VPN" || !vpnSettings
       ? null
       : !vpnEnabled || !wireGuardProviderActive
-      ? []
-      : (
-          await prisma.vpnPeer.findMany({
+        ? []
+        : await prisma.vpnPeer.findMany({
             where: { nodeId: node.id, enabled: true },
             select: {
+              userId: true,
               publicKey: true,
               address: true,
               exitIp: true,
-              /* NETLINK: расход периода нужен здесь же: лимит — такое же
-                 основание доступа, как и сама подписка, и проверяться он должен в той
-                 же единственной точке, а не задачей по расписанию. */
               rxBytes: true,
               txBytes: true,
               usageResetAt: true,
-              /* VPN-PLAN: право даёт либо Premium, либо подписка только на VPN. */
               user: {
                 select: {
                   banned: true,
@@ -317,29 +351,66 @@ export async function POST(req: Request) {
               },
             },
             orderBy: { address: "asc" },
+          });
+
+  // Сначала получаем общую квоту каждого аккаунта, и только потом
+  // решаем, какие устройства можно передать VPN-узлу.
+  let vpnPeers: {
+    publicKey: string;
+    allowedIp: string;
+    exitIp: string;
+    throttleKbps: number;
+  }[] | null = null;
+
+  if (vpnPeerRows !== null) {
+    if (!vpnSettings || !vpnEnabled || !wireGuardProviderActive) {
+      vpnPeers = [];
+    } else {
+      const eligiblePeers = vpnPeerRows.filter((peer) => isPeerEntitled(peer.user));
+      const userIds = [...new Set(eligiblePeers.map((peer) => peer.userId))];
+
+      const accountUsageRows = userIds.length
+        ? await prisma.vpnAccountUsage.findMany({
+            where: { userId: { in: userIds } },
           })
-        )
-          .filter((peer) => isPeerEntitled(peer.user))
-          /* NETLINK: исчерпанный лимит при правиле «отключить» снимает соединение
-             тем же способом, что и кончившаяся подписка: пир перестаёт попадать
-             в список узла. Запись остаётся — новый период вернёт доступ сам.
-             NETLINK-STAFF: безлимит — только у администрации проекта; ни Premium,
-             ни «Ускоренный интернет» от лимита не освобождают. */
-          .filter((peer) => !isTrafficBlocked(peer, vpnSettings, new Date(), isUsageUnlimited(peer.user)))
-          .map((peer) => ({
+        : [];
+
+      const usageByUserId = new Map(
+        accountUsageRows.map((usage) => [usage.userId, usage]),
+      );
+      const now = new Date();
+
+      vpnPeers = eligiblePeers
+        .filter((peer) => {
+          const accountUsage = usageByUserId.get(peer.userId);
+          return !isTrafficBlocked(
+            accountUsage,
+            vpnSettings,
+            now,
+            isUsageUnlimited(peer.user),
+          );
+        })
+        .map((peer) => {
+          const accountUsage = usageByUserId.get(peer.userId);
+          const overLimit = usageView(
+            accountUsage,
+            vpnSettings,
+            now,
+            isUsageUnlimited(peer.user),
+          ).overLimit;
+
+          return {
             publicKey: peer.publicKey,
             allowedIp: `${peer.address}/32`,
-            // VPN-EXIT: пустая строка — общий MASQUERADE узла (прежнее поведение).
             exitIp: peer.exitIp,
-            /* NETLINK: потолок скорости в Кбит/с для тех, кто вышел за лимит при
-               правиле «снизить скорость». 0 — ограничений нет. Формирует трафик сам
-               узел: через главный сервер этот трафик не проходит вообще. */
             throttleKbps:
-              vpnSettings.overLimitAction === "THROTTLE" &&
-              usageView(peer, vpnSettings, new Date(), isUsageUnlimited(peer.user)).overLimit
+              vpnSettings.overLimitAction === "THROTTLE" && overLimit
                 ? vpnSettings.throttleKbps
                 : 0,
-          }));
+          };
+        });
+    }
+  }
 
   return NextResponse.json({
     ok: true,

@@ -27,6 +27,8 @@ import { QRCodeSVG } from "qrcode.react";
 type VpnRouting = "ALL" | "SERVICES";
 
 interface VpnPeerState {
+  publicKey: string;
+  label: string;
   nodeId?: string;
   address: string;
   exitIp: string;
@@ -68,6 +70,7 @@ interface VpnState {
   entitled: boolean;
   nodeReady: boolean;
   peer: (VpnPeerState & { nodeId?: string }) | null;
+  devices?: (VpnPeerState & { nodeId?: string; peerApplied?: boolean })[];
   plan?: PlanState | null;
   servers?: ServerChoice[] | null;
 }
@@ -220,6 +223,8 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
     (AmneziaVpnProfile & { signature: string }) | null
   >(null);
   const [showAmneziaQr, setShowAmneziaQr] = useState(false);
+  const [editingDeviceKey, setEditingDeviceKey] = useState<string | null>(null);
+  const [deviceLabelDraft, setDeviceLabelDraft] = useState("");
 
   useEffect(() => {
     /* VPN-ANDROID: определяем оболочку один раз — window нет на сервере. */
@@ -308,6 +313,10 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
         entitled: prev?.entitled ?? true,
         nodeReady: prev?.nodeReady ?? true,
         peer,
+        devices: [
+          ...(prev?.devices ?? []).filter((item) => item.publicKey !== peer.publicKey),
+          peer,
+        ],
       }));
       setError("");
       if (peer.tunnel.serverPublicKey && peer.tunnel.endpoint) {
@@ -340,7 +349,7 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
       try {
         const enrolled = await enroll(mode, nodeId);
         if (!enrolled) return;
-        await waitForAndroidPeer();
+        await waitForAndroidPeer(enrolled.peer.publicKey);
         const st = await bridge.up(enrolled.config);
         setTunnel(st);
       } catch (e) {
@@ -390,7 +399,8 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
     const pending = (async (): Promise<VpnState | null> => {
       try {
-        const res = await fetch("/api/vpn/me", { cache: "no-store" });
+        const pair = await vpnEnrollmentKeys();
+        const res = await fetch(`/api/vpn/me?publicKey=${encodeURIComponent(pair.publicKey)}`, { cache: "no-store" });
         const data = res.ok ? await res.json().catch(() => null) : null;
         if (!data || typeof data !== "object")
           throw new Error("Некорректный ответ состояния");
@@ -399,6 +409,7 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
           entitled: data.entitled === true,
           nodeReady: data.nodeReady === true,
           peer: data.peer ?? null,
+          devices: Array.isArray(data.devices) ? data.devices : [],
           plan: data.plan ?? null,
           servers: Array.isArray(data.servers) ? data.servers : [],
         };
@@ -427,10 +438,11 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
     setShowAmneziaQr(false);
     setBusy(true);
     try {
+      const pair = await vpnEnrollmentKeys();
       const res = await fetch("/api/vpn/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodeId }),
+        body: JSON.stringify({ nodeId, publicKey: pair.publicKey }),
       });
       const data = (await res.json().catch(() => null)) as {
         error?: string;
@@ -448,6 +460,69 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
       }
     } catch {
       setError("Ошибка сети");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameDevice = async (publicKey: string) => {
+    if (busy) return;
+    const label = deviceLabelDraft.trim();
+    if (!label) {
+      setError("Введите название устройства.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/vpn/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rename", publicKey, label }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Не удалось переименовать устройство");
+
+      setEditingDeviceKey(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeDevice = async (device: VpnState["devices"] extends (infer T)[] | undefined ? T : never) => {
+    if (busy) return;
+    if (!window.confirm(
+      `Отозвать доступ устройства «${device.label || "Устройство"}»? Оно больше не сможет подключиться.`
+    )) return;
+
+    setBusy(true);
+    setError("");
+    try {
+      // При удалении текущего устройства сначала выключаем встроенный туннель.
+      if (
+        device.publicKey === state?.peer?.publicKey &&
+        (tunnel?.state === "on" || tunnel?.state === "connecting")
+      ) {
+        const bridge = getVpnBridge();
+        if (bridge) setTunnel(await bridge.down());
+      }
+
+      const res = await fetch("/api/vpn/me", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicKey: device.publicKey }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Не удалось удалить устройство");
+
+      if (editingDeviceKey === device.publicKey) setEditingDeviceKey(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
       setBusy(false);
     }
@@ -572,6 +647,7 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
 
   const plan = state?.plan ?? null;
   const servers = Array.isArray(state?.servers) ? state.servers : [];
+  const devices = Array.isArray(state?.devices) ? state.devices : [];
   const selectedServer = servers.find((server) => server.id === chosenNodeId);
   const selectionUnavailable = !chosenNodeId ||
     (servers.length > 0 && !selectedServer) || selectedServer?.ready === false ||
@@ -894,6 +970,117 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
           </div>
         )}
 
+        {state && (
+          <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-white/[0.07] dark:bg-white/[0.035]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-neutral-800 dark:text-white/80">
+                Мои устройства
+              </p>
+              <span className="text-[11px] tabular-nums text-neutral-400 dark:text-white/40">
+                {devices.length} из 5
+              </span>
+            </div>
+
+            {devices.length === 0 ? (
+              <p className="mt-3 text-[11px] text-neutral-500 dark:text-white/45">
+                Пока нет зарегистрированных устройств.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {devices.map((device) => {
+                  const isCurrent = device.publicKey === state.peer?.publicKey;
+                  const isEditing = editingDeviceKey === device.publicKey;
+
+                  return (
+                    <div
+                      key={device.publicKey}
+                      className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.025]"
+                    >
+                      {isEditing ? (
+                        <>
+                          <input
+                            type="text"
+                            maxLength={80}
+                            autoFocus
+                            aria-label="Название устройства"
+                            value={deviceLabelDraft}
+                            onChange={(e) => setDeviceLabelDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void renameDevice(device.publicKey);
+                              if (e.key === "Escape") setEditingDeviceKey(null);
+                            }}
+                            className="min-h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-violet-500 dark:border-white/15 dark:bg-[#111317] dark:text-white"
+                          />
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              type="button"
+                              disabled={busy || !deviceLabelDraft.trim()}
+                              onClick={() => void renameDevice(device.publicKey)}
+                              className="min-h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50 dark:bg-cyan-500 dark:text-[#06161a]"
+                            >
+                              Сохранить
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => setEditingDeviceKey(null)}
+                              className="min-h-9 rounded-lg border border-neutral-200 px-3 text-xs dark:border-white/10"
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                              {device.label || "Устройство"}
+                              {isCurrent && (
+                                <span className="ml-2 text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
+                                  Это устройство
+                                </span>
+                              )}
+                            </p>
+                            <p className="mt-1 truncate text-[10px] text-neutral-500 dark:text-white/40">
+                              {device.node?.name || "Сервер не указан"} · {device.address}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                setDeviceLabelDraft(device.label || "");
+                                setEditingDeviceKey(device.publicKey);
+                                setError("");
+                              }}
+                              className="text-[11px] text-violet-700 hover:underline disabled:opacity-50 dark:text-cyan-300"
+                            >
+                              Изменить
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void removeDevice(device)}
+                              className="text-[11px] text-red-600 hover:underline disabled:opacity-50 dark:text-red-400"
+                            >
+                              Удалить
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <p className="mt-3 text-[10px] leading-relaxed text-neutral-500 dark:text-white/40">
+              До пяти устройств одновременно. У каждого свой ключ и адрес, а лимит трафика общий для аккаунта.
+            </p>
+          </div>
+        )}
+
         {/* ── Режим маршрутизации ──
             FIX-POWERBTN: кнопок «Включить» и «Выключить соединение» здесь больше нет:
             включает и выключает сам круг выше. Остался только выбор того, что пойдёт
@@ -947,14 +1134,14 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
                     type="button"
                     onClick={() =>
                       downloadText(
-                        currentAmneziaProfile.uri,
-                        "tz-connect.vpn",
+                        currentAmneziaProfile.wireGuardConfig,
+                        "tz-connect.conf",
                         "text/plain;charset=utf-8",
                       )
                     }
                     className="rounded-xl bg-violet-600 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-violet-500 dark:bg-cyan-500 dark:text-[#06161a] dark:hover:bg-cyan-400"
                   >
-                    Скачать профиль
+                    Скачать .conf
                   </button>
                   <button
                     type="button"
@@ -965,19 +1152,7 @@ function VpnPanel({ onClose, onOpenSettings, selector }: { onClose: () => void; 
                     {showAmneziaQr ? "Скрыть QR-код" : "Показать QR-код"}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadText(
-                      currentAmneziaProfile.wireGuardConfig,
-                      "tz-connect.conf",
-                      "text/plain;charset=utf-8",
-                    )
-                  }
-                  className="mt-2 w-full text-[10px] text-neutral-400 underline-offset-2 hover:underline dark:text-white/35"
-                >
-                  Скачать .conf (fallback)
-                </button>
+
                 {showAmneziaQr && (
                   <div className="mt-3 flex flex-col items-center rounded-xl bg-white p-4">
                     <QRCodeSVG

@@ -78,11 +78,11 @@ function sleep(ms: number): Promise<void> {
  *
  * @returns `true` — узел подтвердил пира; `false` — не дождались.
  */
-async function waitPeerApplied(): Promise<boolean> {
+async function waitPeerApplied(publicKey: string): Promise<boolean> {
   const deadline = Date.now() + PEER_WAIT_MS;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch("/api/vpn/me");
+      const res = await fetch(`/api/vpn/me?publicKey=${encodeURIComponent(publicKey)}`);
       const data = (res.ok ? await res.json().catch(() => null) : null) as {
         peerApplied?: unknown;
       } | null;
@@ -139,7 +139,8 @@ export function useDesktopTunnel(): DesktopTunnel {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/vpn/me");
+        const pair = await vpnEnrollmentKeys();
+        const res = await fetch(`/api/vpn/me?publicKey=${encodeURIComponent(pair.publicKey)}`);
         const data = res.ok ? await res.json().catch(() => null) : null;
         if (cancelled || !data || typeof data !== "object") return;
         const routing = data.peer?.routing === "SERVICES" ? "SERVICES" : "ALL";
@@ -208,7 +209,7 @@ export function useDesktopTunnel(): DesktopTunnel {
          узнает сам узел, и только потом поднимаем туннель. Без этого ожидания
          включение было лотереей: совпало с отчётом узла — работает, не совпало —
          туннель поднят, а сервер молчит, и интернета нет вовсе. */
-      if (!(await waitPeerApplied())) {
+      if (!(await waitPeerApplied(pair.publicKey))) {
         setError(
           "Сервер не успел принять доступ. Нажмите включение ещё раз через полминуты",
         );

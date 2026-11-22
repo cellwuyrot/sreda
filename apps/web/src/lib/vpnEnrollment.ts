@@ -14,12 +14,12 @@ export async function vpnEnrollmentKeys() {
     privateKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   };
 }
-export async function waitForAndroidPeer(): Promise<void> {
+export async function waitForAndroidPeer(publicKey: string): Promise<void> {
   if (!getAndroidVpnBridge()) return;
   const deadline = Date.now() + 45000;
   while (Date.now() < deadline) {
     try {
-      const r = await fetch("/api/vpn/me", {
+      const r = await fetch(`/api/vpn/me?publicKey=${encodeURIComponent(publicKey)}`, {
         cache: "no-store",
         signal: AbortSignal.timeout(6000),
       });

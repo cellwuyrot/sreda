@@ -24,6 +24,8 @@ import { hasActiveVpnPlan } from "@/lib/vpnPlan";
 import { usageView, isUsageUnlimited } from "@/lib/connectionUsage";
 import { LINK_NAME_LOWER, LINK_PLAN_NAME, LINK_PLAN_QUOTED } from "@/lib/connectionCopy";
 
+const MAX_VPN_DEVICES_PER_USER = 5;
+
 /**
  * VPN-WG: собственный доступ пользователя.
  *
@@ -180,7 +182,7 @@ async function serverChoices(maxPeersPerNode: number, currentNodeId: string | nu
     .filter((node) => node.ready || node.current);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -210,23 +212,26 @@ export async function GET() {
       premiumUntil = latest?.expiresAt ?? null;
     }
   }
-  const peer = await prisma.vpnPeer.findUnique({
+  const requestedPublicKey = new URL(req.url).searchParams.get("publicKey");
+  const peers = await prisma.vpnPeer.findMany({
     where: { userId: session.user.id },
     include: {
       node: {
-        /* FIX-PEERWAIT: `lastSeenAt` нужен, чтобы ответить на вопрос «узел уже
-           знает об этом пире?». Без ответа клиент поднимал туннель в пустоту. */
         select: {
-          name: true,
-          region: true,
-          lastReport: true,
-          lastSeenAt: true,
-          endpointHost: true,
-          transport: true,
-          obfuscation: true,
+          name: true, region: true, lastReport: true, lastSeenAt: true,
+          endpointHost: true, transport: true, obfuscation: true,
         },
       },
     },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const peer = requestedPublicKey
+    ? peers.find((item) => item.publicKey === requestedPublicKey) ?? null
+    : peers[0] ?? null;
+
+  const accountUsage = await prisma.vpnAccountUsage.findUnique({
+    where: { userId: session.user.id },
   });
 
   // Признак «узел готов принимать пиров» нужен клиенту заранее: если ни один
@@ -247,7 +252,7 @@ export async function GET() {
      копии разойдутся в сторону безлимита. */
   const unlimited = isUsageUnlimited(user);
   const traffic = {
-    ...usageView(peer, settings, new Date(), unlimited),
+    ...usageView(accountUsage, settings, new Date(), unlimited),
     limitGb: unlimited ? 0 : settings.trafficLimitGb,
     overLimitAction: settings.overLimitAction,
     throttleKbps: settings.throttleKbps,
@@ -260,9 +265,17 @@ export async function GET() {
     premiumUntil,
   );
 
+  const devices = peers.map((item) => ({
+    ...peerView(item, item.node, nodeTunnel(item.node), settings),
+    nodeId: item.nodeId,
+    peerApplied: !!item.node.lastSeenAt &&
+      item.node.lastSeenAt.getTime() > item.configAt.getTime(),
+  }));
+
   if (!peer) {
     return NextResponse.json({
       peer: null,
+      devices,
       serviceEnabled: settings.enabled,
       entitled,
       nodeReady,
@@ -303,6 +316,7 @@ export async function GET() {
     servers,
     /** Узел уже знает об этом пире — туннель можно поднимать. */
     peerApplied,
+    devices,
     peer: { ...peerView(peer, peer.node, nodeTunnel(peer.node), settings), nodeId: peer.nodeId },
   });
 }
@@ -368,28 +382,42 @@ export async function POST(req: NextRequest) {
   }
   const requestedNodeId = typeof body.nodeId === "string" ? body.nodeId.trim() : null;
 
-  // Один и тот же ключ не может принадлежать двум аккаунтам.
-  const keyOwner = await prisma.vpnPeer.findUnique({ where: { publicKey }, select: { userId: true } });
-  if (keyOwner && keyOwner.userId !== session.user.id) {
-    return NextResponse.json({ error: "Этот ключ уже занят другим аккаунтом" }, { status: 409 });
-  }
-
+  // Публичный ключ — постоянный идентификатор конкретного устройства.
   const existing = await prisma.vpnPeer.findUnique({
-    where: { userId: session.user.id },
+    where: { publicKey },
     include: {
       node: {
         select: {
-          id: true, name: true, region: true, lastReport: true, endpointHost: true,
+          id: true, name: true, region: true, publicIps: true,
+          lastReport: true, lastSeenAt: true, endpointHost: true,
           transport: true, obfuscation: true, enabled: true, kind: true,
         },
       },
     },
   });
 
-  const label = typeof body.label === "string" ? sanitizeText(body.label).trim().slice(0, 80) : "";
-  /* Режим не передали — оставляем прежний выбор человека, а для нового пира берём
-     «весь трафик»: это то, чего ждут от VPN по умолчанию. */
-  const routing = isVpnRouting(body.routing) ? body.routing : existing?.routing ?? "ALL";
+  if (existing && existing.userId !== session.user.id) {
+    return NextResponse.json({ error: "Этот ключ уже занят другим аккаунтом" }, { status: 409 });
+  }
+
+  const deviceCount = await prisma.vpnPeer.count({
+    where: { userId: session.user.id },
+  });
+
+  if (!existing && deviceCount >= MAX_VPN_DEVICES_PER_USER) {
+    return NextResponse.json(
+      { error: `Достигнут лимит: не более ${MAX_VPN_DEVICES_PER_USER} устройств на аккаунт` },
+      { status: 409 },
+    );
+  }
+
+  const label = typeof body.label === "string"
+    ? sanitizeText(body.label).trim().slice(0, 80)
+    : "";
+  const deviceLabel = label || existing?.label || `Устройство ${deviceCount + (existing ? 0 : 1)}`;
+  const routing = isVpnRouting(body.routing)
+    ? body.routing
+    : existing?.routing ?? "ALL";
 
   const selected = requestedNodeId ? await prisma.serverNode.findFirst({
     where: { id: requestedNodeId, kind: "VPN", enabled: true },
@@ -399,48 +427,33 @@ export async function POST(req: NextRequest) {
       _count: { select: { vpnPeers: true } },
     },
   }) : null;
+
   if (requestedNodeId) {
-    if (!selected) return NextResponse.json({ error: "Выбранный сервер недоступен" }, { status: 404 });
+    if (!selected) {
+      return NextResponse.json({ error: "Выбранный сервер недоступен" }, { status: 404 });
+    }
     const wg = nodeTunnel(selected);
-    if (!selected.lastSeenAt || Date.now() - selected.lastSeenAt.getTime() >= NODE_ONLINE_WINDOW_MS ||
+    if (!selected.lastSeenAt ||
+        Date.now() - selected.lastSeenAt.getTime() >= NODE_ONLINE_WINDOW_MS ||
         !wg.publicKey || !wg.endpoint) {
       return NextResponse.json({ error: "Выбранный сервер не готов. Обновите список или выберите другой." }, { status: 409 });
     }
-    if (selected.id !== existing?.nodeId && selected._count.vpnPeers >= settings.maxPeersPerNode) {
+    if (selected.id !== existing?.nodeId &&
+        selected._count.vpnPeers >= settings.maxPeersPerNode) {
       return NextResponse.json({ error: "Сервер заполнен — выберите другой" }, { status: 409 });
     }
   }
 
-  // Повторная регистрация с того же аккаунта заменяет ключ: старое устройство
-  // теряет доступ. Это и есть правило «один аккаунт — один ключ».
-  if (existing && existing.node.enabled && existing.node.kind === "VPN" &&
-      (!requestedNodeId || requestedNodeId === existing.nodeId)) {
-    const updated = await prisma.vpnPeer.update({
-      where: { userId: session.user.id },
-      /* `enabled: true` — на случай, когда пира когда-то выключили: иначе
-         перевыпуск ключа возвращал бы профиль, по которому туннель не поднимется
-         (узлу такой пир не отдаётся), и причина была бы совершенно не видна. */
-      /* FIX-PEERAPPLY: `configAt` — отметка «конфигурация сменилась», по ней
-         клиент ждёт, пока узел узнает о новом ключе. */
-      data: {
-        publicKey,
-        label: label || existing.label,
-        lastHandshakeAt: null,
-        enabled: true,
-        routing,
-        configAt: new Date(),
-      },
-    });
-    return NextResponse.json({
-      peer: peerView(updated, selected ?? existing.node, nodeTunnel(selected ?? existing.node), settings),
-      replaced: existing.publicKey !== publicKey,
-    });
-  }
+  const keepExistingNode =
+    !!existing && existing.node.enabled && existing.node.kind === "VPN" &&
+    (!requestedNodeId || requestedNodeId === existing.nodeId);
 
-  // Пира ещё нет (или его узел выключен) — выбираем узел заново.
   const picked = selected
     ? { node: selected, wg: nodeTunnel(selected) }
-    : await pickVpnNode(settings.maxPeersPerNode);
+    : keepExistingNode
+      ? { node: existing!.node, wg: nodeTunnel(existing!.node) }
+      : await pickVpnNode(settings.maxPeersPerNode);
+
   if (!picked) {
     return NextResponse.json(
       { error: "Нет доступного VPN-узла. Добавьте узел с назначением VPN и дождитесь его отчёта." },
@@ -448,48 +461,66 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  /* Прежний адрес сохраняется только при возврате на тот же узел. При переезде
-     на другой узел он берётся из подсети нового: там прежний может быть занят. */
+  // У каждого нового устройства собственный адрес; при повторном подключении
+  // сохраняем прежний адрес, если устройство осталось на том же узле.
+  const sameNode = existing?.nodeId === picked.node.id;
   const address = await chooseAddress(picked.node.id, existing);
+
   if (!address) {
     return NextResponse.json({ error: "В подсети узла не осталось свободных адресов" }, { status: 503 });
   }
 
-  // VPN-EXIT: внешний адрес выхода закрепляется за пиром при выдаче доступа.
-  const exitIp = await assignExitIp(picked.node.id, picked.node.publicIps);
+  const exitIp = sameNode
+    ? existing!.exitIp
+    : await assignExitIp(picked.node.id, picked.node.publicIps ?? "");
 
-  const peer = await prisma.vpnPeer.upsert({
-    where: { userId: session.user.id },
-    create: { userId: session.user.id, nodeId: picked.node.id, publicKey, address, exitIp, label, routing },
-    update: {
-      nodeId: picked.node.id,
-      publicKey,
-      address,
-      exitIp,
-      label: label || undefined,
-      lastHandshakeAt: null,
-      enabled: true,
-      routing,
-      // FIX-PEERAPPLY: сменились ключ, узел и адрес — ждём отчёта узла заново.
-      configAt: new Date(),
-    },
-  });
+  const peerData = {
+    nodeId: picked.node.id,
+    publicKey,
+    address,
+    exitIp,
+    label: deviceLabel,
+    routing,
+    lastHandshakeAt: null,
+    enabled: true,
+    configAt: new Date(),
+  };
+
+  const peer = existing
+    ? await prisma.vpnPeer.update({
+        where: { id: existing.id },
+        data: peerData,
+      })
+    : await prisma.vpnPeer.create({
+        data: {
+          ...peerData,
+          userId: session.user.id,
+        },
+      });
 
   return NextResponse.json({
     peer: peerView(peer, picked.node, picked.wg, settings),
-    replaced: !!existing,
+    created: !existing,
+    replaced: false,
   });
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const peer = await prisma.vpnPeer.findUnique({ where: { userId: session.user.id }, select: { id: true } });
+  const body = await req.json().catch(() => null) as { publicKey?: unknown } | null;
+  if (!isValidWireGuardKey(body?.publicKey)) {
+    return NextResponse.json({ error: "Не указан корректный ключ устройства" }, { status: 400 });
+  }
+
+  const peer = await prisma.vpnPeer.findFirst({
+    where: { userId: session.user.id, publicKey: body.publicKey },
+    select: { id: true },
+  });
   if (!peer) return NextResponse.json({ ok: true });
 
   await prisma.vpnPeer.delete({ where: { id: peer.id } });
-  // Узел уберёт пира при следующем отчёте: список приходит ему целиком.
   return NextResponse.json({ ok: true });
 }
 
@@ -525,12 +556,46 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
-  const body = (await req.json().catch(() => null)) as { nodeId?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as {
+    action?: unknown;
+    nodeId?: unknown;
+    publicKey?: unknown;
+    label?: unknown;
+  } | null;
+
+  if (!isValidWireGuardKey(body?.publicKey)) {
+    return NextResponse.json({ error: "Не указан корректный ключ устройства" }, { status: 400 });
+  }
+
+  // Переименование не меняет конфигурацию туннеля и configAt.
+  if (body.action === "rename") {
+    const label = typeof body.label === "string"
+      ? sanitizeText(body.label).trim().slice(0, 80)
+      : "";
+    if (!label) {
+      return NextResponse.json({ error: "Укажите название устройства" }, { status: 400 });
+    }
+
+    const target = await prisma.vpnPeer.findFirst({
+      where: { userId: session.user.id, publicKey: body.publicKey },
+      select: { id: true },
+    });
+    if (!target) {
+      return NextResponse.json({ error: "Устройство не найдено" }, { status: 404 });
+    }
+
+    await prisma.vpnPeer.update({
+      where: { id: target.id },
+      data: { label },
+    });
+    return NextResponse.json({ ok: true, label });
+  }
+
   const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
   if (!nodeId) return NextResponse.json({ error: "Не указан сервер" }, { status: 400 });
 
-  const peer = await prisma.vpnPeer.findUnique({
-    where: { userId: session.user.id },
+  const peer = await prisma.vpnPeer.findFirst({
+    where: { userId: session.user.id, publicKey: body.publicKey },
     select: { id: true, nodeId: true, address: true },
   });
   if (!peer) {
