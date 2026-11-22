@@ -98,7 +98,8 @@ model User {
   notificationsCaused    Notification[]              @relation("NotificationActor")
   onboardingApplications OnboardingApplication[]     @relation("OnboardingApplicant")
   onboardingInvites      OnboardingInvite[]
-  vpnPeer                VpnPeer?
+  vpnPeers               VpnPeer[]
+  vpnAccountUsage        VpnAccountUsage?
   pushDevices            PushDevice[]
   onboardingReviews      OnboardingApplication[]     @relation("OnboardingReviewer")
   calendarSubscriptions  CalendarEventSubscription[] @relation("CalendarSubscriptions")
@@ -900,7 +901,7 @@ model VpnSettings {
 /// выдавать нечего.
 model VpnPeer {
   id     String @id @default(cuid())
-  userId String @unique
+  userId String
   nodeId String
   /// Публичный ключ WireGuard (base64, 44 символа).
   publicKey String @unique
@@ -958,7 +959,20 @@ model VpnPeer {
   /// была прямой поломкой второго узла: адреса выдаются из подсети узла, и
   /// первый же пир на новом узле получал отказ на записи, а не доступ.
   @@unique([nodeId, address])
+  @@index([userId])
   @@index([nodeId])
+}
+
+
+model VpnAccountUsage {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  rxBytes         Float    @default(0)
+  txBytes         Float    @default(0)
+  usageResetAt    DateTime @default(now())
+  usageUpdatedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model EcosystemItem {

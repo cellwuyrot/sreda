@@ -79,27 +79,59 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Этот ключ уже занят другим аккаунтом" }, { status: 409 });
   }
 
-  const label = typeof body?.label === "string" ? sanitizeText(body.label).trim().slice(0, 80) : "";
+  const label = typeof body?.label === "string"
+    ? sanitizeText(body.label).trim().slice(0, 80)
+    : "";
 
+  // Один публичный ключ — одно устройство.
   const existing = await prisma.vpnPeer.findUnique({
-    where: { userId: user.id },
-    include: { node: { select: { id: true, name: true, region: true, lastReport: true, enabled: true, kind: true } } },
+    where: { publicKey },
+    include: {
+      node: {
+        select: {
+          id: true, name: true, region: true, lastReport: true,
+          enabled: true, kind: true,
+        },
+      },
+    },
   });
 
-  // Один аккаунт — один пир: повторная выдача заменяет ключ, старое устройство
-  // теряет доступ. Узел применит изменение при следующем отчёте.
+  if (existing && existing.userId !== user.id) {
+    return NextResponse.json({ error: "Этот ключ уже занят другим аккаунтом" }, { status: 409 });
+  }
+
+  const deviceCount = await prisma.vpnPeer.count({
+    where: { userId: user.id },
+  });
+
+  if (!existing && deviceCount >= 5) {
+    return NextResponse.json(
+      { error: "Достигнут лимит: не более 5 устройств на аккаунт" },
+      { status: 409 },
+    );
+  }
+
+  // Повторная выдача того же ключа обновляет только его устройство.
   if (existing && existing.node.enabled && existing.node.kind === "VPN") {
     const updated = await prisma.vpnPeer.update({
-      where: { userId: user.id },
-      /* `enabled: true` — выключенного пира узел не получает, и выданный профиль
-         молча не работал бы. Повторная выдача обязана возвращать доступ. */
-      data: { publicKey, label: label || existing.label, lastHandshakeAt: null, enabled: true },
+      where: { id: existing.id },
+      data: {
+        label: label || existing.label,
+        lastHandshakeAt: null,
+        enabled: true,
+      },
     });
+
     const wg = readWgReport(existing.node.lastReport);
     return NextResponse.json({
-      replaced: existing.publicKey !== publicKey,
+      created: false,
+      replaced: false,
       user,
-      peer: { address: updated.address, exitIp: updated.exitIp, node: existing.node.name },
+      peer: {
+        address: updated.address,
+        exitIp: updated.exitIp,
+        node: existing.node.name,
+      },
       tunnel: {
         serverPublicKey: wg.publicKey,
         endpoint: wg.endpoint,
@@ -114,38 +146,52 @@ export async function POST(req: Request) {
   const picked = await pickVpnNode(settings.maxPeersPerNode);
   if (!picked) {
     return NextResponse.json(
-      { error: "Нет свободного сервера: добавьте узел соединения или поднимите потолок устройств" },
+      { error: "Нет свободного VPN-сервера" },
       { status: 503 },
     );
   }
 
-  /* Прежний адрес — только при возврате на тот же узел: в подсети другого он
-     может быть уже занят (см. chooseAddress). */
   const address = await chooseAddress(picked.node.id, existing);
   if (!address) {
-    return NextResponse.json({ error: "В подсети узла не осталось свободных адресов" }, { status: 503 });
+    return NextResponse.json(
+      { error: "В подсети узла не осталось свободных адресов" },
+      { status: 503 },
+    );
   }
 
-  const exitIp = await assignExitIp(picked.node.id, picked.node.publicIps);
-  const peer = await prisma.vpnPeer.upsert({
-    where: { userId: user.id },
-    create: { userId: user.id, nodeId: picked.node.id, publicKey, address, exitIp, label },
-    update: {
-      nodeId: picked.node.id,
-      publicKey,
-      address,
-      exitIp,
-      label: label || undefined,
-      lastHandshakeAt: null,
-      enabled: true,
-    },
-  });
+  const exitIp = existing?.nodeId === picked.node.id
+    ? existing.exitIp
+    : await assignExitIp(picked.node.id, picked.node.publicIps);
+
+  const peerData = {
+    nodeId: picked.node.id,
+    publicKey,
+    address,
+    exitIp,
+    label: label || existing?.label || "",
+    lastHandshakeAt: null,
+    enabled: true,
+    configAt: new Date(),
+  };
+
+  const peer = existing
+    ? await prisma.vpnPeer.update({
+        where: { id: existing.id },
+        data: peerData,
+      })
+    : await prisma.vpnPeer.create({
+        data: { ...peerData, userId: user.id },
+      });
 
   return NextResponse.json({
-    replaced: !!existing,
+    created: !existing,
+    replaced: false,
     user,
-    peer: { address: peer.address, exitIp: peer.exitIp, node: picked.node.name },
-    // Всё, что нужно вписать в клиентский профиль. Секретов здесь нет.
+    peer: {
+      address: peer.address,
+      exitIp: peer.exitIp,
+      node: picked.node.name,
+    },
     tunnel: {
       serverPublicKey: picked.wg.publicKey,
       endpoint: picked.wg.endpoint,
